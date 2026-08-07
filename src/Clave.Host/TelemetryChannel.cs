@@ -40,9 +40,9 @@ public sealed class TelemetryChannel<T>
     public int Count => _channel.Reader.Count;
 
     /// <summary>
-    /// Items dropped by <see cref="TelemetryFullMode.DropWrite"/> when the channel was full.
-    /// <see cref="TelemetryFullMode.DropOldest"/> drops are handled inside the channel and
-    /// are not counted here.
+    /// Items discarded under <see cref="TelemetryFullMode.DropWrite"/> when the channel
+    /// was full (detected via Count before/after <c>TryWrite</c>).
+    /// <see cref="TelemetryFullMode.DropOldest"/> evictions are not counted here.
     /// </summary>
     public long DroppedCount => Interlocked.Read(ref _droppedCount);
 
