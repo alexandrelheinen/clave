@@ -1,0 +1,17 @@
+<Project>
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <Deterministic>true</Deterministic>
+    <LangVersion>latest</LangVersion>
+    <Product>CLAVE</Product>
+    <Authors>Alexandre Loeblein Heinen</Authors>
+    <Company>Alexandre Loeblein Heinen</Company>
+    <Copyright>Copyright (c) 2026 Alexandre Loeblein Heinen</Copyright>
+    <RepositoryUrl>https://github.com/alexandrelheinen/clave</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+  </PropertyGroup>
+</Project>

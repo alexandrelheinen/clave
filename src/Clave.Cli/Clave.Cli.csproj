@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Clave.Cli</RootNamespace>
+    <AssemblyName>Clave.Cli</AssemblyName>
+    <Description>CLAVE console smoke entry point.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Clave.Host\Clave.Host.csproj" />
+    <ProjectReference Include="..\Clave.Vision\Clave.Vision.csproj" />
+    <ProjectReference Include="..\Clave.Capture\Clave.Capture.csproj" />
+    <ProjectReference Include="..\Clave.Bus\Clave.Bus.csproj" />
+    <ProjectReference Include="..\Clave.Interop\Clave.Interop.csproj" />
+  </ItemGroup>
+</Project>
