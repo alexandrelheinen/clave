@@ -1,4 +1,4 @@
-# CLAVE specification (Phase 0)
+# CLAVE specification
 
 This document is the project-level functional specification for **CLAVE**
 (**C**ross-**L**anguage **A**rchitecture for **V**ision & **E**dge). Feature-level
@@ -12,23 +12,34 @@ capture/calibration concepts, EtherCAT bus concepts, and auditable Rust hot
 paths. CLAVE is the clef for reading the industrial stack that complements
 arco / fret / luthier / bossa.
 
-## 2. Phase 0 scope
+## 2. Phase scope
+
+### Phase 0 — Scaffold (complete)
+
+**In scope:** repository scaffolding, compile-and-test stubs, agent bridges,
+`./scripts/validate.sh` matching CI.
+
+**Out of scope:** RealSense, OpenCVSharp, ONNX Runtime, TorchSharp, SOEM/EtherCAT
+hardware; sibling git submodules; harvest-robot product features.
+
+### Phase 1 — Host telemetry (current)
 
 **In scope**
 
-- Repository scaffolding: solution, Rust crate, docs, scripts, CI
-- Compile-and-test stubs with zero native hardware/SDK dependencies
-- Agent bridges pointing at CONTRIBUTING
-- Local `./scripts/validate.sh` matching CI
+- `TelemetryChannel<T>` full-mode policies (`Wait`, `DropOldest`, `DropWrite`)
+- ValueTask / Channels hot-path APIs (`WaitToWriteAsync`, `WaitToReadAsync`, counts)
+- `FrameBuffer` Span helpers (`Slice`, `CopyTo`, `TryCopyTo`)
+- Backpressure unit tests and GC / allocation notes (`docs/host-telemetry.md`)
 
 **Out of scope**
 
-- RealSense, OpenCVSharp, ONNX Runtime, TorchSharp, SOEM/EtherCAT hardware
-- Git submodules of sibling repos
-- Harvest-robot product features
-- Logo / branding assets beyond textual identity
+- Native vision / capture / bus SDKs (Phases 2–4)
+- Rust C ABI / P/Invoke (Phase 5)
+- YAML config loader (example file only; options are code-constructed)
 
-## 3. Functional requirements (Phase 0)
+## 3. Functional requirements
+
+### Phase 0
 
 | ID | Requirement | Verification |
 | --- | --- | --- |
@@ -42,11 +53,24 @@ arco / fret / luthier / bossa.
 | FR-P0-08 | Rust SampleRing overwrites when full | `cargo test` |
 | FR-P0-09 | validate.sh and CI run both language gates | `./scripts/validate.sh` |
 
+### Phase 1
+
+| ID | Requirement | Verification |
+| --- | --- | --- |
+| FR-P1-01 | TelemetryChannel accepts `TelemetryChannelOptions` with capacity and full mode | Host.Tests |
+| FR-P1-02 | When full and mode is `Wait`, `TryWrite` returns false without dropping | Host.Tests |
+| FR-P1-03 | When full and mode is `DropOldest`, newest write succeeds and oldest is evicted | Host.Tests |
+| FR-P1-04 | When full and mode is `DropWrite`, `TryWrite` fails and `DroppedCount` increments | Host.Tests |
+| FR-P1-05 | `WaitToWriteAsync` / `WaitToReadAsync` expose channel readiness via ValueTask | Host.Tests |
+| FR-P1-06 | FrameBuffer supports Slice and CopyTo without allocating the view | Host.Tests |
+| FR-P1-07 | GC / full-mode notes documented for operators | `docs/host-telemetry.md` |
+| FR-P1-08 | Cli smoke exercises Wait round-trip and DropWrite counter | Cli smoke |
+
 ## 4. MAF module mapping
 
 | MAF focus | CLAVE home | Phase |
 | --- | --- | --- |
-| .NET memory + async (Span, ValueTask, Channels) | Clave.Host | 0 stub → 1 |
+| .NET memory + async (Span, ValueTask, Channels) | Clave.Host | 0 stub → **1** |
 | Vision / ONNX in .NET | Clave.Vision | 0 stub → 2 |
 | RealSense / calib / point clouds | Clave.Capture (+ docs) | 0 stub → 3 |
 | EtherCAT concepts | Clave.Bus | 0 stub → 4 |
@@ -59,3 +83,4 @@ arco / fret / luthier / bossa.
 - No secrets in repository
 - Deterministic builds (`Directory.Build.props`)
 - Rebase-friendly history; owner merges manually
+- No native hardware SDKs until the matching roadmap phase

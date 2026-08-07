@@ -3,7 +3,7 @@
 Phased delivery for the CLAVE specialization lab. Phase acceptance criteria
 belong in issues/PRs; this file sequences the work.
 
-## Phase 0 — Scaffold (this milestone)
+## Phase 0 — Scaffold (complete)
 
 - Repository layout, MIT license, .gitignore
 - README, CONTRIBUTING, docs stubs, thin agent bridges
@@ -12,13 +12,14 @@ belong in issues/PRs; this file sequences the work.
 - `./scripts/validate.sh` + GitHub Actions CI
 - **No** RealSense / OpenCV / ONNX / EtherCAT native dependencies
 
-## Phase 1 — Module 1 (Host telemetry)
+## Phase 1 — Module 1 (Host telemetry) — current
 
 - Span / ValueTask / Channels host hardening
-- GC profiling notes and drop/full-mode policies
+- GC profiling notes and drop/full-mode policies (`Wait`, `DropOldest`, `DropWrite`)
 - Expand Host tests around backpressure
+- See [specification.md](specification.md) (`FR-P1-*`) and [host-telemetry.md](host-telemetry.md)
 
-## Phase 2 — Module 2 (Vision)
+## Phase 2 — Module 2 (Vision) — next
 
 - OpenCVSharp + ONNX Runtime vision sidecar contract
 - Observation shapes compatible with fret observations
@@ -49,3 +50,4 @@ belong in issues/PRs; this file sequences the work.
 | Next | Immediately following current |
 | Planned | Sequenced but not started |
 | Optional | May slip or stay stubbed without hardware |
+| Complete | Accepted on main |

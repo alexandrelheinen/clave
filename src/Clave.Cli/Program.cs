@@ -13,13 +13,16 @@ internal static class Program
         _ = args;
 
         Console.WriteLine("CLAVE — Cross-Language Architecture for Vision & Edge");
-        Console.WriteLine("Phase 0 scaffold smoke (stubs only; no native SDKs).");
+        Console.WriteLine("Phase 1 host telemetry smoke (stubs only; no native SDKs).");
         Console.WriteLine();
 
-        var channel = new TelemetryChannel<string>(capacity: 8);
+        var channel = new TelemetryChannel<string>(
+            new TelemetryChannelOptions(capacity: 8, fullMode: TelemetryFullMode.Wait));
         await channel.WriteAsync("hello-clave");
         var roundTrip = await channel.ReadAsync();
-        Console.WriteLine($"TelemetryChannel round-trip: {roundTrip}");
+        Console.WriteLine($"TelemetryChannel round-trip: {roundTrip} (mode={channel.FullMode})");
+
+        DemonstrateDropWrite();
 
         byte[] frameBytes = [1, 2, 3, 4, 5, 6, 7, 8];
         PrintFrameBuffer(frameBytes);
@@ -44,10 +47,20 @@ internal static class Program
         return 0;
     }
 
+    private static void DemonstrateDropWrite()
+    {
+        var dropping = new TelemetryChannel<int>(
+            new TelemetryChannelOptions(1, TelemetryFullMode.DropWrite));
+        _ = dropping.TryWrite(1);
+        _ = dropping.TryWrite(2);
+        Console.WriteLine($"DropWrite backpressure: dropped={dropping.DroppedCount}");
+    }
+
     // FrameBuffer is a ref struct — keep usage out of async methods on net8.0.
     private static void PrintFrameBuffer(byte[] frameBytes)
     {
         var frame = new FrameBuffer(frameBytes);
-        Console.WriteLine($"FrameBuffer length: {frame.Length}");
+        FrameBuffer head = frame.Slice(0, 4);
+        Console.WriteLine($"FrameBuffer length: {frame.Length} (head slice: {head.Length})");
     }
 }

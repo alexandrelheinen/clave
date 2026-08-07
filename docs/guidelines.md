@@ -15,7 +15,9 @@ policy live in [CONTRIBUTING.md](../CONTRIBUTING.md)—do not duplicate them her
 - Target **net8.0**; respect `Directory.Build.props` (Nullable, ImplicitUsings,
   TreatWarningsAsErrors, Deterministic).
 - Prefer `Span` / `ReadOnlySpan`, `ref struct` views, and `ValueTask` on hot paths.
-- Use `System.Threading.Channels` for telemetry; document full-mode behavior.
+- Use `System.Threading.Channels` for telemetry; choose an explicit
+  `TelemetryFullMode` (`Wait` / `DropOldest` / `DropWrite`). See
+  [host-telemetry.md](host-telemetry.md).
 - Public APIs should be nullable-aware; avoid `null!` except at proven boundaries.
 - Do not use `FrameBuffer` (ref struct) inside async methods—factor sync helpers.
 - Tests: xUnit; name methods `Method_Scenario_Expected`.

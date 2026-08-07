@@ -44,22 +44,23 @@ source trees into this repository.
 | **[BOSSA](https://github.com/alexandrelheinen/bossa)** | Edge runtime + telemetry for IoT on ARM Linux |
 | **[Personal website](https://alexandrelheinen.pages.dev)** | Methodology articles and portfolio (not product code for CLAVE) |
 
-### What CLAVE provides (Phase 0)
+### What CLAVE provides
 
 | Artifact | Role |
 | --- | --- |
-| `Clave.sln` (.NET 8) | Host, Vision, Capture, Bus, Interop, Cli + xUnit tests |
+| `Clave.sln` (.NET 8) | Host (Phase 1 telemetry), Vision, Capture, Bus, Interop, Cli + xUnit tests |
 | `rust/clave-core` | Auditable ring-buffer stub (`SampleRing`) |
 | `./scripts/validate.sh` | Local gate matching CI |
+| `docs/host-telemetry.md` | Full-mode policies and GC profiling notes |
 
 Specification stack:
 
 | Level | Specification artifacts | Validation artifacts |
 | --- | --- | --- |
 | 1 — Functional | [docs/specification.md](docs/specification.md), [docs/roadmap.md](docs/roadmap.md) | Acceptance criteria / smoke CLI |
-| 2 — Architecture | [docs/architecture.md](docs/architecture.md), README module map | Project references + contract stubs |
+| 2 — Architecture | [docs/architecture.md](docs/architecture.md), [docs/host-telemetry.md](docs/host-telemetry.md), README module map | Project references + contract stubs |
 | 3 — Module API | Public types under `src/` and `rust/clave-core` | xUnit + `cargo test` |
-| 4 — Implementation | Stubs in Phase 0; real backends in later phases | Full `./scripts/validate.sh` + CI |
+| 4 — Implementation | Host hardened in Phase 1; native backends in later phases | Full `./scripts/validate.sh` + CI |
 
 ---
 
