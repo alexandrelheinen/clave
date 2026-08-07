@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Clave.Host</RootNamespace>
+    <AssemblyName>Clave.Host</AssemblyName>
+    <Description>CLAVE host primitives: telemetry channels and frame buffers.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Clave.Interop\Clave.Interop.csproj" />
+  </ItemGroup>
+</Project>
