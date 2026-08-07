@@ -1,9 +1,10 @@
 # Example telemetry channel configuration for CLAVE hosts.
 # Copy to telemetry.yml (gitignored) for local overrides.
+# Semantics: docs/host-telemetry.md (Phase 1).
 
 channel:
   capacity: 64
-  full_mode: wait  # wait | drop_oldest (Phase 1+)
+  full_mode: wait  # wait | drop_oldest | drop_write
 
 host:
   name: clave-host

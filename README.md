@@ -8,9 +8,10 @@ The name *clave* is Portuguese for musical clef — the key to reading the indus
 
 | Document | Description |
 | --- | --- |
-| [docs/specification.md](docs/specification.md) | Product specification and Phase 0 acceptance (SDD) |
+| [docs/specification.md](docs/specification.md) | Product specification and Phase 0/1 acceptance (SDD) |
 | [docs/architecture.md](docs/architecture.md) | Module map, boundaries, and interop direction |
 | [docs/roadmap.md](docs/roadmap.md) | Phased delivery aligned to MAF study modules |
+| [docs/host-telemetry.md](docs/host-telemetry.md) | Host full-mode policies and GC profiling notes |
 | [docs/guidelines.md](docs/guidelines.md) | Coding conventions for C# and Rust |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Constitution: SDD, V-cycle, quality gates, agent policy |
 
@@ -34,7 +35,7 @@ Bridge contracts toward sibling repos later; **do not vendor** them.
 ```mermaid
 flowchart TB
     CLI["Clave.Cli"]
-    HOST["Clave.Host<br/>TelemetryChannel · FrameBuffer"]
+    HOST["Clave.Host<br/>TelemetryChannel · FullMode · FrameBuffer"]
     VISION["Clave.Vision<br/>Observation · pipeline stub"]
     CAPTURE["Clave.Capture<br/>PointCloudStub"]
     BUS["Clave.Bus<br/>EthercatMasterStub"]
@@ -52,9 +53,9 @@ flowchart TB
     INTEROP -.->|"Phase 5 P/Invoke"| RUST
 ```
 
-| Module | Role (Phase 0) |
+| Module | Role |
 | --- | --- |
-| **Clave.Host** | Bounded `TelemetryChannel<T>`, `FrameBuffer` (`readonly ref struct`) |
+| **Clave.Host** | Bounded `TelemetryChannel<T>` with full-mode policy, `FrameBuffer` (`readonly ref struct`) |
 | **Clave.Vision** | `Observation` record + synthetic pipeline stub |
 | **Clave.Capture** | Synthetic XYZ point cloud stub |
 | **Clave.Bus** | EtherCAT master stub (no SOEM) |
@@ -125,7 +126,9 @@ CI runs `./scripts/validate.sh` on pull requests and pushes to `main`.
 
 ## Status
 
-**Phase 0 — scaffold.** Stubs compile and test. No RealSense, OpenCV, ONNX, or EtherCAT native dependencies yet. See [docs/roadmap.md](docs/roadmap.md).
+**Phase 1 — Host telemetry.** Bounded channels with explicit full-mode /
+backpressure policies and GC notes. No RealSense, OpenCV, ONNX, or EtherCAT
+native dependencies yet. See [docs/roadmap.md](docs/roadmap.md).
 
 ---
 
