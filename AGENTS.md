@@ -1,22 +1,23 @@
 # AGENTS Instructions
 
-Automated agents working in this repository must follow
-[CONTRIBUTING.md](CONTRIBUTING.md) as the **single source of truth** for
-development workflow, SDD, the V-cycle, quality gates, and agent policy.
+This file is a bridge only. **Do not add rules here.**
 
-For coding conventions (C# / Rust), follow [docs/guidelines.md](docs/guidelines.md).
+Shared engineering guidelines live in [.guidelines/](.guidelines/) (a git
+submodule):
 
-**Do not duplicate** workflow or V-cycle rules in this file. When instructions
-conflict, resolve in this order:
+- [.guidelines/workflow/sdd.md](.guidelines/workflow/sdd.md), [integration.md](.guidelines/workflow/integration.md), [tdd.md](.guidelines/workflow/tdd.md) — how work gets done
+- [.guidelines/agents/writing.md](.guidelines/agents/writing.md) — how any prose should read
+- [.guidelines/style/naming.md](.guidelines/style/naming.md) — naming
+- [.guidelines/languages/cs.md](.guidelines/languages/cs.md), [rs.md](.guidelines/languages/rs.md) — C# and Rust
 
-1. Direct maintainer request in the active task
-2. [CONTRIBUTING.md](CONTRIBUTING.md)
-3. [docs/guidelines.md](docs/guidelines.md)
-4. [docs/specification.md](docs/specification.md)
-5. Modern .NET / Rust best practices
+For CLAVE's own project context, ecosystem, quality gates, and merge
+policy, read [CONTRIBUTING.md](CONTRIBUTING.md). For CLAVE-specific coding
+notes on top of the shared baseline, read
+[docs/guidelines.md](docs/guidelines.md).
 
-An imperative order (implement, add, fix…) always implies the full V-cycle
-described in [CONTRIBUTING.md](CONTRIBUTING.md), not code alone.
+Conflict order: direct maintainer request > CONTRIBUTING.md > `.guidelines/`
+> `docs/guidelines.md` > `docs/specification.md` > modern .NET / Rust best
+practices.
 
 ## Pre-push gates (mandatory)
 
@@ -28,7 +29,8 @@ Do not push or update a PR until validate exits 0.
 
 ## Cursor Cloud notes
 
-- Install toolchains with `./scripts/setup.sh` if `dotnet` or `cargo` is missing.
-- Phase 0 has no hardware SDKs; do not add RealSense/OpenCV/ONNX/SOEM unless the
-  task advances that roadmap phase.
+- Install toolchains with `./scripts/setup.sh` if `dotnet` or `cargo` is
+  missing.
+- Phase 0 has no hardware SDKs; do not add RealSense/OpenCV/ONNX/SOEM
+  unless the task advances that roadmap phase.
 - Do not merge PRs; owner merges manually.
