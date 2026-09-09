@@ -1,11 +1,13 @@
 # CURSOR Instructions
 
-Cursor agents must follow [CONTRIBUTING.md](CONTRIBUTING.md) as the authoritative
-constitution (SDD, V-cycle, quality gates, merge policy). Coding conventions:
-[docs/guidelines.md](docs/guidelines.md).
+This file is a bridge only. **Do not add rules here.**
 
-Do not duplicate workflow rules in this file or under ad-hoc rule dumps. Prefer
-editing CONTRIBUTING when process changes.
+Shared engineering guidelines (method, writing, naming, C#/Rust style) live
+in [.guidelines/](.guidelines/), a git submodule. For CLAVE's own project
+context, quality gates, and merge policy, read
+[CONTRIBUTING.md](CONTRIBUTING.md). For CLAVE-specific coding notes, read
+[docs/guidelines.md](docs/guidelines.md). Prefer editing `CONTRIBUTING.md`
+or the submodule when process changes; do not add ad-hoc rule dumps here.
 
 Mandatory before push:
 

@@ -1,10 +1,18 @@
-# CLAUDE Instructions
+# Claude instructions
 
-Follow [CONTRIBUTING.md](CONTRIBUTING.md) as the single source of truth for SDD,
-V-cycle, quality gates, and agent policy. Coding conventions:
+@.guidelines/workflow/sdd.md
+@.guidelines/workflow/integration.md
+@.guidelines/workflow/tdd.md
+@.guidelines/agents/writing.md
+@.guidelines/style/naming.md
+@.guidelines/languages/cs.md
+@.guidelines/languages/rs.md
+
+For CLAVE's own project context, quality gates, and merge policy, read
+[CONTRIBUTING.md](CONTRIBUTING.md). For CLAVE-specific coding notes, read
 [docs/guidelines.md](docs/guidelines.md).
 
-Do not duplicate workflow rules here. Before push:
+Before push:
 
 ```bash
 ./scripts/validate.sh
