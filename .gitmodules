@@ -1,5 +1,7 @@
-[submodule ".guidelines"]
+[submodule "standards/guidelines"]
+	path = standards/guidelines
+	url = https://github.com/alexandrelheinen/guidelines.git
 	branch = main
-	update = merge
-	path = .guidelines
-	url = git@github.com:alexandrelheinen/guidelines.git
+[submodule "standards/cc-sdd"]
+	path = standards/cc-sdd
+	url = https://github.com/gotalab/cc-sdd.git
