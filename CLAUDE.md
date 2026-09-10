@@ -50,9 +50,10 @@ what this repository gates on.
 Everything committed follows
 [agents/writing.md](standards/guidelines/agents/writing.md), including
 commit messages, PR bodies, specs, and code comments. The `caveman` plugin
-compresses agent output and contradicts that rule, so it stays off for
-anything that lands in the repository. See
-[standards/README.md](standards/README.md#installing-the-claude-code-plugins).
+compresses agent output and contradicts that rule, so `.caveman.json` at
+the repository root sets its mode to `off`. Invoke it with `/caveman` when
+you want it and leave it off for anything that lands in the repository. See
+[standards/README.md](standards/README.md#caveman-is-switched-off-in-this-repository).
 
 ## Before push
 
