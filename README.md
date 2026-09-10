@@ -35,9 +35,8 @@ replaceable component behind a contract.
 
 ## Status
 
-No application code has landed yet. The repository was reset in September
-2026, replacing an abandoned C# and .NET study lab, and the first crate
-lands with the first specification.
+No application code has landed yet. The first crate lands with the first
+specification.
 
 ## Ecosystem
 
