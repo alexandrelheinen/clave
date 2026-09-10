@@ -1,7 +1,15 @@
 # Claude instructions
 
-This file is a bridge. Rules live in the documents it points at, and it
-should stay short enough that every line earns its place in context.
+CLAVE sorts recyclable waste on a conveyor belt: a camera watches the line,
+a model classifies each object, a tracker follows it across frames, and the
+pipeline decides which channel it belongs in and when to reach for it,
+inside a measured latency budget. [README.md](README.md) has the problem in
+full, including why the pipeline rather than the classifier is the hard
+part. Read it before designing anything.
+
+This file is a bridge for everything else. Rules live in the documents it
+points at, and it should stay short enough that every line earns its place
+in context.
 
 ## Always loaded
 
@@ -16,6 +24,7 @@ should stay short enough that every line earns its place in context.
 
 | Topic | Document |
 | --- | --- |
+| What the project does, and the engineering problem behind it | [README.md](README.md) |
 | Project constitution, quality gates, merge policy | [CONTRIBUTING.md](CONTRIBUTING.md) |
 | Coding notes specific to CLAVE | [docs/guidelines.md](docs/guidelines.md) |
 | Standards, toolchain, and how to install it | [standards/README.md](standards/README.md) |
@@ -33,9 +42,16 @@ names the next command; the phase chain and the reference documents are in
 [standards/README.md](standards/README.md#installing-cc-sdd). Specs live in
 `.kiro/specs/` and are committed.
 
-Do not start implementing a feature that has no approved spec. A change
-small enough to skip the spec is a change `/kiro-discovery` will route
-directly, which is a decision it makes rather than one to assume.
+Do not start implementing a feature that has no approved spec. Discovery
+may offer to route a change straight to implementation; that is a
+suggestion, not permission, and the floor in
+[workflow/sdd.md](standards/guidelines/workflow/sdd.md#gating-rule) still
+applies.
+
+`.kiro/steering/` is cc-sdd's persistent project memory, holding
+`product.md`, `tech.md`, and `structure.md`. Run `/kiro-steering` to
+bootstrap it if it is empty, before the first discovery, so every later
+skill reads the same description of the project instead of re-deriving one.
 
 ## Language
 
