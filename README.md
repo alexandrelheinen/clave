@@ -4,39 +4,23 @@
 
 **CLAVE** = **C**oleta de **L**ixo **A**través de **V**isão **E**mbarcada
 
-> A Rust real-time perception pipeline for automated sorting: camera to
-> inference to tracking to pick decision, under a measured latency budget.
-> Models train in Python and ship as ONNX; everything that runs against the
-> clock is Rust.
+CLAVE sorts recyclable waste travelling on a conveyor belt. A camera watches
+the line, a neural network classifies each object, a tracker follows it
+across frames, and the pipeline decides which channel it belongs in and when
+to reach for it, all inside a latency budget it measures rather than
+assumes. Models train in Python and ship as ONNX; everything that runs
+against the clock is Rust.
 
 <br clear="left">
 
-The name is Portuguese twice over. *Clave* is the musical clef, the key to
-reading the industrial score, which puts it in the same family as **arco**,
-**fret**, **luthier**, and **bossa**. The expansion says what the project
-does, and reads in English as waste collection through embedded vision.
-
-Documentation and code stay in US English, per
-[style/naming.md](standards/guidelines/style/naming.md#language). The
-Portuguese is the product name, not the prose.
-
-## Status
-
-The repository was reset in September 2026. It previously hosted a C# and
-.NET study lab, which was abandoned before it grew past stubs. What
-survives is the architectural intent, the constitution, and the shared
-guidelines; the implementation starts over in Rust.
-
-No application code has landed yet. The first specification comes from the
-SDD workflow described in [standards/README.md](standards/README.md), and
-the first crate lands with it.
+*Clave* is Portuguese for the musical clef, which places the project in the
+same family as **arco**, **fret**, **luthier**, and **bossa**.
 
 ## What this project is about
 
-The interesting problem is not the classifier. Classifying an object on a
-belt is a solved exercise with public datasets, and a model on its own
-proves nothing. The problem worth building is the deterministic pipeline
-around it:
+The classifier is the easy half. Classifying an object on a belt is a
+solved exercise with public datasets, and a model on its own proves
+nothing. The engineering sits in the deterministic pipeline around it:
 
 - Predicting where an object will be when the effector reaches it, rather
   than where the camera saw it.
@@ -48,6 +32,12 @@ around it:
 
 That is where Rust earns its place, and the classifier becomes a
 replaceable component behind a contract.
+
+## Status
+
+No application code has landed yet. The repository was reset in September
+2026, replacing an abandoned C# and .NET study lab, and the first crate
+lands with the first specification.
 
 ## Ecosystem
 
