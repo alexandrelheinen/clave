@@ -1,12 +1,12 @@
-# Copilot Instructions for CLAVE
+# Copilot instructions for CLAVE
 
 This file is a bridge only. **Do not add rules here.**
 
-Shared engineering guidelines (method, writing, naming, C#/Rust style) live
-in [.guidelines/](../.guidelines/), a git submodule. For CLAVE's own
-project context, quality gates, and merge policy, read
-[CONTRIBUTING.md](../CONTRIBUTING.md). For CLAVE-specific coding notes, read
-[docs/guidelines.md](../docs/guidelines.md).
+Read [AGENTS.md](../AGENTS.md), which points at the shared standards in
+[standards/](../standards/README.md), the constitution in
+[CONTRIBUTING.md](../CONTRIBUTING.md), and the CLAVE-specific coding notes
+in [docs/guidelines.md](../docs/guidelines.md).
 
-If a request conflicts with these documents, prioritize them unless the
-user explicitly asks to change them.
+If a request conflicts with those documents, follow them unless the
+maintainer explicitly asks to change them. The full precedence order is in
+[standards/README.md](../standards/README.md#precedence).

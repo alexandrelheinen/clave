@@ -1,13 +1,14 @@
-# CURSOR Instructions
+# Cursor instructions
 
 This file is a bridge only. **Do not add rules here.**
 
-Shared engineering guidelines (method, writing, naming, C#/Rust style) live
-in [.guidelines/](.guidelines/), a git submodule. For CLAVE's own project
-context, quality gates, and merge policy, read
-[CONTRIBUTING.md](CONTRIBUTING.md). For CLAVE-specific coding notes, read
-[docs/guidelines.md](docs/guidelines.md). Prefer editing `CONTRIBUTING.md`
-or the submodule when process changes; do not add ad-hoc rule dumps here.
+Read [AGENTS.md](AGENTS.md), which points at the shared standards in
+[standards/](standards/README.md), the constitution in
+[CONTRIBUTING.md](CONTRIBUTING.md), and the CLAVE-specific coding notes in
+[docs/guidelines.md](docs/guidelines.md).
+
+When process changes, edit `CONTRIBUTING.md` or the guidelines submodule.
+Do not accumulate ad-hoc rule dumps here.
 
 Mandatory before push:
 
