@@ -147,3 +147,9 @@ deviation is written down. CLAVE has one:
   lifecycle and reads from that directory. The content requirements from
   `workflow/sdd.md`, meaning intent, scope, acceptance criteria,
   traceability ids, and constraints, still apply.
+- **Project name.** `style/naming.md` requires US English everywhere.
+  CLAVE's name and its expansion, Coleta de Lixo Através de Visão
+  Embarcada, are Portuguese, matching the musical family the project
+  belongs to. This covers the name alone. Identifiers, comments,
+  documentation, commit messages, and log strings stay in US English, so
+  do not translate them and do not anglicize the name.

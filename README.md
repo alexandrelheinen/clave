@@ -1,15 +1,24 @@
 # CLAVE
 
-**CLAVE** = **C**ross-**L**anguage **A**rchitecture for **V**ision & **E**dge
+<img src="docs/images/clave.svg" alt="CLAVE Logo" width="120" align="left">
+
+**CLAVE** = **C**oleta de **L**ixo **A**través de **V**isão **E**mbarcada
 
 > A Rust real-time perception pipeline for automated sorting: camera to
 > inference to tracking to pick decision, under a measured latency budget.
 > Models train in Python and ship as ONNX; everything that runs against the
 > clock is Rust.
 
-The name *clave* is Portuguese for musical clef, the key to reading the
-industrial score. It belongs to the same musical naming family as **arco**,
-**fret**, **luthier**, and **bossa**.
+<br clear="left">
+
+The name is Portuguese twice over. *Clave* is the musical clef, the key to
+reading the industrial score, which puts it in the same family as **arco**,
+**fret**, **luthier**, and **bossa**. The expansion says what the project
+does, and reads in English as waste collection through embedded vision.
+
+Documentation and code stay in US English, per
+[style/naming.md](standards/guidelines/style/naming.md#language). The
+Portuguese is the product name, not the prose.
 
 ## Status
 
