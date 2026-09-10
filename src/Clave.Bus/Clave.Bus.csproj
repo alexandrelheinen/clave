@@ -1,7 +1,0 @@
-<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <RootNamespace>Clave.Bus</RootNamespace>
-    <AssemblyName>Clave.Bus</AssemblyName>
-    <Description>CLAVE fieldbus stubs (EtherCAT/SOEM deferred).</Description>
-  </PropertyGroup>
-</Project>
