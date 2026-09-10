@@ -1,36 +1,45 @@
-# AGENTS Instructions
+# Agent instructions
 
 This file is a bridge only. **Do not add rules here.**
 
-Shared engineering guidelines live in [.guidelines/](.guidelines/) (a git
-submodule):
+Shared standards live in [standards/](standards/README.md): the
+[guidelines](standards/guidelines/) submodule for method, writing, naming,
+and language style, and the [cc-sdd](standards/cc-sdd/) submodule for the
+spec-driven workflow.
 
-- [.guidelines/workflow/sdd.md](.guidelines/workflow/sdd.md), [integration.md](.guidelines/workflow/integration.md), [tdd.md](.guidelines/workflow/tdd.md) — how work gets done
-- [.guidelines/agents/writing.md](.guidelines/agents/writing.md) — how any prose should read
-- [.guidelines/style/naming.md](.guidelines/style/naming.md) — naming
-- [.guidelines/languages/cs.md](.guidelines/languages/cs.md), [rs.md](.guidelines/languages/rs.md) — C# and Rust
+Start with these:
 
-For CLAVE's own project context, ecosystem, quality gates, and merge
-policy, read [CONTRIBUTING.md](CONTRIBUTING.md). For CLAVE-specific coding
-notes on top of the shared baseline, read
-[docs/guidelines.md](docs/guidelines.md).
+- [workflow/sdd.md](standards/guidelines/workflow/sdd.md),
+  [workflow/tdd.md](standards/guidelines/workflow/tdd.md),
+  [workflow/integration.md](standards/guidelines/workflow/integration.md)
+  for how work gets done
+- [agents/writing.md](standards/guidelines/agents/writing.md) for how any
+  prose should read
+- [style/naming.md](standards/guidelines/style/naming.md) for naming
+- [languages/rs.md](standards/guidelines/languages/rs.md) and
+  [languages/py.md](standards/guidelines/languages/py.md) for Rust and
+  Python style
 
-Conflict order: direct maintainer request > CONTRIBUTING.md > `.guidelines/`
-> `docs/guidelines.md` > `docs/specification.md` > modern .NET / Rust best
-practices.
+For CLAVE's own context, quality gates, and merge policy, read
+[CONTRIBUTING.md](CONTRIBUTING.md). For coding notes specific to CLAVE,
+read [docs/guidelines.md](docs/guidelines.md).
 
-## Pre-push gates (mandatory)
+Precedence when documents disagree is defined in
+[standards/README.md](standards/README.md#precedence).
+
+## Method
+
+Specs come from cc-sdd. Enter through `/kiro-discovery <idea>` and let it
+route the work rather than assuming a feature is small enough to skip the
+spec. See
+[standards/README.md](standards/README.md#installing-cc-sdd).
+
+## Pre-push gate (mandatory)
 
 ```bash
 ./scripts/validate.sh
 ```
 
-Do not push or update a PR until validate exits 0.
-
-## Cursor Cloud notes
-
-- Install toolchains with `./scripts/setup.sh` if `dotnet` or `cargo` is
-  missing.
-- Phase 0 has no hardware SDKs; do not add RealSense/OpenCV/ONNX/SOEM
-  unless the task advances that roadmap phase.
-- Do not merge PRs; owner merges manually.
+Do not push or update a pull request until it exits 0. Do not describe a
+gate as passing without having run it, and do not claim hardware
+validation without evidence.

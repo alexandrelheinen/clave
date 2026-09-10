@@ -1,47 +1,58 @@
 #!/usr/bin/env bash
-# Install local development toolchains for CLAVE (Phase 0).
-set -euo pipefail
+# Report what CLAVE development needs and how to install what is missing.
+# This script does not install toolchains silently.
+set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${ROOT}"
 
-echo "==> CLAVE setup"
+missing=0
 
-need_dotnet=0
-if ! command -v dotnet >/dev/null 2>&1; then
-  need_dotnet=1
-else
-  if ! dotnet --list-sdks 2>/dev/null | grep -q '^8\.'; then
-    need_dotnet=1
+report() {
+  local name="$1" hint="$2"
+  if command -v "${name}" >/dev/null 2>&1; then
+    printf '  ok      %-16s %s\n' "${name}" "$(${name} --version 2>&1 | head -1)"
+  else
+    printf '  MISSING %-16s %s\n' "${name}" "${hint}"
+    missing=1
   fi
-fi
+}
 
-if [[ "${need_dotnet}" -eq 1 ]]; then
-  echo "Installing .NET SDK 8.0 via dotnet-install.sh..."
-  curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install-clave.sh
-  bash /tmp/dotnet-install-clave.sh --channel 8.0
-  export DOTNET_ROOT="${HOME}/.dotnet"
-  export PATH="${DOTNET_ROOT}:${PATH}"
-  echo "Add to your shell profile if needed:"
-  echo "  export DOTNET_ROOT=\"\${HOME}/.dotnet\""
-  echo "  export PATH=\"\${DOTNET_ROOT}:\${PATH}\""
+echo "==> Submodules"
+if [[ -f standards/guidelines/README.md && -f standards/cc-sdd/README.md ]]; then
+  echo "  ok      standards checked out"
 else
-  echo "dotnet OK: $(dotnet --version)"
+  echo "  fetching standards submodules"
+  git submodule update --init --recursive
 fi
 
-if ! command -v cargo >/dev/null 2>&1 || ! command -v rustc >/dev/null 2>&1; then
-  echo "Rust toolchain (cargo/rustc) not found."
-  echo "Install stable Rust from https://rustup.rs/ then re-run this script."
+echo "==> Toolchain"
+report git "install from your package manager"
+report node "install from https://nodejs.org or nvm, needed by the cc-sdd installer"
+report cargo "install a stable Rust toolchain from https://rustup.rs"
+
+echo "==> Cargo tools required by the quality gate"
+if command -v cargo >/dev/null 2>&1; then
+  for tool in nextest llvm-cov deny; do
+    if cargo "${tool}" --version >/dev/null 2>&1; then
+      printf '  ok      cargo-%s\n' "${tool}"
+    else
+      printf '  MISSING cargo-%s   install with: cargo install cargo-%s --locked\n' "${tool}" "${tool}"
+      missing=1
+    fi
+  done
+else
+  echo "  skipped, cargo is not installed yet"
+fi
+
+echo "==> Agent toolchain"
+echo "  See standards/README.md for cc-sdd and the Claude Code plugins."
+
+if [[ "${missing}" -ne 0 ]]; then
+  echo
+  echo "Setup incomplete. Install what is marked MISSING above, then re-run."
   exit 1
 fi
 
-echo "rustc OK: $(rustc --version)"
-echo "cargo OK: $(cargo --version)"
-
-echo "==> Restoring .NET solution"
-dotnet restore Clave.sln
-
-echo "==> Fetching Rust crate (no deps beyond std)"
-cargo metadata --manifest-path rust/clave-core/Cargo.toml --no-deps >/dev/null
-
-echo "Setup complete. Run ./scripts/validate.sh before opening a PR."
+echo
+echo "Setup complete. Run ./scripts/validate.sh before opening a pull request."

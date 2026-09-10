@@ -1,195 +1,149 @@
 # Contributing to CLAVE
 
-This document is the **single source of truth** for CLAVE's own project
-context: what this repo is, its ecosystem, and its specific quality gates
-and merge policy. Generic method (Spec-Driven Development, the V-cycle,
-TDD), writing, and naming guidelines live in [.guidelines/](.guidelines/),
-a shared submodule, not here.
+This document is the single source of truth for CLAVE's own project
+context: what this repository is, its quality gates, and its merge policy.
+Generic method, writing, and naming rules live in
+[standards/](standards/README.md) and are not repeated here.
 
-Do not duplicate rules from the submodule in other files. `AGENTS.md`,
-`CLAUDE.md`, `CURSOR.md`, and `.github/copilot-instructions.md` exist only
-as thin entry points that point to `.guidelines/` and this file.
-
-For coding conventions (C# / Rust style, naming, memory rules), see
-[docs/guidelines.md](docs/guidelines.md) for what is specific to CLAVE, and
-[.guidelines/languages/cs.md](.guidelines/languages/cs.md) /
-[.guidelines/languages/rs.md](.guidelines/languages/rs.md) for the shared
-baseline.
+`AGENTS.md`, `CLAUDE.md`, `CURSOR.md`, and
+`.github/copilot-instructions.md` are thin bridges that point here and at
+the standards. Do not write rules into them.
 
 ## Table of contents
 
-1. [Ecosystem context](#ecosystem-context)
-2. [Development setup](#development-setup)
-3. [Quality gates](#quality-gates)
-4. [Definition of Ready and Definition of Done](#definition-of-ready-and-definition-of-done)
-5. [Pull request and merge policy](#pull-request-and-merge-policy)
-6. [Rules for AI agents](#rules-for-ai-agents)
-7. [Reference documents](#reference-documents)
-8. [Pre-merge checklist](#pre-merge-checklist)
+1. [What this repository is](#what-this-repository-is)
+2. [Ecosystem context](#ecosystem-context)
+3. [Development setup](#development-setup)
+4. [Method](#method)
+5. [Quality gates](#quality-gates)
+6. [Definition of Ready and Definition of Done](#definition-of-ready-and-definition-of-done)
+7. [Pull request and merge policy](#pull-request-and-merge-policy)
+8. [Rules for AI agents](#rules-for-ai-agents)
+9. [Documented deviations](#documented-deviations)
 
 ---
+
+## What this repository is
+
+CLAVE is a Rust real-time perception pipeline for automated sorting.
+Models train in Python and ship as ONNX; the pipeline that runs against a
+latency budget is Rust. See [README.md](README.md) for the problem
+statement.
+
+The repository was reset in September 2026. It previously hosted a C# and
+.NET study lab that never grew past stubs. The commits before the reset
+remain in history and describe a design that no longer applies; do not
+mine them for requirements.
 
 ## Ecosystem context
 
-CLAVE is one project in a musical-named family that shares SDD + V-cycle
-methodology. Bridge contracts toward siblings later; **do not vendor** their
-source trees into this repository.
+CLAVE belongs to a family of projects sharing one method and one set of
+guidelines. Point contracts at siblings; never vendor their source trees
+into this repository.
 
 | Project | Role |
 | --- | --- |
-| **[CLAVE](https://github.com/alexandrelheinen/clave)** (this repo) | Cross-language lab: .NET hosts, vision/capture/bus stubs, Rust hot paths |
+| **CLAVE** (this repo) | Perception, tracking, and pick decision under a latency budget |
 | **[ARCO](https://github.com/alexandrelheinen/arco)** | Motion planning and control algorithms |
-| **[FRET](https://github.com/alexandrelheinen/fret)** | ROS 2 planning + control stack; observation contracts CLAVE may align with |
-| **[Luthier](https://github.com/alexandrelheinen/luthier)** | Photogrammetry → colored point clouds; calibration / 3D path inspiration |
-| **[BOSSA](https://github.com/alexandrelheinen/bossa)** | Edge runtime + telemetry for IoT on ARM Linux |
-| **[Personal website](https://alexandrelheinen.pages.dev)** | Methodology articles and portfolio (not product code for CLAVE) |
-
-### What CLAVE provides
-
-| Artifact | Role |
-| --- | --- |
-| `Clave.sln` (.NET 8) | Host (Phase 1 telemetry), Vision, Capture, Bus, Interop, Cli + xUnit tests |
-| `rust/clave-core` | Auditable ring-buffer stub (`SampleRing`) |
-| `./scripts/validate.sh` | Local gate matching CI |
-| `docs/host-telemetry.md` | Full-mode policies and GC profiling notes |
-
-Specification stack:
-
-| Level | Specification artifacts | Validation artifacts |
-| --- | --- | --- |
-| 1 — Functional | [docs/specification.md](docs/specification.md), [docs/roadmap.md](docs/roadmap.md) | Acceptance criteria / smoke CLI |
-| 2 — Architecture | [docs/architecture.md](docs/architecture.md), [docs/host-telemetry.md](docs/host-telemetry.md), README module map | Project references + contract stubs |
-| 3 — Module API | Public types under `src/` and `rust/clave-core` | xUnit + `cargo test` |
-| 4 — Implementation | Host hardened in Phase 1; native backends in later phases | Full `./scripts/validate.sh` + CI |
-
----
+| **[FRET](https://github.com/alexandrelheinen/fret)** | ROS 2 and MuJoCo effector trajectories |
+| **[Luthier](https://github.com/alexandrelheinen/luthier)** | Photogrammetry and point clouds |
+| **[BOSSA](https://github.com/alexandrelheinen/bossa)** | Edge runtime and telemetry on ARM Linux |
 
 ## Development setup
 
-**Requirements:**
-
-- .NET SDK 8.0 (see `global.json`; `rollForward: latestFeature`)
-- Stable Rust toolchain (`rustc`, `cargo`)
-- Git
+Requirements: git, a stable Rust toolchain, and Node for the cc-sdd
+installer.
 
 ```bash
-git clone https://github.com/alexandrelheinen/clave.git
+git clone --recurse-submodules https://github.com/alexandrelheinen/clave.git
 cd clave
 ./scripts/setup.sh
-./scripts/build.sh
 ./scripts/validate.sh
 ```
 
-`mise` is not required unless you choose to pin toolchains locally yourself.
-
----
+`scripts/setup.sh` reports what is missing and how to install it rather
+than installing toolchains behind your back. The agent toolchain, meaning
+cc-sdd and the Claude Code plugins, is documented in
+[standards/README.md](standards/README.md).
 
 ## Method
 
-Spec-Driven Development, the V-cycle, and TDD are defined once in
-[.guidelines/workflow/sdd.md](.guidelines/workflow/sdd.md),
-[.guidelines/workflow/integration.md](.guidelines/workflow/integration.md),
-and [.guidelines/workflow/tdd.md](.guidelines/workflow/tdd.md). Follow those.
-CLAVE's own additions: acceptance criteria and specs may reference a
-roadmap phase or `FR-*` id (see [docs/specification.md](docs/specification.md)),
-and non-negotiable constraints specific to this repo (no native SDKs before
-the matching roadmap phase, `TreatWarningsAsErrors`) live in
-[docs/guidelines.md](docs/guidelines.md).
+Spec-driven development and TDD are defined in
+[workflow/sdd.md](standards/guidelines/workflow/sdd.md) and
+[workflow/tdd.md](standards/guidelines/workflow/tdd.md), and executed
+through the cc-sdd skills. Enter through `/kiro-discovery <idea>`.
+
+Specifications are committed under `.kiro/specs/`. A feature without an
+approved spec does not get implemented, and a spec is approved by the
+maintainer at its phase gate, not by the agent that wrote it.
 
 ## Quality gates
 
-Before every push on a PR branch, run:
+Before every push on a branch:
 
 ```bash
 ./scripts/validate.sh
 ```
 
-This must exit 0. It runs:
+It must exit 0, and CI runs the same script so the two cannot disagree.
+The Rust gates it will run once the first crate lands are fixed by
+[languages/rs.md](standards/guidelines/languages/rs.md): `cargo fmt
+--check`, `cargo clippy -D warnings`, `cargo nextest run`, doc tests,
+`cargo doc` with warnings denied, `cargo deny check`, and coverage at 80%
+or better. Those are not per-PR negotiations.
 
-1. `dotnet build Clave.sln` (TreatWarningsAsErrors)
-2. `dotnet test Clave.sln`
-3. `cargo test --manifest-path rust/clave-core/Cargo.toml`
-
-CI (`.github/workflows/ci.yml`) runs the same validate script on pull requests
-and pushes to `main`, with .NET 8 and stable Rust.
-
-Additional rule specific to this repo: no secrets in the tree, use examples
-under `config/` only. Commit format and PR hygiene follow
-[.guidelines/workflow/commits.md](.guidelines/workflow/commits.md).
-
----
+No secrets in the tree, ever. Commit format and PR hygiene follow
+[workflow/commits.md](standards/guidelines/workflow/commits.md).
 
 ## Definition of Ready and Definition of Done
 
 **Ready**
 
-- Written intent, scope, and acceptance criteria exist.
-- Roadmap phase / out-of-scope native deps considered.
-- Test approach identified (unit minimum).
+- An approved spec exists with testable acceptance criteria.
+- The test approach is identified, unit tests at minimum.
+- Any new dependency has a stated reason.
 
 **Done**
 
-- Acceptance criteria demonstrated by tests or documented smoke steps.
-- `./scripts/validate.sh` passes.
-- Docs updated when architecture or public contracts change.
-- PR description includes Summary and Test plan.
-- Owner (human) merges.
-
----
+- Acceptance criteria are demonstrated by tests, referenced by their id.
+- `./scripts/validate.sh` exits 0.
+- Documentation is updated when a public contract or a boundary changed.
+- The pull request states intent and how it was tested.
+- The maintainer merges.
 
 ## Pull request and merge policy
 
 - Branch from an up-to-date `main`.
-- Keep history rebase-friendly; avoid noisy merge commits on feature branches.
-- PR body: intent, acceptance checklist, phase note (e.g. Phase 0 only).
-- **Owner merges manually.** Agents open/update PRs but never merge.
-- Do not claim hardware or native-SDK validation without evidence.
-
----
+- Keep history rebase-friendly and commits atomic.
+- Scale the evidence in the pull request body to the blast radius of the
+  change, per
+  [agents/claude.md](standards/guidelines/agents/claude.md).
+- Agents open and update pull requests. The maintainer merges, unless the
+  maintainer asks otherwise in the active task.
 
 ## Rules for AI agents
 
-General agent behavior (evidence, no fabrication, small diffs, git safety)
-follows [.guidelines/agents/claude.md](.guidelines/agents/claude.md). CLAVE
-adds:
+General agent behavior, including the no-fabricated-evidence rule, follows
+[agents/claude.md](standards/guidelines/agents/claude.md). CLAVE adds:
 
-1. Phase 0 / early phases: **no** RealSense, OpenCVSharp, ONNX Runtime,
-   TorchSharp, or EtherCAT native bindings unless the task explicitly
-   advances that phase.
-2. Do not vendor arco / fret / luthier / bossa / website into this repo.
-3. When blocked on missing toolchains, install via `./scripts/setup.sh` or
-   document the exact blocker; do not invent green CI.
+1. Do not claim a gate passed without running it, and do not claim
+   hardware validation without evidence. This machine has no camera and no
+   belt.
+2. Do not vendor arco, fret, luthier, or bossa into this repository.
+3. Do not add a hardware SDK or a heavy model runtime before a spec calls
+   for it.
+4. Do not implement ahead of an approved spec.
 
-Conflict resolution order:
+The precedence order when documents disagree is in
+[standards/README.md](standards/README.md#precedence).
 
-1. Direct maintainer request in the active task
-2. [CONTRIBUTING.md](CONTRIBUTING.md) (this file)
-3. [.guidelines/](.guidelines/) (shared method, writing, naming, style)
-4. [docs/guidelines.md](docs/guidelines.md) (CLAVE-specific coding notes)
-5. [docs/specification.md](docs/specification.md)
-6. Modern .NET / Rust best practices
+## Documented deviations
 
----
+The shared guidelines allow a project to deviate on purpose, provided the
+deviation is written down. CLAVE has one:
 
-## Reference documents
-
-| Document | Role |
-| --- | --- |
-| [README.md](README.md) | Product identity, architecture diagram, build entry |
-| [.guidelines/](.guidelines/) | Shared method, writing, naming, and per-language style (submodule) |
-| [docs/specification.md](docs/specification.md) | Functional / Phase 0 spec |
-| [docs/architecture.md](docs/architecture.md) | Module boundaries |
-| [docs/roadmap.md](docs/roadmap.md) | Phased MAF-aligned plan |
-| [docs/guidelines.md](docs/guidelines.md) | CLAVE-specific coding notes |
-
----
-
-## Pre-merge checklist
-
-- [ ] Spec / PR acceptance criteria are clear and testable
-- [ ] Scope matches the roadmap phase (no premature native SDKs)
-- [ ] Unit tests cover new behavior (xUnit and/or cargo)
-- [ ] `./scripts/validate.sh` exits 0 locally
-- [ ] Docs updated if architecture or public API changed
-- [ ] No secrets or machine-local config committed
-- [ ] PR has Summary + Test plan; owner will merge
+- **Spec location.** `workflow/sdd.md` places specifications in `docs/`.
+  CLAVE keeps them in `.kiro/specs/` instead, because cc-sdd owns the spec
+  lifecycle and reads from that directory. The content requirements from
+  `workflow/sdd.md`, meaning intent, scope, acceptance criteria,
+  traceability ids, and constraints, still apply.

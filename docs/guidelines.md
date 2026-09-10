@@ -1,41 +1,56 @@
 # CLAVE-specific coding notes
 
-The shared baseline for C#/.NET and Rust style, naming, and error handling
-lives in [.guidelines/languages/cs.md](../.guidelines/languages/cs.md) and
-[.guidelines/languages/rs.md](../.guidelines/languages/rs.md). This file
-covers only what is specific to CLAVE. Workflow, SDD, V-cycle, and merge
+The shared baseline for Rust and Python style, naming, and error handling
+lives in
+[standards/guidelines/languages/rs.md](../standards/guidelines/languages/rs.md)
+and
+[standards/guidelines/languages/py.md](../standards/guidelines/languages/py.md).
+This file covers only what is specific to CLAVE. Method, gates, and merge
 policy live in [CONTRIBUTING.md](../CONTRIBUTING.md).
 
-## General
+## Language split
 
-- Phase discipline: do not pull native SDKs before the matching roadmap
-  phase.
+Rust owns anything that runs against the clock: capture, inference,
+tracking, and the pick decision. Python owns training and dataset work,
+and hands over an ONNX artifact. A Python process is never in the loop at
+runtime.
 
-## C# / .NET
+## Hardened by default
 
-- Prefer `Span` / `ReadOnlySpan`, `ref struct` views, and `ValueTask` on
-  hot paths.
-- Use `System.Threading.Channels` for telemetry; choose an explicit
-  `TelemetryFullMode` (`Wait` / `DropOldest` / `DropWrite`). See
-  [host-telemetry.md](host-telemetry.md).
-- Do not use `FrameBuffer` (ref struct) inside async methods; factor sync
-  helpers instead.
+The pipeline crates are real-time crates, so they take the hardened lint
+tier from
+[languages/rs.md](../standards/guidelines/languages/rs.md#hardened-for-real-time-unsafe-and-ffi-crates)
+rather than the baseline. A frame index that silently wraps or a cast that
+silently truncates is a fault in this domain, not a style question.
 
-## Rust
+Tooling crates, dataset preparation, and anything that runs offline take
+the baseline tier.
 
-- `publish = false` for `clave-core` until an intentional release.
-- Crate types: `cdylib` + `rlib`, to prepare FFI without exposing it in
-  Phase 0.
+## Latency is a tested property
 
-## Interop
+Anything in the capture-to-decision path states its latency budget in its
+crate documentation and has a Criterion benchmark under `benches/`. A
+change that moves a budget is a spec change, not an implementation detail.
 
-- Phase 0: managed stubs only (`RingBufferHandle`).
-- Phase 5+: C ABI ownership stays in Rust; the P/Invoke surface stays in
-  `Clave.Interop`.
-- Do not scatter `DllImport` across Host/Vision/Capture.
+Measure at p99, not at the mean. A pipeline that averages well and misses
+one frame in a hundred still drops that object on the floor.
 
-## Documentation
+## Backpressure is explicit
 
-- Update `docs/` when module boundaries or public contracts change.
-- Keep the README module map and architecture diagram in sync with the
-  solution.
+Every queue between stages is bounded, and every bounded queue names what
+happens when it fills: block, drop the oldest, or drop the newest. There
+is no default. A stage that cannot state its policy is not designed yet.
+
+## Model artifacts
+
+ONNX files are not committed to this repository. Reference a model by
+version and checksum, and fetch it in a script. Datasets are public ones
+(TrashNet, TACO, ZeroWaste) referenced by URL, never vendored.
+
+## Contracts toward siblings
+
+CLAVE publishes a pick decision. Motion planning and execution belong to
+[ARCO](https://github.com/alexandrelheinen/arco) and
+[FRET](https://github.com/alexandrelheinen/fret). Define the contract as a
+serializable type in CLAVE and let the consumer adapt to it; do not import
+a sibling's types and do not vendor a sibling's source.

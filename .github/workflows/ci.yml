@@ -15,14 +15,20 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
-
-      - name: Set up .NET 8
-        uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: "8.0.x"
+          submodules: recursive
 
       - name: Set up Rust (stable)
+        if: hashFiles('Cargo.toml') != ''
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy, llvm-tools-preview
 
-      - name: Validate (.NET + Rust)
+      - name: Install cargo tools
+        if: hashFiles('Cargo.toml') != ''
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest,cargo-llvm-cov,cargo-deny
+
+      - name: Validate
         run: ./scripts/validate.sh
