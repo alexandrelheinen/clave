@@ -1,7 +1,0 @@
-<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <RootNamespace>Clave.Interop</RootNamespace>
-    <AssemblyName>Clave.Interop</AssemblyName>
-    <Description>CLAVE managed interop stubs (Rust FFI deferred).</Description>
-  </PropertyGroup>
-</Project>
