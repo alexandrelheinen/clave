@@ -9,7 +9,7 @@ rather than vendored.
 | --- | --- | --- | --- |
 | [guidelines](https://github.com/alexandrelheinen/guidelines) | Personal standards: method, writing voice, naming, per-language style | Submodule at `standards/guidelines` | `v1.1.0` |
 | [cc-sdd](https://github.com/gotalab/cc-sdd) | Method: spec-driven development harness, 17 agent skills | Submodule at `standards/cc-sdd`, installed with `npx` | `v3.0.2` |
-| [caveman](https://github.com/JuliusBrussee/caveman) | Prompt compression, on demand | Claude Code plugin | `v2.6.0` |
+| [caveman](https://github.com/JuliusBrussee/caveman) | Prompt compression, on demand | Claude Code plugin | commit `15581d14` |
 | [mattpocock-skills](https://github.com/mattpocock/skills) | Skillset: TDD, review, spec and ticket flows, domain modelling | Claude Code plugin | `v1.2.3` |
 
 The split is deliberate. A submodule is worth it when the checked-out
@@ -108,13 +108,40 @@ claude plugin install caveman@caveman
 
 Verify with `claude plugin list`.
 
-**caveman is not enabled by default in this repository.** It compresses
-agent output into telegraphic style, which saves tokens in a working
-session but contradicts
-[guidelines/agents/writing.md](guidelines/agents/writing.md), the rule that
-governs every piece of prose that ends up committed. Invoke it explicitly
-with `/caveman` for exploratory or throwaway work, and leave it off when
-the output is a README, a spec, a commit message, or a PR description.
+Version pinning differs between the two. `mattpocock-skills` declares a
+`version` in its plugin manifest, so the install records `1.2.3`. caveman
+declares none, so Claude Code pins to the marketplace commit it cloned and
+records that sha instead. Either way the exact pin lives in
+`~/.claude/plugins/installed_plugins.json`, and `claude plugin update`
+moves it.
+
+### caveman is switched off in this repository
+
+caveman does not sit idle until invoked. Its plugin manifest registers a
+`SessionStart` hook that injects its ruleset as hidden context and a
+`UserPromptSubmit` hook, and `getDefaultMode` in its configuration module
+falls through to `full` when nothing overrides it. Installing it is
+therefore enough to turn it on everywhere.
+
+That contradicts
+[guidelines/agents/writing.md](guidelines/agents/writing.md), which governs
+every piece of prose that ends up committed. The `.caveman.json` at the
+repository root turns it off for CLAVE:
+
+```json
+{
+  "defaultMode": "off"
+}
+```
+
+caveman walks up from the working directory looking for `.caveman/config.json`
+or `.caveman.json` and takes the first one it finds, so the file covers the
+whole repository. Only `CAVEMAN_DEFAULT_MODE` in the environment outranks
+it.
+
+Invoke it explicitly with `/caveman` for exploratory or throwaway work, and
+leave it off when the output is a README, a spec, a commit message, or a
+pull request description.
 
 Note the license: caveman's skill surface is MIT, but its compression
 engine and the Go binaries that embed it are Business Source License 1.1,
