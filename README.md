@@ -4,7 +4,7 @@
 
 **CLAVE** = **C**oleta de **L**ixo **A**través de **V**isão **E**mbarcada
 
-CLAVE sorts recyclable waste travelling on a conveyor belt. A camera watches
+CLAVE sorts recyclable waste traveling on a conveyor belt. A camera watches
 the line, a neural network classifies each object, a tracker follows it
 across frames, and the pipeline decides which channel it belongs in and when
 to reach for it, all inside a latency budget it measures rather than
@@ -62,6 +62,7 @@ publishes that decision.
 | [CONTRIBUTING.md](CONTRIBUTING.md) | The constitution: quality gates, merge policy, agent rules |
 | [docs/guidelines.md](docs/guidelines.md) | Coding notes specific to CLAVE, on top of the shared baseline |
 | [standards/](standards/README.md) | Shared guidelines, the SDD method, and the agent toolchain |
+| `.kiro/` | Committed specifications and the steering documents agents read as project memory |
 | `scripts/` | Toolchain setup and the local quality gate |
 
 ## Getting started

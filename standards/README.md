@@ -7,10 +7,10 @@ rather than vendored.
 
 | Piece | Role | Consumed as | Pinned at |
 | --- | --- | --- | --- |
-| [guidelines](https://github.com/alexandrelheinen/guidelines) | Personal standards: method, writing voice, naming, per-language style | Submodule at `standards/guidelines` | `v1.1.0` |
+| [guidelines](https://github.com/alexandrelheinen/guidelines) | Personal standards: method, writing voice, naming, per-language style | Submodule at `standards/guidelines` | `v1.2.0` |
 | [cc-sdd](https://github.com/gotalab/cc-sdd) | Method: spec-driven development harness, 17 agent skills | Submodule at `standards/cc-sdd`, installed with `npx` | `v3.0.2` |
 | [caveman](https://github.com/JuliusBrussee/caveman) | Prompt compression, on demand | Claude Code plugin | commit `15581d14` |
-| [mattpocock-skills](https://github.com/mattpocock/skills) | Skillset: TDD, review, spec and ticket flows, domain modelling | Claude Code plugin | `v1.2.3` |
+| [mattpocock-skills](https://github.com/mattpocock/skills) | Skillset: TDD, review, spec and ticket flows, domain modeling | Claude Code plugin | `v1.2.3` |
 
 The split is deliberate. A submodule is worth it when the checked-out
 files are the thing you read, which holds for the guidelines and for the
@@ -37,9 +37,9 @@ Moving to a newer version is a deliberate commit, never a drive-by:
 
 ```bash
 git -C standards/guidelines fetch --tags
-git -C standards/guidelines checkout v1.2.0
+git -C standards/guidelines checkout v1.3.0
 git add standards/guidelines
-git commit -m "Move guidelines to v1.2.0"
+git commit -m "Move guidelines to v1.3.0"
 ```
 
 Read the guidelines before changing anything here. `CLAUDE.md` imports the
