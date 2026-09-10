@@ -30,11 +30,6 @@ Models train in Python and ship as ONNX; the pipeline that runs against a
 latency budget is Rust. See [README.md](README.md) for the problem
 statement.
 
-The repository was reset in September 2026. It previously hosted a C# and
-.NET study lab that never grew past stubs. The commits before the reset
-remain in history and describe a design that no longer applies; do not
-mine them for requirements.
-
 ## Ecosystem context
 
 CLAVE belongs to a family of projects sharing one method and one set of
@@ -133,6 +128,9 @@ General agent behavior, including the no-fabricated-evidence rule, follows
 3. Do not add a hardware SDK or a heavy model runtime before a spec calls
    for it.
 4. Do not implement ahead of an approved spec.
+5. Requirements come from a spec, never from commit history. Parts of this
+   repository's history describe a design that was abandoned, and reading
+   intent out of a diff is guessing either way.
 
 The precedence order when documents disagree is in
 [standards/README.md](standards/README.md#precedence).
@@ -140,13 +138,11 @@ The precedence order when documents disagree is in
 ## Documented deviations
 
 The shared guidelines allow a project to deviate on purpose, provided the
-deviation is written down. CLAVE has one:
+deviation is written down. CLAVE has one. Where an installed skill or
+plugin disagrees with the guidelines instead, the answer is in
+[integrations/toolkits.md](standards/guidelines/integrations/toolkits.md),
+not here.
 
-- **Spec location.** `workflow/sdd.md` places specifications in `docs/`.
-  CLAVE keeps them in `.kiro/specs/` instead, because cc-sdd owns the spec
-  lifecycle and reads from that directory. The content requirements from
-  `workflow/sdd.md`, meaning intent, scope, acceptance criteria,
-  traceability ids, and constraints, still apply.
 - **Project name.** `style/naming.md` requires US English everywhere.
   CLAVE's name and its expansion, Coleta de Lixo Através de Visão
   Embarcada, are Portuguese, matching the musical family the project

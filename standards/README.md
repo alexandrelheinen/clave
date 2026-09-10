@@ -124,8 +124,9 @@ falls through to `full` when nothing overrides it. Installing it is
 therefore enough to turn it on everywhere.
 
 That contradicts
-[guidelines/agents/writing.md](guidelines/agents/writing.md), which governs
-every piece of prose that ends up committed. The `.caveman.json` at the
+[agents/writing.md](guidelines/agents/writing.md#compression-tools), which
+governs every piece of prose that ends up committed and scopes a
+compression tool to output nobody keeps. The `.caveman.json` at the
 repository root turns it off for CLAVE:
 
 ```json
@@ -155,16 +156,16 @@ third parties. See
 
 ## Precedence
 
-When two of these disagree, resolve in this order:
+The order is set once, upstream, in
+[agents/claude.md](guidelines/agents/claude.md): a direct request from the
+maintainer, then [CONTRIBUTING.md](../CONTRIBUTING.md), then the shared
+guidelines, then the installed skills and plugins, then general best
+practice. CLAVE slots [docs/guidelines.md](../docs/guidelines.md) between
+the constitution and the guidelines, since it holds the notes specific to
+this project.
 
-1. A direct request from the maintainer in the active task.
-2. [CONTRIBUTING.md](../CONTRIBUTING.md), this repository's constitution.
-3. `standards/guidelines`, the personal standards.
-4. [docs/guidelines.md](../docs/guidelines.md), coding notes specific to
-   CLAVE.
-5. cc-sdd and the installed skillsets.
-
-The guidelines outrank the imported skillsets on purpose. A skillset is
-someone else's opinion about how to work and it is welcome, but the house
-voice, naming, and language rules are the ones that survive into the
-repository.
+Where a package and the guidelines genuinely conflict, the decision is
+already recorded in
+[integrations/toolkits.md](guidelines/integrations/toolkits.md#arbitration).
+Look it up rather than re-deciding it here, and if the conflict is not
+listed, add it there instead of settling it privately.

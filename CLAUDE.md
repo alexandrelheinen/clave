@@ -19,6 +19,7 @@ should stay short enough that every line earns its place in context.
 | Project constitution, quality gates, merge policy | [CONTRIBUTING.md](CONTRIBUTING.md) |
 | Coding notes specific to CLAVE | [docs/guidelines.md](docs/guidelines.md) |
 | Standards, toolchain, and how to install it | [standards/README.md](standards/README.md) |
+| A skill or plugin telling you to do what the guidelines forbid | [integrations/toolkits.md](standards/guidelines/integrations/toolkits.md) |
 | Commits, branching, review, integration | [workflow/](standards/guidelines/workflow/) |
 | Comments and error handling across languages | [style/comments.md](standards/guidelines/style/comments.md), [style/errors.md](standards/guidelines/style/errors.md) |
 | Python, for model training and dataset tooling | [languages/py.md](standards/guidelines/languages/py.md) |
