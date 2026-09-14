@@ -25,8 +25,20 @@ ARM_MODEL = Path(
     "open_manipulator_x.xml"
 )
 
-PARKED_Z = -5.0
-"""Where pooled objects wait before they are spawned, well below the floor."""
+PARKED_Z = 0.05
+"""Height at which pooled objects wait before they are spawned.
+
+They rest on the floor well to the side of the belt rather than hanging beneath
+it. A MuJoCo plane collides from above only, so a body parked below the floor
+falls forever and eventually drives the solver to a NaN. v0.6.0 worked around
+that by having the conveyor pin every parked slot on each step, which left the
+scene stable only while a conveyor happened to be stepping it: building the
+world and stepping it directly, as the arm controller does, reproduced the
+instability. Parking above the floor makes the scene stable on its own.
+"""
+
+PARKED_X = 3.0
+"""How far to the side pooled objects wait, clear of the belt and the camera."""
 
 
 @dataclass(frozen=True)
@@ -211,7 +223,7 @@ def build(
         template = plan.objects[index % len(plan.objects)]
         body = world.add_body(
             name=f"object_{index}",
-            pos=[0.0, 0.0, PARKED_Z - index],
+            pos=[PARKED_X + 0.3 * index, PARKED_X, PARKED_Z],
         )
         body.add_freejoint()
         size_a = template.size[0].sample(rng)

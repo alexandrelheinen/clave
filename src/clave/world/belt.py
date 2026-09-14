@@ -19,7 +19,7 @@ from typing import Any
 import numpy as np
 
 from clave.world.config import Range
-from clave.world.scene import PARKED_Z, SceneLayout
+from clave.world.scene import PARKED_X, PARKED_Z, SceneLayout
 
 
 @dataclass(frozen=True)
@@ -149,10 +149,10 @@ class Conveyor:
     def _hold_parked(self, model: Any, data: Any) -> None:
         """Pin every unspawned pool slot in place.
 
-        A MuJoCo plane collides from above only, so a body parked beneath the
-        floor falls forever, gains unbounded velocity, and eventually drives the
-        solver to a NaN. Holding each parked slot at its position with zero
-        velocity costs nothing and removes that failure entirely.
+        Parked slots rest on the floor clear of the belt, so the scene is
+        stable without this. Pinning them anyway keeps a recorded rollout
+        identical from one run to the next, since a body settling under gravity
+        is one more thing that would have to converge the same way twice.
         """
         import mujoco
 
@@ -160,7 +160,11 @@ class Conveyor:
             body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, f"object_{slot}")
             address = model.jnt_qposadr[model.body_jntadr[body]]
             velocity = model.jnt_dofadr[model.body_jntadr[body]]
-            data.qpos[address : address + 3] = [0.0, 0.0, PARKED_Z - slot]
+            data.qpos[address : address + 3] = [
+                PARKED_X + 0.3 * slot,
+                PARKED_X,
+                PARKED_Z,
+            ]
             data.qpos[address + 3 : address + 7] = [1.0, 0.0, 0.0, 0.0]
             data.qvel[velocity : velocity + 6] = 0.0
 
