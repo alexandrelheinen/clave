@@ -68,6 +68,15 @@ module = [
 ]
 ignore_missing_imports = true
 
+# The behavior cloning baseline subclasses torch.nn.Module inside a builder. On
+# a machine with torch installed mypy resolves that base class; on the gate,
+# where torch is deliberately absent, it resolves to Any and strict mode refuses
+# the subclass. The check is disabled for that one module so the same source
+# type-checks in both environments.
+[[tool.mypy.overrides]]
+module = ["clave.candidates.policy"]
+disallow_subclassing_any = false
+
 [tool.pytest.ini_options]
 addopts = "--strict-markers --strict-config"
 testpaths = ["tests"]
