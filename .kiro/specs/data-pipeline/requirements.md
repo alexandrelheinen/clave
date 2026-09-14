@@ -171,3 +171,9 @@ corpus is the only remaining step.
    so a held-out real set can be excluded from training. `AC-INGEST-04`
 5. The Pipeline shall state that no corpus has been fetched and that the
    ingestion path is exercised against a fixture. `AC-INGEST-05`
+   **Superseded on 2026-09-14.** TrashNet was fetched, digested and measured,
+   so the condition this criterion describes no longer holds. Its id is retired
+   rather than reused or reworded, per the append-only rule, and
+   [docs/research/corpus-ingestion.md](../../../docs/research/corpus-ingestion.md)
+   records what replaced it. Three of the four shortlisted corpora are still
+   unfetched, so the underlying caution survives in narrower form.
