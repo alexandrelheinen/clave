@@ -1,0 +1,51 @@
+# Software in the loop runtime.
+#
+# The workspace envelope the safety layer checks against is not here. It is
+# derived from configs/world/sorting_line.yml, so the geometry the layer
+# enforces cannot drift from the geometry the simulation runs.
+#
+# Channel numbers are the operator's, not the taxonomy's. A line with fewer
+# channels than classes expresses that by mapping several classes to one
+# number, which is what the routing policy was built to accept.
+
+runtime:
+  # The trained candidates the loop runs, from the checkpoints v0.7.0 wrote.
+  # The classifier says what is on the belt; the policy says where to reach.
+  perception: resnet50-baseline
+  policy: behavior-cloning-baseline
+  checkpoints: runs
+  seconds: 20.0
+  capture_interval_seconds: 0.5
+  frame_height: 240
+  frame_width: 320
+  seed: 0
+  # Below this probability the classifier abstains and no proposal is sent,
+  # which is how a frame with nothing on the belt produces no decision.
+  presence_floor: 0.30
+  # How far the identity association may reach, in meters. CLAVE has no
+  # tracker, so a proposed point is matched to the nearest object the world
+  # holds; a point further than this from every object matches nothing and is
+  # dropped rather than published under some other object's identity.
+  association_radius_meters: 0.30
+
+routing:
+  reject_channel: 0
+  # The floor below which an object goes to reject whatever its class. It
+  # depends on a trained model, so it is configuration rather than a constant.
+  confidence_floor: 0.60
+  channels:
+    M-01: 1
+    M-02: 2
+    M-03: 3
+    M-04: 4
+    M-05: 5
+    M-06: 6
+    M-07: 7
+    # Corrugated cardboard, mixed paper and beverage carton share CH-FIBER in
+    # the taxonomy, so they share one channel here.
+    M-08: 8
+    M-09: 8
+    M-10: 8
+    # Residue routes to reject, which the channel map enforces rather than
+    # trusts.
+    M-11: 0

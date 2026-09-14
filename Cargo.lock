@@ -158,6 +158,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "clave-safety"
+version = "0.1.0"
+dependencies = [
+ "clave-decision",
+ "clave-routing",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
+name = "clave-sitl"
+version = "0.1.0"
+dependencies = [
+ "clave-decision",
+ "clave-publish",
+ "clave-routing",
+ "clave-safety",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "criterion"
 version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
