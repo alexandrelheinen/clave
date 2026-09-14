@@ -31,12 +31,14 @@ Applied uniformly to every option below, before any verdict.
 record it as not applicable rather than leaving it blank, so a blank always
 means omission.
 
-CLAVE's intended use, which `S1` is judged against, is the one stated in
-[README.md](../../README.md): an industrial recycling sorting line. A license
-restricted to non-commercial use fails `S1` under that reading. The maintainer
-may narrow the stated intent to research, which would change two verdicts here;
-that decision is recorded in [Open questions](#open-questions) rather than
-assumed.
+CLAVE's intended use, which `S1` is judged against, is **personal research**,
+confirmed by the maintainer on 2026-09-14. A license restricted to
+non-commercial use therefore passes `S1`. A copyleft license that attaches
+obligations to *distribution* still fails, because this repository is public and
+MIT licensed, and that is a separate question from whether money changes hands.
+
+The first version of this review judged `S1` against an industrial sorting line
+and rejected ZeroWaste on those grounds. That reading is superseded.
 
 ### Verdict vocabulary
 
@@ -88,35 +90,34 @@ order and names the criterion that decided any close call.
 
 ## Compute budget
 
-**State: unresolved.**
+**State: resolved.** Inventory supplied by the maintainer on 2026-09-14 and
+verified by inspecting the machine.
 
-The hardware inventory was requested from the maintainer on 2026-09-14 and has
-not been supplied. `AC-COMPUTE-01` needs the accelerator model, its memory, and
-whether access is continuous or shared. No agent can observe what machines this
-project may use, and assuming one would be the fabrication `AC-DOC-04` forbids.
+| Component | Value |
+| --- | --- |
+| CPU | AMD Ryzen 7 7735U, 8 cores and 16 threads, mobile U-series |
+| GPU | AMD Radeon 680M integrated, device `0x1681`, 512 MB dedicated |
+| Accelerated compute | None usable. No CUDA runtime, no `nvidia-smi`, no NVIDIA device. WSL exposes `libd3d12` and `libdxcore` only, which are graphics rather than compute |
+| ROCm | Not installed, and ROCm on WSL supports selected discrete Radeon cards rather than integrated RDNA2 graphics |
+| Memory available to WSL | 7 GiB |
+| Access | Shared. This is the maintainer's working laptop |
 
-One partial observation is on the record. The development machine was inspected
-on 2026-09-14 and exposes no CUDA-capable accelerator: `nvidia-smi` is absent,
-and the environment is WSL2, where an absent `nvidia-smi` can also mean GPU
-passthrough was never configured rather than that no card exists. MuJoCo 3.10.0
-is installed and runs on CPU. This narrows the question rather than answering
-it: it says nothing about whether the project has access to an accelerator on
-another machine, which is the answer `AC-COMPUTE-01` actually needs.
+The maintainer expected GPU acceleration to be available. It is not, and that
+correction is the single most consequential fact in this revision. The budget is
+**CPU-only, on a mobile processor, inside 7 GiB**.
 
-If the development machine turns out to be the training machine, the budget is
-CPU-only, and that alone would reject several shortlisted architectures under
-`S4`. Nothing is rejected on that basis here, because the premise is unconfirmed.
+`torch-directml` is the one remaining accelerated path on this hardware, since
+DirectX 12 is present. It carries partial operator coverage and lags upstream
+PyTorch, so it is recorded as an option to evaluate rather than counted as
+available compute.
 
-Two consequences follow, and both are visible in the registers below.
+### How costs below were produced
 
-Every architecture row carries `pending budget` in its estimated training cost
-cell rather than a number. No option is rejected under `S4` while the budget is
-unresolved, so an architecture that would otherwise advance carries the verdict
-`Advance (provisional)` instead of `Advance`.
-
-Resolving the inventory converts every `pending budget` cell into wall-clock
-time with its governing assumption named, and turns every provisional verdict
-final or rejected.
+Every figure in the `Estimated training cost` column is an **estimate, not a
+measurement**. Nothing has been trained. Each estimate assumes single-machine
+CPU execution at 16 threads and states the throughput assumption it rests on.
+They are intended to separate hours from weeks, which is all `S4` needs, and
+they should be replaced with measurements at v0.7.0.
 
 ## Shortlist
 
@@ -127,13 +128,19 @@ criteria tables above.
 
 **Corpora**
 
-1. **SpectralWaste**, the only advancing corpus captured on an operating
-   sorting line under a permissive license. Decided by `C-CORPUS-1` and
-   `C-CORPUS-2` together: ZeroWaste matches the scene as well but fails `S1`.
-2. **TACO**, permissive and localized, carrying the widest category coverage of
-   any advancing corpus. Ranked below SpectralWaste on `C-CORPUS-1`, since its
-   imagery is outdoor litter rather than a belt.
-3. **TrashNet**, advancing as `Baseline` only. It fails `C-CORPUS-3` outright,
+1. **ZeroWaste**, now the strongest corpus in the shortlist. Operating recovery
+   facility conveyor, localization annotations, and roughly five times
+   SpectralWaste's labeled volume. Decided by `C-CORPUS-1`, `C-CORPUS-3` and
+   `C-CORPUS-5` together. It ranks below SpectralWaste on `C-CORPUS-2` alone,
+   since NonCommercial is a weaker permission than CC BY, and that criterion
+   loses to three others.
+2. **SpectralWaste**, also captured on an operating sorting line, under the more
+   permissive license. Ranked second on `C-CORPUS-5`: 852 labeled images is
+   enough to evaluate against and thin to fine-tune on.
+3. **TACO**, permissive and localized, carrying the widest category coverage of
+   any advancing corpus. Ranked below both on `C-CORPUS-1`, since its imagery is
+   outdoor litter rather than a belt.
+4. **TrashNet**, advancing as `Baseline` only. It fails `C-CORPUS-3` outright,
    carrying whole-image labels with no localization, which makes it a sanity
    check rather than a training corpus.
 
@@ -158,19 +165,22 @@ criteria tables above.
 
 **Perception architectures**, four advancing, meeting the roadmap target of three.
 
-1. **RT-DETR**, Apache-2.0 and transformer-based, strongest on `C-ARCH-1` and
-   `C-ARCH-3` together.
-2. **Detectron2 Mask R-CNN**, Apache-2.0, instance segmentation rather than
-   boxes, which suits overlapping objects on a belt.
-3. **SAM 2**, Apache-2.0, promptable segmentation with video propagation, which
-   is the closest published match to tracking an object across frames.
-4. **torchvision ResNet-50**, advancing as `Baseline`. It cannot localize, so it
-   exists to show what the sophisticated options are worth.
+1. **Faster R-CNN with MobileNetV3-Large FPN**, BSD-3 and the only advancing
+   detector the budget admits. Decided by `C-ARCH-3`, since it is the one
+   localizing architecture whose training cost is measured in hours.
+2. **SAM 2**, Apache-2.0, promptable segmentation with video propagation, which
+   is the closest published match to tracking an object across frames. It
+   advances because it is used zero-shot and needs no training, so `S4` does not
+   bind. Its CPU inference latency is a serious open risk against `C-ARCH-3`.
+3. **torchvision ResNet-50**, advancing as `Baseline`. It cannot localize, so it
+   exists to show what the localizing options are worth.
 
-Ultralytics YOLO is the notable absence. It is the most widely used detector in
-this domain and it fails `S1`.
+Two absences are worth naming. Ultralytics YOLO is the most widely used detector
+in this domain and fails `S1` on AGPL-3.0. RT-DETR and Detectron2, which led
+this shortlist in the previous revision, now fail `S4`: they are fine
+architectures on hardware this project does not have.
 
-**Policy architectures**, four advancing, meeting the roadmap target of three.
+**Policy architectures**, four advancing, meeting the roadmap target of three. Unchanged by this revision: all four are CPU-trainable at reduced scale, and MuJoCo rollouts are the workload a CPU handles best.
 
 1. **Diffusion Policy**, MIT, strongest on `C-ARCH-2`: it learns from
    demonstrations, which is exactly what FRET's scripted expert produces.
@@ -184,22 +194,28 @@ OpenVLA is the notable absence among policies, rejected on `S3`.
 
 ### Criteria that did not decide anything
 
-Six criteria separated no candidate in this round: `C-CORPUS-4`, `C-CORPUS-5`,
-`C-ARCH-4`, `C-ARCH-5`, `C-INFRA-2`, and `C-INFRA-3`. They are retained rather
-than deleted because v0.4.0 scores the shortlisted architectures against the
-same tables once they are running, and a criterion that separates nothing on
-paper can separate a great deal once there are measurements. `C-ARCH-4` in
-particular is inert here only because the maintenance signals it reads are
-among the cells this review left unverified.
+Three criteria separated no candidate in this revision: `C-CORPUS-4`,
+`C-ARCH-4`, and `C-ARCH-5`. That is down from six, because resolving the compute
+budget put `C-ARCH-3` and `C-CORPUS-5` to work deciding real calls.
 
-Naming them is the point. A criteria table nobody cites is decoration, and the
-honest way to keep one is to say which parts of it are not yet doing work.
+`C-ARCH-4` stays inert for a poor reason: the maintenance signals it reads are
+among the cells this review left unverified. It cannot decide anything until
+somebody fills them in.
+
+The three are retained because v0.4.0 scores the shortlist against the same
+tables once the candidates are running, and a criterion that separates nothing
+on paper can separate a great deal once there are measurements.
 
 ### Roadmap target
 
-Met for both stages. Four perception and four policy architectures advance,
-against a target of three each, and each stage carries the required simple
-comparator.
+Met for both stages, but narrowly on the perception side. Three perception and
+four policy architectures advance against a target of three each, and each stage
+carries the required simple comparator.
+
+Perception has no margin. Of its three, one is a baseline that cannot localize
+and one is used zero-shot with unmeasured CPU latency. If the Faster R-CNN cost
+estimate proves optimistic, or if SAM 2 turns out too slow for a conveyor, the
+target is unmet and v0.4.0 has to say so rather than proceed quietly.
 
 ## Candidate registers
 
@@ -208,43 +224,65 @@ comparator.
 | Corpus | License | Size | Annotation type | Capture conditions | Difference from CLAVE scene | Constraint failed | Verdict | Source |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | SpectralWaste | CC BY 4.0 | 852 labeled images, 2,059 instances, 6,803 unlabeled RGB and hyperspectral frames | Semantic segmentation, six classes | Operating waste sorting plant for plastics, cartons and cans, conveyor belt, fixed camera | Carries a hyperspectral channel CLAVE has no sensor for; its six classes are object kinds such as film and trash bags rather than material classes | - | Advance | [arXiv 2403.18033](https://arxiv.org/abs/2403.18033) |
-| ZeroWaste | CC BY-NC 4.0 | About 4,500 labeled images, about 27,000 instances, about 6,000 unlabeled frames | Detection and segmentation | Operating material recovery facility, conveyor belt | None material: this is the closest published match to CLAVE's scene | S1 | Reject | [ai.bu.edu/zerowaste](https://ai.bu.edu/zerowaste) |
+| ZeroWaste | CC BY-NC 4.0 | About 4,500 labeled images, about 27,000 instances, about 6,000 unlabeled frames | Detection and segmentation | Operating material recovery facility, conveyor belt | None material: this is the closest published match to CLAVE's scene | - | Advance | [ai.bu.edu/zerowaste](https://ai.bu.edu/zerowaste) |
 | TACO | CC BY 4.0 | About 1,500 images, 60 categories | Segmentation masks in COCO format | Outdoor, in the wild, litter in streets and nature | Background is ground and vegetation rather than a belt; no conveyor motion; objects appear singly rather than as a stream | - | Advance | [tacodataset.org](http://tacodataset.org/) |
 | TrashNet | MIT | 2,527 images, six classes | Whole-image classification only | Controlled indoor capture, one object on a plain background | No clutter, no occlusion, no belt, and no localization to learn from | - | Baseline | [github.com/garythung/trashnet](https://github.com/garythung/trashnet) |
 | WaDaBa | Images downloadable; annotations released only after signing a license whose terms are not publicly inspectable | About 2,000 images | Classification by plastic resin code | Controlled indoor capture, objects well separated from background | Objects are isolated rather than cluttered, which is the opposite of a belt | S1 | Reject | [waste-datasets-review](https://github.com/AgaMiko/waste-datasets-review) |
 
 Licenses above were checked on 2026-09-14.
 
-ZeroWaste is the most painful rejection in this review. It is the only corpus
-whose imagery is a material recovery facility conveyor at scale, and its
-`CC BY-NC 4.0` term forbids commercial use, which conflicts with the industrial
-sorting line CLAVE's README describes. See [Open questions](#open-questions).
+ZeroWaste advances in this revision. It was rejected in the first version on
+`CC BY-NC 4.0` against an industrial sorting line; the maintainer confirmed on
+2026-09-14 that CLAVE is personal research, under which a NonCommercial term is
+satisfied. It is now the strongest corpus in the shortlist: the only one whose
+imagery is a material recovery facility conveyor at scale, with localization
+annotations and roughly five times the labeled volume of SpectralWaste.
+
+Its license still constrains what can be done later. A NonCommercial corpus
+cannot train a model that is subsequently used commercially, so if CLAVE's
+intent ever changes, every model trained on ZeroWaste has to be retrained.
 
 ### Architecture register
 
 | Architecture | Stage | License | Weights license | Last release | Training signal | Estimated training cost | Published result | Measured on | Constraint failed | Verdict | Source |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| RT-DETR | Perception | Apache-2.0 | Apache-2.0 | Not verified (2026-09-14) | n/a | pending budget | Not extracted (2026-09-14) | Not extracted (2026-09-14) | - | Advance (provisional) | [arXiv 2304.08069](https://arxiv.org/abs/2304.08069) |
-| Detectron2 Mask R-CNN | Perception | Apache-2.0 | Apache-2.0 | Not verified (2026-09-14) | n/a | pending budget | Not extracted (2026-09-14) | Not extracted (2026-09-14) | - | Advance (provisional) | [github.com/facebookresearch/detectron2](https://github.com/facebookresearch/detectron2) |
-| SAM 2 | Perception | Apache-2.0 | Apache-2.0 | SAM 2.1 checkpoint, date not verified (2026-09-14) | n/a | pending budget | Not extracted (2026-09-14) | Not extracted (2026-09-14) | - | Advance (provisional) | [arXiv 2408.00714](https://arxiv.org/abs/2408.00714) |
-| torchvision ResNet-50 | Perception | BSD-3-Clause | BSD-3-Clause | Tracks PyTorch releases | n/a | pending budget | n/a, used as a comparator | n/a | - | Baseline | [pytorch.org](https://github.com/pytorch/pytorch/blob/main/NOTICE) |
-| Ultralytics YOLO | Perception | AGPL-3.0 | AGPL-3.0 | YOLO26, January 2026 | n/a | pending budget | Not extracted (2026-09-14) | Not extracted (2026-09-14) | S1 | Reject | [docs.ultralytics.com](https://docs.ultralytics.com/models/yolo26) |
-| Diffusion Policy | Policy | MIT | Trained in project | Not verified (2026-09-14) | Demonstrations | pending budget | 46.9 percent average improvement over the prior state of the art | 15 tasks across 4 manipulation benchmarks | - | Advance (provisional) | [arXiv 2303.04137](https://arxiv.org/abs/2303.04137) |
-| ACT | Policy | MIT | Trained in project | Not verified (2026-09-14) | Demonstrations | pending budget | Not extracted (2026-09-14) | Bimanual fine manipulation tasks | - | Advance (provisional) | [github.com/tonyzhaozh/act](https://github.com/tonyzhaozh/act) |
-| PPO through stable-baselines3 | Policy | MIT | Trained in project | 2.9.0, 15 June 2026 | Reward | pending budget | n/a, an algorithm implementation rather than a published result | n/a | - | Advance (provisional) | [github.com/DLR-RM/stable-baselines3](https://github.com/DLR-RM/stable-baselines3) |
-| Behavior cloning | Policy | n/a, implemented in project | Trained in project | n/a | Demonstrations | pending budget | n/a, used as a comparator | n/a | - | Baseline | n/a, no upstream |
-| OpenVLA | Policy | MIT for code | Llama Community License, inherited from Llama-2 | Not verified (2026-09-14) | Demonstrations at Open X-Embodiment scale, about 970,000 trajectories | pending budget | Not extracted (2026-09-14) | Open X-Embodiment evaluation suite | S3 | Reject | [arXiv 2406.09246](https://arxiv.org/abs/2406.09246) |
+| Faster R-CNN MobileNetV3-Large FPN | Perception | BSD-3-Clause | BSD-3-Clause | Tracks PyTorch releases | n/a | Estimated 10 to 16 hours, assuming about 0.3 s per image for a forward and backward pass at 16 CPU threads, over 5,000 images and 30 epochs | Not extracted (2026-09-14) | Not extracted (2026-09-14) | - | Advance | [torchvision detection models](https://github.com/pytorch/vision) |
+| SAM 2 | Perception | Apache-2.0 | Apache-2.0 | SAM 2.1 checkpoint, date not verified (2026-09-14) | n/a | No training required; used zero-shot for mask proposals, so `S4` does not bind | Not extracted (2026-09-14) | Not extracted (2026-09-14) | - | Advance | [arXiv 2408.00714](https://arxiv.org/abs/2408.00714) |
+| torchvision ResNet-50 | Perception | BSD-3-Clause | BSD-3-Clause | Tracks PyTorch releases | n/a | Estimated 2 to 4 hours, assuming about 0.15 s per image at 16 CPU threads over 2,500 images and 30 epochs | n/a, used as a comparator | n/a | - | Baseline | [pytorch.org](https://github.com/pytorch/pytorch/blob/main/NOTICE) |
+| RT-DETR | Perception | Apache-2.0 | Apache-2.0 | Not verified (2026-09-14) | n/a | Estimated 3 to 6 weeks, assuming about 1.5 s per image for a forward and backward pass at 16 CPU threads over 5,000 images and 40 epochs | Not extracted (2026-09-14) | Not extracted (2026-09-14) | S4 | Reject | [arXiv 2304.08069](https://arxiv.org/abs/2304.08069) |
+| Detectron2 Mask R-CNN | Perception | Apache-2.0 | Apache-2.0 | Not verified (2026-09-14) | n/a | Estimated 4 to 8 weeks, on the same basis as RT-DETR with a heavier backbone and an added mask head | Not extracted (2026-09-14) | Not extracted (2026-09-14) | S4 | Reject | [github.com/facebookresearch/detectron2](https://github.com/facebookresearch/detectron2) |
+| Ultralytics YOLO | Perception | AGPL-3.0 | AGPL-3.0 | YOLO26, January 2026 | n/a | Not estimated; rejected on license before cost was considered | Not extracted (2026-09-14) | Not extracted (2026-09-14) | S1 | Reject | [docs.ultralytics.com](https://docs.ultralytics.com/models/yolo26) |
+| Diffusion Policy | Policy | MIT | Trained in project | Not verified (2026-09-14) | Demonstrations | Estimated 3 to 7 days, assuming a reduced-width network on simulated rollouts at 16 CPU threads | 46.9 percent average improvement over the prior state of the art | 15 tasks across 4 manipulation benchmarks | - | Advance | [arXiv 2303.04137](https://arxiv.org/abs/2303.04137) |
+| ACT | Policy | MIT | Trained in project | Not verified (2026-09-14) | Demonstrations | Estimated 2 to 5 days, assuming a reduced-depth transformer on simulated rollouts at 16 CPU threads | Not extracted (2026-09-14) | Bimanual fine manipulation tasks | - | Advance | [github.com/tonyzhaozh/act](https://github.com/tonyzhaozh/act) |
+| PPO through stable-baselines3 | Policy | MIT | Trained in project | 2.9.0, 15 June 2026 | Reward | Estimated 6 to 20 hours for one million MuJoCo steps, assuming a small MLP policy and CPU rollouts, which is the workload MuJoCo is most efficient at | n/a, an algorithm implementation rather than a published result | n/a | - | Advance | [github.com/DLR-RM/stable-baselines3](https://github.com/DLR-RM/stable-baselines3) |
+| Behavior cloning | Policy | n/a, implemented in project | Trained in project | n/a | Demonstrations | Estimated under 1 hour on recorded scripted-expert demonstrations | n/a, used as a comparator | n/a | - | Baseline | n/a, no upstream |
+| OpenVLA | Policy | MIT for code | Llama Community License, inherited from Llama-2 | Not verified (2026-09-14) | Demonstrations at Open X-Embodiment scale, about 970,000 trajectories | Not estimated; rejected on training signal before cost was considered | Not extracted (2026-09-14) | Open X-Embodiment evaluation suite | S3 | Reject | [arXiv 2406.09246](https://arxiv.org/abs/2406.09246) |
 
 Licenses above were checked on 2026-09-14.
 
-Two rejections carry the weight of this register. Ultralytics YOLO is the
-default detector in most published waste sorting work, and its AGPL-3.0 term
-obliges anyone distributing a derived work to publish their own source under
-the same terms, which CLAVE's MIT license cannot absorb. OpenVLA fails `S3`
-rather than `S1`: FRET's scripted expert can generate demonstrations
-indefinitely, but it generates them for one task on one arm, and a model
-pretrained on roughly 970,000 trajectories across 70 robot datasets is not
-reachable from that signal.
+Four rejections carry this register, and two of them are new in this revision.
+
+Ultralytics YOLO fails `S1` and the change of intent does not save it. AGPL-3.0
+attaches obligations to *distribution*, not to commerce, and this repository is
+public and MIT licensed, so the conflict is unchanged by CLAVE being personal
+research.
+
+OpenVLA fails `S3`. FRET's scripted expert generates demonstrations
+indefinitely, but for one task on one arm, and a model pretrained on roughly
+970,000 trajectories across 70 robot datasets is not reachable from that signal.
+
+RT-DETR and Detectron2 Mask R-CNN are the new rejections, both on `S4`. Neither
+is a weak architecture; both are simply untrainable on a mobile CPU inside
+7 GiB in any timeframe this project can absorb. They return the moment an
+accelerator does, which is exactly what recording the failed constraint id is
+for.
+
+Their removal dropped the advancing perception count to two, below the roadmap
+target of three. Rather than lower the bar, the review added a candidate the
+resolved budget admits: torchvision's Faster R-CNN with a MobileNetV3-Large FPN
+backbone, which is BSD-3, localizes, and fine-tunes in hours rather than weeks.
+That is a re-screen driven by a changed constraint, which is the mechanism
+working rather than a concession.
 
 ### Infrastructure register
 
@@ -272,41 +310,41 @@ and choosing between them at every boundary.
 
 Each entry names who can close it and what closing it requires.
 
-**The compute budget is unresolved.** Closed by the maintainer supplying the
-accelerator model, its memory, and whether access is continuous or shared. Until
-then, seven architectures carry `Advance (provisional)` rather than `Advance`,
-and no option can be rejected on cost. The development machine was found to
-expose no CUDA accelerator on 2026-09-14, which narrows the question without
-closing it: what matters is whether the project can reach an accelerator at all,
-not what one laptop has.
+**The compute budget is resolved and the answer constrains the project.** The
+maintainer expected GPU acceleration; the machine has an integrated AMD Radeon
+680M with no CUDA and no ROCm path, 7 GiB of memory available to WSL, and a
+mobile CPU. Two architectures were rejected on that basis. Nothing further is
+needed to proceed, but two options would reopen them: an NVIDIA machine, or
+`torch-directml`, which is the one accelerated path DirectX 12 leaves open on
+this hardware and which carries partial operator coverage. Evaluating
+`torch-directml` is a task for v0.3.0's successor rather than a blocker here.
 
-**ZeroWaste hinges on how CLAVE's intended use is stated.** Closed by the
-maintainer. `CC BY-NC 4.0` forbids commercial use, and the README describes an
-industrial sorting line, so `S1` fails on the current reading. If the stated
-intent is narrowed to non-commercial research, ZeroWaste advances and becomes
-the best-matched corpus in this review by a wide margin, ahead of SpectralWaste
-on `C-CORPUS-5`. This single decision changes the corpus shortlist more than
-anything else in this document.
+**Every training cost in this document is an estimate, not a measurement.** They
+separate hours from weeks, which is what `S4` needs, and no more. Closed by
+v0.7.0 replacing them with measured wall-clock times. If the Faster R-CNN
+estimate is wrong by a factor of five, the perception shortlist has one entry
+and the roadmap target is unmet.
 
-**Release dates and published results are incompletely verified.** Closed by a
-human filling the cells marked `Not verified (2026-09-14)` and
-`Not extracted (2026-09-14)`. This review checked every license, which is what
-the rejections turn on, and did not finish checking every maintenance signal.
-`AC-ARCH-02` and `AC-ARCH-04` are therefore partially unmet, and this is
-recorded rather than papered over. No verdict in this document depends on a
-cell that carries one of those markers.
+**ZeroWaste's NonCommercial term still binds later.** It passes `S1` under
+personal research. A model trained on it cannot later be used commercially
+without retraining. Closed only by CLAVE's intent staying research, and worth
+re-reading if that ever changes.
 
-**Mesh sources were not surveyed.** The roadmap lists simulated object meshes
-among this step's candidate inputs, and the design placed them at v0.5.0
-`sorting-world` instead, because no approved requirement covers them and they
-carry neither an annotation type nor capture conditions. Closed by the
-maintainer either amending the roadmap entry or accepting the divergence.
+**Release dates and published results are incompletely verified.** Unchanged
+from the first revision. Cells marked `Not verified (2026-09-14)` and
+`Not extracted (2026-09-14)` need a human with the upstream repositories open.
+`AC-ARCH-02` and `AC-ARCH-04` stay partially unmet. No verdict depends on one of
+those cells.
 
-**The corpus label sets have not been mapped onto a material taxonomy.** That
-mapping is v0.2.0 `waste-taxonomy` work. This review records what each corpus
-labels; it does not decide what CLAVE's classes are. SpectralWaste labels object
-kinds such as film and trash bags rather than materials, so the mapping is not
-trivial and should be treated as real work rather than a rename.
+**Mesh sources were not surveyed.** Unchanged. The roadmap lists them here and
+the design placed them at v0.5.0 `sorting-world`, next to the scene that
+consumes them.
+
+**SAM 2 inference latency on CPU is unmeasured and may be disqualifying.** It
+advances because it needs no training, but a conveyor has a latency budget and a
+promptable segmentation model on a mobile CPU is the least likely candidate here
+to meet one. Closed by measuring it at v0.4.0, which is the step that reports
+single-frame latency.
 
 ## Retrieval notes
 
