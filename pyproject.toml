@@ -28,7 +28,14 @@ candidates = [
     "gymnasium>=1.0",
 ]
 world = ["mujoco>=3.2", "pyyaml>=6"]
-dev = ["pytest>=8", "pytest-cov>=5", "mypy>=1.9", "ruff>=0.4"]
+# Publishing the decision on ROS 2. rclpy and the message packages come from a
+# ROS installation rather than from a wheel, which is why only the CBOR decoder
+# is listed here.
+ros = ["cbor2>=5.6"]
+# cbor2 belongs to the ros extra and is repeated here on purpose: the decoder
+# that reads the published contract is core enough to test on every run, and the
+# gate installs no ROS distribution, so this is the only way it gets exercised.
+dev = ["pytest>=8", "pytest-cov>=5", "mypy>=1.9", "ruff>=0.4", "cbor2>=5.6"]
 
 [project.scripts]
 clave = "clave.cli:main"
@@ -68,6 +75,14 @@ module = [
     "diffusers.*",
     "mujoco.*",
     "yaml",
+    "cbor2",
+    # ROS 2 ships rclpy and its message packages through a system installation
+    # rather than a wheel, so they are absent from the gate's environment and
+    # from any machine that has not sourced a distribution.
+    "rclpy.*",
+    "vision_msgs.*",
+    "geometry_msgs.*",
+    "std_msgs.*",
 ]
 ignore_missing_imports = true
 

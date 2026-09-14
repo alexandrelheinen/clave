@@ -27,6 +27,11 @@ runtime:
   # holds; a point further than this from every object matches nothing and is
   # dropped rather than published under some other object's identity.
   association_radius_meters: 0.30
+  # The coordinate frame a pick point is expressed in, carried into every
+  # published message. The belt frame has its origin at the upstream edge of
+  # the working area, with x along belt travel, y across the belt and z normal
+  # to the surface, which is what the decision contract already states.
+  belt_frame: belt
 
 routing:
   reject_channel: 0

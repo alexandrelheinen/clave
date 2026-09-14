@@ -15,6 +15,7 @@ import json
 import socket
 import subprocess
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -95,17 +96,28 @@ class Bridge:
     rather than waiting.
     """
 
-    def __init__(self, binary: Path, paths: BridgePaths, config: dict[str, Any]):
+    def __init__(
+        self,
+        binary: Path,
+        paths: BridgePaths,
+        config: dict[str, Any],
+        on_decision: Callable[[bytes], None] | None = None,
+    ):
         """Prepare a bridge without starting anything.
 
         Args:
             binary: The built runtime.
             paths: Where its files go.
             config: The envelope and routing policy the runtime reads.
+            on_decision: Receives the bytes of every decision the runtime
+                published, in arrival order. This is the seam a ROS 2 publisher
+                hangs on, and it is handed the published bytes rather than the
+                proposal that produced them so the two cannot drift.
         """
         self._binary = binary
         self._paths = paths
         self._config = config
+        self._on_decision = on_decision
         self._process: subprocess.Popen[bytes] | None = None
         self._decisions: socket.socket | None = None
         self._outcomes: socket.socket | None = None
@@ -247,10 +259,12 @@ class Bridge:
         try:
             while True:
                 try:
-                    self._decisions.recv(RECEIVE_CAPACITY)
+                    payload = self._decisions.recv(RECEIVE_CAPACITY)
                 except (BlockingIOError, InterruptedError):
                     return
                 self.decisions_received += 1
+                if self._on_decision is not None:
+                    self._on_decision(payload)
         finally:
             self._decisions.settimeout(REPLY_TIMEOUT_SECONDS)
 

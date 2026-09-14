@@ -281,6 +281,7 @@ def _run_sitl(
     scripted: bool,
     directory: Path,
     seconds: float | None,
+    publish_to_ros: bool,
 ) -> int:
     """Run the software-in-the-loop runtime and report what it did.
 
@@ -292,6 +293,7 @@ def _run_sitl(
             go.
         seconds: Overrides how many simulated seconds to run, which is how a
             measurement gets enough samples for a percentile to mean anything.
+        publish_to_ros: Put every published decision on a ROS 2 topic.
 
     Returns:
         A process exit code.
@@ -317,7 +319,7 @@ def _run_sitl(
             presence_floor=settings.presence_floor,
             association_radius=settings.association_radius_meters,
         )
-    report = loop.run(root, settings, predictor, directory)
+    report = loop.run(root, settings, predictor, directory, publish_to_ros)
     loop.write_record(directory / "sitl.json", report)
 
     print(f"  predictor       {report.predictor}")
@@ -328,6 +330,10 @@ def _run_sitl(
     for name in sorted(report.counters):
         print(f"  {name:22s}  {report.counters[name]}")
     print(f"  decisions back  {report.decisions_received}")
+    if publish_to_ros:
+        print(f"  published       {report.published_to_ros} on ROS 2")
+        if report.ros_unavailable_reason is not None:
+            print(f"  NO ROS          {report.ros_unavailable_reason}")
     print(
         f"  budget          {report.budget_seconds:.3f} s at "
         f"{report.belt_speed:.3f} m/s"
@@ -386,6 +392,11 @@ def main(argv: list[str] | None = None) -> int:
     sitl.add_argument("--out", type=Path, default=Path("runs/sitl"))
     sitl.add_argument("--seconds", type=float, default=None)
     sitl.add_argument(
+        "--ros",
+        action="store_true",
+        help="publish every decision on a ROS 2 topic",
+    )
+    sitl.add_argument(
         "--scripted",
         action="store_true",
         help="propose with the scripted expert instead of the trained models",
@@ -407,7 +418,12 @@ def main(argv: list[str] | None = None) -> int:
             return _train(args.root, args.config, args.candidate)
         if args.command == "run-sitl":
             return _run_sitl(
-                args.root, args.config, args.scripted, args.out, args.seconds
+                args.root,
+                args.config,
+                args.scripted,
+                args.out,
+                args.seconds,
+                args.ros,
             )
         if args.command == "validate-run":
             return _validate_run(args.root, args.outcomes, args.gates)
