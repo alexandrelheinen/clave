@@ -267,6 +267,17 @@ the ladder rests on.
 - [ ] sitl-runtime -- Close the loop in Rust: inference, safety override, decision publication, and the p99 latency benchmark. Dependencies: training-application, sorting-world
 - [ ] benchmark-suite -- Compare every candidate in one reproducible benchmark and record the chosen configuration. Dependencies: sitl-runtime, validation-harness
 
+Checkboxes above track the roadmap step, which closes when its deliverable
+lands, not when its spec is written.
+
+| Spec | Requirements | Design | Tasks | Step |
+| --- | --- | --- | --- | --- |
+| training-infrastructure-review | Approved | Approved | Approved | Awaiting implementation |
+| every other spec | Not started | Not started | Not started | Not started |
+
+`training-infrastructure-review` is ready for implementation. Implementation
+runs through `/kiro-impl`, which only the maintainer can invoke.
+
 Authoring waves, given those dependencies:
 
 | Wave | Specs |
