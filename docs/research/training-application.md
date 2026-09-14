@@ -122,10 +122,12 @@ be inferred from a loss. The training split is 160 frames drawn from six
 rollouts of one simulated world, covering 8 of 11 material classes, with the
 classes present imbalanced by a factor of three.
 
-No model was evaluated against real imagery, because no corpus has been fetched.
-The synthetic frames show parametric primitives, so a classifier trained on them
-learns shape rather than material, which makes the perception results here weak
-by construction rather than by accident. The policy side is what this data
+No model was evaluated against real imagery. The corpora fetched since, reported
+in [corpus-ingestion.md](corpus-ingestion.md), are not in this dataset, and
+nothing here was trained or scored on one. The synthetic frames show parametric
+primitives, so a classifier trained on them learns shape rather than material,
+which makes the perception results here weak by construction rather than by
+accident. The policy side is what this data
 genuinely supports.
 
 Every measurement is CPU-only and becomes void the moment an accelerator appears.

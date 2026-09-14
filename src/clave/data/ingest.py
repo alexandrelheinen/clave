@@ -4,11 +4,20 @@ The mappings below mirror `docs/waste-taxonomy.md`, which is the authority. Most
 corpus labels are coarser than the taxonomy, so a mapping loses information, and
 the loss is recorded rather than resolved by picking a class.
 
-TrashNet is fetched, digested in `corpora/manifest.toml`, and read through
-:class:`CorpusArchive`. What the archive holds and what the mapping costs are
-recorded in `docs/research/corpus-ingestion.md`. The other shortlisted corpora
-are still unfetched, and declaring a layout for one before its bytes are in hand
-would be a guess, so :data:`CORPUS_LAYOUTS` describes only what has been read.
+TrashNet and ZeroWaste are fetched, digested in `corpora/manifest.toml`, and
+read here. What each archive holds and what its mapping costs are recorded in
+`docs/research/corpus-ingestion.md`. The remaining shortlisted corpora are
+unfetched, and declaring a layout for one before its bytes are in hand would be
+a guess, so :data:`CORPUS_LAYOUTS` and :data:`CORPUS_ANNOTATIONS` describe only
+what has been read.
+
+The two corpora need two readers because they make two different claims.
+TrashNet writes one label per image in a directory name, so
+:class:`CorpusArchive` reads a path. ZeroWaste annotates regions inside an
+image, several per frame and often of different materials, so
+:class:`LocalizedArchive` reads a COCO annotation file and carries a box per
+region. Flattening ZeroWaste into one label per image would throw away exactly
+the property that makes it the strongest corpus on the shortlist.
 
 A fetched image is a :class:`CorpusExample` rather than a
 :class:`clave.data.examples.Example`. The two are different claims. A simulated
@@ -26,12 +35,14 @@ keeping it out means this module runs wherever the standard library does.
 
 from __future__ import annotations
 
+import json
 import zipfile
 from collections import Counter
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
+from typing import Any, Self
 
 import numpy as np
 from numpy.typing import NDArray
@@ -381,6 +392,370 @@ def compose_corpus(
     return CorpusComposition(
         corpus=corpus,
         example_count=len(examples),
+        source_counts=dict(sorted(sources.items())),
+        class_counts=dict(sorted(spanned.items())),
+        resolved_class_counts=dict(sorted(resolved.items())),
+        ambiguous_count=ambiguous,
+        unmapped_count=unmapped,
+        absent_classes=tuple(
+            entry.id for entry in MATERIAL_CLASSES if spanned.get(entry.id, 0) == 0
+        ),
+        unresolved_classes=tuple(
+            entry.id
+            for entry in MATERIAL_CLASSES
+            if spanned.get(entry.id, 0) > 0 and resolved.get(entry.id, 0) == 0
+        ),
+    )
+
+
+@dataclass(frozen=True)
+class CocoLayout:
+    """Where a corpus archive keeps its COCO annotation files and its imagery.
+
+    Attributes:
+        root: Top-level directory every split sits under.
+        splits: Split directories, in the order a report should read them.
+        annotations: Name of the annotation file inside each split.
+        images: Directory inside each split holding the imagery. A split
+            usually holds more than one directory of pixels, and ZeroWaste's
+            `sem_seg` masks are pixels that are not photographs.
+    """
+
+    root: str
+    splits: tuple[str, ...]
+    annotations: str
+    images: str
+
+
+CORPUS_ANNOTATIONS: dict[str, CocoLayout] = {
+    "zerowaste": CocoLayout(
+        root="splits_final_deblurred",
+        splits=("train", "val", "test"),
+        annotations="labels.json",
+        images="data",
+    ),
+}
+
+
+@dataclass(frozen=True)
+class CorpusRegion:
+    """One annotated object inside a fetched image.
+
+    Attributes:
+        label: The corpus label resolved against the taxonomy, carrying the
+            ambiguity when the label spans several classes.
+        bbox: Pixel bounds as (x_min, y_min, x_max, y_max). COCO writes a box
+            as an origin and a size; corners are what every consumer in this
+            project already uses, so the conversion happens once, here.
+        area_pixels: The area the corpus recorded, which comes from the
+            segmentation mask rather than from the box and is therefore smaller
+            than the box for anything that is not rectangular.
+    """
+
+    label: MappedLabel
+    bbox: tuple[float, float, float, float]
+    area_pixels: float
+
+    @property
+    def source_label(self) -> str:
+        """The label as the corpus writes it."""
+        return self.label.source_label
+
+
+@dataclass(frozen=True)
+class LocalizedExample:
+    """One image of a corpus that annotates regions rather than whole images.
+
+    This is a different claim from :class:`CorpusExample`, which is why it is a
+    different type. A whole-image label says what the single object in the
+    frame is. A localized frame says where several objects are and what each
+    one is, and an image with no region at all is a photograph of a belt
+    carrying nothing the annotators marked rather than a missing label.
+
+    Attributes:
+        corpus: Corpus identifier, as the manifest names it.
+        member: Path of the image inside the archive.
+        split: Which split the corpus filed it under.
+        width: Image width in pixels, as the annotation file records it.
+        height: Image height in pixels, as the annotation file records it.
+        regions: The annotated objects, in annotation order.
+        origin: Always real, carried for the same reason a simulated example
+            carries it.
+    """
+
+    corpus: str
+    member: str
+    split: str
+    width: int
+    height: int
+    regions: tuple[CorpusRegion, ...]
+    origin: Origin = Origin.REAL
+
+    @property
+    def file_name(self) -> str:
+        """The image name inside its split.
+
+        A name is unique inside one split and not across splits, which is a
+        property of this corpus rather than an assumption: three ZeroWaste
+        names appear in two splits each and name different frames.
+        """
+        return self.member.rsplit("/", 1)[-1]
+
+
+class _ArchiveReader:
+    """Shared machinery for reading a fetched archive in place.
+
+    The archive is read rather than unpacked, so the bytes an example comes
+    from are the bytes the manifest digested. Unpacking would put a second,
+    undigested copy on disk and leave no way to tell the two apart.
+    """
+
+    def __init__(self, path: Path, corpus: str) -> None:
+        """Open an archive.
+
+        Args:
+            path: The fetched archive.
+            corpus: Corpus identifier, as the manifest names it.
+
+        Raises:
+            CorpusError: If the file is not a readable archive.
+        """
+        try:
+            self._archive = zipfile.ZipFile(path)
+        except (OSError, zipfile.BadZipFile) as exc:
+            raise CorpusError(f"{path} is not a readable archive: {exc}") from exc
+        self._corpus = corpus
+
+    def __enter__(self) -> Self:
+        """Return the opened archive."""
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        """Close the archive."""
+        self.close()
+
+    def close(self) -> None:
+        """Release the underlying file handle."""
+        self._archive.close()
+
+    def read_bytes(self, example: CorpusExample | LocalizedExample) -> bytes:
+        """Return one image's encoded bytes, straight from the archive.
+
+        Args:
+            example: An example this archive produced.
+
+        Returns:
+            The member's bytes, still encoded.
+        """
+        return self._archive.read(example.member)
+
+    def read_frame(
+        self, example: CorpusExample | LocalizedExample, decode: FrameDecoder
+    ) -> NDArray[np.uint8]:
+        """Decode one image through a decoder the caller supplies.
+
+        Args:
+            example: An example this archive produced.
+            decode: Turns encoded bytes into pixels.
+
+        Returns:
+            Whatever the decoder returned.
+        """
+        return decode(self.read_bytes(example))
+
+
+class LocalizedArchive(_ArchiveReader):
+    """A fetched corpus whose labels live in COCO annotation files.
+
+    Every split's annotation file is read at open time, because the counts it
+    implies are the check that the reader agrees with the corpus. An image the
+    annotations describe and the archive does not hold is a failure rather than
+    a skipped row.
+    """
+
+    def __init__(self, path: Path, corpus: str) -> None:
+        """Open an archive and resolve every region it annotates.
+
+        Args:
+            path: The fetched archive.
+            corpus: Corpus identifier, as the manifest names it.
+
+        Raises:
+            CorpusError: If the corpus declares no annotation layout, the file
+                is not a readable archive, a split is absent, an annotation
+                names a category the file never declared, or an annotated image
+                is missing from the archive.
+        """
+        layout = CORPUS_ANNOTATIONS.get(corpus)
+        if layout is None:
+            known = ", ".join(sorted(CORPUS_ANNOTATIONS)) or "none"
+            raise CorpusError(
+                f"corpus {corpus!r} declares no annotation layout; declared: {known}"
+            )
+        super().__init__(path, corpus)
+        self._layout = layout
+        try:
+            self._examples = tuple(self._scan())
+        except CorpusError:
+            self._archive.close()
+            raise
+
+    @property
+    def examples(self) -> tuple[LocalizedExample, ...]:
+        """Every annotated image the archive holds, split by split."""
+        return self._examples
+
+    def _scan(self) -> Iterator[LocalizedExample]:
+        """Yield one example per annotated image, in the order the file lists."""
+        held = set(self._archive.namelist())
+        for split in self._layout.splits:
+            path = f"{self._layout.root}/{split}/{self._layout.annotations}"
+            if path not in held:
+                raise CorpusError(f"{self._corpus}: no annotation file at {path}")
+            yield from self._split(split, json.loads(self._archive.read(path)), held)
+
+    def _split(
+        self, split: str, labels: dict[str, object], held: set[str]
+    ) -> Iterator[LocalizedExample]:
+        """Yield every image one split's annotation file describes."""
+        categories = {
+            int(entry["id"]): str(entry["name"])
+            for entry in _listing(labels, "categories")
+        }
+        regions: dict[int, list[CorpusRegion]] = {}
+        for annotation in _listing(labels, "annotations"):
+            name = categories.get(int(annotation["category_id"]))
+            if name is None:
+                raise CorpusError(
+                    f"{self._corpus}/{split}: annotation "
+                    f"{annotation.get('id')} names category "
+                    f"{annotation['category_id']}, which the file never declares"
+                )
+            x_min, y_min, width, height = (float(value) for value in annotation["bbox"])
+            regions.setdefault(int(annotation["image_id"]), []).append(
+                CorpusRegion(
+                    label=map_label(self._corpus, name),
+                    bbox=(x_min, y_min, x_min + width, y_min + height),
+                    area_pixels=float(annotation["area"]),
+                )
+            )
+        for image in _listing(labels, "images"):
+            file_name = str(image["file_name"])
+            member = f"{self._layout.root}/{split}/{self._layout.images}/{file_name}"
+            if member not in held:
+                raise CorpusError(
+                    f"{self._corpus}/{split}: the annotations describe "
+                    f"{file_name}, which the archive does not hold"
+                )
+            yield LocalizedExample(
+                corpus=self._corpus,
+                member=member,
+                split=split,
+                width=int(image["width"]),
+                height=int(image["height"]),
+                regions=tuple(regions.get(int(image["id"]), ())),
+            )
+
+
+def _listing(labels: dict[str, object], key: str) -> list[dict[str, Any]]:
+    """Read one list out of a COCO annotation file.
+
+    Args:
+        labels: The parsed annotation file.
+        key: Which list to read.
+
+    Returns:
+        The list, empty when the file omits it.
+
+    Raises:
+        CorpusError: If the value is present and is not a list.
+    """
+    value = labels.get(key, [])
+    if not isinstance(value, list):
+        raise CorpusError(f"a COCO annotation file's {key!r} is not a list")
+    return value
+
+
+@dataclass(frozen=True)
+class LocalizedComposition:
+    """What a localized corpus holds, measured against the taxonomy.
+
+    The unit is a region rather than an image, because one frame holding six
+    annotated objects is six pieces of evidence about six materials.
+
+    Attributes:
+        corpus: Corpus identifier.
+        example_count: Images read.
+        region_count: Annotated objects read.
+        unannotated_count: Images carrying no annotated object at all.
+        source_counts: Corpus label to region count, as the corpus writes it.
+        class_counts: Taxonomy class to the number of regions whose label spans
+            it, so one ambiguous region is counted under every class it may be.
+        resolved_class_counts: Taxonomy class to the number of regions whose
+            label names that class and no other.
+        ambiguous_count: Regions whose label spans more than one class.
+        unmapped_count: Regions whose label maps to no class at all.
+        absent_classes: Taxonomy classes no label reaches, even ambiguously.
+        unresolved_classes: Taxonomy classes reachable only through an
+            ambiguous label.
+    """
+
+    corpus: str
+    example_count: int
+    region_count: int
+    unannotated_count: int
+    source_counts: dict[str, int]
+    class_counts: dict[str, int]
+    resolved_class_counts: dict[str, int]
+    ambiguous_count: int
+    unmapped_count: int
+    absent_classes: tuple[str, ...]
+    unresolved_classes: tuple[str, ...]
+
+
+def compose_localized(
+    corpus: str, examples: Sequence[LocalizedExample]
+) -> LocalizedComposition:
+    """Measure what a localized corpus supplies for each taxonomy class.
+
+    Counts come from the regions read, never from the mapping table or from a
+    published description of the corpus.
+
+    Args:
+        corpus: Corpus identifier.
+        examples: The examples read from the archive.
+
+    Returns:
+        The measured composition, naming both the classes the corpus cannot
+        supply and the classes it supplies only ambiguously.
+    """
+    sources: Counter[str] = Counter()
+    spanned: Counter[str] = Counter()
+    resolved: Counter[str] = Counter()
+    regions = ambiguous = unmapped = unannotated = 0
+    for example in examples:
+        if not example.regions:
+            unannotated += 1
+        for region in example.regions:
+            regions += 1
+            sources[region.source_label] += 1
+            spanned.update(region.label.classes)
+            if region.label.ambiguous:
+                ambiguous += 1
+            elif region.label.mapped:
+                resolved[region.label.classes[0]] += 1
+            else:
+                unmapped += 1
+    return LocalizedComposition(
+        corpus=corpus,
+        example_count=len(examples),
+        region_count=regions,
+        unannotated_count=unannotated,
         source_counts=dict(sorted(sources.items())),
         class_counts=dict(sorted(spanned.items())),
         resolved_class_counts=dict(sorted(resolved.items())),

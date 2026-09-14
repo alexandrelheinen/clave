@@ -36,3 +36,23 @@ source = "https://raw.githubusercontent.com/garythung/trashnet/master/data/datas
 # docs/research/corpus-ingestion.md. The archive itself is never committed: it
 # belongs under datasets/, which is gitignored.
 sha256 = "0bf472790f8b20e5c950d5b5012a9d38af0d3392efd65f8ce171334fc16b07c2"
+
+[[artifact]]
+name = "zerowaste"
+source = "https://zenodo.org/records/6412647/files/zerowaste-f-final.zip"
+# Verified. 7518242799 bytes, 4503 images under COCO annotations carrying 26766
+# boxed regions across four material labels, on an operating recovery-facility
+# conveyor. Ranked first at v0.1.0. Fetched and digested on 2026-09-14 through
+# `clave record-digest`; the md5 Zenodo publishes for the same file,
+# e26e31a58080bca6782dca0e56074c5d, was checked against the bytes as well, so
+# the artifact is tied to its source by the publisher's own digest and not only
+# by ours. What the bytes hold is measured in
+# docs/research/corpus-ingestion.md. The archive is never committed: it belongs
+# under datasets/, which is gitignored.
+#
+# The license is recorded in two places and they disagree. The Zenodo record
+# states CC BY 4.0; the project page at ai.bu.edu/zerowaste states CC BY-NC
+# 4.0. CLAVE is personal research, which satisfies the stricter of the two, so
+# nothing here depends on resolving it, and the narrower term is the one
+# docs/research/training-infrastructure-review.md carries.
+sha256 = "9ce00fe12e0e4163d94f83e167e7d358211702d58fd6b82b9b9021615a80f117"
