@@ -14,6 +14,41 @@ from clave.data.examples import Rollout
 
 ROOT = Path(__file__).resolve().parents[2]
 
+_PROBE = (
+    "import os;os.environ.setdefault('MUJOCO_GL','osmesa');"
+    "import mujoco;"
+    "m=mujoco.MjModel.from_xml_string("
+    '\'<mujoco><worldbody><geom type="box" size=".1 .1 .1"/></worldbody></mujoco>\');'
+    "mujoco.Renderer(m,height=8,width=8)"
+)
+
+
+def _rendering_available() -> bool:
+    """Whether offscreen rendering works here.
+
+    MuJoCo aborts the process when no GL backend is present, so this cannot be
+    a try/except around an import: the probe runs in a subprocess where an abort
+    kills the child rather than the test session.
+    """
+    import subprocess
+    import sys
+
+    try:
+        return (
+            subprocess.run(
+                [sys.executable, "-c", _PROBE], capture_output=True, timeout=60
+            ).returncode
+            == 0
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+RENDERS = _rendering_available()
+needs_rendering = pytest.mark.skipif(
+    not RENDERS, reason="no offscreen GL backend available for MuJoCo"
+)
+
 
 def record_short(seed: int, rollout_id: str = "r0") -> Rollout:
     """Record a short rollout for testing."""
@@ -31,9 +66,9 @@ def record_short(seed: int, rollout_id: str = "r0") -> Rollout:
     )
 
 
+@needs_rendering
 def test_a_rollout_captures_labeled_frames() -> None:
     """AC-RECORD-01 and AC-RECORD-02."""
-    pytest.importorskip("mujoco")
     rollout = record_short(0)
     assert rollout.examples
     example = rollout.examples[-1]
@@ -44,9 +79,9 @@ def test_a_rollout_captures_labeled_frames() -> None:
         assert label.channel.startswith("CH-")
 
 
+@needs_rendering
 def test_every_example_carries_seed_time_and_config_digest() -> None:
     """AC-RECORD-03: a dataset must say what produced it."""
-    pytest.importorskip("mujoco")
     rollout = record_short(2)
     for example in rollout.examples:
         assert example.seed == 2
@@ -54,17 +89,17 @@ def test_every_example_carries_seed_time_and_config_digest() -> None:
         assert len(example.config_digest) == 64
 
 
+@needs_rendering
 def test_one_seed_twice_records_identical_examples() -> None:
     """AC-RECORD-04: two runs must be comparable."""
-    pytest.importorskip("mujoco")
     first, second = record_short(7), record_short(7)
     assert len(first.examples) == len(second.examples)
     assert np.array_equal(first.examples[-1].frame, second.examples[-1].frame)
     assert first.examples[-1].material_classes == second.examples[-1].material_classes
 
 
+@needs_rendering
 def test_two_seeds_record_different_examples() -> None:
     """The guard above would pass for a constant renderer."""
-    pytest.importorskip("mujoco")
     first, second = record_short(7), record_short(8)
     assert not np.array_equal(first.examples[-1].frame, second.examples[-1].frame)

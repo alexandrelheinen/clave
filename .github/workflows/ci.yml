@@ -36,6 +36,10 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Install offscreen GL for MuJoCo
+        if: hashFiles('pyproject.toml') != ''
+        run: sudo apt-get update && sudo apt-get install -y libosmesa6 libgl1
+
       - name: Install Python toolchain
         if: hashFiles('pyproject.toml') != ''
         run: |
