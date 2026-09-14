@@ -151,7 +151,8 @@ policy, all from open sources.
 | v0.6.0 | `data-pipeline` | Ingestion of public corpora, synthetic generation from the world, demonstration recording, and reproducible splits |
 | v0.7.0 | `training-application` | Training runs for every candidate: imitation learning from the scripted expert, then reinforcement fine-tuning |
 | v0.8.0 | `validation-harness` | Metrics, the validation protocol, and the gates that decide whether a candidate passes |
-| v0.9.0 | `sitl-runtime` | The Rust runtime closing the loop in SITL: inference, safety check, and the published decision |
+| v0.9.0 | `sitl-runtime` | The Rust runtime closing the loop inside CLAVE: inference bridge, safety check, and the published decision |
+| v0.10.0 | `fret-integration` | Handing the decision to FRET over ROS 2 so it drives the manipulator |
 
 **v0.5.0 release criteria.** The scene steps in MuJoCo, objects ride the belt
 into the arm's workspace, and the arm reaches them. Every asset carries a
@@ -178,12 +179,24 @@ concluded. Generalization to unseen object instances is measured separately
 from seen ones. Every gate states its threshold before the run rather than
 after it.
 
-**v0.9.0 release criteria.** The loop closes in SITL: frames leave the
+**v0.9.0 release criteria.** The loop closes inside CLAVE: frames leave the
 simulator, inference produces a decision, the Rust safety layer accepts or
-overrides it, and FRET drives the arm. Decision latency is measured at p99
-against a stated budget with a Criterion benchmark. A test proves the safety
-layer overrides an action that leaves the workspace. The report states plainly
-that nothing was validated on hardware.
+overrides it, and the decision is published to a consumer. Decision latency is
+measured at p99 against a stated budget with a Criterion benchmark. A test
+proves the safety layer overrides an action that leaves the workspace. The
+report states plainly that nothing was validated on hardware.
+
+This step was narrowed on 2026-09-14. It previously also required FRET to drive
+the arm, which bundled four things under one label and two of them had never
+been designed: the boundary by which Rust consumes a model trained in Python,
+deferred at v0.3.0 and still open, and a ROS 2 integration crossing into a
+sibling repository with its own roadmap. Both now sit at v0.10.0, so v0.9.0
+proves the loop CLAVE owns end to end and v0.10.0 hands it to FRET.
+
+**v0.10.0 release criteria.** CLAVE's published decision reaches FRET and drives
+the manipulator in FRET's MuJoCo SITL. This is the first step that depends on a
+sibling repository at runtime rather than for assets, and it needs ROS 2, which
+CLAVE does not depend on today. Nothing here runs on hardware.
 
 ### v1.0.0
 
@@ -271,6 +284,7 @@ the ladder rests on.
 - [x] validation-harness -- Define sorting and picking metrics, the validation protocol on unseen scenes, and the pass gates. Dependencies: waste-taxonomy, sorting-world
 - [x] training-application -- Train every candidate by imitation from the scripted expert, then fine-tune with reinforcement learning under domain randomization. Dependencies: model-candidates, data-pipeline
 - [ ] sitl-runtime -- Close the loop in Rust: inference, safety override, decision publication, and the p99 latency benchmark. Dependencies: training-application, sorting-world
+- [ ] fret-integration -- Hand the published decision to FRET over ROS 2 so it drives the manipulator in SITL. Dependencies: sitl-runtime
 - [ ] benchmark-suite -- Compare every candidate in one reproducible benchmark and record the chosen configuration. Dependencies: sitl-runtime, validation-harness
 
 Checkboxes above track the roadmap step, which closes when its deliverable
@@ -332,10 +346,18 @@ recorded.
 
 **Simulated object meshes**
 
-| Source | Shape | Why it is a candidate |
-| --- | --- | --- |
-| mujoco_scanned_objects | 1,030 MJCF models from Google Scanned Objects, CC-BY 4.0 meshes with MIT XML | Ready-to-load household containers, which is most of what a recycling line sees |
-| AWS RoboMaker warehouse | Bucket, clutter, and pallet meshes, MIT-0 | Already imported in FRET, so the conversion path is proven |
+Recorded at v0.1.0 as a candidate input and resolved on 2026-09-14. The v0.1.0
+design placed mesh sources at v0.5.0, next to the world that consumes them, and
+v0.5.0 then shipped parametric primitives instead: they give correct mass,
+footprint and grasp width for belt dynamics, which is what the pick policy
+needs, and give nothing for appearance.
+
+That tradeoff stands, and its cost is already recorded where it bites. Frames
+from this world show shape rather than material, so perception trained on them
+alone is weak by construction. Adopting `mujoco_scanned_objects`, 1,030 MJCF
+models from Google Scanned Objects under CC-BY 4.0 meshes with MIT XML, is the
+refinement that would close it, and it is a v0.5.x patch rather than an open
+question.
 
 **Architectures**
 
