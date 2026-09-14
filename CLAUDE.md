@@ -1,4 +1,6 @@
-# Claude instructions
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 CLAVE sorts recyclable waste on a conveyor belt: a camera watches the line,
 a model classifies each object, a tracker follows it across frames, and the
@@ -72,11 +74,71 @@ the repository root sets its mode to `off`. Invoke it with `/caveman` when
 you want it and leave it off for anything that lands in the repository. See
 [standards/README.md](standards/README.md#caveman-is-switched-off-in-this-repository).
 
-## Before push
+## Setup and validation
+
+New to the repo? Clone and set up with:
+
+```bash
+git clone --recurse-submodules https://github.com/alexandrelheinen/clave.git
+cd clave
+./scripts/setup.sh
+```
+
+The setup script reports which tools are missing and how to install them. It
+does not install toolchains silently; it is a dry run that lets the developer
+choose their installation method.
+
+## Development loop
+
+After any code change, run the local quality gate:
 
 ```bash
 ./scripts/validate.sh
 ```
 
-Do not push or update a pull request until it exits 0, and never describe
-a gate as passing without having run it.
+The gate checks the standards submodules and runs the full Rust quality chain
+once a `Cargo.toml` exists: formatting, clippy, tests, coverage, documentation,
+and dependency advisories. CI runs the same script as its only gate, so the
+two cannot disagree. Do not push or update a pull request until it exits 0,
+and never describe a gate as passing without having run it.
+
+## Common tasks
+
+- **Specification**: Start a feature with `/kiro-discovery <idea>`, which routes
+  to spec creation via cc-sdd skills. Specs live in `.kiro/specs/` and must be
+  approved before implementation begins.
+- **Run a single test**: `cargo nextest run -p <crate> <test_name>` (nextest is
+  the runner, not cargo test directly).
+- **Run benchmarks**: `cargo bench -p <crate>` in a crate with a `benches/`
+  directory.
+- **Check formatting only**: `cargo fmt --all --check` (no `--check` flag to apply
+  fixes).
+- **Run clippy only**: `cargo clippy --all-targets --all-features -- -D warnings`.
+- **Check coverage**: `cargo llvm-cov --all-features` (shows HTML report path).
+
+## Crate layout
+
+Crates go in `crates/<name>/` and follow one pattern:
+- Unit tests colocated in `#[cfg(test)] mod tests` at the bottom of each file.
+- Integration tests in `tests/` for the public API.
+- Benchmarks in `benches/` for anything with a latency budget (pipeline stages).
+
+See [docs/guidelines.md](docs/guidelines.md) for which parts of the pipeline are
+Rust (capture, inference, tracking, pick decision—the clock) and which are Python
+(training, dataset tooling—offline work).
+
+## Real-time crate hardening
+
+Pipeline crates take the hardened lint tier, which raises the bar on arithmetic,
+casts, and unwraps. A frame index that silently wraps or a cast that silently
+truncates is a fault, not a style question. Tooling crates take the baseline
+tier. Document your crate in its root-level docs and state which tier it uses.
+
+## Architecture at a glance
+
+Staged pipeline: capture → inference → tracking → pick decision. Every queue
+between stages is bounded, and every bounded queue states its overflow policy
+(block, drop oldest, or drop newest) as part of the interface. The pick decision
+is a serializable type published to siblings (ARCO, FRET); their source is never
+vendored here. See [.kiro/steering/](.kiro/steering/) for patterns that outlive
+a single feature.
