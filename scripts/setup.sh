@@ -45,6 +45,19 @@ else
   echo "  skipped, cargo is not installed yet"
 fi
 
+echo "==> Python platform tooling"
+if [[ -f pyproject.toml ]]; then
+  if [[ -x .venv/bin/ruff ]]; then
+    echo "  ok      .venv with the dev toolchain"
+  else
+    printf '  MISSING python dev toolchain. Create it with:\n'
+    printf '            uv venv .venv && . .venv/bin/activate && uv pip install -e ".[dev]"\n'
+    missing=1
+  fi
+else
+  echo "  skipped, no pyproject.toml yet"
+fi
+
 echo "==> Agent toolchain"
 echo "  See standards/README.md for cc-sdd and the Claude Code plugins."
 
