@@ -232,12 +232,18 @@ matching how FRET separates its own eras.
   ARCO consumes CLAVE output directly when ARCO is a library FRET calls.
   Dependencies: none
 
-This spec has approved requirements and a generated design, both written
-against the earlier deterministic-pipeline description of the project. It
-carries the first Rust crate and the workspace gates, so it does not depend on
-any learning work and can land at any point on the ladder. Two questions have to
-be settled before its design is approved: whether the payload stays a discrete
-pick decision or becomes a continuous action, and which consumer receives it.
+Both questions are settled. The maintainer confirmed on 2026-09-14 that the
+output is a pick location plus a material class, so the payload stays a discrete
+pick decision and the "continuous action" framing is withdrawn. FRET is the
+consumer, and its planner nodes reach ARCO as a library.
+
+The spec's original requirements already described exactly that payload, so they
+stand. Its design needed one correction: its `MaterialClass` carried TrashNet's
+six labels, which v0.2.0 superseded with the eleven-class taxonomy. That is the
+drift the taxonomy's stability section named in advance, and it is now aligned.
+
+The spec carries the first Rust crate and the workspace gates, so it depends on
+no learning work and can land at any point on the ladder.
 
 ## Direct Implementation Candidates
 
