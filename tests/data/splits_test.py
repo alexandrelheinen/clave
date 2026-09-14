@@ -135,3 +135,29 @@ def test_a_missing_description_is_refused(tmp_path: Path) -> None:
     """A directory of archives is not a dataset."""
     with pytest.raises(DatasetError, match="not a dataset directory"):
         read(tmp_path)
+
+
+def test_proprioception_survives_a_dataset_round_trip(tmp_path: Path) -> None:
+    """A policy reading a stored dataset needs the arm state back."""
+    from clave.data.dataset import load_split
+
+    base = rollout("r0", ("M-01",))
+    with_joints = Rollout(
+        rollout_id="r0",
+        seed=0,
+        examples=tuple(
+            Example(
+                frame=item.frame,
+                labels=item.labels,
+                simulated_time=item.simulated_time,
+                seed=item.seed,
+                config_digest=item.config_digest,
+                arm_joints=(0.1, 0.2, 0.3, 0.4),
+            )
+            for item in base.examples
+        ),
+    )
+    parts: dict[str, tuple[str, ...]] = {"train": ("r0",)}
+    write(tmp_path, (with_joints,), parts, seed=1, config_digest="cfg")
+    restored = load_split(tmp_path, "train")
+    assert restored[0].examples[0].arm_joints == pytest.approx((0.1, 0.2, 0.3, 0.4))

@@ -136,11 +136,10 @@ def policy_batches(
         batch_size: Examples per batch.
         window_exit: Belt coordinate where the reachable window ends.
 
-    The dataset carries no arm proprioception: the world records object state
-    but never the manipulator's joint positions, because nothing actuates it.
-    The state input is therefore zeroed, which makes this policy vision-only in
-    practice. That is a property of the data rather than of the architecture,
-    and it changes when v0.9.0 closes the loop.
+    Since v0.6.2 the observation carries the manipulator's joint angles, so the
+    policy can see where its own arm is. An example recorded before that, or any
+    real photograph, carries none, and its state is zeroed rather than dropped so
+    the two remain mixable in one batch.
 
     Yields:
         Image, state and target position triples.
@@ -160,6 +159,10 @@ def policy_batches(
             [list(decision.position) for _, decision in chunk], dtype=torch.float32
         )
         states = torch.zeros((len(chunk), STATE_DIMENSION), dtype=torch.float32)
+        for row, (item, _) in enumerate(chunk):
+            if item.arm_joints:
+                width = min(len(item.arm_joints), STATE_DIMENSION)
+                states[row, :width] = torch.tensor(item.arm_joints[:width])
         yield images, states, actions
 
 
@@ -206,9 +209,11 @@ def act_batches(
         images = functional.interpolate(
             images, size=(ACT_FRAME_SIZE, ACT_FRAME_SIZE), mode="bilinear"
         )
-        states = torch.tensor(
-            [list(d.position) + [0.0, 0.0, 0.0] for _, d in chunk], dtype=torch.float32
-        )
+        states = torch.zeros((len(chunk), STATE_DIMENSION), dtype=torch.float32)
+        for row, (item, _) in enumerate(chunk):
+            if item.arm_joints:
+                width = min(len(item.arm_joints), STATE_DIMENSION)
+                states[row, :width] = torch.tensor(item.arm_joints[:width])
         actions = torch.zeros((len(chunk), chunk_size, 6), dtype=torch.float32)
         pad = torch.ones((len(chunk), chunk_size), dtype=torch.bool)
         for row in range(len(chunk)):

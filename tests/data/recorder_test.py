@@ -127,3 +127,12 @@ def test_some_labeled_objects_are_outside_the_camera_view() -> None:
     visible = sum(len(example.visible_labels) for example in rollout.examples)
     assert labeled > 0
     assert visible <= labeled
+
+
+@needs_rendering
+def test_recorded_examples_carry_a_moving_arm() -> None:
+    """The arm must actually move, or proprioception carries no information."""
+    rollout = record_short(0, "proprio")
+    joints = np.array([example.arm_joints for example in rollout.examples])
+    assert joints.shape[1] == 4
+    assert float(np.ptp(joints, axis=0).max()) > 1e-3

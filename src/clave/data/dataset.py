@@ -85,6 +85,9 @@ def write(
             path,
             frames=np.stack([example.frame for example in rollout.examples]),
             times=np.array([example.simulated_time for example in rollout.examples]),
+            arm_joints=np.array(
+                [example.arm_joints for example in rollout.examples], dtype=np.float64
+            ),
             labels=np.array(
                 json.dumps(
                     [
@@ -179,6 +182,10 @@ def load_split(root: Path, part: str) -> tuple[Rollout, ...]:
         archive = np.load(root / f"{rollout_id}.npz", allow_pickle=False)
         frames = archive["frames"]
         times = archive["times"]
+        # Datasets recorded before v0.6.2 carry no proprioception. Reading them
+        # must keep working, so an absent array becomes an empty tuple per
+        # example rather than an error.
+        joints = archive.get("arm_joints", None)
         per_frame = json.loads(str(archive["labels"]))
         examples = tuple(
             Example(
@@ -197,6 +204,11 @@ def load_split(root: Path, part: str) -> tuple[Rollout, ...]:
                 simulated_time=float(times[index]),
                 seed=description.seed,
                 config_digest=description.config_digest,
+                arm_joints=(
+                    tuple(float(v) for v in joints[index])
+                    if joints is not None and len(joints)
+                    else ()
+                ),
             )
             for index, labels in enumerate(per_frame)
         )
