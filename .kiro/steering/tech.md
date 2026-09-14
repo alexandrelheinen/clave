@@ -19,16 +19,16 @@ and emergency-stop interlocks ensure the physical system never enters an
 unsafe state. Unsafe actions are overridden with safe fallbacks.
 
 Policy training sits outside the runtime and hands over a serialized policy
-artifact. A Python process is never in the loop at runtime. Inference runs on
-BOSSA edge hardware (ARM Linux).
+artifact. A Python process is never in the loop at runtime. Through the v1.x
+line the runtime executes against FRET's MuJoCo SITL, not against hardware.
 
 ## Core Technologies
 
 - **Safety layer**: Rust, edition 2024, resolver 3, toolchain pinned in
   `rust-toolchain.toml`. Handles hardware communication, collision checking,
   and safety interlocks.
-- **Inference runtime**: Optimized neural runtime on BOSSA (ARM Linux,
-  typically ONNX Runtime or TensorRT for efficiency).
+- **Inference runtime**: chosen at the `learning-platform` step of the
+  roadmap, loaded by a Rust wrapper that enforces the policy interface.
 - **Policy training**: Python with PyTorch or JAX for imitation and
   reinforcement learning. Domain randomization for sim-to-real transfer.
 - **Training environment**: MuJoCo simulation via FRET, providing kinematic
@@ -87,8 +87,8 @@ at 80% lines through `cargo llvm-cov`.
 The entire perception-to-safety-check path has a latency budget measured at
 p99. Every component in the Rust safety layer states its budget in crate
 documentation and carries Criterion benchmarks under `benches/`. The neural
-inference latency is measured on target hardware (BOSSA ARM edge device) and
-becomes a constraint on model complexity and quantization strategy. A system
+inference latency is measured on the development machine through the v1.x
+line and becomes a constraint on model complexity and quantization strategy. A system
 that averages well but misses one frame in a hundred still drops that object
 on the floor. Moving a latency budget is a specification change, not an
 implementation detail.
@@ -125,8 +125,8 @@ until it exits 0.
   but is always checked against safety constraints before physical action.
 - **Learned policy is trained in simulation, deployed with safety checks.**
   MuJoCo simulation via FRET provides the training environment. Domain
-  randomization bridges sim-to-real gaps. The trained policy runs on BOSSA
-  ARM hardware under Rust safety oversight.
+  randomization is what a later hardware era would rely on to cross the
+  simulation gap; the v1.x line measures nothing outside simulation.
 - **Zero-copy shared memory between Rust and neural inference.** Visual
   embeddings flow one direction; action distributions flow back. Minimizing
   latency and memory copies is essential for real-time performance.

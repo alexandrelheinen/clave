@@ -108,18 +108,18 @@ use crate::config::Config;
   Rust and hardened. Policy learning and inference are Python and external
   runtimes, called through a zero-copy shared memory interface that minimizes
   latency.
-- **Neural inference is wrapped by Rust.** BOSSA provides the inference
-  runtime; a Rust wrapper handles embeddings, action sampling, and latency
-  measurement. The wrapper enforces the contract between neural policy and
-  safety layer.
+- **Neural inference is wrapped by Rust.** A Rust wrapper handles embeddings,
+  action sampling, and latency measurement, and enforces the contract between
+  the policy and the safety layer. Which runtime it wraps is settled at the
+  `learning-platform` step of the roadmap.
 - **Zero-copy communication between Rust and neural inference.** Visual
   embeddings and action distributions flow through shared memory, not
   serialization. Latency is measured end-to-end: capture to safety-checked
   action.
 - **Contracts point outward, source does not come in.** The policy interface
-  (input dimensions, output distributions, quantization) and pick decision
-  (trajectory waypoints) are defined here; ARCO, FRET, Luthier, and BOSSA
-  adapt to them. They are never vendored.
+  (input dimensions, output distributions, quantization) and the decision
+  CLAVE publishes are defined here, and FRET adapts to them as the consumer.
+  No sibling is ever vendored.
 - **Training happens in Python and MuJoCo, independent of runtime.** Policy
   training runs on development machines using PyTorch, imitation learning
   from human demonstrations, and RL in MuJoCo via FRET. Trained policies are

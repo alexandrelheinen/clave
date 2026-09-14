@@ -42,16 +42,18 @@ The easy problem is pattern recognition on images. The hard problem is
 learning what to pick, when to pick it, and how to do so reliably under
 physical variation. CLAVE solves this by training a policy that learns
 robust pick decisions through interaction with simulation. The hybrid
-architecture—learned inference plus deterministic safety—is where Rust earns
-its place and where every safety-critical requirement lives.
+architecture, learned inference plus deterministic safety, is where Rust
+earns its place and where every safety-critical requirement lives.
 
 ## Boundaries
 
 CLAVE learns a policy and executes it with safety guarantees. Policy training
-uses FRET and MuJoCo as the environment. Continuous trajectory waypoints go
-to ARCO for motion planning. Inference runs on BOSSA and logs telemetry.
-Sibling projects are reached through published contracts; their source trees
-are never vendored into this repository.
+runs in FRET's MuJoCo simulation, and FRET is also the consumer of the
+decision CLAVE publishes: its planner nodes call ARCO as a synchronous
+library, so CLAVE does not address ARCO directly. BOSSA carries telemetry in
+a later hardware era and has no role in the simulation line. Sibling projects
+are reached through published contracts; their source trees are never vendored
+into this repository.
 
 ---
 _Focus on patterns and purpose, not exhaustive feature lists_

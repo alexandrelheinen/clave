@@ -8,10 +8,10 @@ CLAVE sorts recyclable waste traveling on a conveyor belt through a learned
 perception-action policy. A neural architecture fuses visual perception,
 object tracking, and pick timing into an end-to-end system trained via
 imitation and reinforcement learning. The policy runs against the clock with
-hard safety guarantees: a Rust core handles hardware interlocks and emergency
-stops, while neural inference provides perception and decision-making. Models
-train in Python and MuJoCo simulation; optimized inference runs on the BOSSA
-edge runtime.
+hard safety guarantees: a Rust core handles interlocks and workspace limits,
+while neural inference provides perception and decision-making. Models train
+in Python against MuJoCo simulation supplied by FRET. Everything through the
+v1.x line runs in simulation.
 
 <br clear="left">
 
@@ -20,35 +20,52 @@ same family as **arco**, **fret**, **luthier**, and **bossa**.
 
 ## What this project is about
 
-The hard problem is not classification—it is learning a policy that maps
-visual streams to physical actions. Classifying an object on a belt is a
-solved exercise; predicting what to pick, when to pick it, and where to
-route it under conveyor motion, variable material properties, and hardware
-constraints is where the engineering lives.
+The hard problem is learning a policy that maps visual streams to physical
+actions. Classifying an object on a belt is a solved exercise; predicting
+what to pick, when to pick it, and where to route it under conveyor motion,
+variable material properties, and hardware constraints is where the
+engineering lives.
 
 CLAVE addresses this by replacing handcoded scheduling rules with a learned
-policy network trained end-to-end:
+policy trained end to end:
 
-- **Neural perception**: Continuous spatial-temporal representations of the
+- **Neural perception**: continuous spatial-temporal representations of the
   conveyor state, replacing frame-by-frame snapshots.
-- **Learned tracking**: Neural tracking networks that handle severe
-  occlusion, illumination changes, and overlapping objects without
-  geometric heuristics.
-- **Policy learning**: A perception-action loop trained via imitation
-  learning on human demonstrations and reinforcement learning in MuJoCo
-  simulation, learning robust pick timing under physical variation.
-- **Hybrid safety**: Neural inference handles perception and decision-making,
-  while a Rust safety layer enforces hard interlocks and collision checks,
-  ensuring the physical system never enters an unsafe state.
+- **Learned tracking**: tracking networks that hold an identity through
+  occlusion, illumination change, and overlapping objects without geometric
+  heuristics.
+- **Policy learning**: a perception-action loop trained by imitation from a
+  scripted expert, then fine-tuned with reinforcement learning in MuJoCo,
+  so pick timing survives physical variation.
+- **Hybrid safety**: inference proposes, and a Rust layer disposes. Every
+  action passes a deterministic check on workspace bounds and actuator
+  limits before it reaches the arm.
 
 The split between learned policy and deterministic safety is where Rust
-earns its place, and the perception pipeline becomes a replaceable
-component behind a contract.
+earns its place, and the perception stage becomes a replaceable component
+behind a contract.
 
 ## Status
 
-No application code has landed yet. The first crate lands with the first
-specification.
+No application code has landed yet. The plan to the first release is in
+[.kiro/steering/roadmap.md](.kiro/steering/roadmap.md), which schedules nine
+minor versions from a bibliographic review to a reproducible benchmark.
+
+## Versioning
+
+CLAVE follows semantic versioning, with each position given a fixed meaning
+for this project.
+
+| Position | Meaning |
+| --- | --- |
+| MAJOR | The delivery surface changes. `v1.x` is the simulation era; a hardware era would open at `v2.0.0` and has no plan yet. |
+| MINOR | One roadmap step lands and is tagged. A minor is the unit of planned work. |
+| PATCH | A fix, a correction, or a change of mind inside a step already tagged. Unplanned by definition. |
+
+`v1.0.0` means the full pipeline runs in simulation, with training,
+validation, and a benchmark that reproduces from a seed and a manifest. It
+does not mean anything was tested on hardware. A minor is tagged only once
+its release criteria hold and `./scripts/validate.sh` exits 0.
 
 ## Ecosystem
 
@@ -58,17 +75,19 @@ between them.
 
 | Project | Role |
 | --- | --- |
-| **CLAVE** (this repo) | Learned perception-action policy, safety interlocks |
-| **[ARCO](https://github.com/alexandrelheinen/arco)** | Motion planning for continuous trajectory waypoints |
-| **[FRET](https://github.com/alexandrelheinen/fret)** | Training environment, kinematic constraints, reward functions |
-| **[Luthier](https://github.com/alexandrelheinen/luthier)** | Photogrammetry for sim-to-real calibration |
-| **[BOSSA](https://github.com/alexandrelheinen/bossa)** | Edge inference runtime, neural telemetry logging |
+| **CLAVE** (this repo) | Learned perception and pick policy, plus the safety layer that checks it |
+| **[ARCO](https://github.com/alexandrelheinen/arco)** | Python planning and control algorithms, including joint-space MPC |
+| **[FRET](https://github.com/alexandrelheinen/fret)** | ROS 2 and MuJoCo SITL, the ROBOTIS manipulators, and the simulation CLAVE trains in |
+| **[Luthier](https://github.com/alexandrelheinen/luthier)** | Photogrammetry and point clouds |
+| **[BOSSA](https://github.com/alexandrelheinen/bossa)** | C++20 edge runtime on ARM Linux, publishing telemetry to SQLite |
 
-CLAVE learns and executes a perception-to-action policy. FRET provides the
-training environment and kinematic constraints for policy learning. ARCO
-receives continuous trajectory waypoints from CLAVE and executes them. BOSSA
-runs neural inference on ARM hardware and logs activation patterns and
-latency metrics. Luthier supplies calibration data for sim-to-real transfer.
+FRET is the integration edge. CLAVE publishes a decision, FRET's planner
+nodes consume it, and those nodes call ARCO as a synchronous library rather
+than reaching CLAVE directly. FRET also supplies the MuJoCo world CLAVE
+trains against, including the OpenMANIPULATOR arms and the pinned mesh
+submodules. BOSSA carries telemetry once a hardware era opens, which is
+outside the v1.x line. What CLAVE takes from each sibling is itemized in the
+[roadmap](.kiro/steering/roadmap.md#what-clave-reuses-from-the-family).
 
 ## Repository layout
 
@@ -77,6 +96,7 @@ latency metrics. Luthier supplies calibration data for sim-to-real transfer.
 | [CONTRIBUTING.md](CONTRIBUTING.md) | The constitution: quality gates, merge policy, agent rules |
 | [docs/guidelines.md](docs/guidelines.md) | Coding notes specific to CLAVE, on top of the shared baseline |
 | [standards/](standards/README.md) | Shared guidelines, the SDD method, and the agent toolchain |
+| [.kiro/steering/roadmap.md](.kiro/steering/roadmap.md) | The ladder to v1.0.0, its release criteria, and the spec dependency order |
 | `.kiro/` | Committed specifications and the steering documents agents read as project memory |
 | `scripts/` | Toolchain setup and the local quality gate |
 
