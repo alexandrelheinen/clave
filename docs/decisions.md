@@ -41,6 +41,7 @@ library happens to be present measures the environment rather than the tests.
 than optional, this entry is superseded and the modules return to the
 denominator.
 
+<<<<<<< HEAD
 ## D-02: the decision socket is an AF_UNIX datagram rather than SOCK_SEQPACKET
 
 **Date**: 2026-09-14 · **Step**: `pick-decision-contract`, which is off the v0.x ladder
@@ -100,3 +101,43 @@ other float in the contract stays `float64`.
 **Reversal condition**: a classifier that genuinely reports confidence at
 double precision. Widening the field raises the contract version, the same as
 any other shape change.
+=======
+## D-04: the named confusion gate is looser than the per-class accuracy gate
+
+**Date**: 2026-09-14 · **Step**: v0.8.0 `validation-harness`
+
+**The standard**: the gates in `configs/validation/gates.yml` apply one bar to
+classification quality, and a validation harness that sets an easier bar for the
+errors a model is most likely to make is a harness that grades on a curve.
+
+**What was scoped**: `max_named_confusion_rate` is 0.35, while
+`min_per_class_accuracy` is 0.60, which is an error ceiling of 0.40. The looser
+number applies only to the three groups
+[docs/waste-taxonomy.md](waste-taxonomy.md) names as unresolvable from a color
+image: `M-01` against `M-03` against `M-04` when transparent, `M-05` against
+`M-06`, and `M-08` against `M-09` face-on.
+
+**Why**: those three separations are made by near-infrared absorption, by a
+magnet, and by an edge-on view of a flute. CLAVE observes the belt with a color
+camera and has none of them. Holding a color-only classifier to the same bar
+inside those groups as outside them would gate on a sensor CLAVE does not have,
+and the run would fail for a reason no amount of training changes.
+
+The gate still exists because the groups carry real signal a model should learn:
+beverage cans are taller and narrower than food cans, opaque PET and PP differ,
+and a corrugated box seen from any angle but face-on shows its flute. A rate
+above 0.35 inside a group means the model has not learned the signal that is
+there, which is a training problem and not a sensor limit. The gate separates
+those two cases, which is the whole reason the taxonomy asked for these three to
+be reported by name.
+
+**What is not scoped**: the named confusions stay inside the general confusion
+matrix and inside overall accuracy, both of which apply the ordinary bar. This
+entry loosens one gate, not the aggregate.
+
+**Reversal condition**: a near-infrared or magnetic sensor entering the pipeline
+removes the reason for this gate, at which point the three groups return to the
+ordinary per-class bar. A first measurement showing a trained candidate well
+under 0.35 is also reason to tighten it, since a gate nothing ever approaches
+gates nothing.
+>>>>>>> e3df238 (Land the v0.8.0 validation harness and its gates)

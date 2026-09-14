@@ -1,0 +1,86 @@
+# Validation gates for the sorting pipeline.
+#
+# Every threshold the harness applies lives here. Nothing in clave.validation
+# carries a numeric default: a missing key fails at load naming itself, because
+# a threshold buried in Python is a threshold nobody reviews.
+#
+# NONE OF THESE NUMBERS IS A MEASUREMENT. No candidate has been trained, so no
+# accuracy figure in this repository describes a model. The two timing gates are
+# derived from the geometry and the latency measurements recorded in
+# docs/research/sorting-world.md and docs/research/model-candidates.md. The rest
+# are targets chosen before the first run, which is the point: a threshold
+# written after seeing a result describes that result instead of gating it.
+#
+# Moving a gate is a spec change with an entry in docs/decisions.md, not an
+# edit. See docs/validation-protocol.md.
+
+gates:
+  # Share of all records classified correctly. A target, not a prediction.
+  # Three of the eleven classes sit in groups a color camera cannot fully
+  # separate, so the ceiling here is below 1.0 by construction and how far
+  # below is exactly what the first trained candidate will reveal.
+  min_overall_accuracy: 0.80
+
+  # Share of one class's records classified as that class. Set below the
+  # aggregate because a rare class carries fewer records and because the three
+  # named confusions concentrate their damage in specific classes rather than
+  # spreading it.
+  min_per_class_accuracy: 0.60
+
+  # Records a class needs before its accuracy counts as measured. At thirty
+  # records one error moves the figure by 3.3 points, which is the coarsest
+  # resolution worth calling a measurement. Below this the class fails its gate
+  # as unmeasured rather than passing on an empty denominator.
+  min_class_support: 30
+
+  # Share of presented objects the effector grasped and moved. An object that
+  # leaves the reachable window untouched is a throughput loss rather than a
+  # misroute, which is why it is gated here and not with the routing errors.
+  min_pick_success_rate: 0.90
+
+  # Share of presented objects placed in the wrong material channel. Tighter
+  # than the pick gate because a misroute contaminates a bale while a missed
+  # pick only costs a pick.
+  max_misroute_rate: 0.05
+
+  # Share of one named confusion group's records predicted as another member of
+  # the same group. Looser than the per-class accuracy gate on purpose: these
+  # three separations are unavailable from a color image, so this gate asks
+  # whether the model is worse than the sensor limit rather than whether it is
+  # perfect.
+  max_named_confusion_rate: 0.35
+
+  # Frame to published decision, at the 99th percentile, in seconds. Derived:
+  # docs/research/sorting-world.md fixes the per-object budget at 1.13 s at the
+  # fastest configured belt speed, and docs/research/model-candidates.md
+  # measured the only viable localizing perception candidate at 391.7 ms median
+  # on the development machine. A p99 of 0.45 s leaves 0.68 s for planning and
+  # motion and gives that median 58 ms of tail headroom.
+  max_decision_latency_p99_seconds: 0.45
+
+  # Decision to placement, at the 99th percentile, in seconds. Derived: it is
+  # the reachable window divided by the fastest configured belt speed, which
+  # docs/research/sorting-world.md computes as 1.13 s. An object whose cycle
+  # exceeds this left the window before the arm reached it.
+  max_cycle_time_p99_seconds: 1.13
+
+  # Accuracy lost going from object instances seen in training to instances
+  # never seen. A candidate that only memorized shows a large positive drop.
+  max_unseen_accuracy_drop: 0.10
+
+# Where each material class belongs on this deployment. The taxonomy makes this
+# a property of the installed effector rather than of the material stream, so a
+# line with fewer bins merges entries here rather than editing the taxonomy.
+# Class identifiers come from docs/waste-taxonomy.md and are append-only there.
+channels:
+  M-01: CH-PET
+  M-02: CH-HDPE
+  M-03: CH-PP
+  M-04: CH-PLASTIC-OTHER
+  M-05: CH-ALU
+  M-06: CH-FERROUS
+  M-07: CH-GLASS
+  M-08: CH-FIBER
+  M-09: CH-FIBER
+  M-10: CH-FIBER
+  M-11: CH-REJECT
