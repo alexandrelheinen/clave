@@ -1,0 +1,111 @@
+# Simulated sorting line.
+#
+# Every tunable the world reads lives here. Nothing in clave.world carries a
+# numeric default: a missing key fails at load naming itself, because a silently
+# defaulted belt speed produces a world nobody can reproduce.
+#
+# A two-element value is a range that domain randomization draws from. A scalar
+# is fixed across runs.
+#
+# Material class identifiers are from docs/waste-taxonomy.md and are append-only
+# there.
+
+physics:
+  timestep_seconds: 0.002
+
+belt:
+  length_meters: 2.0
+  width_meters: 0.50
+  surface_height_meters: 0.35
+  speed_meters_per_second: [0.10, 0.30]
+
+spawn:
+  # Objects are recycled from a fixed pool, because a compiled MuJoCo model
+  # cannot gain bodies at run time. The pool bounds how many objects can be on
+  # the belt at once.
+  pool_size: 12
+  # Objects enter this far inside the belt's leading edge. Spawning exactly on
+  # the edge lets an object tip off before the belt drive engages.
+  entry_margin_meters: 0.12
+  interval_seconds: [0.8, 2.5]
+  lateral_offset_meters: [-0.15, 0.15]
+  drop_height_meters: [0.02, 0.06]
+
+arm:
+  # Placed beside the belt, facing it. The OpenMANIPULATOR-X is a 4 degree of
+  # freedom arm with a parallel gripper, loaded from the pinned submodule.
+  base_position_meters: [0.0, -0.34, 0.35]
+  reach_radius_meters: 0.38
+
+bins:
+  # One bin per distinct channel across the object set below.
+  spacing_meters: 0.20
+  size_meters: [0.08, 0.08, 0.06]
+  offset_from_belt_meters: 0.42
+
+camera:
+  height_above_belt_meters: [0.85, 1.10]
+  fovy_degrees: [45.0, 60.0]
+
+lighting:
+  diffuse: [0.45, 0.80]
+
+objects:
+  # size_a / size_b are interpreted per shape:
+  #   cylinder -> radius, half-length
+  #   box      -> half-width, half-height
+  - name: drink_bottle
+    material_class: M-01
+    shape: cylinder
+    size_a_meters: [0.030, 0.038]
+    size_b_meters: [0.090, 0.120]
+    density_kg_per_m3: [55, 110]
+
+  - name: milk_jug
+    material_class: M-02
+    shape: box
+    size_a_meters: [0.045, 0.058]
+    size_b_meters: [0.090, 0.115]
+    density_kg_per_m3: [70, 130]
+
+  - name: yogurt_tub
+    material_class: M-03
+    shape: cylinder
+    size_a_meters: [0.035, 0.048]
+    size_b_meters: [0.030, 0.050]
+    density_kg_per_m3: [80, 150]
+
+  - name: drink_can
+    material_class: M-05
+    shape: cylinder
+    size_a_meters: [0.031, 0.034]
+    size_b_meters: [0.058, 0.067]
+    density_kg_per_m3: [40, 90]
+
+  - name: food_can
+    material_class: M-06
+    shape: cylinder
+    size_a_meters: [0.036, 0.044]
+    size_b_meters: [0.040, 0.058]
+    density_kg_per_m3: [180, 320]
+
+  - name: glass_bottle
+    material_class: M-07
+    shape: cylinder
+    size_a_meters: [0.032, 0.040]
+    size_b_meters: [0.095, 0.130]
+    density_kg_per_m3: [380, 620]
+
+  - name: shipping_box
+    material_class: M-08
+    shape: box
+    size_a_meters: [0.070, 0.110]
+    size_b_meters: [0.040, 0.070]
+    density_kg_per_m3: [60, 120]
+
+  - name: beverage_carton
+    material_class: M-10
+    shape: box
+    size_a_meters: [0.033, 0.042]
+    size_b_meters: [0.085, 0.110]
+    density_kg_per_m3: [70, 140]
