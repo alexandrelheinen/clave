@@ -1,0 +1,128 @@
+; Pick decision, contract version 1.
+;
+; CLAVE publishes one of these per object it resolves to a channel. The
+; encoding is CBOR (RFC 8949) and this schema is CDDL (RFC 8610). A consumer
+; implements against this file and the golden vectors in vectors/, not against
+; CLAVE's source.
+;
+; Every field is a named map entry, never a positional index, so inserting a
+; field cannot silently remap the ones after it. Floats are encoded at fixed
+; width: an f64 as the eight byte form (0xfb) and an f32 as the four byte form
+; (0xfa). A producer that emits the half width form (0xf9) is not speaking this
+; contract.
+;
+; Time reference: every timestamp in this contract is a reading of the Linux
+; system monotonic clock in nanoseconds. It is shared between processes on one
+; machine and meaningful within one boot. A consumer on another machine cannot
+; interpret these values.
+;
+; Coordinate frame: every length in this contract is in the belt frame, in
+; meters. The belt frame has its origin at the upstream edge of the working
+; area, with x running along belt travel, y across the belt, and z normal to
+; the belt surface.
+;
+; Version rule: the version is the first field of the map. A consumer reads it
+; first and, if the value is not a version that consumer implements, it shall
+; reject the whole message and read no further field. It shall not fall back to
+; a default, and it shall not decode the fields it does recognize. A producer
+; running ahead of a consumer stops that consumer, which is the intended
+; behavior on a line where a wrong pick is worse than no pick. The vector
+; vectors/v1/unknown-version.hex exists so a consumer can point its own
+; rejection path at a real message.
+;
+; Version bump rule: any change to the fields below, or to the set of material
+; classes, raises the version, ships a new vectors/<version>/ directory, and
+; leaves every existing vector directory untouched.
+
+pick-decision = {
+  ; The contract version this message was produced under. Always the first
+  ; field of the map.
+  version: 1,
+
+  ; The identity the tracker assigned to this object. Stable across every
+  ; decision published for one tracked object. Minted upstream of this
+  ; contract, never rewritten by it.
+  object: uint,
+
+  ; The material class the classifier assigned.
+  class: material-class,
+
+  ; The channel the line operator's mapping resolved for this object,
+  ; including the reject channel. The mapping from class to channel is
+  ; configuration the operator supplies, so this number carries no meaning
+  ; beyond naming an installed channel.
+  channel: uint,
+
+  ; Where the object is predicted to be, and when that prediction holds.
+  pose: pick-pose,
+
+  ; When the object is reachable by the effector.
+  window: pick-window,
+
+  ; How sure the classifier was of `class`, from 0.0 to 1.0 inclusive, finite.
+  ; An object whose confidence fell below the operator's threshold was already
+  ; routed to the reject channel before this message was produced, and it
+  ; still arrives as an ordinary decision.
+  confidence: float32,
+}
+
+; The fixed set of material classes, from docs/waste-taxonomy.md. The wire
+; carries the name, not a number, so reordering this list cannot silently
+; remap a label. The taxonomy owns this set: adding, merging, or retiring a
+; class there raises the contract version. A retired class keeps its name.
+material-class =
+    "Pet"            ; M-01, polyethylene terephthalate, resin code 1
+  / "Hdpe"           ; M-02, high-density polyethylene, resin code 2
+  / "Pp"             ; M-03, polypropylene, resin code 5
+  / "OtherPlastic"   ; M-04, plastics outside codes 1, 2 and 5, including film
+  / "Aluminum"       ; M-05, non-ferrous metal packaging
+  / "Ferrous"        ; M-06, steel and tinplate packaging
+  / "Glass"          ; M-07, container glass of any color
+  / "Cardboard"      ; M-08, old corrugated containers
+  / "MixedPaper"     ; M-09, paperboard, newsprint and office paper
+  / "BeverageCarton" ; M-10, liquid packaging board
+  / "Residue"        ; M-11, material not recoverable in this stream
+
+; The pose the object is predicted to hold at `reference_time`. This is a
+; prediction for a moment inside the pick window, not an observation from the
+; frame the object was captured in. The producer guarantees that
+; `reference_time` falls inside the window, both edges included.
+;
+; The pose is planar, meaning a point and a yaw, which describes a top-down
+; pick. A tilted object or an off-vertical approach needs a full orientation,
+; and widening this raises the contract version.
+pick-pose = {
+  point: belt-point,
+
+  ; Rotation about the belt normal, in radians. Not normalized to any range.
+  yaw_radians: float64,
+
+  ; The monotonic nanosecond reading this pose is predicted for.
+  reference_time: monotonic-nanos,
+}
+
+; A point in the belt frame, in meters.
+belt-point = {
+  ; Along belt travel, in meters.
+  x_meters: float64,
+  ; Across the belt, in meters.
+  y_meters: float64,
+  ; Normal to the belt surface, in meters.
+  z_meters: float64,
+}
+
+; The interval during which the effector can reach the object, both edges
+; included. The producer guarantees that `latest` is not before `earliest`.
+; An object not picked before `latest` continues down the belt, which is a
+; throughput loss rather than a misroute.
+pick-window = {
+  ; The earliest monotonic nanosecond reading at which the object is reachable.
+  earliest: monotonic-nanos,
+  ; The latest monotonic nanosecond reading at which the object is reachable.
+  latest: monotonic-nanos,
+}
+
+; A reading of the Linux system monotonic clock, in nanoseconds. Signed,
+; because the clock's zero is the boot of the machine and a producer may
+; report a reading before its own start.
+monotonic-nanos = int

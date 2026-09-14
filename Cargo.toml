@@ -1,0 +1,51 @@
+[workspace]
+resolver = "3"
+members = ["crates/clave-decision", "crates/clave-publish", "crates/clave-routing"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+license = "MIT"
+authors = ["Alexandre Loeblein Heinen"]
+repository = "https://github.com/alexandrelheinen/clave"
+
+[workspace.dependencies]
+clave-decision = { path = "crates/clave-decision", version = "0.1.0" }
+cbor4ii = { version = "1.2.3", default-features = false, features = ["serde1", "use_std"] }
+criterion = { version = "0.8.2", default-features = false, features = ["cargo_bench_support"] }
+proptest = { version = "1.11.0", default-features = false, features = ["std"] }
+serde = { version = "1.0.229", default-features = false, features = ["derive", "std"] }
+thiserror = { version = "2.0.20", default-features = false, features = ["std"] }
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+missing_docs = "warn"
+missing_debug_implementations = "warn"
+unreachable_pub = "warn"
+unused_qualifications = "warn"
+unused_lifetimes = "warn"
+trivial_casts = "warn"
+trivial_numeric_casts = "warn"
+let_underscore_drop = "warn"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+undocumented_unsafe_blocks = "deny"
+multiple_unsafe_ops_per_block = "deny"
+unwrap_used = "deny"
+expect_used = "warn"
+panic = "warn"
+todo = "warn"
+unimplemented = "warn"
+dbg_macro = "deny"
+float_cmp = "deny"
+missing_errors_doc = "warn"
+missing_panics_doc = "warn"
+allow_attributes = "warn"
+allow_attributes_without_reason = "warn"
+
+[profile.release]
+overflow-checks = true
+debug = "line-tables-only"
