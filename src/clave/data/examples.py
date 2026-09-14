@@ -48,6 +48,12 @@ class ObjectLabel:
         in_reachable_window: Whether the arm could have reached it. An object
             outside the window cannot be picked, so training on it as a pick
             target teaches a false association.
+        bbox: Pixel bounds as (x_min, y_min, x_max, y_max), or None when the
+            object is not visible in the frame. The camera sees roughly half the
+            belt, so an object on the belt is frequently absent from the image,
+            and a detector trained on a label with no pixels would be taught to
+            hallucinate. None is therefore the visibility flag as well as the
+            absence of a box.
     """
 
     object_id: int
@@ -55,6 +61,7 @@ class ObjectLabel:
     channel: str
     position: tuple[float, float, float]
     in_reachable_window: bool
+    bbox: tuple[int, int, int, int] | None = None
 
     def __post_init__(self) -> None:
         """Refuse a class the taxonomy does not define.
@@ -76,6 +83,7 @@ class ObjectLabel:
             "channel": self.channel,
             "position": list(self.position),
             "in_reachable_window": self.in_reachable_window,
+            "bbox": list(self.bbox) if self.bbox is not None else None,
         }
 
 
@@ -101,8 +109,18 @@ class Example:
 
     @property
     def material_classes(self) -> tuple[str, ...]:
-        """The material classes present in this frame."""
+        """The material classes of every labeled object, visible or not."""
         return tuple(label.material_class for label in self.labels)
+
+    @property
+    def visible_labels(self) -> tuple[ObjectLabel, ...]:
+        """Only the objects actually present in the frame.
+
+        Detection training must use these. Training on a label whose object is
+        outside the camera's field of view teaches the model to predict a box
+        where there are no pixels.
+        """
+        return tuple(label for label in self.labels if label.bbox is not None)
 
 
 @dataclass(frozen=True)

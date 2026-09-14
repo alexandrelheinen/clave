@@ -87,6 +87,23 @@ Neither bug contradicts anything v0.5.0 claimed. The reachable window, the belt
 speed and the 1.13 second time budget are geometry and are unaffected. What
 changed is that more objects now survive to reach the window.
 
+## Pixel boxes, added at v0.6.1
+
+The first release recorded each object's world position and nothing about where
+it appeared in the image, which left detectors untrainable: v0.4.0's advancing
+detector needs pixel bounds and the dataset had none.
+
+Boxes now come from a segmentation render, where MuJoCo reports a geometry id
+per pixel. They are ground truth rather than a projection estimate, and an
+object absent from the render is simply absent from the result.
+
+That second property turned out to matter more than the boxes. The camera sees
+roughly half the belt, so **about 18 percent of labeled objects are not in the
+frame at all**. The first release could not distinguish them, and a detector
+trained on those labels would have been taught to predict a box where there are
+no pixels. An example now exposes its visible labels separately, and detection
+training must use those.
+
 ## Design decisions worth knowing
 
 **Splits partition by rollout, never by frame.** Two frames of one object half a
