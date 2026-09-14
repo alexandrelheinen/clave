@@ -91,3 +91,30 @@ def test_the_expert_is_deterministic() -> None:
     labels = (label(1, "M-01", 0.0, True), label(2, "M-07", 0.0, True))
     first, second = decide(labels, 0.17), decide(labels, 0.17)
     assert first == second
+
+
+def test_a_label_without_a_box_is_not_visible() -> None:
+    """A label whose object is outside the camera view carries no box."""
+    assert label(1, "M-01", 0.0, True).bbox is None
+
+
+def test_visible_labels_excludes_objects_outside_the_frame() -> None:
+    """Training detection on an off-frame label teaches hallucination."""
+    inside = ObjectLabel(
+        object_id=1,
+        material_class="M-01",
+        channel="CH-PET",
+        position=(0.0, 0.0, 0.4),
+        in_reachable_window=True,
+        bbox=(10, 20, 30, 40),
+    )
+    outside = label(2, "M-07", 0.9, False)
+    example = Example(
+        frame=np.zeros((4, 4, 3), dtype=np.uint8),
+        labels=(inside, outside),
+        simulated_time=0.0,
+        seed=0,
+        config_digest="d",
+    )
+    assert example.visible_labels == (inside,)
+    assert len(example.labels) == 2

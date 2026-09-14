@@ -103,3 +103,27 @@ def test_two_seeds_record_different_examples() -> None:
     """The guard above would pass for a constant renderer."""
     first, second = record_short(7), record_short(8)
     assert not np.array_equal(first.examples[-1].frame, second.examples[-1].frame)
+
+
+@needs_rendering
+def test_visible_labels_carry_pixel_boxes_inside_the_frame() -> None:
+    """Boxes come from a segmentation render, so they are ground truth."""
+    rollout = record_short(0, "boxes")
+    visible = [
+        label for example in rollout.examples for label in example.visible_labels
+    ]
+    assert visible, "no object was ever in frame"
+    for label in visible:
+        x_min, y_min, x_max, y_max = label.bbox or (0, 0, 0, 0)
+        assert 0 <= x_min <= x_max < 64
+        assert 0 <= y_min <= y_max < 48
+
+
+@needs_rendering
+def test_some_labeled_objects_are_outside_the_camera_view() -> None:
+    """The camera sees part of the belt, so labels and visibility differ."""
+    rollout = record_short(0, "coverage")
+    labeled = sum(len(example.labels) for example in rollout.examples)
+    visible = sum(len(example.visible_labels) for example in rollout.examples)
+    assert labeled > 0
+    assert visible <= labeled

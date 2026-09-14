@@ -29,8 +29,49 @@ def _ensure_software_rendering() -> None:
     os.environ.setdefault("MUJOCO_GL", "osmesa")
 
 
+def _boxes_from_segmentation(
+    model: Any, segmentation: Any
+) -> dict[str, tuple[int, int, int, int]]:
+    """Derive exact pixel bounds per object from a segmentation render.
+
+    MuJoCo renders geometry ids per pixel, so the bounds are ground truth rather
+    than a projection estimate, and an object absent from the render is simply
+    absent from the result.
+
+    Args:
+        model: The compiled model, used to map geometry ids to names.
+        segmentation: The segmentation buffer, height by width by two.
+
+    Returns:
+        Object body name to pixel bounds as (x_min, y_min, x_max, y_max).
+    """
+    import mujoco
+    import numpy as np
+
+    geom_ids = segmentation[:, :, 0]
+    boxes: dict[str, tuple[int, int, int, int]] = {}
+    for geom_id in np.unique(geom_ids):
+        if geom_id < 0 or geom_id >= model.ngeom:
+            continue
+        name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, int(geom_id))
+        if name is None or not name.startswith("object_"):
+            continue
+        rows, columns = np.where(geom_ids == geom_id)
+        boxes[name.removesuffix("_geom")] = (
+            int(columns.min()),
+            int(rows.min()),
+            int(columns.max()),
+            int(rows.max()),
+        )
+    return boxes
+
+
 def _labels_for(
-    model: Any, data: Any, conveyor: belt.Conveyor, half_window: float
+    model: Any,
+    data: Any,
+    conveyor: belt.Conveyor,
+    half_window: float,
+    boxes: dict[str, tuple[int, int, int, int]],
 ) -> tuple[ObjectLabel, ...]:
     """Read every active object's label straight from the world."""
     import mujoco
@@ -47,6 +88,7 @@ def _labels_for(
                 channel=item.channel,
                 position=(position[0], position[1], position[2]),
                 in_reachable_window=abs(position[0]) <= half_window,
+                bbox=boxes.get(item.name),
             )
         )
     return tuple(labels)
@@ -94,6 +136,8 @@ def record(
     half_window = conveyor.report.window_length / 2.0
 
     renderer = mujoco.Renderer(model, height=height, width=width)
+    segmenter = mujoco.Renderer(model, height=height, width=width)
+    segmenter.enable_segmentation_rendering()
     examples: list[Example] = []
     next_capture = 0.0
     for _ in range(int(seconds / plan.timestep)):
@@ -102,10 +146,12 @@ def record(
         if data.time < next_capture:
             continue
         renderer.update_scene(data, camera="overhead")
+        segmenter.update_scene(data, camera="overhead")
+        boxes = _boxes_from_segmentation(model, segmenter.render())
         examples.append(
             Example(
                 frame=renderer.render().astype(np.uint8),
-                labels=_labels_for(model, data, conveyor, half_window),
+                labels=_labels_for(model, data, conveyor, half_window, boxes),
                 simulated_time=float(data.time),
                 seed=seed,
                 config_digest=config_digest,
