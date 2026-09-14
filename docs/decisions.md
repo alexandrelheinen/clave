@@ -41,7 +41,6 @@ library happens to be present measures the environment rather than the tests.
 than optional, this entry is superseded and the modules return to the
 denominator.
 
-<<<<<<< HEAD
 ## D-02: the decision socket is an AF_UNIX datagram rather than SOCK_SEQPACKET
 
 **Date**: 2026-09-14 · **Step**: `pick-decision-contract`, which is off the v0.x ladder
@@ -101,7 +100,6 @@ other float in the contract stays `float64`.
 **Reversal condition**: a classifier that genuinely reports confidence at
 double precision. Widening the field raises the contract version, the same as
 any other shape change.
-=======
 ## D-04: the named confusion gate is looser than the per-class accuracy gate
 
 **Date**: 2026-09-14 · **Step**: v0.8.0 `validation-harness`
@@ -140,4 +138,3 @@ removes the reason for this gate, at which point the three groups return to the
 ordinary per-class bar. A first measurement showing a trained candidate well
 under 0.35 is also reason to tighten it, since a gate nothing ever approaches
 gates nothing.
->>>>>>> e3df238 (Land the v0.8.0 validation harness and its gates)
