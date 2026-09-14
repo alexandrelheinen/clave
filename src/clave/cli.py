@@ -245,6 +245,36 @@ def _record_dataset(root: Path, out: Path, seed: int) -> int:
     return 0
 
 
+def _train(root: Path, config_path: Path, candidate: str | None) -> int:
+    """Train one candidate from a configuration file.
+
+    Args:
+        root: Repository root.
+        config_path: Path to the training configuration.
+        candidate: Overrides the candidate named in the file.
+
+    Returns:
+        A process exit code. Non-zero when the candidate could not be loaded.
+    """
+    from clave.training.config import TrainingConfig
+    from clave.training.runner import train
+
+    config = TrainingConfig.load(root / config_path, candidate)
+    run = train(config, config.window_exit_meters)
+    if run.unavailable_reason is not None:
+        print(f"  UNAVAILABLE  {config.candidate}: {run.unavailable_reason}")
+        return 1
+    print(f"  candidate     {run.candidate}")
+    print(f"  machine       {run.machine}, {run.threads} threads")
+    print(f"  dataset       {run.dataset_digest[:16]}...")
+    for epoch in run.epochs:
+        print(
+            f"  epoch {epoch.index:2d}      loss {epoch.loss:10.4f}   "
+            f"{epoch.seconds:8.1f} s"
+        )
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run a CLAVE command.
 
@@ -273,6 +303,9 @@ def main(argv: list[str] | None = None) -> int:
     rec = sub.add_parser("record-dataset", help="record a labeled dataset")
     rec.add_argument("--out", type=Path, default=Path("datasets/synthetic"))
     rec.add_argument("--seed", type=int, default=0)
+    tr = sub.add_parser("train", help="train a candidate from a configuration")
+    tr.add_argument("--config", type=Path, default=Path("configs/training/default.yml"))
+    tr.add_argument("--candidate", type=str, default=None)
     validate = sub.add_parser(
         "validate-run", help="score recorded outcomes against the validation gates"
     )
@@ -291,6 +324,8 @@ def main(argv: list[str] | None = None) -> int:
             return _world_probe(args.root, args.seconds, args.seed)
         if args.command == "record-dataset":
             return _record_dataset(args.root, args.out, args.seed)
+        if args.command == "train":
+            return _train(args.root, args.config, args.candidate)
         if args.command == "validate-run":
             return _validate_run(args.root, args.outcomes, args.gates)
         return _record(args.root, args.name, args.path)

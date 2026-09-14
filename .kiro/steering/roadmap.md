@@ -269,7 +269,7 @@ the ladder rests on.
 - [x] sorting-world -- Build the MuJoCo conveyor scene with a ROBOTIS arm, channel bins, tagged waste assets, and YAML randomization knobs. Dependencies: waste-taxonomy
 - [x] data-pipeline -- Ingest public corpora, generate labeled rollouts from the world, record expert demonstrations, and produce reproducible splits. Dependencies: waste-taxonomy, learning-platform, sorting-world
 - [x] validation-harness -- Define sorting and picking metrics, the validation protocol on unseen scenes, and the pass gates. Dependencies: waste-taxonomy, sorting-world
-- [ ] training-application -- Train every candidate by imitation from the scripted expert, then fine-tune with reinforcement learning under domain randomization. Dependencies: model-candidates, data-pipeline
+- [x] training-application -- Train every candidate by imitation from the scripted expert, then fine-tune with reinforcement learning under domain randomization. Dependencies: model-candidates, data-pipeline
 - [ ] sitl-runtime -- Close the loop in Rust: inference, safety override, decision publication, and the p99 latency benchmark. Dependencies: training-application, sorting-world
 - [ ] benchmark-suite -- Compare every candidate in one reproducible benchmark and record the chosen configuration. Dependencies: sitl-runtime, validation-harness
 
@@ -284,7 +284,8 @@ lands, not when its spec is written.
 | model-candidates | Approved | Approved | Approved | Delivered, tagged v0.4.0 |
 | sorting-world | Approved | Approved | Approved | Delivered, tagged v0.5.0 |
 | data-pipeline | Approved | Approved | Approved | Delivered, tagged v0.6.0 |
-| validation-harness | Approved | Approved | Approved | Code merged; tag waits for v0.7.0 |
+| training-application | Approved | Approved | Approved | Delivered, tagged v0.7.0 |
+| validation-harness | Approved | Approved | Approved | Delivered, tagged v0.8.0 |
 | every other spec | Not started | Not started | Not started | Not started |
 
 v0.1.0 delivered [docs/research/training-infrastructure-review.md](../../docs/research/training-infrastructure-review.md).

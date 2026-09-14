@@ -147,3 +147,60 @@ def read(root: Path) -> DatasetDescription:
             f"{raw['digest']}; the contents changed"
         )
     return DatasetDescription(**raw)
+
+
+def load_split(root: Path, part: str) -> tuple[Rollout, ...]:
+    """Load the rollouts belonging to one split part.
+
+    The archive format is this module's, so reading it is too. Training reads
+    through here rather than opening archives itself.
+
+    Args:
+        root: The dataset directory.
+        part: Split part name, such as `train`.
+
+    Returns:
+        The rollouts in that part, with frames and labels restored.
+
+    Raises:
+        DatasetError: If the dataset does not verify, or the part is unknown.
+            Verification happens first, so training can never read a dataset
+            whose contents changed since it was described.
+    """
+    from clave.data.examples import Example, ObjectLabel
+
+    description = read(root)
+    if part not in description.parts:
+        known = ", ".join(sorted(description.parts))
+        raise DatasetError(f"unknown split part {part!r}; this dataset has {known}")
+
+    rollouts: list[Rollout] = []
+    for rollout_id in description.parts[part]:
+        archive = np.load(root / f"{rollout_id}.npz", allow_pickle=False)
+        frames = archive["frames"]
+        times = archive["times"]
+        per_frame = json.loads(str(archive["labels"]))
+        examples = tuple(
+            Example(
+                frame=frames[index],
+                labels=tuple(
+                    ObjectLabel(
+                        object_id=item["object_id"],
+                        material_class=item["material_class"],
+                        channel=item["channel"],
+                        position=tuple(item["position"]),
+                        in_reachable_window=item["in_reachable_window"],
+                        bbox=tuple(item["bbox"]) if item.get("bbox") else None,
+                    )
+                    for item in labels
+                ),
+                simulated_time=float(times[index]),
+                seed=description.seed,
+                config_digest=description.config_digest,
+            )
+            for index, labels in enumerate(per_frame)
+        )
+        rollouts.append(
+            Rollout(rollout_id=rollout_id, seed=description.seed, examples=examples)
+        )
+    return tuple(rollouts)
