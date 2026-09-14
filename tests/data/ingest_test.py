@@ -6,6 +6,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from numpy.typing import NDArray
 
 from clave.corpus.artifacts import digest_of
 from clave.corpus.manifest import Manifest
@@ -159,7 +160,7 @@ def test_a_frame_decodes_through_the_caller_supplied_decoder(
     """AC-INGEST-11: ingestion needs no image library of its own."""
     seen: list[bytes] = []
 
-    def decode(payload: bytes) -> np.ndarray:
+    def decode(payload: bytes) -> NDArray[np.uint8]:
         seen.append(payload)
         return np.zeros((2, 2, 3), dtype=np.uint8)
 
