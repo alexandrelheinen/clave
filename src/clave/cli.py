@@ -113,6 +113,56 @@ def _bench_candidates(warmup: int, repetitions: int) -> int:
     return 0
 
 
+def _world_probe(root: Path, seconds: float, seed: int) -> int:
+    """Build the sorting world, run it, and report its reachability budget.
+
+    Args:
+        root: Repository root.
+        seconds: Simulated seconds to run.
+        seed: Seed for belt speed, placement and spawn timing.
+
+    Returns:
+        A process exit code. Non-zero when the belt never enters the arm's
+        reach, which would make the world useless for picking.
+    """
+    import mujoco
+    import numpy as np
+
+    from clave.world import belt, config, scene
+
+    raw = config.load(root / "configs" / "world" / "sorting_line.yml")
+    rng = np.random.default_rng(seed)
+    model, data, plan = scene.build(raw, rng, root)
+    spawn = config.require(raw, "spawn")
+    conveyor = belt.Conveyor(
+        plan,
+        rng,
+        config.require_range(spawn, "interval_seconds", "spawn"),
+        config.require_range(spawn, "lateral_offset_meters", "spawn"),
+        config.require_range(spawn, "drop_height_meters", "spawn"),
+        entry_margin=float(config.require(spawn, "entry_margin_meters", "spawn")),
+    )
+    report = conveyor.report
+    print(f"  reach radius      {report.reach_radius:.3f} m")
+    print(f"  belt offset       {report.belt_offset:.3f} m")
+    print(f"  reachable window  {report.window_length:.3f} m")
+    print(f"  belt speed        {report.belt_speed:.3f} m/s")
+    print(f"  time budget       {report.time_budget:.3f} s per object")
+    print(f"  channels          {len(plan.channels)} bins")
+
+    for _ in range(int(seconds / plan.timestep)):
+        mujoco.mj_step(model, data)
+        conveyor.step(model, data)
+
+    print(f"  simulated         {data.time:.2f} s")
+    print(f"  spawned           {len(conveyor.active)}")
+    print(f"  entered window    {len(conveyor.entered_window())}")
+    if not report.reachable:
+        print("  FAILED   the belt never enters the arm's reach")
+        return 1
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run a CLAVE command.
 
@@ -135,6 +185,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     bench.add_argument("--warmup", type=int, default=3)
     bench.add_argument("--repetitions", type=int, default=10)
+    world = sub.add_parser("world-probe", help="build the sorting world and report it")
+    world.add_argument("--seconds", type=float, default=12.0)
+    world.add_argument("--seed", type=int, default=0)
 
     args = parser.parse_args(argv)
     try:
@@ -144,6 +197,8 @@ def main(argv: list[str] | None = None) -> int:
             return _check_research(args.root)
         if args.command == "bench-candidates":
             return _bench_candidates(args.warmup, args.repetitions)
+        if args.command == "world-probe":
+            return _world_probe(args.root, args.seconds, args.seed)
         return _record(args.root, args.name, args.path)
     except ClaveError as exc:
         print(f"  FAILED   {exc}", file=sys.stderr)

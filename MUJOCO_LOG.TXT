@@ -1,0 +1,8 @@
+WARNING Mon Sep 14 16:17:11 2026: Attach conflict when attaching 'open_manipulator_x', policy is 'warning'
+impratio: parent has 1 (default), child has 10, keeping parent value
+cone: parent has 0 (default), child has 1, keeping parent value
+
+WARNING Mon Sep 14 16:20:18 2026: Nan, Inf or huge value in QACC at DOF 52. The simulation is unstable. Time = 2.9460.
+
+WARNING Mon Sep 14 16:20:41 2026: Nan, Inf or huge value in QACC at DOF 52. The simulation is unstable. Time = 2.9460.
+

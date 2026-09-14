@@ -266,7 +266,7 @@ the ladder rests on.
 - [x] waste-taxonomy -- Define material classes from recovery-facility practice, map everyday objects onto them, and set the channel and reject policy. Dependencies: training-infrastructure-review
 - [x] learning-platform -- Choose the deep learning framework, corpus storage and versioning, experiment tracking, and the reproducibility rules. Dependencies: training-infrastructure-review
 - [x] model-candidates -- Put at least three open-source perception architectures and three policy architectures behind one interface. Dependencies: training-infrastructure-review, learning-platform
-- [ ] sorting-world -- Build the MuJoCo conveyor scene with a ROBOTIS arm, channel bins, tagged waste assets, and YAML randomization knobs. Dependencies: waste-taxonomy
+- [x] sorting-world -- Build the MuJoCo conveyor scene with a ROBOTIS arm, channel bins, tagged waste assets, and YAML randomization knobs. Dependencies: waste-taxonomy
 - [ ] data-pipeline -- Ingest public corpora, generate labeled rollouts from the world, record expert demonstrations, and produce reproducible splits. Dependencies: waste-taxonomy, learning-platform, sorting-world
 - [ ] validation-harness -- Define sorting and picking metrics, the validation protocol on unseen scenes, and the pass gates. Dependencies: waste-taxonomy, sorting-world
 - [ ] training-application -- Train every candidate by imitation from the scripted expert, then fine-tune with reinforcement learning under domain randomization. Dependencies: model-candidates, data-pipeline
@@ -282,6 +282,7 @@ lands, not when its spec is written.
 | waste-taxonomy | Approved | Approved | Approved | Delivered, tagged v0.2.0 |
 | learning-platform | Approved | Approved | Approved | Delivered, tagged v0.3.0 |
 | model-candidates | Approved | Approved | Approved | Delivered, tagged v0.4.0 |
+| sorting-world | Approved | Approved | Approved | Delivered, tagged v0.5.0 |
 | every other spec | Not started | Not started | Not started | Not started |
 
 v0.1.0 delivered [docs/research/training-infrastructure-review.md](../../docs/research/training-infrastructure-review.md).
