@@ -1,0 +1,22 @@
+{
+  "feature_name": "data-pipeline",
+  "created_at": "2026-09-14T15:54:38Z",
+  "updated_at": "2026-09-14T15:56:07Z",
+  "language": "en",
+  "phase": "tasks-generated",
+  "approvals": {
+    "requirements": {
+      "generated": true,
+      "approved": true
+    },
+    "design": {
+      "generated": true,
+      "approved": true
+    },
+    "tasks": {
+      "generated": true,
+      "approved": true
+    }
+  },
+  "ready_for_implementation": true
+}
