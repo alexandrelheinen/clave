@@ -16,6 +16,7 @@ from clave.errors import ClaveError
 from clave.research.tables import check_all
 
 DEFAULT_MANIFEST = Path("corpora/manifest.toml")
+DEFAULT_GATES = Path("configs/validation/gates.yml")
 
 
 def _verify_manifest(root: Path) -> int:
@@ -163,6 +164,30 @@ def _world_probe(root: Path, seconds: float, seed: int) -> int:
     return 0
 
 
+def _validate_run(root: Path, outcomes: Path, gates: Path | None) -> int:
+    """Score recorded outcomes against the configured gates and print a report.
+
+    Args:
+        root: Repository root.
+        outcomes: The records file to score.
+        gates: The gate configuration, defaulting to the committed one.
+
+    Returns:
+        A process exit code. Non-zero when any gate is unmet, because an unmet
+        gate is a failure rather than a number in a table.
+    """
+    from clave.validation.gates import GateConfig
+    from clave.validation.outcomes import load_outcomes
+    from clave.validation.report import ValidationReport
+
+    report = ValidationReport.build(
+        load_outcomes(outcomes),
+        GateConfig.load(gates if gates is not None else root / DEFAULT_GATES),
+    )
+    print(report.render())
+    return 0 if report.passed else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run a CLAVE command.
 
@@ -188,6 +213,11 @@ def main(argv: list[str] | None = None) -> int:
     world = sub.add_parser("world-probe", help="build the sorting world and report it")
     world.add_argument("--seconds", type=float, default=12.0)
     world.add_argument("--seed", type=int, default=0)
+    validate = sub.add_parser(
+        "validate-run", help="score recorded outcomes against the validation gates"
+    )
+    validate.add_argument("--outcomes", type=Path, required=True)
+    validate.add_argument("--gates", type=Path, default=None)
 
     args = parser.parse_args(argv)
     try:
@@ -199,6 +229,8 @@ def main(argv: list[str] | None = None) -> int:
             return _bench_candidates(args.warmup, args.repetitions)
         if args.command == "world-probe":
             return _world_probe(args.root, args.seconds, args.seed)
+        if args.command == "validate-run":
+            return _validate_run(args.root, args.outcomes, args.gates)
         return _record(args.root, args.name, args.path)
     except ClaveError as exc:
         print(f"  FAILED   {exc}", file=sys.stderr)

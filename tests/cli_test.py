@@ -71,3 +71,76 @@ def test_no_command_is_an_error() -> None:
     """argparse requires a subcommand."""
     with pytest.raises(SystemExit):
         main([])
+
+
+def _write_outcomes(path: Path, correct: bool) -> None:
+    """Write a records file whose objects are all handled the same way.
+
+    The records are a synthetic fixture. They exercise the command and say
+    nothing about any model, because no model has been trained.
+
+    Args:
+        path: Where to write.
+        correct: Whether each object is classified and routed correctly.
+    """
+    import json
+
+    records = [
+        {
+            "object_id": f"obj-{index}",
+            "true_class": "M-01",
+            "predicted_class": "M-01" if correct else "M-04",
+            "picked": True,
+            "routed_channel": "CH-PET" if correct else "CH-PLASTIC-OTHER",
+            "seen_instance": index % 2 == 0,
+            "decision_latency_seconds": 0.1,
+            "cycle_time_seconds": 0.5,
+        }
+        for index in range(40)
+    ]
+    path.write_text(
+        json.dumps(
+            {"provenance": "synthetic fixture, not a measurement", "outcomes": records}
+        )
+    )
+
+
+def test_validate_run_prints_a_report(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """AC-VERDICT-05: the harness runs from one command."""
+    outcomes = tmp_path / "outcomes.json"
+    _write_outcomes(outcomes, correct=True)
+    main(
+        [
+            "--root",
+            str(ROOT),
+            "validate-run",
+            "--outcomes",
+            str(outcomes),
+        ]
+    )
+    captured = capsys.readouterr().out
+    assert "## What was run" in captured
+    assert "## What was concluded" in captured
+    assert "synthetic fixture, not a measurement" in captured
+
+
+def test_validate_run_exits_non_zero_when_a_gate_fails(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """AC-VERDICT-04: an unmet gate is a failure, not a reported number."""
+    outcomes = tmp_path / "outcomes.json"
+    _write_outcomes(outcomes, correct=False)
+    assert main(["--root", str(ROOT), "validate-run", "--outcomes", str(outcomes)]) == 1
+    assert "FAIL" in capsys.readouterr().out
+
+
+def test_validate_run_reports_a_malformed_records_file(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """AC-OUTCOME-03: a bad record fails the command naming what was wrong."""
+    outcomes = tmp_path / "outcomes.json"
+    outcomes.write_text('{"provenance": "fixture", "outcomes": [{"object_id": "a"}]}')
+    assert main(["--root", str(ROOT), "validate-run", "--outcomes", str(outcomes)]) == 1
+    assert "true_class" in capsys.readouterr().err
