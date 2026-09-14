@@ -257,7 +257,7 @@ the ladder rests on.
 ## Specs (dependency order)
 
 - [x] training-infrastructure-review -- Survey waste datasets, candidate architectures, and training infrastructure, and name what advances. Dependencies: none
-- [ ] waste-taxonomy -- Define material classes from recovery-facility practice, map everyday objects onto them, and set the channel and reject policy. Dependencies: training-infrastructure-review
+- [x] waste-taxonomy -- Define material classes from recovery-facility practice, map everyday objects onto them, and set the channel and reject policy. Dependencies: training-infrastructure-review
 - [ ] learning-platform -- Choose the deep learning framework, corpus storage and versioning, experiment tracking, and the reproducibility rules. Dependencies: training-infrastructure-review
 - [ ] model-candidates -- Put at least three open-source perception architectures and three policy architectures behind one interface. Dependencies: training-infrastructure-review, learning-platform
 - [ ] sorting-world -- Build the MuJoCo conveyor scene with a ROBOTIS arm, channel bins, tagged waste assets, and YAML randomization knobs. Dependencies: waste-taxonomy
@@ -273,6 +273,7 @@ lands, not when its spec is written.
 | Spec | Requirements | Design | Tasks | Step |
 | --- | --- | --- | --- | --- |
 | training-infrastructure-review | Approved | Approved | Approved | Delivered, tagged v0.1.0 |
+| waste-taxonomy | Approved | Approved | Approved | Delivered, tagged v0.2.0 |
 | every other spec | Not started | Not started | Not started | Not started |
 
 v0.1.0 delivered [docs/research/training-infrastructure-review.md](../../docs/research/training-infrastructure-review.md).
