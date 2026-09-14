@@ -188,6 +188,63 @@ def _validate_run(root: Path, outcomes: Path, gates: Path | None) -> int:
     return 0 if report.passed else 1
 
 
+def _record_dataset(root: Path, out: Path, seed: int) -> int:
+    """Record rollouts, split them, and write a described dataset.
+
+    Args:
+        root: Repository root.
+        out: Directory to write the dataset into.
+        seed: Base seed; each rollout uses a derived seed.
+
+    Returns:
+        A process exit code.
+    """
+    from clave.data import dataset, splits
+    from clave.data.recorder import record
+    from clave.world import config
+
+    raw = config.load(root / "configs" / "data" / "recording.yml")
+    rec = config.require(raw, "recording")
+    proportions = {
+        name: float(value) for name, value in config.require(raw, "splits").items()
+    }
+    count = int(config.require(rec, "rollouts", "recording"))
+
+    rollouts = []
+    for index in range(count):
+        rollouts.append(
+            record(
+                root=root,
+                seed=seed + index,
+                seconds=float(config.require(rec, "seconds_per_rollout", "recording")),
+                capture_interval_seconds=float(
+                    config.require(rec, "capture_interval_seconds", "recording")
+                ),
+                height=int(config.require(rec, "frame_height", "recording")),
+                width=int(config.require(rec, "frame_width", "recording")),
+                rollout_id=f"rollout_{index:03d}",
+            )
+        )
+        print(f"  recorded rollout_{index:03d}: {len(rollouts[-1].examples)} examples")
+
+    plan = splits.split(tuple(r.rollout_id for r in rollouts), proportions, seed)
+    description = dataset.write(
+        out, tuple(rollouts), plan.parts, seed, rollouts[0].examples[0].config_digest
+    )
+
+    print(f"  digest            {description.digest[:16]}...")
+    print(f"  examples          {description.example_count}")
+    for name in ("train", "validation", "test", "overall"):
+        part = description.composition[name]
+        absent = list(part["absent_classes"])  # type: ignore[call-overload]
+        present = dict(part["class_counts"])  # type: ignore[call-overload]
+        print(
+            f"  {name:16s}  {part['example_count']:4d} frames, "
+            f"{len(present)} classes present, {len(absent)} absent"
+        )
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run a CLAVE command.
 
@@ -213,6 +270,9 @@ def main(argv: list[str] | None = None) -> int:
     world = sub.add_parser("world-probe", help="build the sorting world and report it")
     world.add_argument("--seconds", type=float, default=12.0)
     world.add_argument("--seed", type=int, default=0)
+    rec = sub.add_parser("record-dataset", help="record a labeled dataset")
+    rec.add_argument("--out", type=Path, default=Path("datasets/synthetic"))
+    rec.add_argument("--seed", type=int, default=0)
     validate = sub.add_parser(
         "validate-run", help="score recorded outcomes against the validation gates"
     )
@@ -229,6 +289,8 @@ def main(argv: list[str] | None = None) -> int:
             return _bench_candidates(args.warmup, args.repetitions)
         if args.command == "world-probe":
             return _world_probe(args.root, args.seconds, args.seed)
+        if args.command == "record-dataset":
+            return _record_dataset(args.root, args.out, args.seed)
         if args.command == "validate-run":
             return _validate_run(args.root, args.outcomes, args.gates)
         return _record(args.root, args.name, args.path)

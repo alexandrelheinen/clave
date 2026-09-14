@@ -180,6 +180,19 @@ def build(
         rgba=[0.25, 0.25, 0.28, 1.0],
     )
 
+    # Side guides. A real sorting line has them, and without them a cylinder
+    # that lands and tips simply rolls off the belt, which showed up as objects
+    # recorded at lateral positions outside the belt's own width.
+    rail = float(require(require(raw, "belt"), "guide_height_meters", "belt"))
+    for sign in (-1.0, 1.0):
+        world.add_geom(
+            name=f"belt_guide_{'left' if sign < 0 else 'right'}",
+            type=mujoco.mjtGeom.mjGEOM_BOX,
+            size=[half[0], 0.01, rail / 2.0],
+            pos=[0.0, sign * (half[1] + 0.01), plan.belt.surface_height + rail / 2.0],
+            rgba=[0.30, 0.30, 0.34, 1.0],
+        )
+
     bin_size = [float(v) for v in require(bins_cfg, "size_meters", "bins")]
     spacing = float(require(bins_cfg, "spacing_meters", "bins"))
     offset = float(require(bins_cfg, "offset_from_belt_meters", "bins"))
@@ -222,10 +235,13 @@ def build(
             )
 
     height = require_range(camera_cfg, "height_above_belt_meters", "camera")
+    # A MuJoCo camera already looks along its own negative z, so an identity
+    # orientation at this height points straight down at the belt. Rotating it
+    # by 180 degrees about x, which looks correct at a glance, aims it at the
+    # sky and renders a uniformly black frame.
     world.add_camera(
         name="overhead",
         pos=[0.0, 0.0, plan.belt.surface_height + height.sample(rng)],
-        quat=[0.0, 1.0, 0.0, 0.0],
         fovy=require_range(camera_cfg, "fovy_degrees", "camera").sample(rng),
     )
 

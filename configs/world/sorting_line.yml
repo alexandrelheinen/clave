@@ -18,6 +18,8 @@ belt:
   width_meters: 0.50
   surface_height_meters: 0.35
   speed_meters_per_second: [0.10, 0.30]
+  # Side guides keep tipped cylinders from rolling off. A real line has them.
+  guide_height_meters: 0.06
 
 spawn:
   # Objects are recycled from a fixed pool, because a compiled MuJoCo model

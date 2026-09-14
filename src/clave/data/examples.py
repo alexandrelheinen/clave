@@ -1,0 +1,124 @@
+"""Labeled examples, as the world produces them.
+
+Labels come from the simulator rather than from a labeling pass. The world
+already knows each object's material class, so a synthetic example is labeled by
+construction and the usual source of label noise does not arise.
+
+What that does not give is appearance. These frames show parametric primitives,
+so a classifier trained only on them learns shape rather than material.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from enum import Enum
+from typing import Any
+
+import numpy as np
+from numpy.typing import NDArray
+
+from clave.errors import ClaveError
+from clave.taxonomy import BY_ID
+
+
+class LabelError(ClaveError):
+    """A label names a material class the taxonomy does not define."""
+
+
+class Origin(Enum):
+    """Where an example came from.
+
+    Kept on every example so a held-out set of real imagery can be excluded from
+    training without re-deriving which examples are which.
+    """
+
+    SIMULATED = "simulated"
+    REAL = "real"
+
+
+@dataclass(frozen=True)
+class ObjectLabel:
+    """One object as the world knows it at capture time.
+
+    Attributes:
+        object_id: Identity, stable across the frames of one rollout.
+        material_class: Taxonomy identifier of the form `M-NN`.
+        channel: Default channel for that class.
+        position: Object position in meters, in world coordinates.
+        in_reachable_window: Whether the arm could have reached it. An object
+            outside the window cannot be picked, so training on it as a pick
+            target teaches a false association.
+    """
+
+    object_id: int
+    material_class: str
+    channel: str
+    position: tuple[float, float, float]
+    in_reachable_window: bool
+
+    def __post_init__(self) -> None:
+        """Refuse a class the taxonomy does not define.
+
+        Raises:
+            LabelError: If the material class is unknown, naming it.
+        """
+        if self.material_class not in BY_ID:
+            raise LabelError(
+                f"object {self.object_id} carries material class "
+                f"{self.material_class!r}, which is not in the taxonomy"
+            )
+
+    def as_dict(self) -> dict[str, Any]:
+        """Render as plain data for the dataset index."""
+        return {
+            "object_id": self.object_id,
+            "material_class": self.material_class,
+            "channel": self.channel,
+            "position": list(self.position),
+            "in_reachable_window": self.in_reachable_window,
+        }
+
+
+@dataclass(frozen=True)
+class Example:
+    """One captured frame and everything known about it.
+
+    Attributes:
+        frame: The rendered frame, height by width by three, unsigned bytes.
+        labels: The objects visible in it.
+        simulated_time: Seconds of simulated time at capture.
+        seed: Seed the rollout ran under.
+        config_digest: Digest of the world configuration that produced it.
+        origin: Simulated or real.
+    """
+
+    frame: NDArray[np.uint8]
+    labels: tuple[ObjectLabel, ...]
+    simulated_time: float
+    seed: int
+    config_digest: str
+    origin: Origin = Origin.SIMULATED
+
+    @property
+    def material_classes(self) -> tuple[str, ...]:
+        """The material classes present in this frame."""
+        return tuple(label.material_class for label in self.labels)
+
+
+@dataclass(frozen=True)
+class Rollout:
+    """One continuous run of the world.
+
+    Splits partition by rollout rather than by frame, because two frames of one
+    object are almost perfectly correlated and a frame-level split would put
+    near duplicates on both sides of the boundary.
+
+    Attributes:
+        rollout_id: Identity, unique within a dataset.
+        seed: Seed this rollout ran under.
+        examples: Captured examples, in capture order.
+    """
+
+    rollout_id: str
+    seed: int
+    examples: tuple[Example, ...]
