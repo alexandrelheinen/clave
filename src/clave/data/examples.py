@@ -98,6 +98,11 @@ class Example:
         seed: Seed the rollout ran under.
         config_digest: Digest of the world configuration that produced it.
         origin: Simulated or real.
+        arm_joints: Manipulator joint angles at capture, in radians. Empty for
+            an example recorded before v0.6.2, and for any real image, since a
+            photograph carries no proprioception. A policy that cannot see where
+            its own arm is cannot account for it, which is why v0.7.0's policies
+            were vision only.
     """
 
     frame: NDArray[np.uint8]
@@ -106,6 +111,7 @@ class Example:
     seed: int
     config_digest: str
     origin: Origin = Origin.SIMULATED
+    arm_joints: tuple[float, ...] = ()
 
     @property
     def material_classes(self) -> tuple[str, ...]:

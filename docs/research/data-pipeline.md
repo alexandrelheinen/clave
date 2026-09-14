@@ -104,6 +104,39 @@ trained on those labels would have been taught to predict a box where there are
 no pixels. An example now exposes its visible labels separately, and detection
 training must use those.
 
+## Proprioception, added at v0.6.2
+
+v0.5.1 made the manipulator movable. This makes it move during recording, driven
+toward whatever the scripted expert would pick, and records its four joint
+angles on every captured frame.
+
+Without the arm moving, proprioception would be a constant and carry no
+information, so the two changes only mean something together.
+
+Policies trained after this receive arm state rather than a zero vector.
+Retraining on a freshly recorded dataset gives:
+
+| Candidate | Vision only, v0.7.0 | With proprioception |
+| --- | --- | --- |
+| `behavior-cloning-baseline` | 0.0332 to 0.0094 | 0.0416 to 0.0137 |
+| `act` | 30.07 to 4.65 | 29.11 to 4.49 |
+
+**Those columns are not comparable and neither is evidence of anything.** The
+dataset was re-recorded, and because the arm now moves and collides with objects
+on the belt, the trajectories themselves differ. Behavior cloning ends higher
+with proprioception than without, which says nothing about whether the extra
+input helps: three epochs on 160 frames is not a measurement, and two different
+datasets cannot be compared by their losses.
+
+What can be said is narrower and worth saying: the observation now contains the
+arm's state, so a policy that needs it is no longer structurally prevented from
+using it, and a reward-driven candidate now has an environment it can act in.
+Whether either helps is v1.0.0's benchmark to answer.
+
+An example recorded before this, or any real photograph, carries no
+proprioception. Its state is zeroed rather than dropped, so simulated and real
+examples stay mixable in one batch.
+
 ## Design decisions worth knowing
 
 **Splits partition by rollout, never by frame.** Two frames of one object half a

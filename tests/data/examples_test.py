@@ -118,3 +118,28 @@ def test_visible_labels_excludes_objects_outside_the_frame() -> None:
     )
     assert example.visible_labels == (inside,)
     assert len(example.labels) == 2
+
+
+def test_an_example_records_arm_proprioception() -> None:
+    """v0.7.0's policies were vision only because this did not exist."""
+    example = Example(
+        frame=np.zeros((4, 4, 3), dtype=np.uint8),
+        labels=(),
+        simulated_time=0.0,
+        seed=0,
+        config_digest="d",
+        arm_joints=(0.1, -0.2, 0.3, 0.0),
+    )
+    assert len(example.arm_joints) == 4
+
+
+def test_an_example_without_proprioception_is_still_valid() -> None:
+    """A real photograph carries none, and older datasets carry none."""
+    example = Example(
+        frame=np.zeros((4, 4, 3), dtype=np.uint8),
+        labels=(),
+        simulated_time=0.0,
+        seed=0,
+        config_digest="d",
+    )
+    assert example.arm_joints == ()

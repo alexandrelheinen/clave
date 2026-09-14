@@ -17,7 +17,16 @@ from typing import Any
 import numpy as np
 
 from clave.data.examples import Example, ObjectLabel, Origin, Rollout
+from clave.data.expert import decide
+from clave.world import arm as armmod
 from clave.world import belt, config, scene
+
+ARM_GAIN = 0.35
+"""How much of each solved inverse kinematics step to apply.
+
+Low enough that the arm tracks the expert smoothly rather than snapping between
+targets as objects enter and leave the reachable window.
+"""
 
 
 def _ensure_software_rendering() -> None:
@@ -135,14 +144,27 @@ def record(
     )
     half_window = conveyor.report.window_length / 2.0
 
+    indices = armmod.locate(model)
     renderer = mujoco.Renderer(model, height=height, width=width)
     segmenter = mujoco.Renderer(model, height=height, width=width)
     segmenter.enable_segmentation_rendering()
     examples: list[Example] = []
     next_capture = 0.0
+    half_window = conveyor.report.window_length / 2.0
     for _ in range(int(seconds / plan.timestep)):
         mujoco.mj_step(model, data)
         conveyor.step(model, data)
+
+        # Drive the arm toward whatever the scripted expert would pick. Without
+        # this the manipulator never moves, its joint angles are constant, and
+        # the proprioception recorded below carries no information at all.
+        labels_now = _labels_for(model, data, conveyor, half_window, {})
+        chosen = decide(labels_now, half_window)
+        if chosen is not None:
+            armmod.step_toward(
+                model, data, indices, np.array(chosen.position), gain=ARM_GAIN
+            )
+
         if data.time < next_capture:
             continue
         renderer.update_scene(data, camera="overhead")
@@ -156,6 +178,10 @@ def record(
                 seed=seed,
                 config_digest=config_digest,
                 origin=Origin.SIMULATED,
+                arm_joints=tuple(
+                    float(angle)
+                    for angle in armmod.joint_positions(model, data, indices)
+                ),
             )
         )
         next_capture = data.time + capture_interval_seconds
