@@ -120,10 +120,17 @@ screens against one implicit context.
 
 ### Architecture Pattern and Boundary Map
 
-The review is a single document composed of six sections in a fixed order. The
-order is load-bearing: constraints precede verdicts so that no verdict can be
-read before the rule it was reached under, and the shortlist precedes the
-surveys so a consuming reader is not required to read the evidence first.
+The review is a single document composed of six sections in this fixed order:
+screening constraints, criteria tables, compute budget, shortlist, candidate
+registers, open questions.
+
+The order is load-bearing and resolves two pulls against each other. The method
+comes first, meaning constraints, criteria, and the budget, so that no verdict
+can be read before the rules it was reached under, and so that the budget that
+feeds `S4` is visible before any rejection cites it. The shortlist then precedes
+the registers, so a reader arriving from v0.3.0 or v0.4.0 gets the answer without
+reading the evidence first, while a reader questioning a verdict finds the
+register immediately below it.
 
 ```mermaid
 graph TB
@@ -170,7 +177,7 @@ docs/
 
 | File | Status | Responsibility |
 |---|---|---|
-| `docs/research/training-infrastructure-review.md` | New | The entire deliverable: constraints, criteria, candidate registers, compute budget, shortlist, and open questions |
+| `docs/research/training-infrastructure-review.md` | New | The entire deliverable, in the section order fixed above: screening constraints, criteria tables, compute budget, shortlist, candidate registers, open questions |
 
 Every component named in Components and Interfaces is a section of that single
 file. The spec creates no other file, so component-to-file mapping is total and
@@ -236,7 +243,11 @@ and prefixed, meaning `C-CORPUS-1`, `C-ARCH-1`, `C-INFRA-1`. Weights express
 what the review cares about and make a close call arguable rather than asserted.
 
 Criteria are distinct from constraints. A constraint is pass or fail and
-produces a verdict. A criterion is comparative and orders the survivors.
+produces a verdict. A criterion is comparative and orders the survivors, which
+is its only job: the shortlist presents advancing entries in criteria order and
+names the criterion that decided any close call. A criteria table that no
+shortlist entry ever cites is decoration and should be removed rather than left
+in place.
 
 ### Survey: Corpus register
 
@@ -255,12 +266,15 @@ capture conditions on an operating sorting line, which satisfies 1.1.
 Exact header, in this order:
 
 ```
-| Architecture | Stage | License | Weights license | Last release | Training signal | Published result | Measured on | Constraint failed | Verdict | Source |
+| Architecture | Stage | License | Weights license | Last release | Training signal | Estimated training cost | Published result | Measured on | Constraint failed | Verdict | Source |
 ```
 
 `Stage` is `Perception` or `Policy`. `Training signal` is required for the
 policy stage and records `n/a` for perception, distinguishing demonstrations
-from reward as 2.3 requires. `Published result` and `Measured on` together
+from reward as 2.3 requires. `Estimated training cost` is what `S4` is judged
+against: it holds a wall-clock estimate on the stated hardware when the budget
+is resolved, and `pending budget` when it is not. Without this column `S4` would
+be applied to an input nothing produces. `Published result` and `Measured on` together
 satisfy 2.4, and `Source` carries the citation that attributes both.
 
 The register must contain at least three rows with `Stage` of `Perception` and a
@@ -335,8 +349,8 @@ Three record types, one per survey domain, sharing a common tail.
 - **CorpusRecord**: identity, license, size, annotation type, capture
   conditions, scene difference, plus the common tail.
 - **ArchitectureRecord**: identity, stage, license, weights license, last
-  release date, training signal, published result, measurement task, plus the
-  common tail.
+  release date, training signal, estimated training cost, published result,
+  measurement task, plus the common tail.
 - **InfrastructureRecord**: identity, purpose, license, FRET compatibility,
   reproducibility requirements, competing option and tradeoff, plus the common
   tail.
@@ -352,7 +366,12 @@ Three record types, one per survey domain, sharing a common tail.
    names one of `S1` through `S4`.
 4. No record carries `Reject` against `S4` while the compute budget is
    unresolved.
-5. `Source` resolves to a retrievable public reference.
+5. `Source` resolves to a retrievable public reference that documents the
+   candidate. For a row verdicted `Unavailable`, that reference documents the
+   corpus, such as its paper or its entry in a dataset index, even though the
+   corpus itself could not be retrieved. The failed retrieval is recorded as a
+   dated note beneath the register rather than in the `Source` cell, so the
+   invariant that every source resolves holds without erasing the attempt.
 
 ## Error Handling
 
@@ -382,9 +401,18 @@ a checker at v0.3.0:
 5. The corpus register has at least four rows and at least one with operating-line
    capture conditions.
 6. Each stage has at least three architectures verdicted `Advance`, `Advance
-   (provisional)`, or `Baseline`, and at least one `Baseline`.
+   (provisional)`, or `Baseline`, and at least one `Baseline`. Failing this
+   check is a legitimate outcome, not a defect to repair: 6.3 requires the
+   shortlist to declare the target unmet and name what would change it.
 7. The budget section declares resolved or unresolved on its first line.
 8. No `Reject` against `S4` exists while the budget is unresolved.
+9. Every architecture row carries an `Estimated training cost`, holding either a
+   wall-clock estimate or `pending budget`.
+
+A structural check that fails is reported back to the section that owns the
+defect and repaired there. The validation pass does not edit registers, the
+budget, or the shortlist directly, because that would move ownership of those
+sections into validation.
 
 **Content checks**, which only a reviewer can perform:
 
@@ -416,7 +444,7 @@ a checker at v0.3.0:
 | 3.4 | Seed control and environment pinning | Infrastructure register | `Reproducibility requirements` |
 | 4.1 | Hardware named | Compute budget | Resolved state |
 | 4.2 | Cost in wall-clock time with assumption | Compute budget | Resolved state |
-| 4.3 | Reject over budget regardless of results | Compute budget, Screening constraints | `Constraint failed` = `S4` |
+| 4.3 | Reject over budget regardless of results | Compute budget, Architecture register, Screening constraints | `Estimated training cost` against budget, `Constraint failed` = `S4` |
 | 4.4 | Unresolved rather than assumed | Compute budget | Unresolved state |
 | 5.1 | Constraints stated once, applied uniformly | Screening constraints | `S1` to `S4` before any register |
 | 5.2 | FRET simulator and manipulators | Screening constraints | `S2` |
