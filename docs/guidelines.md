@@ -27,9 +27,10 @@ that affects hardware safety is Rust and hardened.
 reinforcement learning in MuJoCo simulation via FRET, domain randomization
 for sim-to-real transfer. Trained policies are serialized and versioned.
 
-**Inference runtime**: Hosted on BOSSA edge hardware (ARM Linux), typically
-ONNX Runtime or TensorRT. Wrapped by Rust code that enforces the policy
-interface contract.
+**Inference runtime**: selected at the `learning-platform` step of the
+roadmap and wrapped by Rust code that enforces the policy interface contract.
+Through the v1.x line it runs on the development machine against FRET's
+MuJoCo SITL.
 
 ## Hardened by default
 
@@ -47,7 +48,7 @@ anything that runs offline take the baseline tier.
 The entire perception-to-safety-check path has a latency budget measured at
 p99. Every safety-layer crate states its budget in documentation and carries
 Criterion benchmarks under `benches/`. Neural inference latency is measured
-on target BOSSA hardware and is a constraint on model size and quantization.
+on the development machine and is a constraint on model size and quantization.
 A system that averages well and misses one frame in a hundred still drops
 that object on the floor. A change that moves a budget is a spec change,
 not an implementation detail.
@@ -55,9 +56,9 @@ not an implementation detail.
 ## Inference throughput and batching
 
 Neural inference is single-frame, no batching across conveyor objects.
-Throughput depends on model complexity, target hardware (BOSSA ARM device),
-and quantization strategy. Every policy release documents minimum and
-expected inference latency at the target quantization level. Inference
+Throughput depends on model complexity, the machine it runs on, and the
+quantization strategy. Every policy release documents minimum and expected
+inference latency at the quantization level it was measured at. Inference
 latency is part of the overall budget, not separate from safety checks.
 
 ## Policy artifacts
@@ -84,11 +85,16 @@ contract; a mismatch between policy and wrapper is a runtime error.
 
 ## Contracts toward siblings
 
-CLAVE publishes trajectory waypoints and pick timing. Motion planning and
-execution belong to [ARCO](https://github.com/alexandrelheinen/arco). Policy
-training uses FRET and MuJoCo simulation from
-[FRET](https://github.com/alexandrelheinen/fret). Neural inference runs on
-[BOSSA](https://github.com/alexandrelheinen/bossa). Sim-to-real calibration
-uses [Luthier](https://github.com/alexandrelheinen/luthier). Define contracts
-as serializable types in CLAVE and let consumers adapt; do not import a
-sibling's types and do not vendor a sibling's source.
+[FRET](https://github.com/alexandrelheinen/fret) is the integration edge in
+both directions. It supplies the MuJoCo simulation, the OpenMANIPULATOR arms,
+and the pinned mesh submodules CLAVE trains against, and its planner nodes
+consume the decision CLAVE publishes. Those nodes call
+[ARCO](https://github.com/alexandrelheinen/arco) as a synchronous Python
+library, so CLAVE does not address ARCO directly.
+[BOSSA](https://github.com/alexandrelheinen/bossa) is a C++20 telemetry
+runtime for ARM Linux and carries metrics in a later hardware era, not in the
+v1.x simulation line. [Luthier](https://github.com/alexandrelheinen/luthier)
+supplies photogrammetry when calibration against real geometry starts.
+
+Define contracts as serializable types in CLAVE and let consumers adapt; do
+not import a sibling's types and do not vendor a sibling's source.

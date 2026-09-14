@@ -61,8 +61,8 @@ skill reads the same description of the project instead of re-deriving one.
 **Rust** for the safety layer: collision checking, actuator limits, hardware
 interlocks, and the zero-copy bridge to neural inference. The hardened lint
 tiers in [languages/rs.md](standards/guidelines/languages/rs.md) are not
-suggestions—arithmetic overflow, casts, and unwraps can fail silently in this
-domain and cause physical faults.
+suggestions. Arithmetic overflow, casts, and unwraps fail silently in this
+domain and turn into physical faults.
 
 **Python** for policy training: imitation learning from human demonstrations,
 reinforcement learning in MuJoCo simulation via FRET, and domain
@@ -134,7 +134,7 @@ Crates go in `crates/<name>/` organized by responsibility:
 **Inference crates** (policy loading, embeddings, shared memory, action sampling):
 - Baseline lint tier.
 - Unit and integration tests for contract enforcement.
-- Benchmarks for inference latency on target BOSSA hardware.
+- Benchmarks for inference latency on the development machine.
 
 **Shared utility crates**:
 - Baseline tier unless they support safety-layer code.
@@ -151,12 +151,14 @@ perception and policy. Every policy decision is checked against safety
 constraints before physical action. A policy that tries to reach past an
 actuator limit is overridden by the safety layer.
 
-Latency is measured end-to-end: visual embeddings from the camera to a
-safety-checked action ready for ARCO. Every component states its latency
-budget at p99 and proves it with benchmarks. Inference latency is measured
-on target BOSSA hardware and is part of the overall budget, not separate.
+Latency is measured end to end, from the frame leaving the simulator to a
+safety-checked decision FRET can act on. Every component states its latency
+budget at p99 and proves it with a benchmark. Inference latency counts
+toward that budget rather than sitting outside it.
 
 The policy interface (input/output dimensions, quantization) is defined as a
 Rust type in this repo. Trained policies are versioned separately and fetched
 by deployment scripts, never committed. See [.kiro/steering/](.kiro/steering/)
-for patterns that outlive a single feature.
+for patterns that outlive a single feature, and
+[roadmap.md](.kiro/steering/roadmap.md) for the ladder to v1.0.0 and what
+each step has to prove before it is tagged.

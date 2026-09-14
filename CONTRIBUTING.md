@@ -40,11 +40,15 @@ into this repository.
 
 | Project | Role |
 | --- | --- |
-| **CLAVE** (this repo) | Learned perception-action policy, safety interlocks |
-| **[ARCO](https://github.com/alexandrelheinen/arco)** | Motion planning for continuous trajectory waypoints |
-| **[FRET](https://github.com/alexandrelheinen/fret)** | Training environment, kinematic constraints, reward functions |
-| **[Luthier](https://github.com/alexandrelheinen/luthier)** | Photogrammetry for sim-to-real calibration |
-| **[BOSSA](https://github.com/alexandrelheinen/bossa)** | Edge inference runtime, neural telemetry logging |
+| **CLAVE** (this repo) | Learned perception and pick policy, plus the safety layer that checks it |
+| **[ARCO](https://github.com/alexandrelheinen/arco)** | Python planning and control algorithms, including joint-space MPC |
+| **[FRET](https://github.com/alexandrelheinen/fret)** | ROS 2 and MuJoCo SITL, the ROBOTIS manipulators, and the simulation CLAVE trains in |
+| **[Luthier](https://github.com/alexandrelheinen/luthier)** | Photogrammetry and point clouds |
+| **[BOSSA](https://github.com/alexandrelheinen/bossa)** | C++20 edge runtime on ARM Linux, publishing telemetry to SQLite |
+
+FRET is the integration edge. CLAVE publishes a decision, FRET's planner
+nodes consume it, and those nodes call ARCO as a synchronous library rather
+than reaching CLAVE directly.
 
 ## Development setup
 
@@ -73,6 +77,11 @@ through the cc-sdd skills. Enter through `/kiro-discovery <idea>`.
 Specifications are committed under `.kiro/specs/`. A feature without an
 approved spec does not get implemented, and a spec is approved by the
 maintainer at its phase gate, not by the agent that wrote it.
+
+[.kiro/steering/roadmap.md](.kiro/steering/roadmap.md) holds the ladder to
+v1.0.0: one minor version per step, the release criteria each has to meet,
+and the dependency order the specs are written in. It also fixes what MAJOR,
+MINOR, and PATCH mean for this project.
 
 ## Quality gates
 
@@ -123,9 +132,9 @@ No secrets in the tree, ever. Commit format and PR hygiene follow
 General agent behavior, including the no-fabricated-evidence rule, follows
 [agents/claude.md](standards/guidelines/agents/claude.md). CLAVE adds:
 
-1. Do not claim a gate passed without running it. Do not claim inference
-   latency or policy performance without evidence from the target BOSSA
-   hardware.
+1. Do not claim a gate passed without running it, and do not claim hardware
+   validation of any kind. This machine has no camera, no belt, and no arm.
+   Latency and policy numbers are simulation numbers, and a report says so.
 2. Do not vendor arco, fret, luthier, or bossa into this repository. Safety
    contracts point outward; source does not come in.
 3. Do not commit trained policies to the repository. Policies are versioned
