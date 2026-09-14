@@ -182,3 +182,51 @@ meaningful share of the per-object budget. At that point the honest move is a
 shared-memory transport rather than linking a model into the safety crate, since
 the property being protected is the absence of shared code and not the presence
 of a socket.
+
+## D-06: the decision reaches ROS 2 as a standard message, not a CLAVE one
+
+**Date**: 2026-09-15 · **Step**: v0.10.0 `decision-publisher`
+
+**The standard**: `standards/guidelines/workflow/sdd.md` asks that a
+cross-project boundary be specified before it is implemented, and CLAVE already
+publishes a decision under a CDDL schema with golden vectors. Adding a second
+encoding of the same decision needs a reason and a rule for keeping the two
+honest.
+
+**What was scoped**: CLAVE publishes `vision_msgs/msg/Detection3DArray` on
+`/clave/pick_decisions`, mapped in
+`crates/clave-decision/contract/ros-decision.md`. No ROS interface package is
+defined in this repository. The material class and the resolved channel travel
+as two hypotheses in one detection, read by prefix, and the window duration
+travels in `bbox.size.x`.
+
+**Why a standard type**: defining a message means an interface package, which
+means `rosidl` and a colcon build inside a repository whose gate is cargo and
+pytest. A consumer would then need to build CLAVE's package before it could
+subscribe. A standard type costs two documented reuses of a field and buys a
+subscriber that needs nothing from here, plus `ros2 topic echo`, `rosbag` and
+RViz working with no plugin.
+
+**Why two hypotheses rather than one**: an object below the confidence floor
+keeps its material class and goes to the reject channel, so a decision carries
+`M-01` and `channel:0` at the same time. A consumer that recomputed the channel
+from the class would defeat the floor. `ObjectHypothesisWithPose` is a labeled
+assertion with a score, which is what both of these are.
+
+**Why the window rides in `bbox`**: a `Detection3D` carries a bounding box, and
+CLAVE estimates a pick point rather than an object extent, so the field would
+otherwise be zeroed. A decision without its window cannot be checked for
+staleness by a subscriber that received it late. The reuse is documented in the
+contract rather than left for a reader to infer, and it is the one place in the
+mapping where a field is used for something other than its name.
+
+**What keeps the two encodings honest**: the ROS publisher decodes the CBOR that
+was published. It never builds a message from the proposal that produced the
+decision, which would be easier and would create a second path free to drift
+from the contract with no test noticing. The Python decoder is tested against
+the committed golden vectors, which is the same check a consumer in another
+language runs.
+
+**Reversal condition**: FRET writing the subscriber and finding the two reuses
+confusing or insufficient. At that point an interface package becomes the better
+trade, and the cost is a colcon build this repository does not have today.

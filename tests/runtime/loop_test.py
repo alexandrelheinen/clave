@@ -5,7 +5,6 @@ and skips when any is absent, as the world tests do. Covers `AC-LOOP-01`,
 `AC-LOOP-03`, `AC-LOOP-04`, `AC-RTBENCH-02` and `AC-RTBENCH-04`.
 """
 
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -14,7 +13,6 @@ import pytest
 import yaml
 
 from clave.runtime import loop
-from clave.runtime.bridge import BridgeError, locate_binary
 from clave.runtime.inference import ScriptedPredictor, associate
 from clave.world import config
 
@@ -28,20 +26,6 @@ _PROBE = (
     '\'<mujoco><worldbody><geom type="box" size=".1 .1 .1"/></worldbody></mujoco>\');'
     "mujoco.Renderer(m,height=8,width=8)"
 )
-
-
-def _binary_or_skip() -> Path:
-    """Return the built runtime, building it once if it is absent."""
-    try:
-        return locate_binary(ROOT)
-    except BridgeError:
-        pass
-    if shutil.which("cargo") is None:
-        pytest.skip("cargo is absent, so the runtime cannot be built here")
-    subprocess.run(
-        ["cargo", "build", "-p", "clave-sitl"], cwd=ROOT, check=True, timeout=900
-    )
-    return locate_binary(ROOT)
 
 
 def _rendering_available() -> bool:
@@ -133,12 +117,13 @@ def test_a_prediction_matching_no_object_is_associated_with_nothing() -> None:
     assert associate((0.0, 0.0, 0.0), (), 0.30) is None
 
 
-def test_the_loop_runs_end_to_end_and_reports_what_it_did(tmp_path: Path) -> None:
+def test_the_loop_runs_end_to_end_and_reports_what_it_did(
+    tmp_path: Path, runtime_binary: Path
+) -> None:
     """One command steps the world, decides, publishes and counts."""
     pytest.importorskip("mujoco")
     if not _rendering_available():
         pytest.skip("no offscreen GL backend here")
-    _binary_or_skip()
 
     settings = loop.RuntimeSettings.load(SETTINGS)
     short = loop.RuntimeSettings(**{**vars(settings), "seconds": 6.0})

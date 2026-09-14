@@ -152,7 +152,7 @@ policy, all from open sources.
 | v0.7.0 | `training-application` | Training runs for every candidate: imitation learning from the scripted expert, then reinforcement fine-tuning |
 | v0.8.0 | `validation-harness` | Metrics, the validation protocol, and the gates that decide whether a candidate passes |
 | v0.9.0 | `sitl-runtime` | The Rust runtime closing the loop inside CLAVE: inference bridge, safety check, and the published decision |
-| v0.10.0 | `fret-integration` | Handing the decision to FRET over ROS 2 so it drives the manipulator |
+| v0.10.0 | `decision-publisher` | Publishing the decision on ROS 2 in the shape FRET's pick-and-place state machine consumes |
 
 **v0.5.0 release criteria.** The scene steps in MuJoCo, objects ride the belt
 into the arm's workspace, and the arm reaches them. Every asset carries a
@@ -193,10 +193,33 @@ deferred at v0.3.0 and still open, and a ROS 2 integration crossing into a
 sibling repository with its own roadmap. Both now sit at v0.10.0, so v0.9.0
 proves the loop CLAVE owns end to end and v0.10.0 hands it to FRET.
 
-**v0.10.0 release criteria.** CLAVE's published decision reaches FRET and drives
-the manipulator in FRET's MuJoCo SITL. This is the first step that depends on a
-sibling repository at runtime rather than for assets, and it needs ROS 2, which
-CLAVE does not depend on today. Nothing here runs on hardware.
+**v0.10.0 release criteria.** CLAVE publishes its decision on a ROS 2 topic in
+the shape FRET's `PickPlaceFSM` already consumes, meaning an object position and
+a signal that a pick is available, with the channel selecting the place side. A
+test proves a subscriber receives it and that the published fields carry the
+units and the frame FRET expects. Nothing in CLAVE gains a planner, a controller
+or a second simulator. Nothing here runs on hardware.
+
+This step was narrowed on 2026-09-15, and the reasoning is worth keeping. FRET
+is already a ROS 2 Jazzy stack running OpenMANIPULATOR-X and OpenMANIPULATOR-Y
+pick-and-place in MuJoCo, with ARCO planning and a joint-space controller behind
+it, and its `PickPlaceObservation` already takes an object position and a flag
+that starts a cycle. CLAVE's decision substitutes for the ball pose FRET's own
+camera pipeline supplies today, so the integration is a message rather than a
+subsystem.
+
+What the narrowing removes is a dependency CLAVE cannot schedule. FRET's scenes
+are tabletop, and a belt carrying moving objects is the theme of FRET v1.5,
+which has not shipped. Waiting for it would stall CLAVE behind a sibling
+roadmap; publishing the message does not. The conveyor scene and the moving pick
+belong in FRET's repository, where the state machine and the controller already
+live, and building a second pick-and-place stack here would put two in the
+family for the same reason v0.5.1 declined to build one.
+
+**What this costs v1.0.0.** Cycle time, from decision to placement, cannot be
+measured until something executes a pick. The benchmark reports it as unmeasured
+and names why, rather than substituting a number from a controller CLAVE wrote
+to measure itself.
 
 ### v1.0.0
 
@@ -283,8 +306,8 @@ the ladder rests on.
 - [x] data-pipeline -- Ingest public corpora, generate labeled rollouts from the world, record expert demonstrations, and produce reproducible splits. Dependencies: waste-taxonomy, learning-platform, sorting-world
 - [x] validation-harness -- Define sorting and picking metrics, the validation protocol on unseen scenes, and the pass gates. Dependencies: waste-taxonomy, sorting-world
 - [x] training-application -- Train every candidate by imitation from the scripted expert, then fine-tune with reinforcement learning under domain randomization. Dependencies: model-candidates, data-pipeline
-- [ ] sitl-runtime -- Close the loop in Rust: inference, safety override, decision publication, and the p99 latency benchmark. Dependencies: training-application, sorting-world
-- [ ] fret-integration -- Hand the published decision to FRET over ROS 2 so it drives the manipulator in SITL. Dependencies: sitl-runtime
+- [x] sitl-runtime -- Close the loop in Rust: inference, safety override, decision publication, and the p99 latency benchmark. Dependencies: training-application, sorting-world
+- [x] decision-publisher -- Publish the decision on a ROS 2 topic in the shape FRET's PickPlaceFSM consumes, so FRET can drive the manipulator without CLAVE gaining a planner, a controller or a second simulator. Dependencies: sitl-runtime
 - [ ] benchmark-suite -- Compare every candidate in one reproducible benchmark and record the chosen configuration. Dependencies: sitl-runtime, validation-harness
 
 Checkboxes above track the roadmap step, which closes when its deliverable
@@ -301,6 +324,7 @@ lands, not when its spec is written.
 | training-application | Approved | Approved | Approved | Delivered, tagged v0.7.0 |
 | validation-harness | Approved | Approved | Approved | Delivered, tagged v0.8.0 |
 | sitl-runtime | Approved | Approved | Approved | Delivered, tagged v0.9.0 |
+| decision-publisher | Approved | Approved | Approved | Delivered, tagged v0.10.0 |
 | every other spec | Not started | Not started | Not started | Not started |
 
 v0.1.0 delivered [docs/research/training-infrastructure-review.md](../../docs/research/training-infrastructure-review.md).

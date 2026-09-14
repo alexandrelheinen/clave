@@ -69,6 +69,9 @@ class RuntimeSettings:
         seed: Seed controlling belt speed, placement and spawn timing.
         presence_floor: Probability below which the classifier abstains.
         association_radius_meters: How far an identity association may reach.
+        belt_frame: Name of the coordinate frame pick points are expressed in,
+            carried into every published message so a consumer knows what the
+            numbers mean.
         routing: The operator's channel policy.
     """
 
@@ -82,6 +85,7 @@ class RuntimeSettings:
     seed: int
     presence_floor: float
     association_radius_meters: float
+    belt_frame: str
     routing: RoutingPolicy
 
     @classmethod
@@ -121,6 +125,7 @@ class RuntimeSettings:
             association_radius_meters=float(
                 _require(runtime, "association_radius_meters", "runtime")
             ),
+            belt_frame=str(_require(runtime, "belt_frame", "runtime")),
             routing=RoutingPolicy(
                 channels={str(key): int(value) for key, value in channels.items()},
                 reject_channel=int(_require(routing, "reject_channel", "routing")),
@@ -196,6 +201,8 @@ class RunReport:
         proposals: Proposals sent across the boundary.
         silent_frames: Frames where the predictor proposed nothing.
         decisions_received: Published decisions that arrived back.
+        published_to_ros: Decisions put on the ROS 2 topic.
+        ros_unavailable_reason: Why nothing was published, when nothing was.
         counters: The runtime's own counts, which are the authority.
         latencies_seconds: Frame to published decision, one per proposal.
         belt_speed: Belt speed this run drew, in meters per second.
@@ -219,6 +226,8 @@ class RunReport:
     threads: int = 0
     frame_height: int = 0
     frame_width: int = 0
+    published_to_ros: int = 0
+    ros_unavailable_reason: str | None = None
 
     @property
     def budget_seconds(self) -> float:
@@ -262,6 +271,8 @@ class RunReport:
                 "p99": self.percentile(0.99),
                 "worst": max(self.latencies_seconds, default=0.0),
             },
+            "published_to_ros": self.published_to_ros,
+            "ros_unavailable_reason": self.ros_unavailable_reason,
             "machine": self.machine,
             "threads": self.threads,
             "frame_height": self.frame_height,
@@ -279,6 +290,7 @@ def run(
     settings: RuntimeSettings,
     predictor: Predictor,
     directory: Path,
+    publish_to_ros: bool = False,
 ) -> RunReport:
     """Run the loop end to end and report what it did.
 
@@ -287,6 +299,10 @@ def run(
         settings: What to run and for how long.
         predictor: What proposes a pick per frame.
         directory: Where the sockets and the runtime configuration go.
+        publish_to_ros: Put every published decision on a ROS 2 topic. A machine
+            with no ROS installation runs the loop anyway and says in the report
+            that nothing was published, because a missing consumer is not a
+            reason to refuse to decide.
 
     Returns:
         The report, with one latency sample per proposal.
@@ -327,9 +343,16 @@ def run(
         frame_width=settings.frame_width,
     )
 
+    publisher = _publisher(settings, report) if publish_to_ros else None
+
     directory.mkdir(parents=True, exist_ok=True)
     paths = BridgePaths.under(directory)
-    bridge = Bridge(locate_binary(root), paths, runtime_config(raw, settings.routing))
+    bridge = Bridge(
+        locate_binary(root),
+        paths,
+        runtime_config(raw, settings.routing),
+        on_decision=None if publisher is None else publisher.publish,
+    )
     with bridge:
         next_capture = 0.0
         for _ in range(int(settings.seconds / plan.timestep)):
@@ -386,7 +409,29 @@ def run(
 
         report.counters = bridge.counters()
         report.decisions_received = bridge.decisions_received
+    if publisher is not None:
+        report.published_to_ros = publisher.published
+        publisher.close()
     return report
+
+
+def _publisher(settings: RuntimeSettings, report: RunReport) -> Any:
+    """Start the ROS 2 publisher, or record why there is none.
+
+    Args:
+        settings: Carries the frame the pick point is expressed in.
+        report: Receives the reason when ROS is absent.
+
+    Returns:
+        The publisher, or None when ROS 2 is not installed here.
+    """
+    from clave.ros.publisher import DecisionPublisher, RosUnavailable
+
+    try:
+        return DecisionPublisher(frame_id=settings.belt_frame)
+    except RosUnavailable as error:
+        report.ros_unavailable_reason = str(error)
+        return None
 
 
 def _labels(
