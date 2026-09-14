@@ -111,6 +111,39 @@ count at one seed rather than as an error.
 Parked slots are now pinned each step with zero velocity. `AC-SCENE-03` exists
 for this class of defect, and it caught it.
 
+## Arm actuation, added at v0.5.1
+
+v0.5.0 placed the manipulator in the scene and never moved it. Nothing wrote
+`data.ctrl`, which had consequences two steps later that were not obvious here:
+v0.7.0 could not train a reinforcement candidate at all, because there was no
+action to take and no reward to earn, and every policy it did train was
+vision-only, because the dataset had no proprioception to record.
+
+The arm now reaches a Cartesian target by damped least squares on the position
+Jacobian, writing joint angles into the position actuators and clipping to the
+limits the menagerie declares. Damping is not decoration: an undamped
+pseudo-inverse diverges near a singular configuration, and a four degree of
+freedom arm reaching across a belt sits near one routinely.
+
+Measured on the shipped world, commanding a target 0.338 m from the end
+effector closes the distance to 0.040 m.
+
+This is a reaching controller and not a pick-and-place state machine. FRET
+already owns a robot-agnostic `PickPlaceFSM`, and building a second one here
+would put two in the family.
+
+### A fragility it exposed
+
+The scene turned out to be stable only while a conveyor was stepping it. Parked
+pool objects sat below the floor, and since a MuJoCo plane collides from above
+only, they fell forever; v0.6.0 worked around that by having the conveyor pin
+every parked slot each step. Building the world and stepping it directly, which
+is what a controller test does, reproduced the original NaN.
+
+Parked objects now rest on the floor clear of the belt, so the scene is stable
+on its own. The conveyor still pins them, which is no longer about stability but
+about keeping a recorded rollout identical from one run to the next.
+
 ## Limitations
 
 **Objects are parametric primitives, not scanned meshes.** Mass, footprint and
