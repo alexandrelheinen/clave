@@ -138,8 +138,37 @@ two separately, because they have different causes and different fixes.
 ## Corpus label mappings
 
 One table per corpus shortlisted in
-[the v0.1.0 review](research/training-infrastructure-review.md). ZeroWaste is
-absent because it failed the license constraint there.
+[the v0.1.0 review](research/training-infrastructure-review.md).
+
+### ZeroWaste
+
+Four foreground material types are annotated; everything else is background
+([Bashkirova et al., CVPR 2022](https://arxiv.org/abs/2106.02740), read
+2026-09-14). Splits are 3,002 train, 572 validation and 929 test images, with a
+further 6,212 unlabeled frames captured under the same conditions.
+
+| Corpus label | Maps to | Loss |
+| --- | --- | --- |
+| cardboard | `M-08`, `M-09`, `M-10` | Merges all three fiber classes: the label covers parcel packaging, boxboard such as cereal boxes, and carton food packaging, which CLAVE routes to one channel but counts separately |
+| soft_plastic | `M-04` | Film. Resin is not recorded |
+| rigid_plastic | `M-01`, `M-02`, `M-03`, `M-04` | Spans every rigid plastic class. The label covers food containers and bottles without recording resin, which is the distinction `M-01` through `M-03` exist to make |
+| metal | `M-05`, `M-06` | Ferrous and non-ferrous are merged, which is the distinction a magnet makes and a color camera cannot |
+
+**What it labels instead of material.** It does label material, which makes it
+the only shortlisted corpus whose vocabulary is the same kind of thing as
+CLAVE's. What it does not do is separate within a material family: four labels
+stand where CLAVE has ten recoverable classes.
+
+**Classes it supplies no signal for.** `M-07` glass and `M-11` residue. Glass is
+not among the annotated foreground types, and residue is unlabeled background,
+so neither receives a positive example.
+
+ZeroWaste advanced at [v0.1.2](research/training-infrastructure-review.md) once
+the maintainer confirmed CLAVE is personal research, which satisfies its
+NonCommercial term. It is now the strongest corpus in the shortlist: an
+operating recovery-facility conveyor, localization annotations, and roughly five
+times SpectralWaste's labeled volume. Its four labels are coarse, but they are
+coarse in the direction CLAVE can refine later rather than orthogonal to it.
 
 ### SpectralWaste
 
@@ -257,11 +286,18 @@ TACO repository and mapping the remaining categories. Twenty-six of sixty are
 mapped. No claim in this document depends on the unmapped remainder, but v0.6.0
 cannot build a TACO training set without it.
 
-**ZeroWaste is unmapped.** Closed by the maintainer deciding whether CLAVE's
-stated intent is commercial. ZeroWaste failed the license constraint at v0.1.0
-on `CC BY-NC 4.0`. If the intent narrows to research, ZeroWaste advances and
-needs a fourth mapping table here, and it would be the strongest of the four for
-both scene and class coverage.
+**ZeroWaste's coarse labels have to be refined, not just mapped.** It is now
+mapped and is the strongest corpus in the shortlist, but three of its four
+labels span several CLAVE classes: `rigid_plastic` covers four, `cardboard`
+covers three, and `metal` covers two. Training on it directly teaches a model to
+predict the coarse label, not the class. Closed at v0.6.0 by deciding whether
+CLAVE trains a coarse head and refines it, trains only on the classes a corpus
+separates, or relabels a subset. That is a real design decision, not a mapping
+exercise.
+
+**Its NonCommercial term binds anything trained on it.** A model trained on
+ZeroWaste cannot later be used commercially without retraining. Closed only by
+CLAVE's intent staying personal research.
 
 **Film handling is an operator decision, not a taxonomy decision.** `M-04`
 carries film, and many facilities route film to residue because it wraps
