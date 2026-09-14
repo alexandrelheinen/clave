@@ -60,3 +60,6 @@ MUJOCO_LOG.TXT
 tmp/
 temp/
 .cache/
+
+# --- Training runs (checkpoints, never committed) ---
+runs/

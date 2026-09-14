@@ -82,6 +82,35 @@ def _build_act() -> Any:
     return ACTPolicy(ACTConfig(input_features=inputs, output_features=outputs)).eval()
 
 
+def build_act(chunk_size: int) -> Any:
+    """Build ACT with a chunk size suited to the data at hand.
+
+    v0.4.0 benchmarked the upstream default of 100. A rollout here captures one
+    observation every half second, so a chunk of 100 would reach far past the
+    1.13 second window an object is reachable for, and would be almost entirely
+    padding. Training uses a shorter horizon and records that it differs from
+    the benchmarked configuration.
+
+    Args:
+        chunk_size: Actions predicted per observation.
+
+    Returns:
+        The policy.
+    """
+    from lerobot.policies.act.configuration_act import ACTConfig
+    from lerobot.policies.act.modeling_act import ACTPolicy
+
+    inputs, outputs = _lerobot_features()
+    return ACTPolicy(
+        ACTConfig(
+            input_features=inputs,
+            output_features=outputs,
+            chunk_size=chunk_size,
+            n_action_steps=chunk_size,
+        )
+    ).eval()
+
+
 def _build_diffusion_policy() -> Any:
     """Build Diffusion Policy from lerobot."""
     from lerobot.policies.diffusion.configuration_diffusion import DiffusionConfig
