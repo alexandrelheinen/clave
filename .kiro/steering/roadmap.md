@@ -256,7 +256,7 @@ the ladder rests on.
 
 ## Specs (dependency order)
 
-- [ ] training-infrastructure-review -- Survey waste datasets, candidate architectures, and training infrastructure, and name what advances. Dependencies: none
+- [x] training-infrastructure-review -- Survey waste datasets, candidate architectures, and training infrastructure, and name what advances. Dependencies: none
 - [ ] waste-taxonomy -- Define material classes from recovery-facility practice, map everyday objects onto them, and set the channel and reject policy. Dependencies: training-infrastructure-review
 - [ ] learning-platform -- Choose the deep learning framework, corpus storage and versioning, experiment tracking, and the reproducibility rules. Dependencies: training-infrastructure-review
 - [ ] model-candidates -- Put at least three open-source perception architectures and three policy architectures behind one interface. Dependencies: training-infrastructure-review, learning-platform
@@ -272,11 +272,13 @@ lands, not when its spec is written.
 
 | Spec | Requirements | Design | Tasks | Step |
 | --- | --- | --- | --- | --- |
-| training-infrastructure-review | Approved | Approved | Approved | Awaiting implementation |
+| training-infrastructure-review | Approved | Approved | Approved | Delivered, tagged v0.1.0 |
 | every other spec | Not started | Not started | Not started | Not started |
 
-`training-infrastructure-review` is ready for implementation. Implementation
-runs through `/kiro-impl`, which only the maintainer can invoke.
+v0.1.0 delivered [docs/research/training-infrastructure-review.md](../../docs/research/training-infrastructure-review.md).
+Two of its acceptance criteria are partially unmet and recorded in that
+document's open questions rather than closed silently: the compute budget waits
+on a maintainer input, and release-date verification is incomplete.
 
 Authoring waves, given those dependencies:
 
