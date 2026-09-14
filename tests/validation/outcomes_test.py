@@ -75,8 +75,24 @@ def test_unknown_predicted_class_is_refused_by_name() -> None:
 
 def test_absent_prediction_is_accepted() -> None:
     """AC-OUTCOME-01: no prediction is a state, not an error."""
-    outcomes = OutcomeSet("fixture", [_record(predicted_class=None)])
+    outcomes = OutcomeSet(
+        "fixture",
+        [_record(predicted_class=None, decision_latency_seconds=None)],
+    )
     assert outcomes.outcomes[0].predicted_class is None
+
+
+def test_a_record_with_no_prediction_carries_no_decision_latency() -> None:
+    """An object nobody decided about has no frame-to-decision time.
+
+    A zero there would enter the latency summary as an instant decision that
+    never happened, which is how an absence turns into a flattering number.
+    """
+    with pytest.raises(OutcomeError, match="no prediction"):
+        OutcomeSet(
+            "fixture",
+            [_record(predicted_class=None, decision_latency_seconds=0.1)],
+        )
 
 
 def test_unpicked_record_carrying_a_channel_is_refused() -> None:
@@ -95,6 +111,14 @@ def test_negative_duration_is_refused() -> None:
     """AC-OUTCOME-01: a negative duration is not a time anything took."""
     with pytest.raises(OutcomeError, match="decision_latency_seconds"):
         OutcomeSet("fixture", [_record(decision_latency_seconds=-0.01)])
+
+
+def test_a_record_may_carry_no_decision_latency_at_all() -> None:
+    """None means the question does not apply, which is not the same as zero."""
+    outcomes = OutcomeSet(
+        "fixture", [_record(predicted_class=None, decision_latency_seconds=None)]
+    )
+    assert outcomes.outcomes[0].decision_latency_seconds is None
 
 
 def test_negative_cycle_time_is_refused() -> None:

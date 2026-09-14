@@ -27,10 +27,12 @@ that affects hardware safety is Rust and hardened.
 reinforcement learning in MuJoCo simulation via FRET, domain randomization
 for sim-to-real transfer. Trained policies are serialized and versioned.
 
-**Inference runtime**: selected at the `learning-platform` step of the
-roadmap and wrapped by Rust code that enforces the policy interface contract.
-Through the v1.x line it runs on the development machine against FRET's
-MuJoCo SITL.
+**Inference runtime**: Python, in its own process, with Rust on the other side
+of a versioned JSON proposal over a Unix datagram. Rust never loads a model,
+because the layer that can override inference earns its place by sharing no code
+with it. `D-05` in [decisions.md](decisions.md) records the choice and the three
+alternatives it beat, and `crates/clave-safety/contract/proposal.md` specifies
+the boundary. Through the v1.x line everything runs on the development machine.
 
 ## Hardened by default
 

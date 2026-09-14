@@ -382,7 +382,10 @@ class ValidationSummary:
             cannot present a fixture as a measurement.
         matrix: The confusion matrix over all records.
         routing: What became of each presented object.
-        decision_latency: Frame to decision, over every record.
+        decision_latency: Frame to decision, over the records that carry one.
+            A record for an object the system never decided about carries none,
+            and including a zero for it would report an instant decision that
+            never happened.
         cycle_time: Decision to placement, over the records that carry one.
         named_confusions: The three confusions the taxonomy names.
         seen_accuracy: Accuracy over instances seen in training, or None.
@@ -426,7 +429,11 @@ class ValidationSummary:
             matrix=ConfusionMatrix.over(records),
             routing=RoutingCounts.over(records, channel_map),
             decision_latency=TimingSummary.over(
-                [record.decision_latency_seconds for record in records]
+                [
+                    record.decision_latency_seconds
+                    for record in records
+                    if record.decision_latency_seconds is not None
+                ]
             ),
             cycle_time=TimingSummary.over(
                 [

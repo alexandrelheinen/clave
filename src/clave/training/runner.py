@@ -179,6 +179,11 @@ def _checkpoint(config: TrainingConfig, model: Any, optimizer: Any, epoch: int) 
             "epoch": epoch,
             "model": model.state_dict(),
             "optimizer": optimizer.state_dict(),
+            # An architecture whose shape depends on a hyperparameter cannot be
+            # rebuilt from its name alone. ACT's action chunk is one of those,
+            # and a checkpoint that does not carry it can only be loaded by a
+            # reader that guesses the same number.
+            "act_chunk_size": config.act_chunk_size,
         },
         _checkpoint_path(config),
     )

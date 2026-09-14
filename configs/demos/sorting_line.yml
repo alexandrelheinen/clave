@@ -1,0 +1,33 @@
+# The sorting line, as the scripted teacher sees it.
+#
+# Every tunable is here, including the angle the video is filmed from. A
+# demonstration whose viewing angle is buried in Python is one nobody can vary
+# without editing code.
+
+scenario:
+  name: sorting-line
+  description: >-
+    The belt carries tagged objects past the manipulator. The scripted expert
+    proposes a pick for whichever reachable object has least time left, the Rust
+    safety layer accepts or overrides it, and the decision is published. The arm
+    tracks the proposal; nothing grasps, because nothing in CLAVE executes a
+    pick yet.
+  predictor: scripted
+  seed: 0
+  seconds: 25.0
+  publish_to_ros: false
+
+video:
+  width: 960
+  height: 540
+  frames_per_second: 30
+  # Simulated seconds between rendered frames. At 0.05 with 30 frames a second,
+  # the recording plays at 1.5 times simulated time.
+  interval_seconds: 0.05
+  # An oblique view down the belt, which shows the objects arriving and the arm
+  # reaching across them. The overhead camera the model sees is a different
+  # view and a worse one to watch.
+  azimuth_degrees: 150.0
+  elevation_degrees: -20.0
+  distance_meters: 2.0
+  lookat_meters: [0.0, -0.10, 0.42]
