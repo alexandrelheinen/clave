@@ -20,6 +20,16 @@ if git submodule status --recursive | grep -q '^+'; then
 fi
 echo "submodules OK"
 
+echo "==> [1b/3] merge conflict markers"
+# A conflict marker committed into a tracked file is invisible to every other
+# gate: ruff and mypy never see Markdown, and a corrupted document still renders.
+# One slipped into docs/decisions.md and survived a merge to main.
+if git grep -nE '^(<<<<<<< |={7}$|>>>>>>> )' -- . ':!standards' ':!third_party' >/dev/null 2>&1; then
+  git grep -nE '^(<<<<<<< |={7}$|>>>>>>> )' -- . ':!standards' ':!third_party' >&2
+  fail "a merge conflict marker is committed in a tracked file"
+fi
+echo "no conflict markers"
+
 echo "==> [2/3] python platform"
 if [[ ! -f pyproject.toml ]]; then
   echo "no pyproject.toml yet, skipping Python gates."
