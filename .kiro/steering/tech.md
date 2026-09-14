@@ -9,7 +9,10 @@ on neural inference, wrapped by a deterministic safety layer in Rust.
 object tracking, and pick decisions into an end-to-end policy trained via
 imitation learning (from human demonstrations) and reinforcement learning
 (in MuJoCo simulation). The policy outputs continuous pick coordinates, timing
-offsets, and channel routing decisions as continuous action distributions.
+offsets, and channel routing decisions. The maintainer settled the output shape
+on 2026-09-14: a discrete pick decision carrying a pick location and a material
+class, not a continuous action or a trajectory. Motion remains FRET's and
+ARCO's.
 
 **Safety layer**: A Rust runtime enforces hard invariants. Zero-copy shared
 memory transfers visual embeddings to the neural inference layer and receives

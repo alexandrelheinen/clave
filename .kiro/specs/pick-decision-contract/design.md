@@ -352,7 +352,27 @@ clock thread and the check costs one comparison.
 ```rust
 pub const CONTRACT_VERSION: u16 = 1;
 
-pub enum MaterialClass { Glass, Paper, Cardboard, Plastic, Metal, Trash }
+// MaterialClass is owned by docs/waste-taxonomy.md, not by this crate. Adding,
+// merging or retiring a class there raises CONTRACT_VERSION and invalidates
+// every golden fixture, which is why that document marks its identifiers
+// append-only and names this contract as the consumer a rename breaks.
+
+/// The material classes fixed by docs/waste-taxonomy.md at v0.2.0.
+/// Identifiers are append-only there, so a variant is never removed or
+/// renumbered: a retired class keeps its variant and its discriminant.
+pub enum MaterialClass {
+    Pet = 1,            // M-01
+    Hdpe = 2,           // M-02
+    Pp = 3,             // M-03
+    OtherPlastic = 4,   // M-04
+    Aluminum = 5,       // M-05
+    Ferrous = 6,        // M-06
+    Glass = 7,          // M-07
+    Cardboard = 8,      // M-08
+    MixedPaper = 9,     // M-09
+    BeverageCarton = 10,// M-10
+    Residue = 11,       // M-11
+}
 
 pub struct ChannelId(u16);
 pub struct ObjectId(u64);
