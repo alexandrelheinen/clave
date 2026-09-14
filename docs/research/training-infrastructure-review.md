@@ -95,6 +95,18 @@ not been supplied. `AC-COMPUTE-01` needs the accelerator model, its memory, and
 whether access is continuous or shared. No agent can observe what machines this
 project may use, and assuming one would be the fabrication `AC-DOC-04` forbids.
 
+One partial observation is on the record. The development machine was inspected
+on 2026-09-14 and exposes no CUDA-capable accelerator: `nvidia-smi` is absent,
+and the environment is WSL2, where an absent `nvidia-smi` can also mean GPU
+passthrough was never configured rather than that no card exists. MuJoCo 3.10.0
+is installed and runs on CPU. This narrows the question rather than answering
+it: it says nothing about whether the project has access to an accelerator on
+another machine, which is the answer `AC-COMPUTE-01` actually needs.
+
+If the development machine turns out to be the training machine, the budget is
+CPU-only, and that alone would reject several shortlisted architectures under
+`S4`. Nothing is rejected on that basis here, because the premise is unconfirmed.
+
 Two consequences follow, and both are visible in the registers below.
 
 Every architecture row carries `pending budget` in its estimated training cost
@@ -263,7 +275,10 @@ Each entry names who can close it and what closing it requires.
 **The compute budget is unresolved.** Closed by the maintainer supplying the
 accelerator model, its memory, and whether access is continuous or shared. Until
 then, seven architectures carry `Advance (provisional)` rather than `Advance`,
-and no option can be rejected on cost.
+and no option can be rejected on cost. The development machine was found to
+expose no CUDA accelerator on 2026-09-14, which narrows the question without
+closing it: what matters is whether the project can reach an accelerator at all,
+not what one laptop has.
 
 **ZeroWaste hinges on how CLAVE's intended use is stated.** Closed by the
 maintainer. `CC BY-NC 4.0` forbids commercial use, and the README describes an
