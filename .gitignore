@@ -52,6 +52,9 @@ credentials.json
 # --- Local overrides ---
 *.local.yml
 
+# --- MuJoCo ---
+MUJOCO_LOG.TXT
+
 # --- Misc ---
 *.log
 tmp/
