@@ -2,23 +2,40 @@
 
 ## Architecture
 
-A staged pipeline: capture, inference, tracking, then pick decision. Every
-queue between two stages is bounded, and every bounded queue names what
-happens when it fills, meaning block, drop the oldest, or drop the newest.
-There is no default policy. A stage that cannot state its policy is not
-designed yet.
+A hybrid system with two layers: a learned perception-action policy running
+on neural inference, wrapped by a deterministic safety layer in Rust.
 
-Model training sits outside the pipeline and hands over an ONNX artifact.
-A Python process is never in the loop at runtime.
+**Learned layer**: Spatial-temporal neural networks fuse visual perception,
+object tracking, and pick decisions into an end-to-end policy trained via
+imitation learning (from human demonstrations) and reinforcement learning
+(in MuJoCo simulation). The policy outputs continuous pick coordinates, timing
+offsets, and channel routing decisions as continuous action distributions.
+
+**Safety layer**: A Rust runtime enforces hard invariants. Zero-copy shared
+memory transfers visual embeddings to the neural inference layer and receives
+action distributions back. A deterministic safety checker inspects every
+action: collision checks against known geometry, actuator limit enforcement,
+and emergency-stop interlocks ensure the physical system never enters an
+unsafe state. Unsafe actions are overridden with safe fallbacks.
+
+Policy training sits outside the runtime and hands over a serialized policy
+artifact. A Python process is never in the loop at runtime. Inference runs on
+BOSSA edge hardware (ARM Linux).
 
 ## Core Technologies
 
-- **Language on the clock**: Rust, edition 2024, resolver 3, toolchain
-  pinned in `rust-toolchain.toml` with the same floor as `rust-version` in
-  `Cargo.toml`.
-- **Language off the clock**: Python, for model training and dataset
-  tooling.
-- **Handover format**: ONNX, loaded by the Rust runtime.
+- **Safety layer**: Rust, edition 2024, resolver 3, toolchain pinned in
+  `rust-toolchain.toml`. Handles hardware communication, collision checking,
+  and safety interlocks.
+- **Inference runtime**: Optimized neural runtime on BOSSA (ARM Linux,
+  typically ONNX Runtime or TensorRT for efficiency).
+- **Policy training**: Python with PyTorch or JAX for imitation and
+  reinforcement learning. Domain randomization for sim-to-real transfer.
+- **Training environment**: MuJoCo simulation via FRET, providing kinematic
+  constraints, object dynamics, and reward functions for RL.
+- **Policy format**: Serialized neural network weights plus metadata. A
+  specification defines the policy interface (input/output dimensions,
+  sampling strategy).
 - **Layout**: one Cargo workspace per repository, crates under
   `crates/<name>/`, shared metadata and lints in `[workspace.package]` and
   `[workspace.lints]`.
@@ -30,12 +47,14 @@ approved specification, and the Rust gates below activate with it.
 
 ### Lint tiers
 
-Pipeline crates take the hardened tier from
-`standards/guidelines/languages/rs.md`: `arithmetic_side_effects`,
-`as_conversions`, `indexing_slicing`, and the cast lints all deny. A frame
-index that silently wraps or a cast that silently truncates is a fault in
-this domain, not a style question. Tooling crates, dataset preparation, and
-anything offline take the baseline tier.
+Safety-layer crates (collision checking, actuator limits, emergency stops)
+take the hardened tier from `standards/guidelines/languages/rs.md`:
+`arithmetic_side_effects`, `as_conversions`, `indexing_slicing`, and the
+cast lints all deny. A coordinate overflow or a silently truncated bound
+check is a fault in this domain, not a style question. Neural inference
+wrapper crates, policy serialization, and anything not in the safety path
+take the baseline tier. Training and dataset tooling are Python and use
+Python linting standards.
 
 Lint configuration lives in `[workspace.lints]` in the root `Cargo.toml`,
 never in crate-root attributes and never in CI flags. Suppress with
@@ -65,11 +84,13 @@ at 80% lines through `cargo llvm-cov`.
 
 ### Latency as a tested property
 
-Anything in the capture-to-decision path states its latency budget in its
-crate documentation and carries a Criterion benchmark under `benches/`.
-Budgets are measured at p99, not at the mean, because a pipeline that
-averages well and misses one frame in a hundred still drops that object on
-the floor. Moving a budget is a specification change, not an
+The entire perception-to-safety-check path has a latency budget measured at
+p99. Every component in the Rust safety layer states its budget in crate
+documentation and carries Criterion benchmarks under `benches/`. The neural
+inference latency is measured on target hardware (BOSSA ARM edge device) and
+becomes a constraint on model complexity and quantization strategy. A system
+that averages well but misses one frame in a hundred still drops that object
+on the floor. Moving a latency budget is a specification change, not an
 implementation detail.
 
 ## Development Environment
@@ -98,12 +119,21 @@ until it exits 0.
 
 ## Key Technical Decisions
 
-- **Rust owns the clock, Python owns the training.** The split is drawn at
-  the ONNX artifact, so the classifier can be replaced without touching the
-  pipeline.
-- **Model artifacts are referenced, never committed.** A model is named by
-  version and checksum and fetched by a script. Datasets are public ones
-  (TrashNet, TACO, ZeroWaste) referenced by URL.
+- **Rust owns safety, neural networks own perception-action.** The safety
+  layer in Rust enforces invariants: collision checks, actuator limits, and
+  emergency stops. Neural inference provides perception and policy execution
+  but is always checked against safety constraints before physical action.
+- **Learned policy is trained in simulation, deployed with safety checks.**
+  MuJoCo simulation via FRET provides the training environment. Domain
+  randomization bridges sim-to-real gaps. The trained policy runs on BOSSA
+  ARM hardware under Rust safety oversight.
+- **Zero-copy shared memory between Rust and neural inference.** Visual
+  embeddings flow one direction; action distributions flow back. Minimizing
+  latency and memory copies is essential for real-time performance.
+- **Policy artifacts are versioned separately from code.** A policy is named
+  by training timestamp and checksum, fetched by a script. Training data
+  (demonstrations, MuJoCo trajectories) are logged and versioned to enable
+  policy retraining and debugging.
 - **Standards are pinned submodules.** `standards/guidelines` and
   `standards/cc-sdd` sit at tags, so any commit reproduces the rules that
   applied when it was written. Moving a pin is its own commit.

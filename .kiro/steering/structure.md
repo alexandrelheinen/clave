@@ -2,19 +2,26 @@
 
 ## Organization Philosophy
 
-One Cargo workspace, crates split by pipeline stage rather than by
-technical layer, so a stage owns its types, its queue policy, and its
-latency budget together. Shared rules are never copied into a crate: they
-live once in `standards/` and are referenced.
+One Cargo workspace, crates split by responsibility: safety-critical
+components in Rust, neural inference abstractions in Rust wrappers around
+external runtimes. The safety layer owns collision checking, actuator
+limits, and emergency stops. The inference layer owns policy loading,
+embeddings, and action sampling. No mixing: a crate either enforces safety
+constraints or it does not. Shared rules are never copied into a crate:
+they live once in `standards/` and are referenced.
 
 ## Directory Patterns
 
 ### Crates
 **Location**: `crates/<name>/`
-**Purpose**: Rust source, one crate per pipeline stage or shared concern.
-**Example**: A stage crate holds its unit tests co-located, its integration
-tests in `tests/`, and its Criterion benchmarks in `benches/` when it sits
-in the capture-to-decision path.
+**Purpose**: Rust source, organized by responsibility. Safety-layer crates
+(collision, actuators, interlocks) are hardened and benchmarked. Inference
+crates (policy loading, embeddings, shared memory) handle communication with
+neural runtimes. Shared utility crates support both layers.
+**Example**: A safety crate checks every pick action against collision bounds
+and actuator limits before allowing execution. It holds unit tests co-located,
+integration tests against simulated conveyor geometry in `tests/`, and
+Criterion benchmarks in `benches/` to prove latency is within budget.
 
 ### Specifications
 **Location**: `.kiro/specs/<feature>/`
@@ -36,11 +43,13 @@ rule means moving the pin.
 
 ### Project documentation
 **Location**: `docs/`
-**Purpose**: `guidelines.md` for coding notes specific to CLAVE, and the
-logo under `images/`. A gate or constraint deliberately loosened is
-recorded in `docs/decisions.md`, which lands with the first such decision.
-The project's one standing deviation, its Portuguese name, is recorded in
-`CONTRIBUTING.md` instead.
+**Purpose**: `guidelines.md` for coding notes specific to CLAVE (safety-layer
+Rust hardening, neural inference integration, policy training). Training
+guides and policy interface definitions live here. The logo is under
+`images/`. A gate or constraint deliberately loosened is recorded in
+`docs/decisions.md`, which lands with the first such decision. The project's
+one standing deviation, its Portuguese name, is recorded in `CONTRIBUTING.md`
+instead.
 
 ### Scripts
 **Location**: `scripts/`
@@ -94,17 +103,31 @@ use crate::config::Config;
 
 ## Code Organization Principles
 
-- **The clock draws the boundary.** Anything between capture and the pick
-  decision is Rust. Training and dataset work is Python and hands over an
-  ONNX file.
-- **Stages talk through bounded queues.** The overflow policy is part of
-  the interface, stated where the queue is declared.
-- **Contracts point outward, source does not come in.** The pick decision
-  is a serializable type defined here; consumers adapt to it. ARCO, FRET,
-  Luthier, and BOSSA are never vendored.
+- **Safety layer in Rust, learned layer behind a contract.** Anything that
+  affects hardware safety (collision checks, actuator limits, interlocks) is
+  Rust and hardened. Policy learning and inference are Python and external
+  runtimes, called through a zero-copy shared memory interface that minimizes
+  latency.
+- **Neural inference is wrapped by Rust.** BOSSA provides the inference
+  runtime; a Rust wrapper handles embeddings, action sampling, and latency
+  measurement. The wrapper enforces the contract between neural policy and
+  safety layer.
+- **Zero-copy communication between Rust and neural inference.** Visual
+  embeddings and action distributions flow through shared memory, not
+  serialization. Latency is measured end-to-end: capture to safety-checked
+  action.
+- **Contracts point outward, source does not come in.** The policy interface
+  (input dimensions, output distributions, quantization) and pick decision
+  (trajectory waypoints) are defined here; ARCO, FRET, Luthier, and BOSSA
+  adapt to them. They are never vendored.
+- **Training happens in Python and MuJoCo, independent of runtime.** Policy
+  training runs on development machines using PyTorch, imitation learning
+  from human demonstrations, and RL in MuJoCo via FRET. Trained policies are
+  versioned and fetched by deployment scripts, not committed to this repo.
 - **Documentation is timeless.** A README or a file under `docs/`
-  describes what the system is, in the present tense. History belongs to
-  git, the changelog, and the issue tracker.
+  describes what the system is, in the present tense. Training data,
+  demonstrations, and experiment logs are archived separately. History
+  belongs to git, the changelog, and the issue tracker.
 - **Traceability runs both ways.** Every acceptance criterion is referenced
   by at least one test, and every test guarding a requirement names that
   requirement's id, so the mapping is greppable from either side.

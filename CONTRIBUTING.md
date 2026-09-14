@@ -25,10 +25,12 @@ the standards. Do not write rules into them.
 
 ## What this repository is
 
-CLAVE is a Rust real-time perception pipeline for automated sorting.
-Models train in Python and ship as ONNX; the pipeline that runs against a
-latency budget is Rust. See [README.md](README.md) for the problem
-statement.
+CLAVE is a learned perception-action system for waste sorting under hard
+safety constraints. A neural policy network fuses visual perception, object
+tracking, and pick timing into an end-to-end learned policy trained via
+imitation and reinforcement learning. The policy runs under a deterministic
+safety layer in Rust that enforces collision checks, actuator limits, and
+hardware interlocks. See [README.md](README.md) for the problem statement.
 
 ## Ecosystem context
 
@@ -38,11 +40,11 @@ into this repository.
 
 | Project | Role |
 | --- | --- |
-| **CLAVE** (this repo) | Perception, tracking, and pick decision under a latency budget |
-| **[ARCO](https://github.com/alexandrelheinen/arco)** | Motion planning and control algorithms |
-| **[FRET](https://github.com/alexandrelheinen/fret)** | ROS 2 and MuJoCo effector trajectories |
-| **[Luthier](https://github.com/alexandrelheinen/luthier)** | Photogrammetry and point clouds |
-| **[BOSSA](https://github.com/alexandrelheinen/bossa)** | Edge runtime and telemetry on ARM Linux |
+| **CLAVE** (this repo) | Learned perception-action policy, safety interlocks |
+| **[ARCO](https://github.com/alexandrelheinen/arco)** | Motion planning for continuous trajectory waypoints |
+| **[FRET](https://github.com/alexandrelheinen/fret)** | Training environment, kinematic constraints, reward functions |
+| **[Luthier](https://github.com/alexandrelheinen/luthier)** | Photogrammetry for sim-to-real calibration |
+| **[BOSSA](https://github.com/alexandrelheinen/bossa)** | Edge inference runtime, neural telemetry logging |
 
 ## Development setup
 
@@ -121,16 +123,22 @@ No secrets in the tree, ever. Commit format and PR hygiene follow
 General agent behavior, including the no-fabricated-evidence rule, follows
 [agents/claude.md](standards/guidelines/agents/claude.md). CLAVE adds:
 
-1. Do not claim a gate passed without running it, and do not claim
-   hardware validation without evidence. This machine has no camera and no
-   belt.
-2. Do not vendor arco, fret, luthier, or bossa into this repository.
-3. Do not add a hardware SDK or a heavy model runtime before a spec calls
-   for it.
-4. Do not implement ahead of an approved spec.
-5. Requirements come from a spec, never from commit history. Parts of this
-   repository's history describe a design that was abandoned, and reading
-   intent out of a diff is guessing either way.
+1. Do not claim a gate passed without running it. Do not claim inference
+   latency or policy performance without evidence from the target BOSSA
+   hardware.
+2. Do not vendor arco, fret, luthier, or bossa into this repository. Safety
+   contracts point outward; source does not come in.
+3. Do not commit trained policies to the repository. Policies are versioned
+   and fetched by deployment scripts.
+4. Do not implement ahead of an approved spec. Policy training strategies,
+   safety constraints, and hardware limits must be specified before
+   implementation.
+5. Requirements come from a spec, never from commit history or training
+   metrics. Policy performance data is archived but not a substitute for
+   specification and test evidence.
+6. When writing training code or policy interfaces, follow Python and Rust
+   style rules from [standards/guidelines/languages/](standards/guidelines/languages/),
+   and document policy versioning and interface contracts in crate docs.
 
 The precedence order when documents disagree is in
 [standards/README.md](standards/README.md#precedence).

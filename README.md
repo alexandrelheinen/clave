@@ -4,12 +4,14 @@
 
 **CLAVE** = **C**oleta de **L**ixo **A**través de **V**isão **E**mbarcada
 
-CLAVE sorts recyclable waste traveling on a conveyor belt. A camera watches
-the line, a neural network classifies each object, a tracker follows it
-across frames, and the pipeline decides which channel it belongs in and when
-to reach for it, all inside a latency budget it measures rather than
-assumes. Models train in Python and ship as ONNX; everything that runs
-against the clock is Rust.
+CLAVE sorts recyclable waste traveling on a conveyor belt through a learned
+perception-action policy. A neural architecture fuses visual perception,
+object tracking, and pick timing into an end-to-end system trained via
+imitation and reinforcement learning. The policy runs against the clock with
+hard safety guarantees: a Rust core handles hardware interlocks and emergency
+stops, while neural inference provides perception and decision-making. Models
+train in Python and MuJoCo simulation; optimized inference runs on the BOSSA
+edge runtime.
 
 <br clear="left">
 
@@ -18,20 +20,30 @@ same family as **arco**, **fret**, **luthier**, and **bossa**.
 
 ## What this project is about
 
-The classifier is the easy half. Classifying an object on a belt is a
-solved exercise with public datasets, and a model on its own proves
-nothing. The engineering sits in the deterministic pipeline around it:
+The hard problem is not classification—it is learning a policy that maps
+visual streams to physical actions. Classifying an object on a belt is a
+solved exercise; predicting what to pick, when to pick it, and where to
+route it under conveyor motion, variable material properties, and hardware
+constraints is where the engineering lives.
 
-- Predicting where an object will be when the effector reaches it, rather
-  than where the camera saw it.
-- Tracking objects across frames, including overlapping and occluded ones.
-- Holding a latency budget from capture to pick command, measured at p99,
-  with explicit backpressure when inference falls behind.
-- Scheduling picks: which channel, what happens when two objects arrive
-  together, and where low-confidence objects go.
+CLAVE addresses this by replacing handcoded scheduling rules with a learned
+policy network trained end-to-end:
 
-That is where Rust earns its place, and the classifier becomes a
-replaceable component behind a contract.
+- **Neural perception**: Continuous spatial-temporal representations of the
+  conveyor state, replacing frame-by-frame snapshots.
+- **Learned tracking**: Neural tracking networks that handle severe
+  occlusion, illumination changes, and overlapping objects without
+  geometric heuristics.
+- **Policy learning**: A perception-action loop trained via imitation
+  learning on human demonstrations and reinforcement learning in MuJoCo
+  simulation, learning robust pick timing under physical variation.
+- **Hybrid safety**: Neural inference handles perception and decision-making,
+  while a Rust safety layer enforces hard interlocks and collision checks,
+  ensuring the physical system never enters an unsafe state.
+
+The split between learned policy and deterministic safety is where Rust
+earns its place, and the perception pipeline becomes a replaceable
+component behind a contract.
 
 ## Status
 
@@ -46,14 +58,17 @@ between them.
 
 | Project | Role |
 | --- | --- |
-| **CLAVE** (this repo) | Perception, tracking, and pick decision under a latency budget |
-| **[ARCO](https://github.com/alexandrelheinen/arco)** | Motion planning and control algorithms |
-| **[FRET](https://github.com/alexandrelheinen/fret)** | ROS 2 and MuJoCo effector trajectories |
-| **[Luthier](https://github.com/alexandrelheinen/luthier)** | Photogrammetry and point clouds |
-| **[BOSSA](https://github.com/alexandrelheinen/bossa)** | Edge runtime and telemetry on ARM Linux |
+| **CLAVE** (this repo) | Learned perception-action policy, safety interlocks |
+| **[ARCO](https://github.com/alexandrelheinen/arco)** | Motion planning for continuous trajectory waypoints |
+| **[FRET](https://github.com/alexandrelheinen/fret)** | Training environment, kinematic constraints, reward functions |
+| **[Luthier](https://github.com/alexandrelheinen/luthier)** | Photogrammetry for sim-to-real calibration |
+| **[BOSSA](https://github.com/alexandrelheinen/bossa)** | Edge inference runtime, neural telemetry logging |
 
-Motion belongs to ARCO and FRET. CLAVE decides what to pick and when, and
-publishes that decision.
+CLAVE learns and executes a perception-to-action policy. FRET provides the
+training environment and kinematic constraints for policy learning. ARCO
+receives continuous trajectory waypoints from CLAVE and executes them. BOSSA
+runs neural inference on ARM hardware and logs activation patterns and
+latency metrics. Luthier supplies calibration data for sim-to-real transfer.
 
 ## Repository layout
 

@@ -2,12 +2,13 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-CLAVE sorts recyclable waste on a conveyor belt: a camera watches the line,
-a model classifies each object, a tracker follows it across frames, and the
-pipeline decides which channel it belongs in and when to reach for it,
-inside a measured latency budget. [README.md](README.md) has the problem in
-full, including why the pipeline rather than the classifier is the hard
-part. Read it before designing anything.
+CLAVE learns and executes a perception-action policy for waste sorting on a
+conveyor belt. A neural architecture fuses visual perception, object
+tracking, and pick timing into an end-to-end learned policy. The policy
+runs with hard safety guarantees: a Rust core enforces collision checks and
+hardware interlocks. [README.md](README.md) has the problem in full,
+including why learned policies under safety constraints matter more than
+classifiers alone. Read it before designing anything.
 
 This file is a bridge for everything else. Rules live in the documents it
 points at, and it should stay short enough that every line earns its place
@@ -57,12 +58,16 @@ skill reads the same description of the project instead of re-deriving one.
 
 ## Language
 
-Rust for anything on the clock, which is the pipeline itself. Python for
-training and dataset work, exporting to ONNX for the Rust runtime to load.
-The Rust rules in
-[languages/rs.md](standards/guidelines/languages/rs.md) are not
-suggestions: the lint tiers, the unsafe policy, and the panic rules are
-what this repository gates on.
+**Rust** for the safety layer: collision checking, actuator limits, hardware
+interlocks, and the zero-copy bridge to neural inference. The hardened lint
+tiers in [languages/rs.md](standards/guidelines/languages/rs.md) are not
+suggestions—arithmetic overflow, casts, and unwraps can fail silently in this
+domain and cause physical faults.
+
+**Python** for policy training: imitation learning from human demonstrations,
+reinforcement learning in MuJoCo simulation via FRET, and domain
+randomization for sim-to-real transfer. Trained policies are versioned and
+deployed, never kept in training form at runtime.
 
 ## Prose
 
@@ -118,27 +123,40 @@ and never describe a gate as passing without having run it.
 
 ## Crate layout
 
-Crates go in `crates/<name>/` and follow one pattern:
-- Unit tests colocated in `#[cfg(test)] mod tests` at the bottom of each file.
-- Integration tests in `tests/` for the public API.
-- Benchmarks in `benches/` for anything with a latency budget (pipeline stages).
+Crates go in `crates/<name>/` organized by responsibility:
 
-See [docs/guidelines.md](docs/guidelines.md) for which parts of the pipeline are
-Rust (capture, inference, tracking, pick decision—the clock) and which are Python
-(training, dataset tooling—offline work).
+**Safety-layer crates** (collision, actuators, interlocks, safety checks):
+- Hardened lint tier: arithmetic and cast safety are enforced.
+- Unit tests colocated in `#[cfg(test)] mod tests`.
+- Integration tests in `tests/` against simulated conveyor geometry.
+- Criterion benchmarks in `benches/` proving latency budgets.
 
-## Real-time crate hardening
+**Inference crates** (policy loading, embeddings, shared memory, action sampling):
+- Baseline lint tier.
+- Unit and integration tests for contract enforcement.
+- Benchmarks for inference latency on target BOSSA hardware.
 
-Pipeline crates take the hardened lint tier, which raises the bar on arithmetic,
-casts, and unwraps. A frame index that silently wraps or a cast that silently
-truncates is a fault, not a style question. Tooling crates take the baseline
-tier. Document your crate in its root-level docs and state which tier it uses.
+**Shared utility crates**:
+- Baseline tier unless they support safety-layer code.
 
-## Architecture at a glance
+See [docs/guidelines.md](docs/guidelines.md) for which components are Rust
+(safety, inference wrappers) and which are Python (training, domain
+randomization).
 
-Staged pipeline: capture → inference → tracking → pick decision. Every queue
-between stages is bounded, and every bounded queue states its overflow policy
-(block, drop oldest, or drop newest) as part of the interface. The pick decision
-is a serializable type published to siblings (ARCO, FRET); their source is never
-vendored here. See [.kiro/steering/](.kiro/steering/) for patterns that outlive
-a single feature.
+## Hybrid safety and learned behavior
+
+The system splits responsibility: Rust handles safety invariants (no
+collisions, no overflows, hardware limits), while neural networks provide
+perception and policy. Every policy decision is checked against safety
+constraints before physical action. A policy that tries to reach past an
+actuator limit is overridden by the safety layer.
+
+Latency is measured end-to-end: visual embeddings from the camera to a
+safety-checked action ready for ARCO. Every component states its latency
+budget at p99 and proves it with benchmarks. Inference latency is measured
+on target BOSSA hardware and is part of the overall budget, not separate.
+
+The policy interface (input/output dimensions, quantization) is defined as a
+Rust type in this repo. Trained policies are versioned separately and fetched
+by deployment scripts, never committed. See [.kiro/steering/](.kiro/steering/)
+for patterns that outlive a single feature.
