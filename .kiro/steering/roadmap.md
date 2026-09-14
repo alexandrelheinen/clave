@@ -241,13 +241,18 @@ pick decision or becomes a continuous action, and which consumer receives it.
 
 ## Direct Implementation Candidates
 
-- [ ] Correct the sibling-project descriptions across `README.md`,
+- [x] Correct the sibling-project descriptions across `README.md`,
   `CONTRIBUTING.md`, `docs/guidelines.md`, and the steering documents. BOSSA is
   a C++20 telemetry runtime writing SQLite and Cloudflare D1, not a neural
   inference runtime, and ARCO is reached through FRET.
-- [ ] Repair the typography the writing guidelines forbid in the documents
+- [x] Repair the typography the writing guidelines forbid in the documents
   rewritten before this roadmap: em dashes outside prose and one negative
   parallelism in `README.md`.
+
+Both landed with the commit that introduced this file, so nothing here is
+outstanding. The section stays because the entries record what was corrected
+and why, which a later reader needs in order to trust the sibling boundaries
+the ladder rests on.
 
 ## Specs (dependency order)
 
