@@ -43,7 +43,7 @@ denominator.
 
 ## D-02: the decision socket is an AF_UNIX datagram rather than SOCK_SEQPACKET
 
-**Date**: 2026-09-14 · **Step**: v0.3.0 `pick-decision-contract`
+**Date**: 2026-09-14 · **Step**: `pick-decision-contract`, which is off the v0.x ladder
 
 **The standard**: the approved design for `pick-decision-contract` selects a
 Unix domain socket in `SOCK_SEQPACKET` mode, opened through
@@ -81,7 +81,7 @@ the sink is replaced behind the existing trait and this entry is superseded.
 
 ## D-03: the confidence field is float32 on the wire
 
-**Date**: 2026-09-14 · **Step**: v0.3.0 `pick-decision-contract`
+**Date**: 2026-09-14 · **Step**: `pick-decision-contract`, which is off the v0.x ladder
 
 **The standard**: the approved design names `Confidence(f32)` in its Rust
 interface and `float64` in its data contract table. The two cannot both hold.
