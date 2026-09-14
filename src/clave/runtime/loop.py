@@ -191,6 +191,27 @@ def runtime_config(world: dict[str, Any], routing: RoutingPolicy) -> dict[str, A
     }
 
 
+@dataclass(frozen=True)
+class DecisionRecord:
+    """One decision the loop published, and the object it was about.
+
+    Attributes:
+        object_id: The identity the world assigned at spawn.
+        true_class: What the object actually is, from the world.
+        predicted_class: What inference said it was.
+        latency_seconds: Frame capture to published decision.
+        verdict: What the safety layer did, as the runtime reported it.
+        channel: The channel the routing policy resolved, when one was.
+    """
+
+    object_id: int
+    true_class: str
+    predicted_class: str
+    latency_seconds: float
+    verdict: str
+    channel: int | None
+
+
 @dataclass
 class RunReport:
     """What one run did, counted and measured.
@@ -202,9 +223,16 @@ class RunReport:
         silent_frames: Frames where the predictor proposed nothing.
         decisions_received: Published decisions that arrived back.
         published_to_ros: Decisions put on the ROS 2 topic.
+        video_path: Where the recording went, when one was made.
+        video_frames: Frames written to it.
         ros_unavailable_reason: Why nothing was published, when nothing was.
         counters: The runtime's own counts, which are the authority.
         latencies_seconds: Frame to published decision, one per proposal.
+        decisions: One record per proposal that crossed the boundary, carrying
+            what the object is as well as what inference said it was.
+        presented: Every object that entered the reachable window, with its
+            true class. This is the population a validation record describes,
+            and an object that never entered the window is outside it.
         belt_speed: Belt speed this run drew, in meters per second.
         window_length: Length of the reachable window, in meters.
         machine: What the measurement was taken on.
@@ -220,6 +248,8 @@ class RunReport:
     decisions_received: int = 0
     counters: dict[str, int] = field(default_factory=dict)
     latencies_seconds: list[float] = field(default_factory=list)
+    decisions: list[DecisionRecord] = field(default_factory=list)
+    presented: list[tuple[int, str]] = field(default_factory=list)
     belt_speed: float = 0.0
     window_length: float = 0.0
     machine: str = ""
@@ -228,6 +258,8 @@ class RunReport:
     frame_width: int = 0
     published_to_ros: int = 0
     ros_unavailable_reason: str | None = None
+    video_path: str | None = None
+    video_frames: int = 0
 
     @property
     def budget_seconds(self) -> float:
@@ -261,6 +293,7 @@ class RunReport:
             "proposals": self.proposals,
             "silent_frames": self.silent_frames,
             "decisions_received": self.decisions_received,
+            "presented": len(self.presented),
             "counters": self.counters,
             "belt_speed_meters_per_second": self.belt_speed,
             "window_length_meters": self.window_length,
@@ -272,6 +305,8 @@ class RunReport:
                 "worst": max(self.latencies_seconds, default=0.0),
             },
             "published_to_ros": self.published_to_ros,
+            "video_path": self.video_path,
+            "video_frames": self.video_frames,
             "ros_unavailable_reason": self.ros_unavailable_reason,
             "machine": self.machine,
             "threads": self.threads,
@@ -291,6 +326,7 @@ def run(
     predictor: Predictor,
     directory: Path,
     publish_to_ros: bool = False,
+    video: Any = None,
 ) -> RunReport:
     """Run the loop end to end and report what it did.
 
@@ -303,6 +339,9 @@ def run(
             with no ROS installation runs the loop anyway and says in the report
             that nothing was published, because a missing consumer is not a
             reason to refuse to decide.
+        video: Settings for recording what the simulation looked like, or None.
+            The video renders on its own cadence from the same stepped world,
+            because the decision cadence is far too sparse to watch.
 
     Returns:
         The report, with one latency sample per proposal.
@@ -331,6 +370,7 @@ def run(
     renderer = mujoco.Renderer(
         model, height=settings.frame_height, width=settings.frame_width
     )
+    recorder, movie, camera = _recording(mujoco, model, video)
 
     machine, threads = _machine()
     report = RunReport(
@@ -345,6 +385,10 @@ def run(
 
     publisher = _publisher(settings, report) if publish_to_ros else None
 
+    # What each object actually is, kept as the world reveals it, so a decision
+    # can be scored against the truth rather than against another prediction.
+    truth: dict[int, str] = {}
+
     directory.mkdir(parents=True, exist_ok=True)
     paths = BridgePaths.under(directory)
     bridge = Bridge(
@@ -353,8 +397,14 @@ def run(
         runtime_config(raw, settings.routing),
         on_decision=None if publisher is None else publisher.publish,
     )
+    movie_renderer = (
+        None
+        if movie is None
+        else mujoco.Renderer(model, height=movie.height, width=movie.width)
+    )
     with bridge:
         next_capture = 0.0
+        next_frame = 0.0
         for _ in range(int(settings.seconds / plan.timestep)):
             mujoco.mj_step(model, data)
             conveyor.step(model, data)
@@ -368,6 +418,16 @@ def run(
                     np.array(reachable[0].position),
                     gain=ARM_GAIN,
                 )
+            if (
+                recorder is not None
+                and movie is not None
+                and movie_renderer is not None
+                and data.time >= next_frame
+            ):
+                next_frame = data.time + movie.interval_seconds
+                movie_renderer.update_scene(data, camera=camera)
+                recorder.write(movie_renderer.render())
+
             if data.time < next_capture:
                 continue
             next_capture = data.time + settings.capture_interval_seconds
@@ -383,6 +443,7 @@ def run(
             joints = tuple(
                 float(angle) for angle in armmod.joint_positions(model, data, indices)
             )
+            truth.update({label.object_id: label.material_class for label in labels})
             prediction = predictor.predict(frame, joints, labels, half_window)
             if prediction is None:
                 report.silent_frames += 1
@@ -392,7 +453,7 @@ def run(
             remaining = max(
                 0.0, (half_window - prediction.point[0]) / conveyor.report.belt_speed
             )
-            bridge.submit(
+            outcome = bridge.submit(
                 Proposal(
                     object_id=prediction.object_id,
                     material_class=prediction.material_class,
@@ -404,15 +465,62 @@ def run(
                     window_end_nanos=now + int(remaining * NANOS_PER_SECOND),
                 )
             )
-            report.latencies_seconds.append(time.perf_counter() - began)
+            elapsed = time.perf_counter() - began
+            report.latencies_seconds.append(elapsed)
             report.proposals += 1
+            report.decisions.append(
+                DecisionRecord(
+                    object_id=prediction.object_id,
+                    true_class=truth.get(prediction.object_id, ""),
+                    predicted_class=prediction.material_class,
+                    latency_seconds=elapsed,
+                    verdict=outcome.verdict,
+                    channel=outcome.channel,
+                )
+            )
 
         report.counters = bridge.counters()
         report.decisions_received = bridge.decisions_received
+        report.presented = [
+            (item.index, item.material_class) for item in conveyor.entered_window()
+        ]
     if publisher is not None:
         report.published_to_ros = publisher.published
         publisher.close()
+    if recorder is not None:
+        recorder.close()
+        report.video_path = str(recorder.settings.path)
+        report.video_frames = recorder.frames
     return report
+
+
+def _recording(mujoco: Any, model: Any, video: Any) -> tuple[Any, Any, Any]:
+    """Prepare the video recorder and the camera it films from.
+
+    Args:
+        mujoco: The imported module, passed in so this stays importable without
+            it.
+        model: The compiled model.
+        video: The settings, or None.
+
+    Returns:
+        The recorder, the settings, and the camera. All three are None when no
+        video was asked for, and the recorder alone is None when the encoder is
+        absent.
+    """
+    if video is None:
+        return None, None, None
+    from clave.demo.video import open_recorder
+
+    recorder = open_recorder(video)
+    if recorder is None:
+        return None, None, None
+    camera = mujoco.MjvCamera()
+    camera.azimuth = video.azimuth
+    camera.elevation = video.elevation
+    camera.distance = video.distance
+    camera.lookat[:] = video.lookat
+    return recorder, video, camera
 
 
 def _publisher(settings: RuntimeSettings, report: RunReport) -> Any:

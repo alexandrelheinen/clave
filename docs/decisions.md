@@ -230,3 +230,34 @@ language runs.
 **Reversal condition**: FRET writing the subscriber and finding the two reuses
 confusing or insufficient. At that point an interface package becomes the better
 trade, and the cost is a colcon build this repository does not have today.
+
+## D-07: a record with no prediction carries no decision latency
+
+**Date**: 2026-09-15 · **Step**: v1.0.0 `benchmark-suite`
+
+**The standard**: `ObjectOutcome.decision_latency_seconds` was a required float,
+and `ValidationSummary` summarized it over every record. v0.8.0 shipped that way
+and nothing had produced a real record yet.
+
+**What was scoped**: the field is now `float | None`, a record whose
+`predicted_class` is absent must carry `None`, and the latency summary is taken
+over the records that carry a value.
+
+**Why**: the benchmark is the first thing to produce records from a live run,
+and a run presents objects the system says nothing about. Under the old shape
+each of those needed a number, and the only available number was zero. Zero is
+not a missing measurement; it reads as a decision taken instantly, and enough of
+them would drag a p99 below the budget while the system was in fact deciding
+nothing at all.
+
+The alternative was to drop the undecided objects from the record set. That
+would have been worse, because it would also drop them from the confusion
+matrix, and an object the system never classified is exactly the kind of failure
+a sorting line cares about.
+
+**What is not scoped**: `cycle_time_seconds` was already optional and is
+unchanged. No threshold moved.
+
+**Reversal condition**: none expected. If a later design makes every presented
+object carry a decision by construction, the `None` branch becomes dead rather
+than wrong.

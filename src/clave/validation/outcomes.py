@@ -44,7 +44,10 @@ class ObjectOutcome:
             not picked.
         seen_instance: Whether this object instance appeared in training.
             Generalization is measured over the instances where this is False.
-        decision_latency_seconds: Time from frame to published decision.
+        decision_latency_seconds: Time from frame to published decision, or
+            None when the system published no decision for this object. An
+            object nobody decided about has no decision latency, and a zero
+            there would read as an instant decision.
         cycle_time_seconds: Time the object occupied the system, from decision
             to placement, or None when it was never picked.
     """
@@ -55,7 +58,7 @@ class ObjectOutcome:
     picked: bool
     routed_channel: str | None
     seen_instance: bool
-    decision_latency_seconds: float
+    decision_latency_seconds: float | None
     cycle_time_seconds: float | None
 
 
@@ -121,8 +124,15 @@ def _check(outcome: ObjectOutcome) -> None:
         raise OutcomeError(
             f"{outcome.object_id}: was not picked but carries a routed channel"
         )
-    if outcome.decision_latency_seconds < 0.0:
+    if (
+        outcome.decision_latency_seconds is not None
+        and outcome.decision_latency_seconds < 0.0
+    ):
         raise OutcomeError(f"{outcome.object_id}: decision_latency_seconds is negative")
+    if outcome.predicted_class is None and outcome.decision_latency_seconds is not None:
+        raise OutcomeError(
+            f"{outcome.object_id}: carries a decision latency but no prediction"
+        )
     if outcome.cycle_time_seconds is not None and outcome.cycle_time_seconds < 0.0:
         raise OutcomeError(f"{outcome.object_id}: cycle_time_seconds is negative")
 

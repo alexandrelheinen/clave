@@ -40,6 +40,12 @@ instability. Parking above the floor makes the scene stable on its own.
 PARKED_X = 3.0
 """How far to the side pooled objects wait, clear of the belt and the camera."""
 
+OFFSCREEN_WIDTH = 1920
+"""Widest frame any renderer attached to this model can produce."""
+
+OFFSCREEN_HEIGHT = 1080
+"""Tallest frame any renderer attached to this model can produce."""
+
 
 @dataclass(frozen=True)
 class BeltGeometry:
@@ -172,6 +178,14 @@ def build(
     # its grasp behavior was tuned with them.
     spec.option.impratio = 10.0
     spec.option.cone = mujoco.mjtCone.mjCONE_ELLIPTIC
+    # The offscreen framebuffer bounds what any renderer attached to this model
+    # can produce, and MuJoCo defaults it to 640 by 480. That is enough for the
+    # 320 by 240 frames the models see and not enough for a demonstration
+    # video. This is a ceiling on rendering rather than a property of the world,
+    # which is why it sits here rather than in the configuration: changing it
+    # changes no trajectory and no measurement.
+    spec.visual.global_.offwidth = OFFSCREEN_WIDTH
+    spec.visual.global_.offheight = OFFSCREEN_HEIGHT
 
     world = spec.worldbody
     world.add_light(pos=[0.0, 0.0, 2.0], dir=[0.0, 0.0, -1.0])

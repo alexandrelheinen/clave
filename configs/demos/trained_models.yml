@@ -1,0 +1,29 @@
+# The same line, decided by the trained models rather than the teacher.
+#
+# This is the one to watch when the question is what CLAVE actually does rather
+# than what it is supposed to do. The models saw 240 frames of parametric
+# primitives, so expect the safety layer to override more than it does under the
+# scripted expert.
+
+scenario:
+  name: trained-models
+  description: >-
+    The classifier trained at v0.7.0 says what is on the belt and the pick
+    policy says where to reach. The safety layer checks the point against the
+    workspace envelope before anything is published.
+  predictor: checkpoints
+  perception: resnet50-baseline
+  policy: behavior-cloning-baseline
+  seed: 1
+  seconds: 20.0
+  publish_to_ros: false
+
+video:
+  width: 960
+  height: 540
+  frames_per_second: 30
+  interval_seconds: 0.05
+  azimuth_degrees: 150.0
+  elevation_degrees: -20.0
+  distance_meters: 2.0
+  lookat_meters: [0.0, -0.10, 0.42]

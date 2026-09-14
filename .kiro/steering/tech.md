@@ -30,8 +30,10 @@ line the runtime executes against FRET's MuJoCo SITL, not against hardware.
 - **Safety layer**: Rust, edition 2024, resolver 3, toolchain pinned in
   `rust-toolchain.toml`. Handles hardware communication, collision checking,
   and safety interlocks.
-- **Inference runtime**: chosen at the `learning-platform` step of the
-  roadmap, loaded by a Rust wrapper that enforces the policy interface.
+- **Inference runtime**: Python, in its own process. Rust never loads a model,
+  which is what lets the safety layer override one it shares no code with. The
+  two exchange a versioned JSON proposal over a Unix datagram, specified in
+  `crates/clave-safety/contract/proposal.md` and recorded as `D-05`.
 - **Policy training**: Python with PyTorch or JAX for imitation and
   reinforcement learning. Domain randomization for sim-to-real transfer.
 - **Training environment**: MuJoCo simulation via FRET, providing kinematic
@@ -43,8 +45,17 @@ line the runtime executes against FRET's MuJoCo SITL, not against hardware.
   `crates/<name>/`, shared metadata and lints in `[workspace.package]` and
   `[workspace.lints]`.
 
-No application code has landed yet. The first crate arrives with the first
-approved specification, and the Rust gates below activate with it.
+Five crates carry the on-the-clock half: `clave-decision` holds the published
+contract and its CBOR codec, `clave-routing` the class-to-channel policy,
+`clave-publish` the bounded ring and its transport, `clave-safety` the workspace
+envelope and the checks that can override a model, and `clave-sitl` the process
+that owns the sockets. Python holds the world, the data pipeline, training,
+validation, the runtime that drives the loop, the benchmark and the
+demonstrations.
+
+The inference runtime question this file used to defer is settled: Python runs
+inference and Rust never loads a model. `D-05` in `docs/decisions.md` records the
+choice and the three alternatives it beat.
 
 ## Development Standards
 

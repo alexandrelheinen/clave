@@ -308,7 +308,7 @@ the ladder rests on.
 - [x] training-application -- Train every candidate by imitation from the scripted expert, then fine-tune with reinforcement learning under domain randomization. Dependencies: model-candidates, data-pipeline
 - [x] sitl-runtime -- Close the loop in Rust: inference, safety override, decision publication, and the p99 latency benchmark. Dependencies: training-application, sorting-world
 - [x] decision-publisher -- Publish the decision on a ROS 2 topic in the shape FRET's PickPlaceFSM consumes, so FRET can drive the manipulator without CLAVE gaining a planner, a controller or a second simulator. Dependencies: sitl-runtime
-- [ ] benchmark-suite -- Compare every candidate in one reproducible benchmark and record the chosen configuration. Dependencies: sitl-runtime, validation-harness
+- [x] benchmark-suite -- Compare every candidate in one reproducible benchmark and record the chosen configuration. Dependencies: sitl-runtime, validation-harness
 
 Checkboxes above track the roadmap step, which closes when its deliverable
 lands, not when its spec is written.
@@ -325,6 +325,7 @@ lands, not when its spec is written.
 | validation-harness | Approved | Approved | Approved | Delivered, tagged v0.8.0 |
 | sitl-runtime | Approved | Approved | Approved | Delivered, tagged v0.9.0 |
 | decision-publisher | Approved | Approved | Approved | Delivered, tagged v0.10.0 |
+| benchmark-suite | Approved | Approved | Approved | Delivered, tagged v1.0.0 |
 | every other spec | Not started | Not started | Not started | Not started |
 
 v0.1.0 delivered [docs/research/training-infrastructure-review.md](../../docs/research/training-infrastructure-review.md).

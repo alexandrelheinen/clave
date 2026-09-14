@@ -349,6 +349,93 @@ def _run_sitl(
     return 0
 
 
+def _benchmark(root: Path, config_path: Path, out: Path) -> int:
+    """Run every configuration the benchmark names and report the comparison.
+
+    Args:
+        root: Repository root.
+        config_path: The benchmark configuration.
+        out: Where the evidence pack and the run directories go.
+
+    Returns:
+        A process exit code. Non-zero when a gate the benchmark could evaluate
+        was not met, because an unmet gate is a failure rather than a row in a
+        table.
+    """
+    from clave.benchmark.config import BenchmarkConfig
+    from clave.benchmark.pack import EvidencePack, score
+    from clave.benchmark.suite import run_configuration
+    from clave.candidates.bench import _machine
+    from clave.corpus.artifacts import digest_of
+    from clave.experiment.run import environment
+    from clave.validation.gates import GateConfig
+
+    config = BenchmarkConfig.load(root / config_path)
+    gates = GateConfig.load(root / config.gates)
+    machine, threads = _machine()
+
+    scored = []
+    for configuration in config.configurations:
+        print(f"  running         {configuration.name}")
+        result = run_configuration(root, config, configuration, out / "runs")
+        if not result.available:
+            print(f"  UNAVAILABLE     {result.unavailable_reason}")
+        scored.append(score(result, gates))
+
+    pack = EvidencePack(
+        config=config,
+        scored=scored,
+        machine=machine,
+        threads=threads,
+        environment=environment(),
+        world_digest=digest_of(root / "configs" / "world" / "sorting_line.yml"),
+    )
+    pack.write(out / "benchmark.json")
+    print()
+    print(pack.render())
+    print()
+    print(f"  evidence pack   {out / 'benchmark.json'}")
+    return 0 if pack.passed else 1
+
+
+def _demo(root: Path, name: str, out: Path, runtime: Path) -> int:
+    """Run one named scenario and report what it did.
+
+    Args:
+        root: Repository root.
+        name: Scenario name, matching a file under configs/demos/.
+        out: Where the record and the video go.
+        runtime: The runtime configuration to start from.
+
+    Returns:
+        A process exit code.
+    """
+    from clave.demo.runner import play, summary
+    from clave.demo.scenario import Scenario, ScenarioError
+
+    demos = root / "configs" / "demos"
+    # A scenario is named with hyphens and its file with underscores, as every
+    # other configuration file in this repository is. Both spellings resolve,
+    # so nobody has to remember which convention applies where.
+    for candidate in (name, name.replace("-", "_")):
+        path = demos / f"{candidate}.yml"
+        if path.is_file():
+            break
+    else:
+        available = sorted(
+            entry.stem.replace("_", "-") for entry in demos.glob("*.yml")
+        )
+        raise ScenarioError(
+            f"no scenario named {name!r}. Available: {', '.join(available)}"
+        )
+    scenario = Scenario.load(path, out)
+    print(f"  {scenario.description}")
+    print()
+    report = play(root, scenario, runtime, out)
+    print(summary(scenario, report))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run a CLAVE command.
 
@@ -391,6 +478,17 @@ def main(argv: list[str] | None = None) -> int:
     sitl.add_argument("--config", type=Path, default=Path("configs/runtime/sitl.yml"))
     sitl.add_argument("--out", type=Path, default=Path("runs/sitl"))
     sitl.add_argument("--seconds", type=float, default=None)
+    bench_suite = sub.add_parser(
+        "benchmark", help="compare every configuration in one table"
+    )
+    bench_suite.add_argument(
+        "--config", type=Path, default=Path("configs/benchmark/default.yml")
+    )
+    bench_suite.add_argument("--out", type=Path, default=Path("runs/benchmark"))
+    demo = sub.add_parser("demo", help="run one named scenario and record it")
+    demo.add_argument("scenario", nargs="?", default="sorting-line")
+    demo.add_argument("--out", type=Path, default=Path("runs/demos"))
+    demo.add_argument("--runtime", type=Path, default=Path("configs/runtime/sitl.yml"))
     sitl.add_argument(
         "--ros",
         action="store_true",
@@ -416,6 +514,10 @@ def main(argv: list[str] | None = None) -> int:
             return _record_dataset(args.root, args.out, args.seed)
         if args.command == "train":
             return _train(args.root, args.config, args.candidate)
+        if args.command == "demo":
+            return _demo(args.root, args.scenario, args.out, args.runtime)
+        if args.command == "benchmark":
+            return _benchmark(args.root, args.config, args.out)
         if args.command == "run-sitl":
             return _run_sitl(
                 args.root,

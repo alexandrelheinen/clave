@@ -1,0 +1,47 @@
+# The benchmark.
+#
+# Every configuration CLAVE can actually run, scored by one protocol over the
+# same seeds and the same world. A row here is a pairing of a perception
+# candidate with a policy candidate, because that is the unit the runtime loads.
+#
+# What is absent is as deliberate as what is present. faster-rcnn-mobilenetv3
+# trains and runs, and it is not here: its output is boxes in pixels, and
+# turning a box into a world pick point needs a camera model CLAVE has not
+# built. sam2 and diffusion-policy were disqualified on measured latency at
+# v0.4.0, and ppo-mlp has no reward to learn from until something executes a
+# pick. docs/research/benchmark.md carries every one of those reasons.
+
+benchmark:
+  # Twenty-four seeds, because three was not enough for the comparison to say
+  # anything. A run presents roughly nine objects to the arm, so three seeds
+  # give about twenty-eight records per row, and at that size the difference
+  # between two rows is one object changing its mind. Twenty-four gives roughly
+  # two hundred and twenty, which is still short of the thirty-per-class floor
+  # the gates ask for on the rarer classes, and the report says so rather than
+  # letting a gate pass on four records.
+  seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11,
+          12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
+  seconds_per_run: 20.0
+  runtime: configs/runtime/sitl.yml
+  gates: configs/validation/gates.yml
+
+configurations:
+  - name: scripted-expert
+    predictor: scripted
+    note: >-
+      The teacher the policies were trained to imitate. It reads the world
+      rather than the frame, so it is a control rather than a competitor: its
+      accuracy is the ceiling imitation could reach, and its latency is the
+      loop's cost with inference removed.
+  - name: resnet50 + behavior-cloning
+    predictor: checkpoints
+    perception: resnet50-baseline
+    policy: behavior-cloning-baseline
+    note: The cheapest trained pairing, and the baseline the rest must beat.
+  - name: resnet50 + act
+    predictor: checkpoints
+    perception: resnet50-baseline
+    policy: act
+    note: >-
+      Same classifier, action chunking transformer in place of the baseline
+      policy. The row that isolates whether the policy architecture matters.

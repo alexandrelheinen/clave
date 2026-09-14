@@ -45,11 +45,55 @@ The split between learned policy and deterministic safety is where Rust
 earns its place, and the perception stage becomes a replaceable component
 behind a contract.
 
-## Status
+## Running it
 
-No application code has landed yet. The plan to the first release is in
-[.kiro/steering/roadmap.md](.kiro/steering/roadmap.md), which schedules nine
-minor versions from a bibliographic review to a reproducible benchmark.
+Two commands do something visible. Both need the world extra and a built
+runtime: `uv pip install -e ".[dev,world]"` and `cargo build --release -p
+clave-sitl`.
+
+```bash
+python -m clave.cli demo sorting-line
+```
+
+Runs one scenario end to end and records a video of the simulation it ran.
+Objects ride the belt, inference proposes a pick, the Rust safety layer accepts
+or overrides it, and the decision is published. Every tunable, including the
+angle the video is filmed from, lives in `configs/demos/`. Nothing is drawn on a
+frame: the video is what MuJoCo rendered.
+
+```bash
+python -m clave.cli benchmark
+```
+
+Runs every configuration in `configs/benchmark/default.yml` over the same seeds
+and prints one comparison, with an evidence pack beside it. Read
+[docs/research/benchmark.md](docs/research/benchmark.md) before reading the
+table, because two of the five headline metrics cannot be measured yet and the
+document says why.
+
+Smaller commands: `clave run-sitl` for one loop with latency, `clave record-dataset`
+to record rollouts, `clave train --candidate <name>` to train one, and
+`clave validate-run --outcomes <file>` to score records against the gates.
+
+## What runs today
+
+Everything through v1.0.0 runs in simulation and nothing has touched hardware.
+
+| Part | State |
+| --- | --- |
+| Material taxonomy, corpus mappings | 11 classes, four corpora mapped |
+| Corpora | TrashNet and ZeroWaste fetched, digested and measured |
+| Simulated world | MuJoCo conveyor, ROBOTIS arm, bins, randomized per seed |
+| Data pipeline | Labeled rollouts, ground-truth boxes, proprioception, digested splits |
+| Candidates | Seven benchmarked, four trained |
+| Runtime | Frame to published decision, with a Rust safety layer that can override the model |
+| Integration | The decision on a ROS 2 topic, specified for a consumer to implement against |
+| Benchmark | Every runnable configuration compared under one protocol |
+
+What is missing is as important: nothing tracks an object across frames, nothing
+executes a pick, and no model has been trained on real imagery. The
+[roadmap](.kiro/steering/roadmap.md) carries the ladder and each step's release
+criteria.
 
 ## Versioning
 
@@ -97,6 +141,11 @@ outside the v1.x line. What CLAVE takes from each sibling is itemized in the
 | [docs/guidelines.md](docs/guidelines.md) | Coding notes specific to CLAVE, on top of the shared baseline |
 | [standards/](standards/README.md) | Shared guidelines, the SDD method, and the agent toolchain |
 | [.kiro/steering/roadmap.md](.kiro/steering/roadmap.md) | The ladder to v1.0.0, its release criteria, and the spec dependency order |
+| [docs/research/](docs/research/) | One report per roadmap step, each stating what it measured and what it did not |
+| [docs/decisions.md](docs/decisions.md) | Why a gate or a constraint was scoped the way it is |
+| `crates/` | The decision contract, the routing policy, the publisher, the safety layer, the runtime |
+| `src/clave/` | The world, the data pipeline, training, validation, the runtime, the benchmark, the demos |
+| `configs/` | Every tunable. Nothing in Python or MJCF carries a numeric default |
 | `.kiro/` | Committed specifications and the steering documents agents read as project memory |
 | `scripts/` | Toolchain setup and the local quality gate |
 

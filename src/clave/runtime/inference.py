@@ -206,7 +206,7 @@ class CheckpointPredictor:
             confidence = float(probabilities[index])
             if confidence < self._presence_floor:
                 return None
-            action = self._policy(image, state)[0, :3]
+            action = self._act(image, state)[:3]
 
         point = (float(action[0]), float(action[1]), float(action[2]))
         associated = associate(point, labels, self._association_radius)
@@ -218,6 +218,30 @@ class CheckpointPredictor:
             confidence=confidence,
             point=point,
         )
+
+    def _act(self, image: Any, state: Any) -> Any:
+        """Ask the policy where to pick.
+
+        An action chunking policy answers differently from a feedforward one: it
+        produces a chunk and dequeues from it, so the queue is reset first. A
+        cached action is a decision about a frame the belt has already carried
+        away.
+        """
+        import torch.nn.functional as functional
+
+        from clave.candidates.fixture import FRAME_HEIGHT, FRAME_WIDTH
+
+        if self._policy_name != "act":
+            return self._policy(image, state)[0]
+        self._policy.reset()
+        return self._policy.select_action(
+            {
+                "observation.image": functional.interpolate(
+                    image, size=(FRAME_HEIGHT, FRAME_WIDTH), mode="bilinear"
+                ),
+                "observation.state": state,
+            }
+        )[0]
 
 
 def _load(checkpoints: Path, candidate: str) -> Any:
@@ -243,21 +267,56 @@ def _load(checkpoints: Path, candidate: str) -> Any:
             f"{path} does not exist. Train it first: "
             f"python -m clave.cli train --candidate {candidate}"
         )
+    state = torch.load(path, weights_only=False)
+    if state.get("candidate") != candidate:
+        raise InferenceError(
+            f"{path} holds a checkpoint for {state.get('candidate')!r}, "
+            f"not {candidate!r}"
+        )
     for entry, _ in REGISTRY:
         if entry.spec.name == candidate:
-            loaded = entry.load()
+            loaded = _rebuild(entry, candidate, state)
             if not loaded.loaded:
                 raise InferenceError(
                     f"{candidate} cannot be loaded here: {loaded.unavailable_reason}"
-                )
-            state = torch.load(path, weights_only=False)
-            if state.get("candidate") != candidate:
-                raise InferenceError(
-                    f"{path} holds a checkpoint for {state.get('candidate')!r}, "
-                    f"not {candidate!r}"
                 )
             model: Any = loaded.model
             model.load_state_dict(state["model"])
             model.eval()
             return model
     raise InferenceError(f"no candidate named {candidate!r} in the registry")
+
+
+def _rebuild(entry: Any, candidate: str, state: dict[str, Any]) -> Any:
+    """Build the architecture the checkpoint was trained as.
+
+    A name is not always enough. ACT's shape depends on its action chunk, and
+    loading weights trained at one chunk into a model built at another either
+    fails loudly or, worse, loads a subset. The chunk travels in the checkpoint
+    so the reader does not have to guess it.
+
+    Args:
+        entry: The registry candidate.
+        candidate: Its name.
+        state: The loaded checkpoint.
+
+    Returns:
+        The loaded candidate, ready for its weights.
+
+    Raises:
+        InferenceError: If the checkpoint predates the field it needs.
+    """
+    if candidate != "act":
+        return entry.load()
+
+    from clave.candidates.base import Candidate
+    from clave.candidates.policy import ACT, build_act
+
+    chunk = state.get("act_chunk_size")
+    if chunk is None:
+        raise InferenceError(
+            "this act checkpoint does not record the action chunk it was "
+            "trained with, so the architecture cannot be rebuilt. Retrain it: "
+            "python -m clave.cli train --candidate act"
+        )
+    return Candidate(ACT, lambda: build_act(int(chunk))).load()
