@@ -29,6 +29,10 @@ source = "http://tacodataset.org/"
 
 [[artifact]]
 name = "trashnet"
-source = "https://github.com/garythung/trashnet"
-# Unverified: not fetched. MIT, 2527 images, whole-image labels only.
-# Advanced at v0.1.0 as a baseline.
+source = "https://raw.githubusercontent.com/garythung/trashnet/master/data/dataset-resized.zip"
+# Verified. MIT, 42834870 bytes, 2527 images under six whole-image labels, no
+# localization. Advanced at v0.1.0 as a baseline. Fetched and digested on
+# 2026-09-14 through `clave record-digest`; what the bytes hold is measured in
+# docs/research/corpus-ingestion.md. The archive itself is never committed: it
+# belongs under datasets/, which is gitignored.
+sha256 = "0bf472790f8b20e5c950d5b5012a9d38af0d3392efd65f8ce171334fc16b07c2"
