@@ -1,0 +1,33 @@
+# Dependency policy for cargo-deny. The Rust guidelines gate advisories,
+# licenses, duplicate versions, and sources, so all four checks are on.
+
+[graph]
+targets = [{ triple = "x86_64-unknown-linux-gnu" }]
+all-features = true
+
+[advisories]
+version = 2
+yanked = "deny"
+
+[licenses]
+version = 2
+# Permissive licenses only. This repository is MIT, and a copyleft dependency
+# in a crate a sibling project links against would change what that sibling
+# may do with it.
+# Every entry is a license the current graph actually carries, so an
+# unexpected one stops the gate instead of passing under a broad allowance.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Unicode-3.0",
+]
+confidence-threshold = 0.93
+
+[bans]
+multiple-versions = "deny"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

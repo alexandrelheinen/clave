@@ -1,0 +1,16 @@
+[package]
+name = "clave-routing"
+description = "Resolves a material class and a classifier confidence to a sorting channel"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+clave-decision.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true
