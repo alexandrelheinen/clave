@@ -13,9 +13,11 @@ venv/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+*.egg-info/
 
 # --- Coverage ---
 coverage/
+.coverage
 lcov.info
 *.profraw
 *.profdata
