@@ -1,7 +1,9 @@
 """Tests for reading a fetched corpus archive into labeled examples."""
 
+import json
 import os
 import zipfile
+from collections import Counter
 from pathlib import Path
 
 import numpy as np
@@ -15,7 +17,9 @@ from clave.data.ingest import (
     CORPUS_LAYOUTS,
     CorpusArchive,
     CorpusError,
+    LocalizedArchive,
     compose_corpus,
+    compose_localized,
 )
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -251,3 +255,295 @@ def test_the_fetched_trashnet_archive_holds_its_recorded_composition() -> None:
         "M-05",
         "M-06",
     )
+
+
+ZEROWASTE_ROOT = "splits_final_deblurred"
+
+DEFAULT_ZEROWASTE = (
+    ROOT / "datasets" / "corpora" / "zerowaste" / "zerowaste-f-final.zip"
+)
+
+
+def zerowaste_archive() -> Path | None:
+    """Return the fetched ZeroWaste archive, or None when it is absent."""
+    override = os.environ.get("CLAVE_ZEROWASTE_ARCHIVE")
+    path = Path(override) if override else DEFAULT_ZEROWASTE
+    return path if path.is_file() else None
+
+
+def coco_labels(
+    images: list[dict[str, object]], annotations: list[dict[str, object]]
+) -> bytes:
+    """Render one COCO annotation file, with ZeroWaste's four categories."""
+    return json.dumps(
+        {
+            "categories": [
+                {"id": 1, "name": "rigid_plastic"},
+                {"id": 2, "name": "cardboard"},
+                {"id": 3, "name": "metal"},
+                {"id": 4, "name": "soft_plastic"},
+            ],
+            "images": images,
+            "annotations": annotations,
+        }
+    ).encode("utf-8")
+
+
+def localized_fixture(path: Path, **overrides: bytes) -> Path:
+    """Build a small archive shaped like ZeroWaste, with all three splits."""
+    members = {
+        f"{ZEROWASTE_ROOT}/train/data/a.PNG": b"first frame",
+        f"{ZEROWASTE_ROOT}/train/data/b.PNG": b"second frame",
+        f"{ZEROWASTE_ROOT}/train/sem_seg/a.PNG": b"a mask, not imagery",
+        f"{ZEROWASTE_ROOT}/train/labels.json": coco_labels(
+            images=[
+                {"id": 0, "file_name": "a.PNG", "width": 1920, "height": 1080},
+                {"id": 1, "file_name": "b.PNG", "width": 1920, "height": 1080},
+            ],
+            annotations=[
+                {
+                    "id": 0,
+                    "image_id": 0,
+                    "category_id": 2,
+                    "bbox": [10.0, 20.0, 30.0, 40.0],
+                    "area": 1200.0,
+                },
+                {
+                    "id": 1,
+                    "image_id": 0,
+                    "category_id": 4,
+                    "bbox": [0.0, 0.0, 5.0, 5.0],
+                    "area": 25.0,
+                },
+            ],
+        ),
+        f"{ZEROWASTE_ROOT}/val/data/c.PNG": b"third frame",
+        f"{ZEROWASTE_ROOT}/val/labels.json": coco_labels(
+            images=[{"id": 0, "file_name": "c.PNG", "width": 1920, "height": 1080}],
+            annotations=[
+                {
+                    "id": 0,
+                    "image_id": 0,
+                    "category_id": 3,
+                    "bbox": [1.0, 2.0, 3.0, 4.0],
+                    "area": 12.0,
+                }
+            ],
+        ),
+        f"{ZEROWASTE_ROOT}/test/data/d.PNG": b"fourth frame",
+        f"{ZEROWASTE_ROOT}/test/labels.json": coco_labels(
+            images=[{"id": 0, "file_name": "d.PNG", "width": 1920, "height": 1080}],
+            annotations=[
+                {
+                    "id": 0,
+                    "image_id": 0,
+                    "category_id": 1,
+                    "bbox": [5.0, 5.0, 5.0, 5.0],
+                    "area": 25.0,
+                }
+            ],
+        ),
+    }
+    members.update(overrides)
+    return build_archive(path, members)
+
+
+def test_a_localized_corpus_reads_regions_with_boxes_and_mapped_labels(
+    tmp_path: Path,
+) -> None:
+    """AC-INGEST-12. The localization is the reason this corpus outranks the rest."""
+    archive_path = localized_fixture(tmp_path / "zerowaste.zip")
+    with LocalizedArchive(archive_path, "zerowaste") as archive:
+        examples = archive.examples
+    assert [example.member for example in examples] == [
+        f"{ZEROWASTE_ROOT}/train/data/a.PNG",
+        f"{ZEROWASTE_ROOT}/train/data/b.PNG",
+        f"{ZEROWASTE_ROOT}/val/data/c.PNG",
+        f"{ZEROWASTE_ROOT}/test/data/d.PNG",
+    ]
+    first = examples[0]
+    assert first.split == "train"
+    assert first.origin is Origin.REAL
+    assert len(first.regions) == 2
+    cardboard = first.regions[0]
+    assert cardboard.label.source_label == "cardboard"
+    assert cardboard.label.classes == ("M-08", "M-09", "M-10")
+    assert cardboard.label.ambiguous
+    # COCO writes a box as x, y, width, height; CLAVE carries corners.
+    assert cardboard.bbox == (10.0, 20.0, 40.0, 60.0)
+    assert first.regions[1].label.classes == ("M-04",)
+    assert not first.regions[1].label.ambiguous
+
+
+def test_an_image_with_no_annotation_is_kept_and_reported(tmp_path: Path) -> None:
+    """AC-INGEST-13. A frame with no foreground is a real frame, not a gap."""
+    archive_path = localized_fixture(tmp_path / "zerowaste.zip")
+    with LocalizedArchive(archive_path, "zerowaste") as archive:
+        composition = compose_localized("zerowaste", archive.examples)
+        empty = [example for example in archive.examples if not example.regions]
+    assert [example.member for example in empty] == [
+        f"{ZEROWASTE_ROOT}/train/data/b.PNG"
+    ]
+    assert composition.example_count == 4
+    assert composition.unannotated_count == 1
+
+
+def test_an_annotation_naming_an_undeclared_category_is_refused(
+    tmp_path: Path,
+) -> None:
+    """AC-INGEST-14. A category the file never declares is corruption, not a label."""
+    archive_path = localized_fixture(
+        tmp_path / "zerowaste.zip",
+        **{
+            f"{ZEROWASTE_ROOT}/train/labels.json": coco_labels(
+                images=[
+                    {"id": 0, "file_name": "a.PNG", "width": 1920, "height": 1080},
+                    {"id": 1, "file_name": "b.PNG", "width": 1920, "height": 1080},
+                ],
+                annotations=[
+                    {
+                        "id": 0,
+                        "image_id": 0,
+                        "category_id": 99,
+                        "bbox": [1.0, 1.0, 2.0, 2.0],
+                        "area": 4.0,
+                    }
+                ],
+            )
+        },
+    )
+    with pytest.raises(CorpusError, match="category 99"):
+        LocalizedArchive(archive_path, "zerowaste")
+
+
+def test_an_annotated_image_missing_from_the_archive_is_refused(
+    tmp_path: Path,
+) -> None:
+    """AC-INGEST-15. Reading fewer images than the annotations describe is a fault."""
+    archive_path = localized_fixture(
+        tmp_path / "zerowaste.zip",
+        **{
+            f"{ZEROWASTE_ROOT}/train/labels.json": coco_labels(
+                images=[
+                    {"id": 0, "file_name": "a.PNG", "width": 1920, "height": 1080},
+                    {"id": 7, "file_name": "ghost.PNG", "width": 1920, "height": 1080},
+                ],
+                annotations=[],
+            )
+        },
+    )
+    with pytest.raises(CorpusError, match="ghost.PNG"):
+        LocalizedArchive(archive_path, "zerowaste")
+
+
+def test_a_localized_composition_counts_regions_rather_than_images(
+    tmp_path: Path,
+) -> None:
+    """AC-INGEST-16. One image holding six objects is six pieces of evidence."""
+    archive_path = localized_fixture(tmp_path / "zerowaste.zip")
+    with LocalizedArchive(archive_path, "zerowaste") as archive:
+        composition = compose_localized("zerowaste", archive.examples)
+    assert composition.example_count == 4
+    assert composition.region_count == 4
+    assert composition.source_counts == {
+        "cardboard": 1,
+        "metal": 1,
+        "rigid_plastic": 1,
+        "soft_plastic": 1,
+    }
+    assert composition.resolved_class_counts == {"M-04": 1}
+    # One rigid_plastic region spans M-01 through M-04, so M-04 is counted
+    # twice: once resolved from soft_plastic and once as a class the rigid
+    # label may be.
+    assert composition.class_counts == {
+        "M-01": 1,
+        "M-02": 1,
+        "M-03": 1,
+        "M-04": 2,
+        "M-05": 1,
+        "M-06": 1,
+        "M-08": 1,
+        "M-09": 1,
+        "M-10": 1,
+    }
+    assert composition.ambiguous_count == 3
+    assert "M-07" in composition.absent_classes
+    assert "M-08" in composition.unresolved_classes
+
+
+def test_a_corpus_with_no_declared_coco_layout_is_refused(tmp_path: Path) -> None:
+    """The reader infers no structure it was not told about."""
+    archive_path = localized_fixture(tmp_path / "zerowaste.zip")
+    with pytest.raises(CorpusError, match="declares no annotation layout"):
+        LocalizedArchive(archive_path, "trashnet")
+
+
+def test_a_localized_frame_decodes_through_the_caller_supplied_decoder(
+    tmp_path: Path,
+) -> None:
+    """Ingestion still needs no image library, localized or not."""
+
+    def decode(payload: bytes) -> NDArray[np.uint8]:
+        assert payload == b"first frame"
+        return np.zeros((2, 2, 3), dtype=np.uint8)
+
+    archive_path = localized_fixture(tmp_path / "zerowaste.zip")
+    with LocalizedArchive(archive_path, "zerowaste") as archive:
+        example = archive.examples[0]
+        assert archive.read_bytes(example) == b"first frame"
+        assert archive.read_frame(example, decode).shape == (2, 2, 3)
+
+
+@pytest.mark.skipif(
+    zerowaste_archive() is None, reason="ZeroWaste has not been fetched locally"
+)
+def test_the_fetched_zerowaste_archive_matches_its_manifest_digest() -> None:
+    """The committed digest describes the bytes this machine holds."""
+    path = zerowaste_archive()
+    assert path is not None
+    recorded = Manifest.load(ROOT / "corpora" / "manifest.toml")["zerowaste"]
+    assert digest_of(path) == recorded.sha256
+
+
+@pytest.mark.skipif(
+    zerowaste_archive() is None, reason="ZeroWaste has not been fetched locally"
+)
+def test_the_fetched_zerowaste_archive_holds_its_recorded_composition() -> None:
+    """The counts in docs/research/corpus-ingestion.md come from these bytes."""
+    path = zerowaste_archive()
+    assert path is not None
+    with LocalizedArchive(path, "zerowaste") as archive:
+        measured = compose_localized("zerowaste", archive.examples)
+        splits = Counter(example.split for example in archive.examples)
+    assert measured.example_count == 4503
+    assert measured.region_count == 26766
+    assert dict(splits) == {"train": 3002, "val": 572, "test": 929}
+    assert measured.source_counts == {
+        "cardboard": 17751,
+        "metal": 382,
+        "rigid_plastic": 1769,
+        "soft_plastic": 6864,
+    }
+    assert measured.unannotated_count == 86
+    assert measured.unmapped_count == 0
+    assert measured.absent_classes == ("M-07", "M-11")
+    assert measured.resolved_class_counts == {"M-04": 6864}
+
+
+@pytest.mark.skipif(
+    zerowaste_archive() is None, reason="ZeroWaste has not been fetched locally"
+)
+def test_a_zerowaste_file_name_does_not_identify_an_image_across_splits() -> None:
+    """Three names appear in two splits each, naming different frames."""
+    path = zerowaste_archive()
+    assert path is not None
+    with LocalizedArchive(path, "zerowaste") as archive:
+        by_name: dict[str, set[str]] = {}
+        for example in archive.examples:
+            by_name.setdefault(example.file_name, set()).add(example.split)
+    collisions = {name for name, splits in by_name.items() if len(splits) > 1}
+    assert collisions == {
+        "01_frame_049000.PNG",
+        "03_frame_049000.PNG",
+        "09_frame_003000.PNG",
+    }

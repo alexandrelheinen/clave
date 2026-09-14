@@ -172,16 +172,17 @@ imitation worked, not that the behavior is good.
 
 ## What is not proven
 
-**No corpus has been fetched.** The ingestion path exists, applies the taxonomy's
-corpus mappings, records an ambiguity when a label spans several classes, and
-keeps an unmapped label rather than discarding it. It has been exercised against
-a fixture and never against ZeroWaste, TACO or SpectralWaste. Its first real test
-comes when an operator downloads one and records its digest through the manifest.
+**Nothing here was measured against a photograph.** The ingestion path applies
+the taxonomy's corpus mappings, records an ambiguity when a label spans several
+classes, and keeps an unmapped label rather than discarding it, and the
+fixtures that prove it were written to match a table in a document. TrashNet and
+ZeroWaste were fetched later and are measured in
+[corpus-ingestion.md](corpus-ingestion.md); the dataset this document describes
+holds neither of them.
 
-**No held-out set of real imagery exists**, for the same reason. The gap between
-simulated primitives and photographs therefore remains unmeasured, and it is the
-largest unknown standing between this pipeline and a model that works on a real
-line.
+**No held-out set of real imagery exists.** The gap between simulated primitives
+and photographs therefore remains unmeasured, and it is the largest unknown
+standing between this pipeline and a model that works on a real line.
 
 **Nothing was trained.** No accuracy is claimed anywhere in this document. The
 only numbers here are counts and measurements of what was recorded.
