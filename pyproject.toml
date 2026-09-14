@@ -15,7 +15,18 @@ dependencies = ["numpy>=1.26"]
 # PyTorch is the framework selected at v0.1.0. Nothing under src/clave imports
 # it: the core stays framework-free so it is testable without a heavy install.
 # v0.7.0 is the step that takes this dependency for real.
-torch = ["torch>=2.2"]
+torch = ["torch>=2.2", "torchvision>=0.17"]
+# Candidate libraries, needed only to run `clave bench-candidates`. The gate
+# does not install them: the registry is readable without them and the
+# candidate tests skip when they are absent.
+candidates = [
+    "torch>=2.2",
+    "torchvision>=0.17",
+    "lerobot>=0.6",
+    "diffusers>=0.27",
+    "stable-baselines3>=2.3",
+    "gymnasium>=1.0",
+]
 dev = ["pytest>=8", "pytest-cov>=5", "mypy>=1.9", "ruff>=0.4"]
 
 [project.scripts]
@@ -42,8 +53,19 @@ files = ["src", "tests"]
 # torch is an optional extra that the core never imports at module scope. The
 # one conditional import in clave.experiment.seeding exists so a machine with
 # torch installed gets it seeded; a machine without it must still type-check.
+# These libraries ship no type stubs and no py.typed marker. They are optional
+# extras imported lazily inside adapter builders, so the core type-checks on a
+# machine where none of them is installed.
 [[tool.mypy.overrides]]
-module = ["torch.*"]
+module = [
+    "torch.*",
+    "torchvision.*",
+    "sam2.*",
+    "lerobot.*",
+    "stable_baselines3.*",
+    "gymnasium.*",
+    "diffusers.*",
+]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
@@ -54,6 +76,11 @@ pythonpath = ["src"]
 [tool.coverage.run]
 source = ["src/clave"]
 branch = true
+# The candidate adapters are three-line shims calling upstream constructors, and
+# they cannot execute without multi-gigabyte optional libraries the gate does
+# not install. Their real test is the benchmark sweep, whose committed output is
+# docs/research/model-candidates.md. Recorded in docs/decisions.md.
+omit = ["src/clave/candidates/perception.py", "src/clave/candidates/policy.py"]
 
 [tool.coverage.report]
 exclude_also = ["if TYPE_CHECKING:", "raise NotImplementedError"]

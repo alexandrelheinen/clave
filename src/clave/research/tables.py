@@ -41,7 +41,26 @@ _REVIEW_VERDICTS = frozenset(
     {"Advance", "Advance (provisional)", "Reject", "Unavailable", "Baseline"}
 )
 
+_CANDIDATE_OUTCOMES = frozenset({"Confirmed", "Contradicted", "Unmeasured"})
+
 DOCUMENTS: dict[str, tuple[TableSchema, ...]] = {
+    "docs/research/model-candidates.md": (
+        TableSchema(
+            label="measurements",
+            header=(
+                "Candidate",
+                "Stage",
+                "Parameters",
+                "Median latency",
+                "Spread",
+                "Repetitions",
+                "v0.1.2 estimate",
+                "Outcome",
+            ),
+            verdict_column="Outcome",
+            vocabulary=_CANDIDATE_OUTCOMES,
+        ),
+    ),
     "docs/research/training-infrastructure-review.md": (
         TableSchema(
             label="corpus register",

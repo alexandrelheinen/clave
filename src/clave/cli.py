@@ -80,6 +80,39 @@ def _record(root: Path, name: str, path: Path) -> int:
     return 0
 
 
+def _bench_candidates(warmup: int, repetitions: int) -> int:
+    """Load and benchmark every shortlisted candidate, printing a table.
+
+    Args:
+        warmup: Untimed iterations per candidate.
+        repetitions: Timed iterations per candidate.
+
+    Returns:
+        A process exit code. Zero even when a candidate is unavailable, since a
+        missing optional dependency is a normal state on this hardware.
+    """
+    from clave.candidates.registry import sweep
+
+    print(
+        f"{'candidate':28s} {'stage':11s} "
+        f"{'params':>10s} {'median':>12s} {'spread':>10s}"
+    )
+    for spec, result, note in sweep(warmup=warmup, repetitions=repetitions):
+        if result is None or result.median_latency_seconds is None:
+            print(
+                f"{spec.name:28s} {spec.stage.value:11s} "
+                f"{'-':>10s} {'-':>12s} {'-':>10s}  {note}"
+            )
+            continue
+        print(
+            f"{spec.name:28s} {spec.stage.value:11s} "
+            f"{result.parameter_count / 1e6:9.2f}M "
+            f"{result.median_latency_seconds * 1000:11.1f}ms "
+            f"{(result.spread_seconds or 0) * 1000:9.1f}ms"
+        )
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run a CLAVE command.
 
@@ -97,6 +130,11 @@ def main(argv: list[str] | None = None) -> int:
     record = sub.add_parser("record-digest", help="report a digest for review")
     record.add_argument("name")
     record.add_argument("path", type=Path)
+    bench = sub.add_parser(
+        "bench-candidates", help="load and benchmark every candidate"
+    )
+    bench.add_argument("--warmup", type=int, default=3)
+    bench.add_argument("--repetitions", type=int, default=10)
 
     args = parser.parse_args(argv)
     try:
@@ -104,6 +142,8 @@ def main(argv: list[str] | None = None) -> int:
             return _verify_manifest(args.root)
         if args.command == "check-research":
             return _check_research(args.root)
+        if args.command == "bench-candidates":
+            return _bench_candidates(args.warmup, args.repetitions)
         return _record(args.root, args.name, args.path)
     except ClaveError as exc:
         print(f"  FAILED   {exc}", file=sys.stderr)
