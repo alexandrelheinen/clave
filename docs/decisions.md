@@ -138,3 +138,47 @@ removes the reason for this gate, at which point the three groups return to the
 ordinary per-class bar. A first measurement showing a trained candidate well
 under 0.35 is also reason to tighten it, since a gate nothing ever approaches
 gates nothing.
+
+## D-05: Python runs inference and Rust never loads a model
+
+**Date**: 2026-09-14 · **Step**: v0.9.0 `sitl-runtime`
+
+**The standard**: [docs/guidelines.md](guidelines.md) and
+`.kiro/steering/tech.md` both say the inference runtime is chosen at the
+learning-platform step. v0.3.0 deferred it, and nothing since has chosen it, so
+the standard names a decision that was never made.
+
+**What was scoped**: Python runs every model and Rust runs none. The two
+processes exchange a versioned JSON proposal over a Unix datagram, specified in
+`crates/clave-safety/contract/proposal.md`. No Rust crate in this workspace
+links a machine learning framework, and a test on the safety crate's manifest
+checks that.
+
+**Why**: the safety layer earns its place by being unable to fail the way the
+model fails. A crate that loaded the model would share its tensor library, its
+export step, and its version skew, and "inference proposes, a deterministic
+layer disposes" would describe two halves of one dependency rather than two
+independent things.
+
+Three alternatives were considered:
+
+| Option | Why not |
+| --- | --- |
+| Export to ONNX and run it in Rust through `ort` | Adds a large native dependency to the component the gate cannot do without, plus an export step that can diverge from the trained model without saying so |
+| TorchScript through `tch-rs` | Links libtorch into the crate that most needs to stay small enough to audit |
+| Reimplement the architectures in a pure Rust framework | Two implementations of one architecture, drifting apart from the first bug fix |
+
+**What is not scoped**: the transport. v0.10.0 hands the decision to FRET over
+ROS 2 and may replace the datagram with something else. What this entry fixes is
+which side owns inference, not which pipe carries the result.
+
+**The cost, measured**: a process boundary adds a round trip that an in-process
+design would not pay. `docs/research/sitl-runtime.md` reports the measured
+frame-to-decision latency against the per-object time budget, so the price of
+this decision is a number rather than an assertion.
+
+**Reversal condition**: a measurement showing the boundary consuming a
+meaningful share of the per-object budget. At that point the honest move is a
+shared-memory transport rather than linking a model into the safety crate, since
+the property being protected is the absence of shared code and not the presence
+of a socket.

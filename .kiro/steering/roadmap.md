@@ -300,6 +300,7 @@ lands, not when its spec is written.
 | data-pipeline | Approved | Approved | Approved | Delivered, tagged v0.6.0 |
 | training-application | Approved | Approved | Approved | Delivered, tagged v0.7.0 |
 | validation-harness | Approved | Approved | Approved | Delivered, tagged v0.8.0 |
+| sitl-runtime | Approved | Approved | Approved | Delivered, tagged v0.9.0 |
 | every other spec | Not started | Not started | Not started | Not started |
 
 v0.1.0 delivered [docs/research/training-infrastructure-review.md](../../docs/research/training-infrastructure-review.md).

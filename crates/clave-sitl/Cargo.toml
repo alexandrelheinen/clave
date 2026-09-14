@@ -1,0 +1,21 @@
+[package]
+name = "clave-sitl"
+description = "The Rust half of the software-in-the-loop runtime: receives proposals, applies the safety layer, publishes decisions"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+clave-decision.workspace = true
+clave-publish.workspace = true
+clave-routing.workspace = true
+clave-safety.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

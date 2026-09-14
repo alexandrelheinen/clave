@@ -275,6 +275,74 @@ def _train(root: Path, config_path: Path, candidate: str | None) -> int:
     return 0
 
 
+def _run_sitl(
+    root: Path,
+    config_path: Path,
+    scripted: bool,
+    directory: Path,
+    seconds: float | None,
+) -> int:
+    """Run the software-in-the-loop runtime and report what it did.
+
+    Args:
+        root: Repository root.
+        config_path: Path to the runtime configuration.
+        scripted: Run the scripted expert instead of the trained checkpoints.
+        directory: Where the sockets, the runtime configuration and the record
+            go.
+        seconds: Overrides how many simulated seconds to run, which is how a
+            measurement gets enough samples for a percentile to mean anything.
+
+    Returns:
+        A process exit code.
+    """
+    from clave.runtime import loop
+    from clave.runtime.inference import (
+        CheckpointPredictor,
+        Predictor,
+        ScriptedPredictor,
+    )
+
+    settings = loop.RuntimeSettings.load(root / config_path)
+    if seconds is not None:
+        settings = loop.RuntimeSettings(**{**vars(settings), "seconds": seconds})
+    predictor: Predictor
+    if scripted:
+        predictor = ScriptedPredictor()
+    else:
+        predictor = CheckpointPredictor(
+            checkpoints=root / settings.checkpoints,
+            perception=settings.perception,
+            policy=settings.policy,
+            presence_floor=settings.presence_floor,
+            association_radius=settings.association_radius_meters,
+        )
+    report = loop.run(root, settings, predictor, directory)
+    loop.write_record(directory / "sitl.json", report)
+
+    print(f"  predictor       {report.predictor}")
+    print(f"  machine         {report.machine}, {report.threads} threads")
+    size = f"{report.frame_width}x{report.frame_height}"
+    print(f"  frames          {report.frames} at {size}")
+    print(f"  proposals       {report.proposals}, {report.silent_frames} silent frames")
+    for name in sorted(report.counters):
+        print(f"  {name:22s}  {report.counters[name]}")
+    print(f"  decisions back  {report.decisions_received}")
+    print(
+        f"  budget          {report.budget_seconds:.3f} s at "
+        f"{report.belt_speed:.3f} m/s"
+    )
+    print(
+        f"  latency         median {report.percentile(0.50) * 1000:.1f} ms, "
+        f"p99 {report.percentile(0.99) * 1000:.1f} ms"
+    )
+    print(
+        "  The models saw 240 frames of parametric primitives. This measures "
+        "the mechanism, not whether a decision is right."
+    )
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run a CLAVE command.
 
@@ -311,6 +379,17 @@ def main(argv: list[str] | None = None) -> int:
     )
     validate.add_argument("--outcomes", type=Path, required=True)
     validate.add_argument("--gates", type=Path, default=None)
+    sitl = sub.add_parser(
+        "run-sitl", help="run the loop from frame to published decision"
+    )
+    sitl.add_argument("--config", type=Path, default=Path("configs/runtime/sitl.yml"))
+    sitl.add_argument("--out", type=Path, default=Path("runs/sitl"))
+    sitl.add_argument("--seconds", type=float, default=None)
+    sitl.add_argument(
+        "--scripted",
+        action="store_true",
+        help="propose with the scripted expert instead of the trained models",
+    )
 
     args = parser.parse_args(argv)
     try:
@@ -326,6 +405,10 @@ def main(argv: list[str] | None = None) -> int:
             return _record_dataset(args.root, args.out, args.seed)
         if args.command == "train":
             return _train(args.root, args.config, args.candidate)
+        if args.command == "run-sitl":
+            return _run_sitl(
+                args.root, args.config, args.scripted, args.out, args.seconds
+            )
         if args.command == "validate-run":
             return _validate_run(args.root, args.outcomes, args.gates)
         return _record(args.root, args.name, args.path)
