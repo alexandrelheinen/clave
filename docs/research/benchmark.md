@@ -14,19 +14,25 @@ predictor.**
 
 `clave benchmark`, 24 seeds, 20 simulated seconds each, 480 simulated seconds
 per configuration, on an AMD Ryzen 7 7735U with no accelerator, in the world
-rescaled at v1.0.1.
+rescaled at v1.0.1 and widened at v1.0.2.
 
 | Configuration | Presented | Decided | Accuracy | Decision p99 | Overridden | Gates passed |
 | --- | --- | --- | --- | --- | --- | --- |
-| `scripted-expert` | 227 | 123 | 54.2% | 0.9 ms | 15 of 691 | 4 of 20 |
-| `resnet50 + behavior-cloning` | 227 | 120 | 11.5% | 146.4 ms | 142 of 542 | 4 of 20 |
-| `resnet50 + act` | 227 | 124 | 9.7% | 192.7 ms | 0 of 450 | 4 of 20 |
+| `scripted-expert` | 63 | 36 | 57.1% | 0.7 ms | 1 of 269 | 4 of 20 |
+| `resnet50 + behavior-cloning` | 63 | 45 | 17.5% | 99.3 ms | 73 of 306 | 4 of 20 |
+| `resnet50 + act` | 63 | 0 | 0.0% | unmeasured | 0 of 0 | 4 of 20 |
+
+**Only 63 objects of the 288 spawned reached the arm**, against 227 before the
+belt was widened. That is the cost of a belt wider than one manipulator, which
+[scene-assets.md](scene-assets.md) explains and which is deliberate: 41 percent
+of the belt width is outside the workspace and an object landing there is never
+presented. A second arm is what covers it.
 
 A record is one object that entered the arm's reachable window, which is the
 population the validation harness defines: an object that never came within
 reach is outside the boundary, since nothing could have been done about it.
 
-**A predictor that always named the most common class would score 19.4%.** Both
+**A predictor that always named the most common class would score 20.6%.** Both
 trained configurations sit below that. Whatever the loss curves at v0.7.0 showed,
 neither learned anything a constant does not already do.
 
@@ -34,8 +40,8 @@ The scripted expert is a control rather than a competitor. It reads the world
 instead of the frame, so what it measures is the ceiling imitation could reach
 and the loop's cost with inference removed, 0.9 ms.
 
-**Its 54.2% is coverage, not classification.** It decided about 123 of the 227
-objects presented and was right about every one of them; the missing 46 percent
+**Its 57.1% is coverage, not classification.** It decided about 36 of the 63
+objects presented and was right about every one of them; the missing 43 percent
 are objects it never decided about at all. The cause is measured in
 [world-scale.md](world-scale.md): the rescaled belt is slow enough that a mean
 of 2.67 objects sit inside the workspace at once, peaking at six, and the expert
@@ -96,31 +102,37 @@ numbers above already say.
 
 ## The recommendation
 
-**`resnet50 + behavior-cloning`**, at 11.5% against 9.7% for
-`resnet50 + act`, at a p99 decision latency of 146.4 ms against 192.7 ms. The
-gap is four records out of 227, which is inside what a handful of objects would
-move, so this is a latency choice rather than an accuracy one.
+**`resnet50 + behavior-cloning`**, at 17.5%, and the reason is not a margin: it
+is the only trained configuration that proposed anything at all.
+
+**ACT made zero proposals.** It shares the classifier with the row above, which
+made 306, so the difference is entirely its predicted pick point. Probed
+directly on one frame it returns (0.157, 0.000, 0.523), half a meter above the
+belt surface and near the effector's own rest pose, which matches no object
+inside the association radius. The integration is sound; the model is not. Three
+epochs over 240 frames taught it to predict where the arm already was.
 
 It is a recommendation between two configurations that both fail, which is worth
 saying plainly. If CLAVE had to run something today it would run this one, and
 the honest reason is that the cheaper policy is not worse than the expensive one
 on this data.
 
-The two policies now decide about nearly the same number of objects, 120 against
-124, so the coverage difference that separated them before the rescale is gone.
-What is left is latency, where behavior cloning is 46 ms cheaper at the 99th
-percentile, and both sit far under the 4.14 s the rescaled belt allows.
+Behavior cloning covers 45 of 63 presented objects, more than the scripted
+expert's 36, because it proposes on frames where the expert declines. Being
+right about 17.5 percent of them is the part that matters and the part that
+fails.
 
 ## What the safety layer did
 
 | Configuration | Proposals | Overridden | Share |
 | --- | --- | --- | --- |
-| `scripted-expert` | 691 | 15 | 2.2% |
-| `resnet50 + behavior-cloning` | 542 | 142 | 26.2% |
-| `resnet50 + act` | 450 | 0 | 0% |
+| `scripted-expert` | 269 | 1 | 0.4% |
+| `resnet50 + behavior-cloning` | 306 | 73 | 23.9% |
+| `resnet50 + act` | 0 | 0 | none proposed |
 
-The control is now overridden 2.2 percent of the time against 47 percent before
-the rescale, and the recommended configuration 26 percent against 65 percent.
+The control is now overridden once in 269 proposals against 47 percent before
+the world was rescaled, and the recommended configuration 24 percent against 65
+percent.
 [world-scale.md](world-scale.md) explains the fall: the arm could not reach the
 middle of its own belt, so most of what any proposer suggested was
 geometrically impossible, and the layer was refusing physics rather than

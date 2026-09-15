@@ -32,6 +32,9 @@ world = ["mujoco>=3.2", "pyyaml>=6"]
 # ROS installation rather than from a wheel, which is why only the CBOR decoder
 # is listed here.
 ros = ["cbor2>=5.6"]
+# Converting the warehouse meshes from COLLADA, which MuJoCo does not read.
+# Needed once, by scripts/import_warehouse_assets.py, never at run time.
+assets = ["trimesh>=4.0", "pycollada>=0.8"]
 # cbor2 belongs to the ros extra and is repeated here on purpose: the decoder
 # that reads the published contract is core enough to test on every run, and the
 # gate installs no ROS distribution, so this is the only way it gets exercised.

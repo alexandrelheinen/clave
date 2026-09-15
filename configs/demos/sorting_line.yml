@@ -29,5 +29,5 @@ video:
   # view and a worse one to watch.
   azimuth_degrees: 150.0
   elevation_degrees: -18.0
-  distance_meters: 0.95
-  lookat_meters: [0.0, -0.06, 0.40]
+  distance_meters: 1.45
+  lookat_meters: [0.0, 0.02, 0.32]
