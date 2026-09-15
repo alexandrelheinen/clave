@@ -1,6 +1,6 @@
 # Dressing the scene, and what is still missing
 
-> Roadmap steps: v1.0.2 and v1.0.3, patches to the world of v0.5.0 · Spec:
+> Roadmap steps: v1.0.2 through v1.0.4, patches to the world of v0.5.0 · Spec:
 > [.kiro/specs/sorting-world/](../../.kiro/specs/sorting-world/)
 
 The simulation was a belt and an arm floating over a gray plane. Everything it
@@ -117,6 +117,52 @@ top, and each axis is scaled independently to the belt the world configures.
 The README tabulates the factors. The modules carry no collision geometry: an
 object still rests on the box the belt has always been, so drawing them moves
 nothing that was ever measured.
+
+## What was added at v1.0.4: every object is now a photograph
+
+The parametric cylinders and boxes are gone. Every object on the belt is a
+scanned package, which removes the limitation [v0.6.0](data-pipeline.md)
+recorded: "a classifier trained only on them learns shape rather than
+material."
+
+Choosing them meant measuring everything available. All 1,030 models in
+[Google's Scanned Objects](https://github.com/kevinzakka/mujoco_scanned_objects),
+pinned as a submodule under MIT with the models themselves CC BY 4.0, plus the
+87 across both YCB collections. **276 fit under 52 mm** across their narrowest
+horizontal axis, and the ones among those that are recyclable packaging rather
+than plant saucers, hard drives or toys are the fourteen that ship.
+
+| Class | Objects | Source |
+| --- | --- | --- |
+| `M-02` HDPE | 5 supplement tubs and toiletry bottles | Scanned Objects |
+| `M-04` Other plastic | 2, a sprinkles jar and a pack of snack bags | Scanned Objects |
+| `M-06` Ferrous metal | 1 tuna can | YCB |
+| `M-09` Paperboard | 6 cartons | YCB and Scanned Objects |
+
+**Seven classes have no object.** Nothing made of PET, PP, aluminum, glass,
+corrugated board or beverage carton fits the gripper in either collection: a
+soda can is 66 mm across, a bleach bottle 68 mm, the narrowest drinking cup 57
+mm, and no glass container is under 52 mm at any size. `D-09` in
+[decisions.md](../decisions.md) records that this does not satisfy
+`AC-ASSET-02`, which asks for six, and what would reverse it.
+
+**The material label is now inferred.** A supplement tub is taken as HDPE and a
+candy carton as paperboard, from what the package is rather than from anything
+measured. The synthetic set knew each object's material because it chose it, so
+this is label noise the world did not have, traded for appearance it also did
+not have.
+
+### The list order turned out to be a measurement
+
+The pool fills its slots by walking the object list, so the list order decides
+which objects a twenty second run ever spawns. The first version of this set
+grouped its classes, which put five HDPE tubs in the first five slots: the
+benchmark came back with 49 records of `M-02` against 1 of `M-09` and a
+majority-class baseline of 74.2 percent. Interleaving the classes brought the
+support to 22, 14, 10 and 23 and the baseline to 33.3 percent.
+
+Nothing about the world changed between those two runs. A configuration file's
+line order is not usually a measurement, and here every number depended on it.
 
 ## Collections worth considering, none added
 

@@ -48,7 +48,7 @@ spawn:
   # Objects are recycled from a fixed pool, because a compiled MuJoCo model
   # cannot gain bodies at run time. The pool bounds how many objects can be on
   # the belt at once.
-  pool_size: 12
+  pool_size: 14
   # Objects enter this far inside the belt's leading edge. Spawning exactly on
   # the edge lets an object tip off before the belt drive engages.
   entry_margin_meters: 0.08
@@ -149,81 +149,45 @@ lighting:
   diffuse: [0.45, 0.80]
 
 objects:
-  # size_a / size_b are interpreted per shape:
-  #   cylinder -> radius, half-length
-  #   box      -> half-width, half-height
+  # Every object is a scanned photograph of a real package. The parametric
+  # cylinders and boxes this world used through v1.0.3 are gone: they taught a
+  # classifier shape rather than material, which is the limitation v0.5.0
+  # recorded and nothing had removed until now.
   #
-  # The grasp width is twice size_a for both shapes, and every entry keeps it
-  # under arm.max_grasp_width_meters. That bound comes from the gripper's own
-  # mesh and it is what decides the scale of this object set: these are the
-  # small containers a 56 mm gripper can close on, not the two litre bottles a
-  # recovery facility sees. A larger object set needs a larger gripper, which
-  # is a different arm rather than a different number here.
-  - name: drink_bottle
-    material_class: M-01
-    shape: cylinder
-    size_a_meters: [0.016, 0.021]
-    size_b_meters: [0.055, 0.080]
-    density_kg_per_m3: [55, 110]
+  # What is here is what the gripper can close on. Measuring all 1,030 scanned
+  # objects and both YCB collections found 276 under 52 mm across their
+  # narrowest horizontal axis, and these are the ones among them that are
+  # recyclable packaging rather than plant saucers, hard drives or toys.
+  #
+  # Two things a reader has to know.
+  #
+  # Four of the eleven taxonomy classes have an object. PET, PP, aluminum,
+  # glass, corrugated board and beverage carton have none, because nothing made
+  # of them in either collection fits a 55.7 mm gripper: a soda can is 66 mm, a
+  # bleach bottle 68 mm, the narrowest cup 57 mm. `AC-ASSET-02` asks for six
+  # classes and this set has four, which `D-09` records rather than hides.
+  #
+  # The material class is inferred from what the package is, not measured. A
+  # supplement tub is taken as HDPE, a candy carton as paperboard, a tuna can
+  # as steel. The synthetic set this replaces had its material true by
+  # construction, so this is label noise the world did not have before, traded
+  # for appearance it also did not have.
 
-  - name: milk_jug
+  # --- M-02, high-density polyethylene: supplement tubs and toiletry bottles ---
+
+  # The pool fills its slots by walking this list in order, so the list order
+  # decides which objects a short run ever spawns. Grouping the classes put
+  # five HDPE tubs in the first five slots and left paperboard with one record
+  # in twenty-four seeded runs. The classes alternate here for that reason, and
+  # the comment is what keeps somebody from tidying them back into groups.
+
+  - name: silicon_bottle
     material_class: M-02
-    shape: box
-    size_a_meters: [0.015, 0.020]
-    size_b_meters: [0.050, 0.070]
+    shape: mesh
+    mesh: third_party/scanned_objects/models/JarroSil_Activated_Silicon/model.obj
+    texture: third_party/scanned_objects/models/JarroSil_Activated_Silicon/texture.png
     density_kg_per_m3: [70, 130]
 
-  - name: yogurt_tub
-    material_class: M-03
-    shape: cylinder
-    size_a_meters: [0.017, 0.022]
-    size_b_meters: [0.022, 0.035]
-    density_kg_per_m3: [80, 150]
-
-  - name: drink_can
-    material_class: M-05
-    shape: cylinder
-    size_a_meters: [0.016, 0.019]
-    size_b_meters: [0.045, 0.060]
-    density_kg_per_m3: [40, 90]
-
-  - name: food_can
-    material_class: M-06
-    shape: cylinder
-    size_a_meters: [0.018, 0.022]
-    size_b_meters: [0.025, 0.040]
-    density_kg_per_m3: [180, 320]
-
-  - name: glass_bottle
-    material_class: M-07
-    shape: cylinder
-    size_a_meters: [0.015, 0.020]
-    size_b_meters: [0.055, 0.085]
-    density_kg_per_m3: [380, 620]
-
-  - name: shipping_box
-    material_class: M-08
-    shape: box
-    size_a_meters: [0.018, 0.022]
-    size_b_meters: [0.020, 0.035]
-    density_kg_per_m3: [60, 120]
-
-  # Scanned objects from the YCB benchmark, pinned at third_party/ycb_sim
-  # under Apache-2.0. These are photographed packages rather than parametric
-  # primitives, which is what a classifier needs in order to learn material
-  # rather than shape.
-  #
-  # Only the ones the gripper can close on are here. Measured across their
-  # narrowest horizontal axis: gelatin box 30.1 mm, tuna can 33.5 mm, pudding
-  # box 38.9 mm, sugar box 49.5 mm, all under the 55.7 mm opening. The five
-  # left out are the cracker box at 71.8 mm, the master chef can at 102.4, the
-  # tomato soup can at 67.7, the mustard bottle at 66.6 and the potted meat can
-  # at 60.1, which misses by 4.4 mm. docs/research/scene-assets.md carries the
-  # measurements and what a wider gripper would add.
-  #
-  # A mesh declares no size. The scene measures the compiled vertices and
-  # refuses to build if one exceeds the gripper, the same check the primitives
-  # get, because a number written here could drift from the file it describes.
   - name: gelatin_box
     material_class: M-09
     shape: mesh
@@ -231,19 +195,12 @@ objects:
     texture: third_party/ycb_sim/textures/009_gelatin_box.png
     density_kg_per_m3: [90, 160]
 
-  - name: pudding_box
-    material_class: M-09
+  - name: snack_bags
+    material_class: M-04
     shape: mesh
-    mesh: third_party/ycb_sim/meshes/008_pudding_box.msh
-    texture: third_party/ycb_sim/textures/008_pudding_box.png
-    density_kg_per_m3: [90, 160]
-
-  - name: sugar_box
-    material_class: M-09
-    shape: mesh
-    mesh: third_party/ycb_sim/meshes/004_sugar_box.msh
-    texture: third_party/ycb_sim/textures/004_sugar_box.png
-    density_kg_per_m3: [90, 160]
+    mesh: third_party/scanned_objects/models/Now_Designs_Snack_Bags_Bicycle_2_count/model.obj
+    texture: third_party/scanned_objects/models/Now_Designs_Snack_Bags_Bicycle_2_count/texture.png
+    density_kg_per_m3: [40, 90]
 
   - name: tuna_fish_can
     material_class: M-06
@@ -252,9 +209,78 @@ objects:
     texture: third_party/ycb_sim/textures/007_tuna_fish_can.png
     density_kg_per_m3: [180, 320]
 
-  - name: beverage_carton
-    material_class: M-10
-    shape: box
-    size_a_meters: [0.016, 0.021]
-    size_b_meters: [0.045, 0.065]
-    density_kg_per_m3: [70, 140]
+  # --- M-09, paperboard: the cartons a kitchen produces most of ---
+
+  - name: coq10_tub
+    material_class: M-02
+    shape: mesh
+    mesh: third_party/scanned_objects/models/CoQ10/model.obj
+    texture: third_party/scanned_objects/models/CoQ10/texture.png
+    density_kg_per_m3: [70, 130]
+
+  - name: pudding_box
+    material_class: M-09
+    shape: mesh
+    mesh: third_party/ycb_sim/meshes/008_pudding_box.msh
+    texture: third_party/ycb_sim/textures/008_pudding_box.png
+    density_kg_per_m3: [90, 160]
+
+  - name: sprinkles_jar
+    material_class: M-04
+    shape: mesh
+    mesh: third_party/scanned_objects/models/Wilton_Pearlized_Sugar_Sprinkles_525_oz_Gold/model.obj
+    texture: third_party/scanned_objects/models/Wilton_Pearlized_Sugar_Sprinkles_525_oz_Gold/texture.png
+    density_kg_per_m3: [70, 130]
+
+  # --- M-06, ferrous metal ---
+
+  - name: candy_carton
+    material_class: M-09
+    shape: mesh
+    mesh: third_party/scanned_objects/models/Nestle_Candy_19_oz_Butterfinger_Singles_116567/model.obj
+    texture: third_party/scanned_objects/models/Nestle_Candy_19_oz_Butterfinger_Singles_116567/texture.png
+    density_kg_per_m3: [90, 160]
+
+  - name: folic_acid_tub
+    material_class: M-02
+    shape: mesh
+    mesh: third_party/scanned_objects/models/Folic_Acid/model.obj
+    texture: third_party/scanned_objects/models/Folic_Acid/texture.png
+    density_kg_per_m3: [70, 130]
+
+  - name: sugar_box
+    material_class: M-09
+    shape: mesh
+    mesh: third_party/ycb_sim/meshes/004_sugar_box.msh
+    texture: third_party/ycb_sim/textures/004_sugar_box.png
+    density_kg_per_m3: [90, 160]
+
+  - name: haircolor_bottle
+    material_class: M-02
+    shape: mesh
+    mesh: third_party/scanned_objects/models/Just_For_Men_Shampoo_In_Haircolor_Darkest_Brown_50/model.obj
+    texture: third_party/scanned_objects/models/Just_For_Men_Shampoo_In_Haircolor_Darkest_Brown_50/texture.png
+    density_kg_per_m3: [80, 140]
+
+  - name: donut_carton
+    material_class: M-09
+    shape: mesh
+    mesh: third_party/scanned_objects/models/Little_Debbie_Donut_Sticks_6_cake_donuts_10_oz_total/model.obj
+    texture: third_party/scanned_objects/models/Little_Debbie_Donut_Sticks_6_cake_donuts_10_oz_total/texture.png
+    density_kg_per_m3: [90, 160]
+
+  - name: caplet_tub
+    material_class: M-02
+    shape: mesh
+    mesh: third_party/scanned_objects/models/Phillips_Caplets_Size_24/model.obj
+    texture: third_party/scanned_objects/models/Phillips_Caplets_Size_24/texture.png
+    density_kg_per_m3: [70, 130]
+
+  # --- M-04, plastics outside codes 1, 2 and 5, including film ---
+
+  - name: coffee_carton
+    material_class: M-09
+    shape: mesh
+    mesh: third_party/scanned_objects/models/NESCAFE_NESCAFE_TC_STKS_DECAF_6_CT/model.obj
+    texture: third_party/scanned_objects/models/NESCAFE_NESCAFE_TC_STKS_DECAF_6_CT/texture.png
+    density_kg_per_m3: [90, 160]

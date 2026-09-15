@@ -14,22 +14,29 @@ predictor.**
 
 `clave benchmark`, 24 seeds, 20 simulated seconds each, 480 simulated seconds
 per configuration, on an AMD Ryzen 7 7735U with no accelerator, in the world
-rescaled at v1.0.1, widened at v1.0.2 and given scanned objects at v1.0.3.
+rescaled at v1.0.1, widened at v1.0.2, and given an object set of scanned
+packages at v1.0.4.
 
-| Configuration | Presented | Decided | Accuracy | Decision p99 | Overridden | Gates passed |
-| --- | --- | --- | --- | --- | --- | --- |
-| `scripted-expert` | 61 | 36 | 59.0% | 0.6 ms | **0 of 276** | 4 of 20 |
-| `resnet50 + behavior-cloning` | 61 | 39 | 18.0% | 163.0 ms | 98 of 278 | 4 of 20 |
-| `resnet50 + act` | 61 | 0 | 0.0% | unmeasured | 0 of 0 | 4 of 20 |
+| Configuration | Presented | Decided | Accuracy | Decision p99 | Overridden |
+| --- | --- | --- | --- | --- | --- |
+| `scripted-expert` | 69 | 39 | 56.5% | 0.8 ms | 84 of 282 |
+| `resnet50 + behavior-cloning` | 69 | 36 | 23.2% | 124.5 ms | 120 of 298 |
+| `resnet50 + act` | 69 | 0 | 0.0% | unmeasured | 0 of 0 |
 
-**The scripted expert is now overridden zero times in 276 proposals.** It was
-47 percent before the world was rescaled at v1.0.1 and 0.4 percent after. Zero
-is what a proposer and a checker reading the same geometry through the same
-test should produce, and reaching it took three rounds of measuring the world
-rather than trusting it.
+**Every object is now a photograph rather than a primitive**, which is the
+change `D-09` records. The taxonomy coverage fell from nine classes to four in
+exchange: `M-02`, `M-04`, `M-06` and `M-09` have objects and the other seven
+have none, because nothing made of them fits a 55.7 mm gripper.
 
-**Only 61 objects of the 288 spawned reached the arm**, against 227 before the
-belt was widened. That is the cost of a belt wider than one manipulator, which
+**The overrides came back.** They were zero at v1.0.3 and are 84 of 282 here,
+and the cause is the object rather than the geometry: the expert proposes the
+position of the object's body, and a scanned package's body origin sits at its
+centre rather than on the belt. A tall bottle therefore puts its pick point 75
+mm above the surface, which pushes it past the 0.25 m the workspace reaches.
+A pick point on the object's top face rather than its centre would recover most
+of them, and nothing here does that yet.
+
+**Only 69 objects of the 336 spawned reached the arm.** That is the cost of a belt wider than one manipulator, which
 [scene-assets.md](scene-assets.md) explains and which is deliberate: 41 percent
 of the belt width is outside the workspace and an object landing there is never
 presented. A second arm is what covers it.
@@ -38,16 +45,25 @@ A record is one object that entered the arm's reachable window, which is the
 population the validation harness defines: an object that never came within
 reach is outside the boundary, since nothing could have been done about it.
 
-**A predictor that always named the most common class would score 19.7%.** Both
-trained configurations sit below that. Whatever the loss curves at v0.7.0 showed,
+**A predictor that always named the most common class would score 33.3%.** Both
+trained configurations sit below that.
+
+That bar moved twice in this release and both moves are worth recording. The
+first object set grouped its classes in the configuration file, and the pool
+fills its slots by walking that list, so five HDPE tubs took the first five
+slots and paperboard ended with one record in twenty-four runs: the majority
+class was 74.2 percent and every number was about that accident. Interleaving
+the classes brought the support to 22, 14, 10 and 23 and the bar to 33.3
+percent. A list order is not usually a measurement, and here it was the
+measurement. Whatever the loss curves at v0.7.0 showed,
 neither learned anything a constant does not already do.
 
 The scripted expert is a control rather than a competitor. It reads the world
 instead of the frame, so what it measures is the ceiling imitation could reach
 and the loop's cost with inference removed, 0.9 ms.
 
-**Its 59.0% is coverage, not classification.** It decided about 36 of the 61
-objects presented and was right about every one of them; the missing 41 percent
+**Its 56.5% is coverage, not classification.** It decided about 39 of the 69
+objects presented and was right about every one of them; the missing 43 percent
 are objects it never decided about at all. The cause is measured in
 [world-scale.md](world-scale.md): the rescaled belt is slow enough that a mean
 of 2.67 objects sit inside the workspace at once, peaking at six, and the expert
@@ -94,18 +110,13 @@ was written to do.
 
 | Class | Records |
 | --- | --- |
-| `M-01` PET | 12 |
-| `M-02` HDPE | 11 |
-| `M-03` PP | 9 |
-| `M-05` Aluminum | 11 |
-| `M-07` Glass | 6 |
-| `M-08` Cardboard | 6 |
-| `M-06` Ferrous | 5 |
-| `M-09` Mixed paper | 1 |
+| `M-09` Mixed paper | 23 |
+| `M-02` HDPE | 22 |
+| `M-04` Other plastic | 14 |
+| `M-06` Ferrous | 10 |
 
-`M-09` exists in the world only since v1.0.3, supplied by three scanned YCB
-boxes, and one record is not a measurement of anything. `M-10` has dropped out
-of the presented population entirely.
+Four classes, none reaching the 30 records the gates ask for, and seven classes
+with no object at all. `D-09` records why.
 
 **Actually failed.** The trained rows miss `overall-accuracy` by a wide margin,
 0.177 and 0.129 against a 0.80 threshold, and they miss per-class accuracy in
@@ -114,8 +125,8 @@ numbers above already say.
 
 ## The recommendation
 
-**`resnet50 + behavior-cloning`**, at 18.0%, and the reason is not a margin: it
-is the only trained configuration that proposed anything at all.
+**`resnet50 + behavior-cloning`**, at 23.2%, and the reason is not a margin: it
+is the only trained configuration that decided anything at all.
 
 **ACT made zero proposals.** It shares the classifier with the row above, which
 made 306, so the difference is entirely its predicted pick point. Probed
@@ -138,12 +149,14 @@ fails.
 
 | Configuration | Proposals | Overridden | Share |
 | --- | --- | --- | --- |
-| `scripted-expert` | 276 | 0 | 0% |
-| `resnet50 + behavior-cloning` | 278 | 98 | 35.3% |
+| `scripted-expert` | 282 | 84 | 29.8% |
+| `resnet50 + behavior-cloning` | 298 | 120 | 40.3% |
 | `resnet50 + act` | 0 | 0 | none proposed |
 
-The control is now overridden not at all, against 47 percent before the world
-was rescaled.
+The control was overridden 47 percent of the time before the world was
+rescaled, zero percent once the geometry agreed, and 29.8 percent again now
+that the objects are scanned packages whose body origin is their centre rather
+than their footprint.
 [world-scale.md](world-scale.md) explains the fall: the arm could not reach the
 middle of its own belt, so most of what any proposer suggested was
 geometrically impossible, and the layer was refusing physics rather than

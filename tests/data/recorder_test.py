@@ -51,14 +51,21 @@ needs_rendering = pytest.mark.skipif(
 
 
 def record_short(seed: int, rollout_id: str = "r0") -> Rollout:
-    """Record a short rollout for testing."""
+    """Record a short rollout for testing.
+
+    Sixteen simulated seconds rather than four. The belt runs at 0.02 to 0.05
+    m/s since v1.0.2, and an object entering 0.52 m upstream of the camera
+    needs about thirteen seconds to reach the frame. At four seconds no object
+    was ever in view, which is a property of a slow belt rather than of the
+    recorder.
+    """
     os.environ.setdefault("MUJOCO_GL", "osmesa")
     from clave.data.recorder import record
 
     return record(
         root=ROOT,
         seed=seed,
-        seconds=4.0,
+        seconds=16.0,
         capture_interval_seconds=1.0,
         height=48,
         width=64,
