@@ -92,3 +92,51 @@ def test_two_seeds_place_objects_differently() -> None:
     _, _, _, _, first = built(5)
     _, _, _, _, second = built(6)
     assert first.belt.speed != second.belt.speed
+
+
+def test_the_belt_is_drawn_as_the_modules_the_configuration_names() -> None:
+    """The module count and the belt length have to describe one belt."""
+    pytest.importorskip("mujoco")
+    import mujoco
+
+    raw = config.load(CONFIG)
+    model, _, plan = scene.build(raw, np.random.default_rng(0), ROOT)
+    names = [
+        mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, g)
+        for g in range(model.ngeom)
+    ]
+    drawn = [n for n in names if n and n.startswith("conveyor_module_")]
+    expected = int(config.require(config.require(raw, "belt"), "modules", "belt"))
+    if not (ROOT / scene.CONVEYOR_MODULE).is_file():
+        assert not drawn
+        return
+    assert len(drawn) == expected
+    # The modules are what a viewer sees; the box underneath keeps the physics.
+    belt = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "belt")
+    assert model.geom_rgba[belt][3] == 0.0
+    assert model.geom_contype[belt] != 0
+    for name in drawn:
+        g = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, name)
+        assert model.geom_contype[g] == 0, "a module must not collide"
+
+
+def test_a_module_count_of_zero_is_refused() -> None:
+    """Zero modules describes no belt."""
+    pytest.importorskip("mujoco")
+    import copy
+
+    raw = copy.deepcopy(config.load(CONFIG))
+    raw["belt"]["modules"] = 0
+    with pytest.raises(config.WorldConfigError, match="positive"):
+        scene.build(raw, np.random.default_rng(0), ROOT)
+
+
+def test_the_arm_keeps_its_pedestal_whatever_draws_the_belt() -> None:
+    """The modules replace the belt's legs, not the arm's support."""
+    pytest.importorskip("mujoco")
+    import mujoco
+
+    raw = config.load(CONFIG)
+    model, _, _ = scene.build(raw, np.random.default_rng(0), ROOT)
+    for part in ("arm_pedestal", "arm_pedestal_plate", "arm_pedestal_foot"):
+        assert mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, part) >= 0

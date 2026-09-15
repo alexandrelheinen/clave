@@ -1,30 +1,50 @@
 #!/usr/bin/env python3
-"""Convert the MIT-0 AWS RoboMaker warehouse assets for MuJoCo.
+"""Convert the scene assets MuJoCo cannot read directly.
 
-MuJoCo reads STL, OBJ and MSH; the upstream assets are COLLADA. This converts
-the visual meshes CLAVE dresses its scene with, scales them from centimeters to
-meters, and copies the two textures, writing everything under `assets/warehouse/`.
+Two sources, neither in a format MuJoCo loads:
 
-The output is generated rather than committed, for the same reason a dataset is:
-it is derived from bytes a submodule already pins, and committing it would put a
-second copy in the history that no digest describes. The world builds without it
-and says so.
+* The MIT-0 AWS RoboMaker warehouse props are COLLADA, pinned as a submodule.
+* The CC BY 4.0 Open-RMF conveyor module is glTF, published on Gazebo Fuel,
+  which is not a git host. It is downloaded and checked against a digest
+  recorded here, the same way a corpus is.
 
-Run it once after checking out the submodule::
+The output under `assets/` is generated rather than committed, for the same
+reason a dataset is: it is derived from bytes that are already pinned, and
+committing it would put a second copy in the history that no digest describes.
+The world builds without any of it and says so.
 
-    git submodule update --init third_party/aws-robomaker-small-warehouse-world
-    python scripts/import_warehouse_assets.py
+Run it once::
+
+    git submodule update --init --recursive
+    python scripts/import_scene_assets.py
 """
 
 from __future__ import annotations
 
+import hashlib
+import io
 import shutil
 import sys
+import urllib.request
+import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SOURCE = ROOT / "third_party" / "aws-robomaker-small-warehouse-world" / "models"
 OUT = ROOT / "assets" / "warehouse"
+CONVEYOR_OUT = ROOT / "assets" / "conveyor"
+
+CONVEYOR_URL = (
+    "https://fuel.gazebosim.org/1.0/Open-RMF/models/conveyor_block/4/"
+    "conveyor_block.zip"
+)
+"""The pinned version of the module, not whatever Fuel serves as latest."""
+
+CONVEYOR_SHA256 = "ab6f108ba144bc076b26166619f27ec1af479a9d33e875a8ef61d3e418460a54"
+"""What those bytes hash to. A download that does not match is refused."""
+
+CONVEYOR_MESH = "meshes/conveyor_block_visual.glb"
+"""The visual mesh inside the archive."""
 
 CENTIMETERS_TO_METERS = 0.01
 """The upstream meshes are authored in centimeters."""
@@ -83,6 +103,73 @@ def convert(name: str, model: str) -> tuple[str, tuple[float, float, float]]:
     return name, (extents[0], extents[1], extents[2])
 
 
+def import_conveyor() -> tuple[float, float, float] | None:
+    """Fetch the Open-RMF conveyor module and convert it to OBJ.
+
+    Gazebo Fuel is not a git host, so this is a download rather than a
+    submodule, checked against a digest exactly as a corpus is. A mismatch is
+    refused rather than used, because a scene asset that silently changed is a
+    scene nobody can reproduce.
+
+    Returns:
+        The module's extents in meters, or None when the download failed.
+    """
+    import trimesh
+
+    try:
+        with urllib.request.urlopen(CONVEYOR_URL, timeout=120) as response:
+            payload = response.read()
+    except OSError as error:
+        print(f"  could not reach Gazebo Fuel: {error}", file=sys.stderr)
+        return None
+
+    digest = hashlib.sha256(payload).hexdigest()
+    if digest != CONVEYOR_SHA256:
+        print(
+            f"  the conveyor archive hashes to {digest}, and this build pins\n"
+            f"  {CONVEYOR_SHA256}. Refusing bytes nobody described.",
+            file=sys.stderr,
+        )
+        return None
+
+    archive = zipfile.ZipFile(io.BytesIO(payload))
+    mesh = trimesh.load(
+        io.BytesIO(archive.read(CONVEYOR_MESH)), file_type="glb", force="mesh"
+    )
+    # Origin at the footprint centre with the belt surface at z = 0, so the
+    # world places a module by naming where its surface goes rather than by
+    # guessing where its author put the origin.
+    mesh.apply_translation(
+        [
+            -mesh.bounds[:, 0].mean(),
+            -mesh.bounds[:, 1].mean(),
+            -mesh.bounds[1][2],
+        ]
+    )
+    CONVEYOR_OUT.mkdir(parents=True, exist_ok=True)
+    mesh.export(CONVEYOR_OUT / "module.obj")
+    extents = tuple(round(float(value), 4) for value in mesh.extents)
+    (CONVEYOR_OUT / "IMPORTED.md").write_text(
+        "\n".join(
+            [
+                "# Imported Open-RMF conveyor module",
+                "",
+                f"Source: {CONVEYOR_URL}",
+                f"sha256: `{CONVEYOR_SHA256}`",
+                "License: CC BY 4.0, Open Robotics",
+                "",
+                f"One module measures {extents[0]:.3f} x {extents[1]:.3f} x "
+                f"{extents[2]:.3f} m as published. The world scales it to the",
+                "belt it configures; see the README.",
+                "",
+                "Not committed. Regenerate with scripts/import_scene_assets.py.",
+            ]
+        )
+        + "\n"
+    )
+    return (extents[0], extents[1], extents[2])
+
+
 def main() -> int:
     """Convert every mesh and copy every texture.
 
@@ -137,6 +224,13 @@ def main() -> int:
     print(f"  wrote {len(rows)} meshes and {len(TEXTURES)} textures to {OUT}")
     for name, extents in rows:
         print(f"    {name:18s} {extents[0]:.3f} x {extents[1]:.3f} x {extents[2]:.3f} m")
+
+    module = import_conveyor()
+    if module is None:
+        print("  the conveyor module was not imported; the belt stays a box")
+        return 0
+    print(f"  wrote the conveyor module to {CONVEYOR_OUT}")
+    print(f"    module.obj         {module[0]:.3f} x {module[1]:.3f} x {module[2]:.3f} m")
     return 0
 
 

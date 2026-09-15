@@ -27,9 +27,13 @@ class ObjectSpec:
     Attributes:
         name: Identifier used in the scene and in recorded rollouts.
         material_class: Taxonomy identifier of the form `M-NN`.
-        shape: Primitive geometry, one of `cylinder` or `box`.
-        size: Half-extents range, interpreted per shape.
+        shape: `cylinder`, `box`, or `mesh` for a scanned object.
+        size: Half-extents range, interpreted per shape. Ignored for a mesh,
+            which carries its own size.
         density: Density range in kilograms per cubic meter.
+        mesh: Path to the mesh, relative to the repository root, when the shape
+            is a mesh.
+        texture: Path to its texture, when it has one.
     """
 
     name: str
@@ -37,6 +41,13 @@ class ObjectSpec:
     shape: str
     size: tuple[Range, Range]
     density: Range
+    mesh: str | None = None
+    texture: str | None = None
+
+    @property
+    def is_mesh(self) -> bool:
+        """Whether this object is a scanned mesh rather than a primitive."""
+        return self.shape == "mesh"
 
     @property
     def channel(self) -> str:
@@ -47,10 +58,16 @@ class ObjectSpec:
     def max_grasp_width(self) -> float:
         """The widest the gripper has to open for this object, in meters.
 
-        Both shapes are grasped across `size_a`: a cylinder by its diameter and
+        A primitive is grasped across `size_a`: a cylinder by its diameter and
         a box by its width. The largest value the range can draw is what the
         gripper has to clear, because a randomized world draws it eventually.
+
+        A mesh carries its own size, so this returns zero and the scene checks
+        the compiled vertices instead. Declaring a mesh's width here would be a
+        number that can drift from the file it describes.
         """
+        if self.is_mesh:
+            return 0.0
         return 2.0 * self.size[0].high
 
 
@@ -87,21 +104,31 @@ def parse(
                 f"which is not in the taxonomy"
             )
         shape = require(entry, "shape", f"objects.{name}")
-        if shape not in ("cylinder", "box"):
+        if shape not in ("cylinder", "box", "mesh"):
             raise WorldConfigError(
                 f"object {name!r} declares shape {shape!r}; "
-                f"expected 'cylinder' or 'box'"
+                f"expected 'cylinder', 'box' or 'mesh'"
             )
+        if shape == "mesh":
+            zero = Range(0.0, 0.0)
+            size = (zero, zero)
+            mesh: str | None = str(require(entry, "mesh", f"objects.{name}"))
+            texture: str | None = entry.get("texture")
+        else:
+            size = (
+                require_range(entry, "size_a_meters", f"objects.{name}"),
+                require_range(entry, "size_b_meters", f"objects.{name}"),
+            )
+            mesh = texture = None
         specs.append(
             ObjectSpec(
                 name=name,
                 material_class=material_class,
                 shape=shape,
-                size=(
-                    require_range(entry, "size_a_meters", f"objects.{name}"),
-                    require_range(entry, "size_b_meters", f"objects.{name}"),
-                ),
+                size=size,
                 density=require_range(entry, "density_kg_per_m3", f"objects.{name}"),
+                mesh=mesh,
+                texture=None if texture is None else str(texture),
             )
         )
     if max_grasp_width is not None:

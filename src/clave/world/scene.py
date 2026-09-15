@@ -159,7 +159,18 @@ def layout(raw: dict[str, Any], rng: np.random.Generator) -> SceneLayout:
 
 
 WAREHOUSE_ASSETS = Path("assets") / "warehouse"
-"""Where `scripts/import_warehouse_assets.py` writes what it converts."""
+"""Where `scripts/import_scene_assets.py` writes the warehouse props."""
+
+CONVEYOR_MODULE = Path("assets") / "conveyor" / "module.obj"
+"""Where the same script writes the conveyor module."""
+
+MODULE_SOURCE_METERS = (0.500, 0.504, 0.502)
+"""The module as published, before the world scales it to its own belt.
+
+Recorded here so the scale factors are derived from a measurement rather than
+from a number somebody typed. `assets/conveyor/IMPORTED.md` carries the same
+figures beside the digest they came from.
+"""
 
 
 def _dress(mujoco: Any, spec: Any, world: Any, raw: dict[str, Any], root: Path) -> bool:
@@ -234,8 +245,114 @@ def _dress(mujoco: Any, spec: Any, world: Any, raw: dict[str, Any], root: Path) 
     return True
 
 
+def _check_mesh_objects_fit(
+    mujoco: Any, model: Any, plan: SceneLayout, limit: float
+) -> None:
+    """Refuse a scanned object the gripper cannot close on.
+
+    A primitive declares its size, so `clave.world.objects` checks it at load.
+    A mesh carries its size in the file, so the check happens here, against the
+    vertices MuJoCo compiled. Both ask the same question.
+
+    The width measured is the narrower of the two horizontal extents, because
+    an object resting on a belt is grasped across its narrow axis. That is what
+    lets a tuna can through at 33.5 mm lying down while its 85.5 mm diameter
+    would not fit standing up.
+
+    Args:
+        mujoco: The imported module.
+        model: The compiled model.
+        plan: The resolved layout, naming which objects are meshes.
+        limit: The widest object the gripper can close on, in meters.
+
+    Raises:
+        WorldConfigError: Naming the object, its width and the limit.
+    """
+    from clave.world.config import WorldConfigError
+
+    for spec in plan.objects:
+        if not spec.is_mesh:
+            continue
+        mesh = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_MESH, f"asset_{spec.name}")
+        if mesh < 0:
+            continue
+        start, count = model.mesh_vertadr[mesh], model.mesh_vertnum[mesh]
+        vertices = model.mesh_vert[start : start + count]
+        extents = vertices.max(axis=0) - vertices.min(axis=0)
+        width = float(min(sorted(extents)[:2]))
+        if width > limit:
+            raise WorldConfigError(
+                f"object {spec.name!r} measures {width * 1000:.1f} mm across its "
+                f"narrowest horizontal axis, and the gripper opens "
+                f"{limit * 1000:.1f} mm. A world that spawns objects it cannot "
+                f"grasp measures a task the arm cannot perform."
+            )
+
+
+def _add_conveyor_modules(
+    mujoco: Any, spec: Any, world: Any, plan: SceneLayout, modules: int, root: Path
+) -> bool:
+    """Draw the belt as a row of conveyor modules.
+
+    The module is published at 0.500 by 0.504 by 0.502 m with its belt surface
+    on top. CLAVE's belt is 1.20 by 0.32 m with its surface at 0.35 m, so each
+    axis is scaled independently to fit: the length so that `modules` of them
+    span the belt, the width to the belt's width, and the height so the module's
+    own surface lands on the belt surface. Scaling rather than restating the
+    belt keeps every geometry this project has measured.
+
+    The modules carry no collision geometry. An object still rests on the box
+    the belt has always been, so nothing here moves a trajectory.
+
+    Args:
+        mujoco: The imported module.
+        spec: The model spec, which owns meshes.
+        world: The worldbody being assembled.
+        plan: The resolved layout.
+        modules: How many modules span the belt.
+        root: Repository root.
+
+    Returns:
+        Whether the modules were drawn. They are not when the asset has not
+        been imported, and the belt then keeps the box and the legs it had.
+
+    Raises:
+        WorldConfigError: If the module count is not positive.
+    """
+    from clave.world.config import WorldConfigError
+
+    if modules <= 0:
+        raise WorldConfigError(f"belt.modules is {modules}; it has to be positive")
+    path = root / CONVEYOR_MODULE
+    if not path.is_file():
+        return False
+
+    length = plan.belt.length / modules
+    scale = [
+        length / MODULE_SOURCE_METERS[0],
+        plan.belt.width / MODULE_SOURCE_METERS[1],
+        plan.belt.surface_height / MODULE_SOURCE_METERS[2],
+    ]
+    spec.add_mesh(name="conveyor_module", file=str(path), scale=scale)
+    first = -plan.belt.length / 2.0 + length / 2.0
+    for index in range(modules):
+        world.add_geom(
+            name=f"conveyor_module_{index}",
+            type=mujoco.mjtGeom.mjGEOM_MESH,
+            meshname="conveyor_module",
+            pos=[first + index * length, 0.0, plan.belt.surface_height],
+            contype=0,
+            conaffinity=0,
+        )
+    return True
+
+
 def _add_supports(
-    mujoco: Any, world: Any, plan: SceneLayout, structure: dict[str, Any]
+    mujoco: Any,
+    world: Any,
+    plan: SceneLayout,
+    structure: dict[str, Any],
+    belt_legs: bool = True,
 ) -> None:
     """Stand the belt and the manipulator on something.
 
@@ -254,13 +371,70 @@ def _add_supports(
         world: The worldbody being assembled.
         plan: The resolved layout, carrying the belt and the arm base.
         structure: The `structure` section of the configuration.
+        belt_legs: Whether to stand the belt on a frame and legs. False when
+            the conveyor modules are drawn, since they carry their own.
     """
     leg = float(require(structure, "leg_side_meters", "structure"))
     inset = float(require(structure, "leg_inset_meters", "structure"))
     frame_depth = float(require(structure, "frame_depth_meters", "structure"))
     steel = [0.32, 0.33, 0.36, 1.0]
 
-    # The frame the belt rides on, spanning the legs just under the surface.
+    if belt_legs:
+        _add_belt_legs(mujoco, world, plan, leg, inset, frame_depth, steel)
+
+    # The pedestal the manipulator is bolted to, from the floor to its base.
+    column = float(require(structure, "pedestal_radius_meters", "structure"))
+    plate = float(require(structure, "pedestal_plate_radius_meters", "structure"))
+    plate_thickness = float(
+        require(structure, "pedestal_plate_thickness_meters", "structure")
+    )
+    mount = plan.arm_base[2]
+    world.add_geom(
+        name="arm_pedestal",
+        type=mujoco.mjtGeom.mjGEOM_CYLINDER,
+        size=[column, (mount - plate_thickness) / 2.0, 0.0],
+        pos=[plan.arm_base[0], plan.arm_base[1], (mount - plate_thickness) / 2.0],
+        rgba=steel,
+    )
+    world.add_geom(
+        name="arm_pedestal_plate",
+        type=mujoco.mjtGeom.mjGEOM_CYLINDER,
+        size=[plate, plate_thickness / 2.0, 0.0],
+        pos=[plan.arm_base[0], plan.arm_base[1], mount - plate_thickness / 2.0],
+        rgba=[0.22, 0.23, 0.26, 1.0],
+    )
+    # A foot, so the pedestal reads as bolted down rather than balanced.
+    world.add_geom(
+        name="arm_pedestal_foot",
+        type=mujoco.mjtGeom.mjGEOM_CYLINDER,
+        size=[plate * 1.2, 0.008, 0.0],
+        pos=[plan.arm_base[0], plan.arm_base[1], 0.008],
+        rgba=[0.22, 0.23, 0.26, 1.0],
+    )
+
+
+def _add_belt_legs(
+    mujoco: Any,
+    world: Any,
+    plan: SceneLayout,
+    leg: float,
+    inset: float,
+    frame_depth: float,
+    steel: list[float],
+) -> None:
+    """Stand the belt on a frame and four uprights.
+
+    Only for a world without the conveyor modules, which carry their own.
+
+    Args:
+        mujoco: The imported module.
+        world: The worldbody being assembled.
+        plan: The resolved layout.
+        leg: Half the side of an upright, in meters.
+        inset: How far the uprights sit inside the corners, in meters.
+        frame_depth: Depth of the frame under the surface, in meters.
+        steel: The color everything structural takes.
+    """
     frame_top = plan.belt.surface_height - 0.04
     frame_half = frame_depth / 2.0
     world.add_geom(
@@ -289,40 +463,6 @@ def _add_supports(
                 rgba=steel,
             )
 
-    # The pedestal the manipulator is bolted to, from the floor to its base.
-    column = float(require(structure, "pedestal_radius_meters", "structure"))
-    plate = float(require(structure, "pedestal_plate_radius_meters", "structure"))
-    plate_thickness = float(
-        require(structure, "pedestal_plate_thickness_meters", "structure")
-    )
-    mount = plan.arm_base[2]
-    world.add_geom(
-        name="arm_pedestal",
-        type=mujoco.mjtGeom.mjGEOM_CYLINDER,
-        size=[column, (mount - plate_thickness) / 2.0, 0.0],
-        pos=[plan.arm_base[0], plan.arm_base[1], (mount - plate_thickness) / 2.0],
-        rgba=steel,
-    )
-    world.add_geom(
-        name="arm_pedestal_plate",
-        type=mujoco.mjtGeom.mjGEOM_CYLINDER,
-        size=[plate, plate_thickness / 2.0, 0.0],
-        pos=[
-            plan.arm_base[0],
-            plan.arm_base[1],
-            mount - plate_thickness / 2.0,
-        ],
-        rgba=[0.22, 0.23, 0.26, 1.0],
-    )
-    # A foot, so the pedestal reads as bolted down rather than balanced.
-    world.add_geom(
-        name="arm_pedestal_foot",
-        type=mujoco.mjtGeom.mjGEOM_CYLINDER,
-        size=[plate * 1.2, 0.008, 0.0],
-        pos=[plan.arm_base[0], plan.arm_base[1], 0.008],
-        rgba=[0.22, 0.23, 0.26, 1.0],
-    )
-
 
 def build(
     raw: dict[str, Any], rng: np.random.Generator, root: Path
@@ -348,36 +488,51 @@ def build(
     spawn_cfg = require(raw, "spawn")
     camera_cfg = require(raw, "camera")
 
-    spec = mujoco.MjSpec()
-    spec.option.timestep = plan.timestep
+    mujoco_spec = mujoco.MjSpec()
+    mujoco_spec.option.timestep = plan.timestep
     # Adopt the manipulator's contact settings rather than the defaults, since
     # its grasp behavior was tuned with them.
-    spec.option.impratio = 10.0
-    spec.option.cone = mujoco.mjtCone.mjCONE_ELLIPTIC
+    mujoco_spec.option.impratio = 10.0
+    mujoco_spec.option.cone = mujoco.mjtCone.mjCONE_ELLIPTIC
     # The offscreen framebuffer bounds what any renderer attached to this model
     # can produce, and MuJoCo defaults it to 640 by 480. That is enough for the
     # 320 by 240 frames the models see and not enough for a demonstration
     # video. This is a ceiling on rendering rather than a property of the world,
     # which is why it sits here rather than in the configuration: changing it
     # changes no trajectory and no measurement.
-    spec.visual.global_.offwidth = OFFSCREEN_WIDTH
-    spec.visual.global_.offheight = OFFSCREEN_HEIGHT
+    mujoco_spec.visual.global_.offwidth = OFFSCREEN_WIDTH
+    mujoco_spec.visual.global_.offheight = OFFSCREEN_HEIGHT
 
-    world = spec.worldbody
+    world = mujoco_spec.worldbody
     world.add_light(pos=[0.0, 0.0, 2.0], dir=[0.0, 0.0, -1.0])
 
-    plan = replace(plan, dressed=_dress(mujoco, spec, world, raw, root))
+    plan = replace(plan, dressed=_dress(mujoco, mujoco_spec, world, raw, root))
 
+    modules = _add_conveyor_modules(
+        mujoco,
+        mujoco_spec,
+        world,
+        plan,
+        int(require(require(raw, "belt"), "modules", "belt")),
+        root,
+    )
+
+    # The belt an object rests on. When the conveyor modules are drawn they are
+    # what a viewer sees, so this keeps its collision and stops being visible:
+    # two belts in the same place is one belt and one artifact.
     half = [plan.belt.length / 2.0, plan.belt.width / 2.0, 0.02]
     world.add_geom(
         name="belt",
         type=mujoco.mjtGeom.mjGEOM_BOX,
         size=half,
         pos=[0.0, 0.0, plan.belt.surface_height - half[2]],
-        rgba=[0.25, 0.25, 0.28, 1.0],
+        rgba=[0.25, 0.25, 0.28, 0.0 if modules else 1.0],
     )
 
-    _add_supports(mujoco, world, plan, require(raw, "structure"))
+    # The modules carry their own frame and legs, so the plain belt supports
+    # are only drawn for a world that has not imported them. The arm stands on
+    # its own pedestal either way.
+    _add_supports(mujoco, world, plan, require(raw, "structure"), belt_legs=not modules)
 
     # Side guides. A real sorting line has them, and without them a cylinder
     # that lands and tips simply rolls off the belt, which showed up as objects
@@ -406,6 +561,28 @@ def build(
         )
 
     drop = require_range(spawn_cfg, "drop_height_meters", "spawn")
+    for spec in plan.objects:
+        if not spec.is_mesh or spec.mesh is None:
+            continue
+        # One mesh asset per object kind, shared by every pool slot that draws
+        # it, because a mesh is bytes on disk rather than a per-slot size.
+        spec_mesh = root / spec.mesh
+        if not spec_mesh.is_file():
+            raise FileNotFoundError(
+                f"object {spec.name!r} names the mesh {spec.mesh}, which is not "
+                "checked out. Run: git submodule update --init --recursive"
+            )
+        mujoco_spec.add_mesh(name=f"asset_{spec.name}", file=str(spec_mesh))
+        if spec.texture is not None and (root / spec.texture).is_file():
+            mujoco_spec.add_texture(
+                name=f"asset_{spec.name}",
+                type=mujoco.mjtTexture.mjTEXTURE_2D,
+                file=str(root / spec.texture),
+            )
+            mujoco_spec.add_material(
+                name=f"asset_{spec.name}", textures=["", f"asset_{spec.name}"]
+            )
+
     for index in range(plan.pool_size):
         template = plan.objects[index % len(plan.objects)]
         body = world.add_body(
@@ -416,7 +593,20 @@ def build(
         size_a = template.size[0].sample(rng)
         size_b = template.size[1].sample(rng)
         density = template.density.sample(rng)
-        if template.shape == "cylinder":
+        if template.is_mesh:
+            body.add_geom(
+                name=f"object_{index}_geom",
+                type=mujoco.mjtGeom.mjGEOM_MESH,
+                meshname=f"asset_{template.name}",
+                density=density,
+                material=(
+                    f"asset_{template.name}"
+                    if template.texture is not None
+                    and (root / template.texture).is_file()
+                    else ""
+                ),
+            )
+        elif template.shape == "cylinder":
             body.add_geom(
                 name=f"object_{index}_geom",
                 type=mujoco.mjtGeom.mjGEOM_CYLINDER,
@@ -450,9 +640,15 @@ def build(
         # The manipulator declares its own impratio and cone; this scene already
         # adopted both above, so the conflict notice carries no information.
         warnings.simplefilter("ignore")
-        spec.attach(_arm_spec(root), prefix="arm_", frame=frame)
+        mujoco_spec.attach(_arm_spec(root), prefix="arm_", frame=frame)
 
-    model = spec.compile()
+    model = mujoco_spec.compile()
+    _check_mesh_objects_fit(
+        mujoco,
+        model,
+        plan,
+        float(require(require(raw, "arm"), "max_grasp_width_meters", "arm")),
+    )
     data = mujoco.MjData(model)
     _ = drop
     return model, data, plan

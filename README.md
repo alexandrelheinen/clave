@@ -49,9 +49,10 @@ behind a contract.
 
 Two commands do something visible. Both need the world extra and a built
 runtime: `uv pip install -e ".[dev,world]"` and `cargo build --release -p
-clave-sitl`. For the warehouse scene dressing, also run
-`python scripts/import_warehouse_assets.py` once, which converts the meshes the
-pinned MIT-0 submodule holds. Without it the scene keeps a plain floor.
+clave-sitl`. For the scene assets, also run
+`uv pip install -e ".[assets]" && python scripts/import_scene_assets.py` once.
+Without it the belt falls back to a plain box on legs and the floor to a gray
+plane; everything still runs and the world reports which it used.
 
 ```bash
 python -m clave.cli demo sorting-line
@@ -77,6 +78,62 @@ Smaller commands: `clave run-sitl` for one loop with latency, `clave record-data
 to record rollouts, `clave train --candidate <name>` to train one, and
 `clave validate-run --outcomes <file>` to score records against the gates.
 
+## The simulated line, and its dimensions
+
+Every number below is configuration in
+[configs/world/sorting_line.yml](configs/world/sorting_line.yml), and every one
+of them is sized to the manipulator rather than to a photograph of a recovery
+facility. [world-scale.md](docs/research/world-scale.md) carries the
+measurements that set them.
+
+| Part | Dimension |
+| --- | --- |
+| Belt | 1.20 m long, 0.32 m wide, surface at 0.35 m |
+| Belt speed | 0.02 to 0.05 m/s, randomized per run |
+| Conveyor modules | **4 modules of 0.300 m**, spanning the 1.20 m belt |
+| Arm | ROBOTIS OpenMANIPULATOR-X, 0.22 m from the belt centerline |
+| Effector workspace | 0.25 m declared, 0.266 m measured by a joint sweep |
+| Reachable window | 0.237 m of belt, 4.7 to 11.9 s per object |
+| Gripper opening | 55.7 mm measured; objects are bounded at 50 mm |
+| Objects | 8 parametric primitives and 4 scanned YCB packages |
+
+### The conveyor modules
+
+The belt is drawn as a row of identical modules from the CC BY 4.0 Open-RMF
+model. The module is **published at 0.500 by 0.504 by 0.502 m** with its belt
+surface on top, and CLAVE scales each axis independently to the belt it
+configures:
+
+| Axis | Published | Scaled to | Factor |
+| --- | --- | --- | --- |
+| Length | 0.500 m | **0.300 m**, so four span 1.20 m | 0.600 |
+| Width | 0.504 m | **0.320 m**, the belt width | 0.635 |
+| Height | 0.502 m | **0.350 m**, so the module surface lands on the belt surface | 0.697 |
+
+Change `belt.modules` and `belt.length_meters` together: four modules of 0.30 m
+make a 1.20 m belt, eight of 0.15 m make the same belt out of shorter sections,
+and six modules on a 1.80 m belt lengthen the line. The module count changes
+nothing the simulation measures, because the modules carry no collision
+geometry: an object still rests on the box the belt has always been.
+
+### The objects
+
+Four are scanned packages from the YCB benchmark, pinned at
+`third_party/ycb_sim` under Apache-2.0. Only the ones the gripper can close on
+are used, measured across the narrowest horizontal axis:
+
+| Object | Narrowest axis | Class |
+| --- | --- | --- |
+| Gelatin box | 30.1 mm | `M-09` paperboard |
+| Tuna fish can | 33.5 mm | `M-06` ferrous metal |
+| Pudding box | 38.9 mm | `M-09` paperboard |
+| Sugar box | 45.2 mm | `M-09` paperboard |
+
+The five left out are 60.1 mm and wider, against a gripper that opens 55.7 mm.
+The remaining eight objects are parametric primitives covering the classes YCB
+has nothing for. [scene-assets.md](docs/research/scene-assets.md) records what a
+wider gripper would add.
+
 ## What runs today
 
 Everything through v1.0.0 runs in simulation and nothing has touched hardware.
@@ -85,7 +142,7 @@ Everything through v1.0.0 runs in simulation and nothing has touched hardware.
 | --- | --- |
 | Material taxonomy, corpus mappings | 11 classes, four corpora mapped |
 | Corpora | TrashNet and ZeroWaste fetched, digested and measured |
-| Simulated world | MuJoCo conveyor, ROBOTIS arm, bins, randomized per seed |
+| Simulated world | MuJoCo conveyor from Open-RMF modules, ROBOTIS arm, bins, warehouse dressing, randomized per seed |
 | Data pipeline | Labeled rollouts, ground-truth boxes, proprioception, digested splits |
 | Candidates | Seven benchmarked, four trained |
 | Runtime | Frame to published decision, with a Rust safety layer that can override the model |
@@ -148,6 +205,7 @@ outside the v1.x line. What CLAVE takes from each sibling is itemized in the
 | `crates/` | The decision contract, the routing policy, the publisher, the safety layer, the runtime |
 | `src/clave/` | The world, the data pipeline, training, validation, the runtime, the benchmark, the demos |
 | `configs/` | Every tunable. Nothing in Python or MJCF carries a numeric default |
+| `third_party/` | Pinned submodules: the ROBOTIS arm, the AWS warehouse props, the YCB objects |
 | `.kiro/` | Committed specifications and the steering documents agents read as project memory |
 | `scripts/` | Toolchain setup and the local quality gate |
 

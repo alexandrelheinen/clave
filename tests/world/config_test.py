@@ -76,3 +76,57 @@ def test_every_shipped_object_fits_the_shipped_gripper() -> None:
     specs = parse(require(raw, "objects"), limit)
     assert specs
     assert all(spec.max_grasp_width <= limit for spec in specs)
+
+
+def test_a_mesh_object_declares_no_size_and_is_checked_against_the_file() -> None:
+    """A number written here could drift from the mesh it describes.
+
+    Guards the YCB objects added at v1.0.3: their width comes from the compiled
+    vertices, checked in the scene, rather than from a value in configuration.
+    """
+    from clave.world.objects import parse
+
+    entry = {
+        "name": "scanned",
+        "material_class": "M-09",
+        "shape": "mesh",
+        "mesh": "third_party/ycb_sim/meshes/009_gelatin_box.msh",
+        "density_kg_per_m3": [90, 160],
+    }
+    spec = parse([entry], 0.050)[0]
+    assert spec.is_mesh
+    assert spec.mesh is not None
+    # Zero rather than a guess, so the primitive check cannot pass judgment on
+    # a file it has not read.
+    assert spec.max_grasp_width == 0.0
+
+
+def test_a_mesh_object_must_name_its_mesh() -> None:
+    """A mesh with no file is a shape nothing can draw."""
+    from clave.world.config import WorldConfigError
+    from clave.world.objects import parse
+
+    with pytest.raises(WorldConfigError, match="mesh"):
+        parse(
+            [
+                {
+                    "name": "scanned",
+                    "material_class": "M-09",
+                    "shape": "mesh",
+                    "density_kg_per_m3": [90, 160],
+                }
+            ]
+        )
+
+
+def test_every_shipped_mesh_object_is_checked_out() -> None:
+    """The submodules the world names have to be present for it to build."""
+    from clave.world.objects import parse
+
+    raw = load(CONFIG)
+    specs = parse(require(raw, "objects"))
+    meshes = [spec for spec in specs if spec.is_mesh]
+    assert meshes, "the world declares no scanned objects"
+    for spec in meshes:
+        assert spec.mesh is not None
+        assert (ROOT / spec.mesh).is_file(), f"{spec.mesh} is not checked out"
