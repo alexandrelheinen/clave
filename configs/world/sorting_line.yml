@@ -33,6 +33,16 @@ belt:
   speed_meters_per_second: [0.02, 0.05]
   # Side guides keep tipped cylinders from rolling off. A real line has them.
   guide_height_meters: 0.04
+  # The belt is drawn as a row of conveyor modules from the CC BY 4.0 Open-RMF
+  # model, scaled to the belt this file configures. The count and the length
+  # above have to agree: four modules of 0.300 m make the 1.20 m belt. The
+  # module is published at 0.500 by 0.504 by 0.502 m and each axis is scaled
+  # independently, which the README tabulates.
+  #
+  # The physics is unchanged. The belt an object rests on is still the box
+  # above, and the modules are visual geometry with no collision, so the module
+  # count moves nothing that was ever measured.
+  modules: 4
 
 spawn:
   # Objects are recycled from a fixed pool, because a compiled MuJoCo model
@@ -69,11 +79,16 @@ arm:
   # grasp band; 0.25 m keeps a margin under that. The old 0.38 m was an upper
   # bound v0.5.0 recorded as one and nothing had checked since.
   reach_radius_meters: 0.25
-  # The widest object the gripper can close on, measured from the mesh vertices
-  # of the pinned OpenMANIPULATOR-X fingers: 55.7 mm of clear opening when the
-  # gripper joint is at its upper limit. Every object below declares a grasp
-  # width under this and the world refuses to build if one does not.
-  max_grasp_width_meters: 0.045
+  # The widest object the gripper can close on. The fingers of the pinned
+  # OpenMANIPULATOR-X leave 55.7 mm of clear opening at the joint's upper
+  # limit, measured from their mesh vertices, and this sits 5.7 mm under that
+  # so there is room to approach rather than exactly enough to close.
+  #
+  # It was 45 mm while every object was a primitive whose size this file chose.
+  # The scanned sugar box measures 45.2 mm, which fits the real gripper and not
+  # the older bound, so the bound moved to where the measurement puts it. The
+  # five YCB objects left out are 60.1 mm and wider and are still refused.
+  max_grasp_width_meters: 0.050
 
 bins:
   # One bin per distinct channel across the object set below.
@@ -192,6 +207,50 @@ objects:
     size_a_meters: [0.018, 0.022]
     size_b_meters: [0.020, 0.035]
     density_kg_per_m3: [60, 120]
+
+  # Scanned objects from the YCB benchmark, pinned at third_party/ycb_sim
+  # under Apache-2.0. These are photographed packages rather than parametric
+  # primitives, which is what a classifier needs in order to learn material
+  # rather than shape.
+  #
+  # Only the ones the gripper can close on are here. Measured across their
+  # narrowest horizontal axis: gelatin box 30.1 mm, tuna can 33.5 mm, pudding
+  # box 38.9 mm, sugar box 49.5 mm, all under the 55.7 mm opening. The five
+  # left out are the cracker box at 71.8 mm, the master chef can at 102.4, the
+  # tomato soup can at 67.7, the mustard bottle at 66.6 and the potted meat can
+  # at 60.1, which misses by 4.4 mm. docs/research/scene-assets.md carries the
+  # measurements and what a wider gripper would add.
+  #
+  # A mesh declares no size. The scene measures the compiled vertices and
+  # refuses to build if one exceeds the gripper, the same check the primitives
+  # get, because a number written here could drift from the file it describes.
+  - name: gelatin_box
+    material_class: M-09
+    shape: mesh
+    mesh: third_party/ycb_sim/meshes/009_gelatin_box.msh
+    texture: third_party/ycb_sim/textures/009_gelatin_box.png
+    density_kg_per_m3: [90, 160]
+
+  - name: pudding_box
+    material_class: M-09
+    shape: mesh
+    mesh: third_party/ycb_sim/meshes/008_pudding_box.msh
+    texture: third_party/ycb_sim/textures/008_pudding_box.png
+    density_kg_per_m3: [90, 160]
+
+  - name: sugar_box
+    material_class: M-09
+    shape: mesh
+    mesh: third_party/ycb_sim/meshes/004_sugar_box.msh
+    texture: third_party/ycb_sim/textures/004_sugar_box.png
+    density_kg_per_m3: [90, 160]
+
+  - name: tuna_fish_can
+    material_class: M-06
+    shape: mesh
+    mesh: third_party/ycb_sim/meshes/007_tuna_fish_can.msh
+    texture: third_party/ycb_sim/textures/007_tuna_fish_can.png
+    density_kg_per_m3: [180, 320]
 
   - name: beverage_carton
     material_class: M-10

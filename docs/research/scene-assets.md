@@ -1,6 +1,6 @@
 # Dressing the scene, and what is still missing
 
-> Roadmap step: v1.0.2, a patch to the world of v0.5.0 · Spec:
+> Roadmap steps: v1.0.2 and v1.0.3, patches to the world of v0.5.0 · Spec:
 > [.kiro/specs/sorting-world/](../../.kiro/specs/sorting-world/)
 
 The simulation was a belt and an arm floating over a gray plane. Everything it
@@ -77,9 +77,51 @@ so what a mesh would add is a rubber-and-roller texture rather than geometry.
 **No small household containers.** The nearest thing is a clutter pile 2.7 m
 across. Nothing in the collection is an object a person throws away.
 
+## What was added at v1.0.3
+
+Two of the collections below were adopted after the measurements in this
+section were taken. What follows the table is the list as it stood when the
+decision was made, kept because it is the reasoning that produced the choice.
+
+| Source | License | Size | What it supplies |
+| --- | --- | --- | --- |
+| [vikashplus/YCB_sim](https://github.com/vikashplus/YCB_sim), submodule | Apache-2.0 | 24 MB checked out | Four scanned packages the gripper can close on |
+| `Open-RMF/conveyor_block` on [Gazebo Fuel](https://app.gazebosim.org/Open-RMF/fuel/models/conveyor_block), downloaded | CC BY 4.0 | 1.1 MB archive | The conveyor module the belt is drawn from |
+
+**The YCB objects are read natively.** MuJoCo loads the `.msh` files and their
+PNG textures with no conversion at all, which is why this collection beat the
+one gigabyte of Scanned Objects on more than size.
+
+| Object | Narrowest horizontal axis | Taxonomy class |
+| --- | --- | --- |
+| `009_gelatin_box` | 30.1 mm | `M-09` paperboard |
+| `007_tuna_fish_can` | 33.5 mm | `M-06` ferrous metal |
+| `008_pudding_box` | 38.9 mm | `M-09` paperboard |
+| `004_sugar_box` | 45.2 mm | `M-09` paperboard |
+
+Adding them moved the world from eight of eleven classes to nine: `M-09` had no
+object before, because no primitive in the set was paperboard.
+
+**The bound moved with the measurement.** `max_grasp_width_meters` was 45 mm
+while every object was a primitive whose size this project chose. The sugar box
+compiles to 45.2 mm, which the real 55.7 mm gripper closes on comfortably, so
+the bound is now 50 mm. The five YCB objects left out are 60.1 mm and wider and
+are still refused, and the check that refuses them reads the compiled vertices
+rather than a number in a file.
+
+**The conveyor comes from Fuel, which is not a git host.** It is downloaded and
+checked against a sha256 recorded in `scripts/import_scene_assets.py`, exactly
+as a corpus is, and a download that does not match is refused rather than used.
+The module is published at 0.500 by 0.504 by 0.502 m with its belt surface on
+top, and each axis is scaled independently to the belt the world configures.
+The README tabulates the factors. The modules carry no collision geometry: an
+object still rests on the box the belt has always been, so drawing them moves
+nothing that was ever measured.
+
 ## Collections worth considering, none added
 
-Listed for a decision rather than adopted. **Nothing below is in the repository.**
+The list as it stood before the two above were adopted. **Nothing below is in
+the repository.**
 
 | Collection | License | Size | What it has | What it costs |
 | --- | --- | --- | --- | --- |
@@ -88,21 +130,29 @@ Listed for a decision rather than adopted. **Nothing below is in the repository.
 | [robocasa/robocasa](https://github.com/robocasa/robocasa) | Not declared at the repository root | 47 MB of code, assets fetched separately | Thousands of kitchen objects across 150 categories in MJCF, sourced from Objaverse | The license is undeclared where it matters, and the assets download separately rather than pinning by submodule |
 | [ARISE-Initiative/robosuite](https://github.com/ARISE-Initiative/robosuite) | Not declared at the repository root | 630 MB | A simulation framework whose object set includes cans, bottles and cereal boxes | Rejected at v0.1.2 on `S2`, since CLAVE reuses FRET's MuJoCo rather than a second framework. Its assets could still be used alone |
 
-### The measurement that decides this
+### The measurement that decided it, and the one that corrected it
 
-A scanned household object does not fit the gripper. The `Diet Pepsi 12 oz
-Cans` model measures 0.406 x 0.129 x 0.139 m, and its smallest horizontal
-dimension is **129 mm** against the gripper's **55.7 mm** clear opening. It is a
-twelve pack rather than a can, and even a single soda can is about 66 mm across,
-still above the opening.
+The first measurement taken was the wrong one. The `Diet Pepsi 12 oz Cans`
+model from Scanned Objects measures 0.406 x 0.129 x 0.139 m, narrowest
+horizontal dimension **129 mm** against the gripper's **55.7 mm**, and the
+conclusion drawn from it was that no realistic object fits and that a wider
+gripper is a precondition. That model is a twelve pack rather than an item
+somebody throws away, and generalizing from it was a mistake.
 
-So adopting a realistic object collection is not an asset decision. Every object
-worth sorting needs a gripper roughly two to three times wider than the
-OpenMANIPULATOR-X has, which is a different arm. The choice is between a scale
-model that the current gripper can hold, which is what ships, and a realistic
-object set that needs new hardware in the simulation first.
+Measuring the nine YCB packages individually gives a different answer: **four
+fit today**, listed above, and a fifth misses by 4.4 mm. What is true is
+narrower than the original claim.
 
-That is worth knowing before a gigabyte of meshes is pinned to find it out.
+| Gripper opening | Objects it adds | Classes reached |
+| --- | --- | --- |
+| 55.7 mm, today | gelatin box, tuna can, pudding box, sugar box | `M-06`, `M-09` |
+| about 62 mm | potted meat can | the same |
+| about 72 mm | mustard bottle, tomato soup can, cracker box | adds `M-02` |
+| about 105 mm | master chef can | the same |
+
+So a wider gripper is worth having and is not a precondition. Four scanned
+packages ship at the current opening, and the classes a wider one would add are
+written down rather than guessed at.
 
 ## What this does not change
 

@@ -12,3 +12,6 @@
 	path = third_party/aws-robomaker-small-warehouse-world
 	url = https://github.com/aws-robotics/aws-robomaker-small-warehouse-world.git
 	branch = ros1
+[submodule "third_party/ycb_sim"]
+	path = third_party/ycb_sim
+	url = https://github.com/vikashplus/YCB_sim.git
