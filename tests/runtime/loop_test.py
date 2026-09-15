@@ -78,11 +78,23 @@ def test_the_envelope_is_derived_from_the_world_rather_than_restated() -> None:
     settings = loop.RuntimeSettings.load(SETTINGS)
     world = config.load(ROOT / "configs" / "world" / "sorting_line.yml")
     derived = loop.runtime_config(world, settings.routing)
-    assert derived["belt_x_meters"] == [-1.0, 1.0]
-    assert derived["belt_y_meters"] == [-0.25, 0.25]
-    assert derived["belt_surface_z_meters"] == 0.35
-    assert derived["arm_base_meters"] == [0.0, -0.34, 0.35]
-    assert derived["reach_radius_meters"] == 0.38
+    belt = config.require(world, "belt")
+    arm = config.require(world, "arm")
+    length = float(config.require(belt, "length_meters", "belt"))
+    width = float(config.require(belt, "width_meters", "belt"))
+    # Derived, not restated: the assertion reads the world rather than repeating
+    # numbers that would have to be edited here every time the line is rescaled.
+    assert derived["belt_x_meters"] == [-length / 2.0, length / 2.0]
+    assert derived["belt_y_meters"] == [-width / 2.0, width / 2.0]
+    assert derived["belt_surface_z_meters"] == float(
+        config.require(belt, "surface_height_meters", "belt")
+    )
+    assert derived["arm_base_meters"] == [
+        float(value) for value in config.require(arm, "base_position_meters", "arm")
+    ]
+    assert derived["reach_radius_meters"] == float(
+        config.require(arm, "reach_radius_meters", "arm")
+    )
 
 
 def test_a_percentile_is_an_observed_sample_rather_than_an_interpolation() -> None:

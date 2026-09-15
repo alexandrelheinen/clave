@@ -122,13 +122,17 @@ def layout(raw: dict[str, Any], rng: np.random.Generator) -> SceneLayout:
         The resolved layout.
 
     Raises:
-        WorldConfigError: If a required key is missing or a range is invalid.
+        WorldConfigError: If a required key is missing, a range is invalid, or
+            an object can be drawn wider than the gripper opens.
     """
     physics = require(raw, "physics")
     belt_cfg = require(raw, "belt")
     arm_cfg = require(raw, "arm")
     spawn_cfg = require(raw, "spawn")
-    specs = parse(require(raw, "objects"))
+    specs = parse(
+        require(raw, "objects"),
+        float(require(arm_cfg, "max_grasp_width_meters", "arm")),
+    )
 
     belt = BeltGeometry(
         length=float(require(belt_cfg, "length_meters", "belt")),

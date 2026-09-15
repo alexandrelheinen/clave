@@ -46,6 +46,26 @@ class ReachReport:
         return self.window_length > 0.0
 
 
+def within_reach(position: tuple[float, float, float], plan: SceneLayout) -> bool:
+    """Whether the effector can reach a point, in three dimensions.
+
+    The reachable window is the chord the reachable sphere cuts through the
+    belt centerline, and an object is rarely on the centerline. Testing only
+    the coordinate along belt travel calls an object reachable when it sits at
+    the window's edge and off to the far side, where the effector cannot go.
+    That is what the safety layer kept overriding, and the demonstrations
+    recorded from it taught picks that could not be executed.
+
+    Args:
+        position: The object's position, in world meters.
+        plan: The resolved scene layout, carrying the arm base and its reach.
+
+    Returns:
+        Whether the point lies inside the reachable sphere.
+    """
+    return math.dist(position, plan.arm_base) <= plan.reach_radius
+
+
 def reach_report(plan: SceneLayout) -> ReachReport:
     """Compute the reachable window and the per-object time budget.
 
@@ -184,7 +204,6 @@ class Conveyor:
             self._next_free += 1
             self._next_spawn = data.time + self.interval.sample(self.rng)
 
-        half_window = self.report.window_length / 2.0
         for item in self.active:
             body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, item.name)
             address = model.jnt_qposadr[model.body_jntadr[body]]
@@ -199,7 +218,9 @@ class Conveyor:
                 # Drive travel only. Vertical motion and rotation stay with
                 # physics, so contacts with bins and the arm remain real.
                 data.qvel[velocity] = self.plan.belt.speed
-            if abs(position[0]) <= half_window and on_belt:
+            if on_belt and within_reach(
+                (float(position[0]), float(position[1]), float(position[2])), self.plan
+            ):
                 item.entered_window = True
 
     def entered_window(self) -> list[SpawnedObject]:

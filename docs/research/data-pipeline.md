@@ -2,6 +2,15 @@
 
 > Roadmap step: v0.6.0 · Spec: [.kiro/specs/data-pipeline/](../../.kiro/specs/data-pipeline/)
 
+> **The geometry in this document was superseded at v1.0.1.** The belt, the arm
+> offset, the reach radius, the belt speed and the object sizes were all
+> rescaled after a solved workspace sweep found the manipulator could not reach
+> the middle of its own belt and its gripper could not close on any object in
+> the set. [world-scale.md](world-scale.md) carries the measurements and the new
+> values. What this document records is what was measured at the time, and it is
+> left standing rather than rewritten.
+
+
 This step turns the simulated world into datasets v0.7.0 can train on and
 v0.8.0 can score. It records rollouts as frames paired with the labels the world
 already holds, partitions them so nothing leaks, reports what the result

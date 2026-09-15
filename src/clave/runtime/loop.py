@@ -561,7 +561,9 @@ def _labels(
                 material_class=item.material_class,
                 channel=item.channel,
                 position=(position[0], position[1], position[2]),
-                in_reachable_window=abs(position[0]) <= half_window,
+                in_reachable_window=belt.within_reach(
+                    (position[0], position[1], position[2]), conveyor.plan
+                ),
             )
         )
     return tuple(labels)

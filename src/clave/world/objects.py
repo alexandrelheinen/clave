@@ -43,20 +43,35 @@ class ObjectSpec:
         """The channel this object routes to by default."""
         return channel_of(self.material_class)
 
+    @property
+    def max_grasp_width(self) -> float:
+        """The widest the gripper has to open for this object, in meters.
 
-def parse(entries: list[dict[str, Any]]) -> tuple[ObjectSpec, ...]:
+        Both shapes are grasped across `size_a`: a cylinder by its diameter and
+        a box by its width. The largest value the range can draw is what the
+        gripper has to clear, because a randomized world draws it eventually.
+        """
+        return 2.0 * self.size[0].high
+
+
+def parse(
+    entries: list[dict[str, Any]], max_grasp_width: float | None = None
+) -> tuple[ObjectSpec, ...]:
     """Read the object set from configuration.
 
     Args:
         entries: The `objects` list from the world configuration.
+        max_grasp_width: The widest object the gripper can close on, in meters.
+            When given, an object wider than this is refused.
 
     Returns:
         The parsed object specs.
 
     Raises:
-        WorldConfigError: If a key is missing, a range is invalid, or a material
-            class is not in the taxonomy. An unknown class names the offending
-            object, because a mislabeled object silently corrupts every rollout
+        WorldConfigError: If a key is missing, a range is invalid, a material
+            class is not in the taxonomy, or an object is wider than the
+            gripper can open. An unknown class names the offending object,
+            because a mislabeled object silently corrupts every rollout
             recorded from this world.
     """
     from clave.world.config import WorldConfigError
@@ -89,7 +104,37 @@ def parse(entries: list[dict[str, Any]]) -> tuple[ObjectSpec, ...]:
                 density=require_range(entry, "density_kg_per_m3", f"objects.{name}"),
             )
         )
+    if max_grasp_width is not None:
+        _check_graspable(specs, max_grasp_width)
     return tuple(specs)
+
+
+def _check_graspable(specs: list[ObjectSpec], limit: float) -> None:
+    """Refuse an object the gripper cannot close on.
+
+    A world that spawns objects wider than its own gripper simulates picking
+    that could never happen, and every number recorded from it describes a task
+    the manipulator was never able to perform. The check is here rather than in
+    a review comment because the sizes are randomized and a reviewer reads the
+    range rather than the draw.
+
+    Args:
+        specs: The parsed objects.
+        limit: The widest object the gripper can close on, in meters.
+
+    Raises:
+        WorldConfigError: Naming the object, its width and the limit.
+    """
+    from clave.world.config import WorldConfigError
+
+    for spec in specs:
+        if spec.max_grasp_width > limit:
+            raise WorldConfigError(
+                f"object {spec.name!r} can be drawn {spec.max_grasp_width * 1000:.1f} "
+                f"mm wide, and the gripper opens {limit * 1000:.1f} mm. A world "
+                f"that spawns objects it cannot grasp measures a task the arm "
+                f"cannot perform."
+            )
 
 
 def channels(specs: tuple[ObjectSpec, ...]) -> tuple[str, ...]:
