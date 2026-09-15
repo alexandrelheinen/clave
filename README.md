@@ -49,7 +49,9 @@ behind a contract.
 
 Two commands do something visible. Both need the world extra and a built
 runtime: `uv pip install -e ".[dev,world]"` and `cargo build --release -p
-clave-sitl`.
+clave-sitl`. For the warehouse scene dressing, also run
+`python scripts/import_warehouse_assets.py` once, which converts the meshes the
+pinned MIT-0 submodule holds. Without it the scene keeps a plain floor.
 
 ```bash
 python -m clave.cli demo sorting-line

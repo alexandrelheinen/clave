@@ -10,8 +10,9 @@ CLAVE does not vendor meshes.
 
 from __future__ import annotations
 
+import math
 import warnings
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -76,6 +77,10 @@ class SceneLayout:
         objects: The object set the pool draws from.
         pool_size: How many object bodies exist.
         timestep: Simulation timestep in seconds.
+        dressed: Whether the warehouse scene dressing was found and used. It
+            is reported rather than assumed, because the assets are generated
+            from a submodule and a clone that has not run the importer gets a
+            plain floor. Nothing the simulation measures depends on it.
     """
 
     belt: BeltGeometry
@@ -85,6 +90,7 @@ class SceneLayout:
     objects: tuple[ObjectSpec, ...]
     pool_size: int
     timestep: float
+    dressed: bool = False
 
 
 def _arm_spec(root: Path) -> Any:
@@ -152,6 +158,172 @@ def layout(raw: dict[str, Any], rng: np.random.Generator) -> SceneLayout:
     )
 
 
+WAREHOUSE_ASSETS = Path("assets") / "warehouse"
+"""Where `scripts/import_warehouse_assets.py` writes what it converts."""
+
+
+def _dress(mujoco: Any, spec: Any, world: Any, raw: dict[str, Any], root: Path) -> bool:
+    """Lay the floor and stand the scene dressing on it.
+
+    The assets are converted from a pinned submodule and are not committed, so
+    a clone that has not run the importer gets the plain floor instead. Nothing
+    here touches the belt, the arm or the objects: every prop is static geometry
+    standing clear of both, and the overhead camera the models see looks
+    straight down at the belt rather than at any of it.
+
+    Args:
+        mujoco: The imported module.
+        spec: The model spec, which owns textures and meshes.
+        world: The worldbody being assembled.
+        raw: The parsed world configuration.
+        root: Repository root.
+
+    Returns:
+        Whether the warehouse assets were found and used.
+    """
+    assets = root / WAREHOUSE_ASSETS
+    ground = assets / "textures" / "ground.png"
+    if not ground.is_file():
+        world.add_geom(
+            name="floor",
+            type=mujoco.mjtGeom.mjGEOM_PLANE,
+            size=[5.0, 5.0, 0.1],
+            pos=[0.0, 0.0, 0.0],
+        )
+        return False
+
+    spec.add_texture(
+        name="warehouse_ground",
+        type=mujoco.mjtTexture.mjTEXTURE_2D,
+        file=str(ground),
+    )
+    spec.add_material(
+        name="warehouse_ground",
+        textures=["", "warehouse_ground"],
+        texrepeat=[6.0, 6.0],
+    )
+    world.add_geom(
+        name="floor",
+        type=mujoco.mjtGeom.mjGEOM_PLANE,
+        size=[5.0, 5.0, 0.1],
+        pos=[0.0, 0.0, 0.0],
+        material="warehouse_ground",
+    )
+
+    for index, prop in enumerate(require(raw, "environment").get("props", [])):
+        name = str(require(prop, "mesh", "environment.props"))
+        path = assets / "meshes" / name
+        if not path.is_file():
+            continue
+        mesh_name = f"prop_{index}"
+        spec.add_mesh(name=mesh_name, file=str(path))
+        position = [float(v) for v in require(prop, "position_meters", name)]
+        yaw = math.radians(float(require(prop, "yaw_degrees", name)))
+        world.add_geom(
+            name=mesh_name,
+            type=mujoco.mjtGeom.mjGEOM_MESH,
+            meshname=mesh_name,
+            pos=position,
+            quat=[math.cos(yaw / 2.0), 0.0, 0.0, math.sin(yaw / 2.0)],
+            # Visual only. A prop that collided would be one more thing the
+            # solver has to resolve every step for no gain, since none of them
+            # is inside the workspace.
+            contype=0,
+            conaffinity=0,
+        )
+    return True
+
+
+def _add_supports(
+    mujoco: Any, world: Any, plan: SceneLayout, structure: dict[str, Any]
+) -> None:
+    """Stand the belt and the manipulator on something.
+
+    Everything here is static geometry under equipment that was already resting
+    on nothing, so no trajectory changes: the belt surface keeps its height, the
+    arm keeps its base, and the legs sit below both. It exists because a scene
+    shown to an audience should read as equipment rather than as boxes floating
+    over a floor.
+
+    The supports are placed clear of the effector's workspace. The pedestal is
+    under the arm base and the legs are under the belt frame, neither of which
+    the arm reaches into.
+
+    Args:
+        mujoco: The imported module.
+        world: The worldbody being assembled.
+        plan: The resolved layout, carrying the belt and the arm base.
+        structure: The `structure` section of the configuration.
+    """
+    leg = float(require(structure, "leg_side_meters", "structure"))
+    inset = float(require(structure, "leg_inset_meters", "structure"))
+    frame_depth = float(require(structure, "frame_depth_meters", "structure"))
+    steel = [0.32, 0.33, 0.36, 1.0]
+
+    # The frame the belt rides on, spanning the legs just under the surface.
+    frame_top = plan.belt.surface_height - 0.04
+    frame_half = frame_depth / 2.0
+    world.add_geom(
+        name="belt_frame",
+        type=mujoco.mjtGeom.mjGEOM_BOX,
+        size=[plan.belt.length / 2.0, plan.belt.width / 2.0, frame_half],
+        pos=[0.0, 0.0, frame_top - frame_half],
+        rgba=steel,
+    )
+
+    # Four uprights, inset from the corners as a bench conveyor's are.
+    leg_top = frame_top - frame_depth
+    for x_sign in (-1.0, 1.0):
+        for y_sign in (-1.0, 1.0):
+            side = "front" if x_sign < 0 else "back"
+            hand = "left" if y_sign < 0 else "right"
+            world.add_geom(
+                name=f"belt_leg_{side}_{hand}",
+                type=mujoco.mjtGeom.mjGEOM_BOX,
+                size=[leg, leg, leg_top / 2.0],
+                pos=[
+                    x_sign * (plan.belt.length / 2.0 - inset),
+                    y_sign * (plan.belt.width / 2.0 - inset),
+                    leg_top / 2.0,
+                ],
+                rgba=steel,
+            )
+
+    # The pedestal the manipulator is bolted to, from the floor to its base.
+    column = float(require(structure, "pedestal_radius_meters", "structure"))
+    plate = float(require(structure, "pedestal_plate_radius_meters", "structure"))
+    plate_thickness = float(
+        require(structure, "pedestal_plate_thickness_meters", "structure")
+    )
+    mount = plan.arm_base[2]
+    world.add_geom(
+        name="arm_pedestal",
+        type=mujoco.mjtGeom.mjGEOM_CYLINDER,
+        size=[column, (mount - plate_thickness) / 2.0, 0.0],
+        pos=[plan.arm_base[0], plan.arm_base[1], (mount - plate_thickness) / 2.0],
+        rgba=steel,
+    )
+    world.add_geom(
+        name="arm_pedestal_plate",
+        type=mujoco.mjtGeom.mjGEOM_CYLINDER,
+        size=[plate, plate_thickness / 2.0, 0.0],
+        pos=[
+            plan.arm_base[0],
+            plan.arm_base[1],
+            mount - plate_thickness / 2.0,
+        ],
+        rgba=[0.22, 0.23, 0.26, 1.0],
+    )
+    # A foot, so the pedestal reads as bolted down rather than balanced.
+    world.add_geom(
+        name="arm_pedestal_foot",
+        type=mujoco.mjtGeom.mjGEOM_CYLINDER,
+        size=[plate * 1.2, 0.008, 0.0],
+        pos=[plan.arm_base[0], plan.arm_base[1], 0.008],
+        rgba=[0.22, 0.23, 0.26, 1.0],
+    )
+
+
 def build(
     raw: dict[str, Any], rng: np.random.Generator, root: Path
 ) -> tuple[Any, Any, SceneLayout]:
@@ -194,12 +366,7 @@ def build(
     world = spec.worldbody
     world.add_light(pos=[0.0, 0.0, 2.0], dir=[0.0, 0.0, -1.0])
 
-    world.add_geom(
-        name="floor",
-        type=mujoco.mjtGeom.mjGEOM_PLANE,
-        size=[5.0, 5.0, 0.1],
-        pos=[0.0, 0.0, 0.0],
-    )
+    plan = replace(plan, dressed=_dress(mujoco, spec, world, raw, root))
 
     half = [plan.belt.length / 2.0, plan.belt.width / 2.0, 0.02]
     world.add_geom(
@@ -209,6 +376,8 @@ def build(
         pos=[0.0, 0.0, plan.belt.surface_height - half[2]],
         rgba=[0.25, 0.25, 0.28, 1.0],
     )
+
+    _add_supports(mujoco, world, plan, require(raw, "structure"))
 
     # Side guides. A real sorting line has them, and without them a cylinder
     # that lands and tips simply rolls off the belt, which showed up as objects
