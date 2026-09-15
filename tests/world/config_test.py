@@ -42,3 +42,37 @@ def test_every_randomizable_belt_and_spawn_value_is_a_range() -> None:
     require_range(raw["spawn"], "interval_seconds", "spawn")
     require_range(raw["spawn"], "lateral_offset_meters", "spawn")
     require_range(raw["camera"], "fovy_degrees", "camera")
+
+
+def test_an_object_wider_than_the_gripper_is_refused() -> None:
+    """A world that spawns what it cannot grasp measures an impossible task.
+
+    Guards the defect v1.0.1 fixed: every object in the shipped set was wider
+    than the gripper's 55.7 mm opening, and nothing said so.
+    """
+    from clave.world.config import WorldConfigError
+    from clave.world.objects import parse
+
+    entry = {
+        "name": "boulder",
+        "material_class": "M-01",
+        "shape": "cylinder",
+        "size_a_meters": [0.030, 0.038],
+        "size_b_meters": [0.090, 0.120],
+        "density_kg_per_m3": [55, 110],
+    }
+    with pytest.raises(WorldConfigError, match="boulder"):
+        parse([entry], 0.045)
+    # The same object is accepted when the gripper is wide enough for it.
+    assert parse([entry], 0.080)[0].max_grasp_width == pytest.approx(0.076)
+
+
+def test_every_shipped_object_fits_the_shipped_gripper() -> None:
+    """The committed world builds, which means every object clears the bound."""
+    from clave.world.objects import parse
+
+    raw = load(CONFIG)
+    limit = float(require(require(raw, "arm"), "max_grasp_width_meters"))
+    specs = parse(require(raw, "objects"), limit)
+    assert specs
+    assert all(spec.max_grasp_width <= limit for spec in specs)

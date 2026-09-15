@@ -14,12 +14,19 @@ physics:
   timestep_seconds: 0.002
 
 belt:
-  length_meters: 2.0
-  width_meters: 0.50
+  # The line is sized for the manipulator it has rather than for a picture of a
+  # recovery facility. A solved workspace sweep put the effector 0.266 m from
+  # its base in the grasp band, so a belt wider than the arm can cross carries
+  # objects nothing can pick. docs/research/world-scale.md has the sweep.
+  length_meters: 1.20
+  width_meters: 0.16
   surface_height_meters: 0.35
-  speed_meters_per_second: [0.10, 0.30]
+  # At or below the effector's own useful speed. The arm covers ground at
+  # roughly 0.10 m/s when it converges at all, so a belt faster than that
+  # carries every object out of reach before the arm arrives.
+  speed_meters_per_second: [0.04, 0.10]
   # Side guides keep tipped cylinders from rolling off. A real line has them.
-  guide_height_meters: 0.06
+  guide_height_meters: 0.04
 
 spawn:
   # Objects are recycled from a fixed pool, because a compiled MuJoCo model
@@ -28,25 +35,40 @@ spawn:
   pool_size: 12
   # Objects enter this far inside the belt's leading edge. Spawning exactly on
   # the edge lets an object tip off before the belt drive engages.
-  entry_margin_meters: 0.12
+  entry_margin_meters: 0.08
   interval_seconds: [0.8, 2.5]
-  lateral_offset_meters: [-0.15, 0.15]
-  drop_height_meters: [0.02, 0.06]
+  # Inside the belt's half width, so nothing spawns against a side guide.
+  lateral_offset_meters: [-0.05, 0.05]
+  drop_height_meters: [0.01, 0.03]
 
 arm:
   # Placed beside the belt, facing it. The OpenMANIPULATOR-X is a 4 degree of
   # freedom arm with a parallel gripper, loaded from the pinned submodule.
-  base_position_meters: [0.0, -0.34, 0.35]
-  reach_radius_meters: 0.38
+  #
+  # The offset is close enough that the whole belt width is inside the solved
+  # workspace: the far edge sits 0.22 m from the base laterally, and the sweep
+  # in docs/research/world-scale.md found 289 reachable poses at that distance
+  # and none at 0.30 m.
+  base_position_meters: [0.0, -0.14, 0.35]
+  # The solved workspace, not the link geometry. Forward kinematics over 83,521
+  # joint combinations put the effector at most 0.266 m from its base in the
+  # grasp band; 0.25 m keeps a margin under that. The old 0.38 m was an upper
+  # bound v0.5.0 recorded as one and nothing had checked since.
+  reach_radius_meters: 0.25
+  # The widest object the gripper can close on, measured from the mesh vertices
+  # of the pinned OpenMANIPULATOR-X fingers: 55.7 mm of clear opening when the
+  # gripper joint is at its upper limit. Every object below declares a grasp
+  # width under this and the world refuses to build if one does not.
+  max_grasp_width_meters: 0.045
 
 bins:
   # One bin per distinct channel across the object set below.
-  spacing_meters: 0.20
-  size_meters: [0.08, 0.08, 0.06]
-  offset_from_belt_meters: 0.42
+  spacing_meters: 0.12
+  size_meters: [0.05, 0.05, 0.04]
+  offset_from_belt_meters: 0.24
 
 camera:
-  height_above_belt_meters: [0.85, 1.10]
+  height_above_belt_meters: [0.45, 0.60]
   fovy_degrees: [45.0, 60.0]
 
 lighting:
@@ -56,58 +78,65 @@ objects:
   # size_a / size_b are interpreted per shape:
   #   cylinder -> radius, half-length
   #   box      -> half-width, half-height
+  #
+  # The grasp width is twice size_a for both shapes, and every entry keeps it
+  # under arm.max_grasp_width_meters. That bound comes from the gripper's own
+  # mesh and it is what decides the scale of this object set: these are the
+  # small containers a 56 mm gripper can close on, not the two litre bottles a
+  # recovery facility sees. A larger object set needs a larger gripper, which
+  # is a different arm rather than a different number here.
   - name: drink_bottle
     material_class: M-01
     shape: cylinder
-    size_a_meters: [0.030, 0.038]
-    size_b_meters: [0.090, 0.120]
+    size_a_meters: [0.016, 0.021]
+    size_b_meters: [0.055, 0.080]
     density_kg_per_m3: [55, 110]
 
   - name: milk_jug
     material_class: M-02
     shape: box
-    size_a_meters: [0.045, 0.058]
-    size_b_meters: [0.090, 0.115]
+    size_a_meters: [0.015, 0.020]
+    size_b_meters: [0.050, 0.070]
     density_kg_per_m3: [70, 130]
 
   - name: yogurt_tub
     material_class: M-03
     shape: cylinder
-    size_a_meters: [0.035, 0.048]
-    size_b_meters: [0.030, 0.050]
+    size_a_meters: [0.017, 0.022]
+    size_b_meters: [0.022, 0.035]
     density_kg_per_m3: [80, 150]
 
   - name: drink_can
     material_class: M-05
     shape: cylinder
-    size_a_meters: [0.031, 0.034]
-    size_b_meters: [0.058, 0.067]
+    size_a_meters: [0.016, 0.019]
+    size_b_meters: [0.045, 0.060]
     density_kg_per_m3: [40, 90]
 
   - name: food_can
     material_class: M-06
     shape: cylinder
-    size_a_meters: [0.036, 0.044]
-    size_b_meters: [0.040, 0.058]
+    size_a_meters: [0.018, 0.022]
+    size_b_meters: [0.025, 0.040]
     density_kg_per_m3: [180, 320]
 
   - name: glass_bottle
     material_class: M-07
     shape: cylinder
-    size_a_meters: [0.032, 0.040]
-    size_b_meters: [0.095, 0.130]
+    size_a_meters: [0.015, 0.020]
+    size_b_meters: [0.055, 0.085]
     density_kg_per_m3: [380, 620]
 
   - name: shipping_box
     material_class: M-08
     shape: box
-    size_a_meters: [0.070, 0.110]
-    size_b_meters: [0.040, 0.070]
+    size_a_meters: [0.018, 0.022]
+    size_b_meters: [0.020, 0.035]
     density_kg_per_m3: [60, 120]
 
   - name: beverage_carton
     material_class: M-10
     shape: box
-    size_a_meters: [0.033, 0.042]
-    size_b_meters: [0.085, 0.110]
+    size_a_meters: [0.016, 0.021]
+    size_b_meters: [0.045, 0.065]
     density_kg_per_m3: [70, 140]

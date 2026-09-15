@@ -261,3 +261,50 @@ unchanged. No threshold moved.
 **Reversal condition**: none expected. If a later design makes every presented
 object carry a decision by construction, the `None` branch becomes dead rather
 than wrong.
+
+## D-08: the world is sized to its manipulator, and the old measurements stand
+
+**Date**: 2026-09-15 · **Step**: v1.0.1, a patch to the world of v0.5.0
+
+**The standard**: v0.5.0 built a conveyor two meters long and half a meter wide,
+running at up to 0.30 m/s, carrying objects 60 to 220 mm across, with the arm
+0.34 m from the centerline and a declared reach of 0.38 m. Every measurement
+from v0.5.0 to v1.0.0 was taken in that world.
+
+**What was scoped**: the belt is now 1.20 m by 0.16 m at 0.04 to 0.10 m/s, the
+arm sits 0.14 m from the centerline with a declared reach of 0.25 m, and objects
+are 38 to 44 mm across. Reachability is a distance in three dimensions rather
+than a coordinate along belt travel. `clave.world.objects` refuses to build a
+world whose objects exceed the gripper's opening.
+
+**Why**: three measurements, all in
+[world-scale.md](research/world-scale.md). The gripper's clear opening is 55.7
+mm, taken from the finger mesh vertices, and not one of the eight objects fit
+inside it. The effector covers ground at about 0.10 m/s while the belt ran up to
+three times faster. And a forward kinematics sweep over 83,521 joint
+combinations put the effector at most 0.266 m from its base in the grasp band,
+which means the arm could not reach the middle of its own belt.
+
+The last of those explains a number this project had been reporting for two
+releases without understanding it. v1.0.0 recorded that 65 percent of the
+recommended configuration's proposals were overridden and called the safety
+layer's work evidence that it was not decorative. Most of that work was refusing
+picks that were geometrically impossible rather than badly chosen. After the
+rescale the control is overridden 2.2 percent of the time instead of 47.
+
+**What is not scoped**: the gates. `max_decision_latency_p99_seconds` stays at
+0.45 s although the time budget rose from 1.13 s to 4.14 s, because a gate
+tighter than the physics demands costs nothing and moving it is a decision
+rather than an edit.
+
+**What this invalidates**: every accuracy, latency and composition figure taken
+before this describes a different world. The dataset was re-recorded, all three
+candidates retrained, and the benchmark rerun.
+[benchmark.md](research/benchmark.md) carries the rescaled numbers. The reports
+for v0.5.0, v0.6.0, v0.7.0 and v0.9.0 carry a note at the top pointing here and
+are otherwise left standing, because they record what was measured at the time
+and rewriting them would erase the trail that led to this entry.
+
+**Reversal condition**: a larger gripper. The object set is small because the
+gripper is, and a line sorting real household packaging needs one that opens two
+to three times wider, which is a different arm rather than a different number.

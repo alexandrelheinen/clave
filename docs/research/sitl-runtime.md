@@ -2,6 +2,15 @@
 
 > Roadmap step: v0.9.0 · Spec: [.kiro/specs/sitl-runtime/](../../.kiro/specs/sitl-runtime/)
 
+> **The geometry in this document was superseded at v1.0.1.** The belt, the arm
+> offset, the reach radius, the belt speed and the object sizes were all
+> rescaled after a solved workspace sweep found the manipulator could not reach
+> the middle of its own belt and its gripper could not close on any object in
+> the set. [world-scale.md](world-scale.md) carries the measurements and the new
+> values. What this document records is what was measured at the time, and it is
+> left standing rather than rewritten.
+
+
 Every piece existed and none of them were connected. The world ran, models were
 trained, the decision contract was published and the routing resolver was
 written, and nothing took a frame and produced a decision. This is the step

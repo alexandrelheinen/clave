@@ -2,6 +2,15 @@
 
 > Roadmap step: v0.5.0 · Spec: [.kiro/specs/sorting-world/](../../.kiro/specs/sorting-world/)
 
+> **The geometry in this document was superseded at v1.0.1.** The belt, the arm
+> offset, the reach radius, the belt speed and the object sizes were all
+> rescaled after a solved workspace sweep found the manipulator could not reach
+> the middle of its own belt and its gripper could not close on any object in
+> the set. [world-scale.md](world-scale.md) carries the measurements and the new
+> values. What this document records is what was measured at the time, and it is
+> left standing rather than rewritten.
+
+
 [v0.4.0](model-candidates.md) measured every candidate's latency and could not
 say whether any of them was fast enough, because no belt speed, field of view or
 effector reach had ever been fixed. Calling Faster R-CNN "marginal" was a

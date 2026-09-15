@@ -28,6 +28,6 @@ video:
   # reaching across them. The overhead camera the model sees is a different
   # view and a worse one to watch.
   azimuth_degrees: 150.0
-  elevation_degrees: -20.0
-  distance_meters: 2.0
-  lookat_meters: [0.0, -0.10, 0.42]
+  elevation_degrees: -18.0
+  distance_meters: 0.95
+  lookat_meters: [0.0, -0.06, 0.40]

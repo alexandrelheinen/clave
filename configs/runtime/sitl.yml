@@ -25,8 +25,10 @@ runtime:
   # How far the identity association may reach, in meters. CLAVE has no
   # tracker, so a proposed point is matched to the nearest object the world
   # holds; a point further than this from every object matches nothing and is
-  # dropped rather than published under some other object's identity.
-  association_radius_meters: 0.30
+  # dropped rather than published under some other object's identity. Scaled
+  # with the belt: on a 0.16 m wide line, a 0.30 m radius would match an object
+  # on the far side of the belt from the one the policy meant.
+  association_radius_meters: 0.12
   # The coordinate frame a pick point is expressed in, carried into every
   # published message. The belt frame has its origin at the upstream edge of
   # the working area, with x along belt travel, y across the belt and z normal

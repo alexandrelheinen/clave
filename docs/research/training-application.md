@@ -2,6 +2,15 @@
 
 > Roadmap step: v0.7.0 · Spec: [.kiro/specs/training-application/](../../.kiro/specs/training-application/)
 
+> **The geometry in this document was superseded at v1.0.1.** The belt, the arm
+> offset, the reach radius, the belt speed and the object sizes were all
+> rescaled after a solved workspace sweep found the manipulator could not reach
+> the middle of its own belt and its gripper could not close on any object in
+> the set. [world-scale.md](world-scale.md) carries the measurements and the new
+> values. What this document records is what was measured at the time, and it is
+> left standing rather than rewritten.
+
+
 Four candidates were trained on the hardware this project actually has. This
 document reports what that cost.
 
