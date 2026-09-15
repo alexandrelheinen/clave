@@ -118,21 +118,33 @@ geometry: an object still rests on the box the belt has always been.
 
 ### The objects
 
-Four are scanned packages from the YCB benchmark, pinned at
-`third_party/ycb_sim` under Apache-2.0. Only the ones the gripper can close on
-are used, measured across the narrowest horizontal axis:
+**Every object is a scanned package.** There are no parametric shapes on the
+belt: a colored cylinder teaches a classifier shape rather than material, which
+is the whole problem CLAVE exists to solve.
 
-| Object | Narrowest axis | Class |
+| Class | Objects | Source |
 | --- | --- | --- |
-| Gelatin box | 30.1 mm | `M-09` paperboard |
-| Tuna fish can | 33.5 mm | `M-06` ferrous metal |
-| Pudding box | 38.9 mm | `M-09` paperboard |
-| Sugar box | 45.2 mm | `M-09` paperboard |
+| `M-02` HDPE | 5 supplement tubs and toiletry bottles | Scanned Objects |
+| `M-04` Other plastic | 2, a sprinkles jar and snack bags | Scanned Objects |
+| `M-06` Ferrous metal | 1 tuna can | YCB |
+| `M-09` Paperboard | 6 cartons | YCB and Scanned Objects |
 
-The five left out are 60.1 mm and wider, against a gripper that opens 55.7 mm.
-The remaining eight objects are parametric primitives covering the classes YCB
-has nothing for. [scene-assets.md](docs/research/scene-assets.md) records what a
-wider gripper would add.
+Seven classes have no object, because nothing made of them fits a 55.7 mm
+gripper: a soda can is 66 mm across and no glass container in either collection
+is under 52 mm. `D-09` in [decisions.md](docs/decisions.md) records the trade.
+
+### Submodule sizes
+
+`git submodule update --init --recursive` fetches about **2 GB**, almost all of
+it the scanned objects.
+
+| Submodule | Checked out | What it supplies |
+| --- | --- | --- |
+| `third_party/scanned_objects` | 2.0 GB | 1,030 scanned household objects, 11 used |
+| `third_party/robotis_mujoco_menagerie` | 185 MB | The OpenMANIPULATOR arms |
+| `third_party/ycb_sim` | 24 MB | 10 YCB packages, 4 used |
+| `third_party/aws-robomaker-small-warehouse-world` | 17 MB | Warehouse props and textures |
+| `standards/guidelines`, `standards/cc-sdd` | Under 10 MB | The shared guidelines and the SDD toolkit |
 
 ## What runs today
 

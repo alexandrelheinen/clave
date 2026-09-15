@@ -308,3 +308,53 @@ and rewriting them would erase the trail that led to this entry.
 **Reversal condition**: a larger gripper. The object set is small because the
 gripper is, and a line sorting real household packaging needs one that opens two
 to three times wider, which is a different arm rather than a different number.
+
+## D-09: the object set is real and covers four classes instead of six
+
+**Date**: 2026-09-15 · **Step**: v1.0.4, a patch to the world of v0.5.0
+
+**The standard**: `AC-ASSET-02` in the `sorting-world` spec asks that the object
+set cover at least six of the taxonomy's material classes, and
+`tests/world/objects_test.py` enforces it. The set that satisfied it was eight
+parametric primitives, whose material was chosen in a configuration file and
+whose appearance was a colored cylinder.
+
+**What was scoped**: every object is now a scanned package, and the set covers
+four classes: `M-02` high-density polyethylene, `M-04` other plastics, `M-06`
+ferrous metal and `M-09` paperboard. `AC-ASSET-02` is not satisfied and the
+test now asserts four with a reference to this entry.
+
+**Why**: the gripper on the pinned OpenMANIPULATOR-X opens 55.7 mm, measured
+from its finger meshes. Every scanned object in the collections this project
+pins was measured against that: 1,030 in Google's Scanned Objects and 87 across
+two YCB sets. 276 fit under 52 mm, and of those the ones that are recyclable
+packaging rather than plant saucers, hard drives or toys reach four classes.
+
+Nothing made of the missing six fits. A soda can is 66 mm across, a bleach
+bottle 68 mm, a mustard bottle 67 mm, the narrowest drinking cup 57 mm, and no
+glass container in either collection is under 52 mm at all.
+
+So the choice was between six classes of colored cylinders and four classes of
+photographs. [v0.6.0](research/data-pipeline.md) already recorded what the
+primitives cost: "a classifier trained only on them learns shape rather than
+material". Four real classes teach a classifier something a camera could
+recognize; six synthetic ones teach it that PET is a yellow cylinder.
+
+**What this costs, stated plainly**:
+
+1. **Two classes fewer than the criterion asks for**, and six of eleven with no
+   object at all.
+2. **The material label is now inferred rather than true by construction.** A
+   supplement tub is taken as HDPE and a candy carton as paperboard, from what
+   the package is. The synthetic world knew each object's material because it
+   chose it. This is label noise that did not exist before.
+3. **The class balance is worse.** Six of the fourteen objects are paperboard
+   and one is metal, because that is what fits.
+
+**Reversal condition**: a wider gripper. At about 72 mm the set gains the
+mustard bottle, the tomato soup can, the bleach cleanser and the cracker box,
+which adds nothing new to the class list; at 85 mm it gains drinking cups for
+`M-03`. Glass and aluminum need a container neither collection has at any size,
+so those two classes need a different source rather than a different arm.
+Restoring the primitives would satisfy the criterion in the same commit that
+undoes the reason for this entry.

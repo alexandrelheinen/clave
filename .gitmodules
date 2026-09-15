@@ -15,3 +15,6 @@
 [submodule "third_party/ycb_sim"]
 	path = third_party/ycb_sim
 	url = https://github.com/vikashplus/YCB_sim.git
+[submodule "third_party/scanned_objects"]
+	path = third_party/scanned_objects
+	url = https://github.com/kevinzakka/mujoco_scanned_objects.git
