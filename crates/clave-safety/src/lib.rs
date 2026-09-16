@@ -34,11 +34,11 @@
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let envelope = Envelope::from_json(
-//!     br#"{"shoulder_meters": [1.5, 0.0, 1.408], "link_meters": [0.4, 0.25],
+//!     br#"{"shoulder_meters": [0.0, 0.0, 1.408], "link_meters": [0.4, 0.25],
 //!          "reach_meters": [0.222, 0.65], "shoulder_limit_radians": 2.443461,
 //!          "elbow_limit_radians": 2.617994,
 //!          "tool_above_belt_meters": [0.03, 0.21],
-//!          "belt_surface_z_meters": 0.9, "belt_x_meters": [0.0, 3.0],
+//!          "belt_surface_z_meters": 0.9, "belt_x_meters": [-1.5, 1.5],
 //!          "belt_y_meters": [-0.5, 0.5]}"#,
 //! )?;
 //! let resolver = Resolver::new(ChannelMap::new(

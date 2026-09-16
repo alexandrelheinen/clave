@@ -16,15 +16,16 @@ still:
   description: >-
     The manipulator mid-reach over the belt with six scanned packages on it,
     covering all four material classes the object set has.
-  # Found by sweeping 40 seeds and every 10th step of a 60 second run for a
+  # Found by sweeping 40 seeds and every 250th step of a 40 second run for a
   # moment with five to seven packages on the belt, all four classes present,
-  # two inside the reachable window, at least 25 mm between neighbours, and the
-  # effector between 30 and 300 mm from the pick it is committed to.
-  seed: 31
-  capture_at_seconds: 14.5
-  # The gripper is commanded open through the approach, which is what a pick
-  # does and what makes the pose read as a machine working rather than parked.
-  open_gripper: true
+  # and at least one inside the reachable window. This one carries six packages
+  # with four of them reachable and 295 mm between the closest pair, which was
+  # the widest spacing any qualifying moment had.
+  #
+  # The previous seed and instant were swept against the old desk-sized world
+  # and carry no meaning in this one: at 14.5 s a single package is on the belt.
+  seed: 29
+  capture_at_seconds: 8.5
   width: 1920
   height: 1080
 
@@ -43,7 +44,7 @@ lighting:
     bottom: [0.46, 0.44, 0.42]
   lights:
     # Key, from the arm's side and high, catching the manipulator's near face.
-    - position_meters: [-0.90, -1.30, 1.70]
+    - position_meters: [0.30, -1.90, 3.20]
       direction: [0.45, 0.62, -0.85]
       diffuse: [0.58, 0.56, 0.51]
       specular: [0.22, 0.22, 0.22]
@@ -51,13 +52,13 @@ lighting:
     # Fill, opposite and lower, so the shadow side keeps a silhouette instead
     # of merging into the background. It casts no shadow, which is what keeps
     # a second set of shadows off the floor.
-    - position_meters: [1.40, 1.50, 1.05]
+    - position_meters: [2.70, 2.10, 2.30]
       direction: [-0.55, -0.62, -0.56]
       diffuse: [0.26, 0.25, 0.28]
       specular: [0.05, 0.05, 0.05]
       cast_shadow: false
     # Warm bounce along the belt, so the packages separate from the conveyor.
-    - position_meters: [0.85, -0.55, 0.80]
+    - position_meters: [2.30, -0.90, 1.60]
       direction: [-0.75, 0.30, -0.58]
       diffuse: [0.26, 0.22, 0.16]
       specular: [0.04, 0.04, 0.04]
@@ -66,22 +67,27 @@ lighting:
 cameras:
   # Three-quarter views down the length of the belt, from the arm's side.
   # Azimuth is measured from the belt axis, so 180 looks straight down it and
-  # these sit 25 to 40 degrees off that.
+  # these sit 25 to 40 degrees off that. Re-aimed for the SCARA line: the arm
+  # stands over the belt centre with its mounting face 1.66 m up, and the belt runs
+  # 3.00 m, so the old framing pointed at empty floor. The elevations are
+  # steeper than the old world's because the warehouse dressing did not move
+  # with the belt: a pallet jack stands at (-1.45, -1.10) and sat squarely
+  # between the near-left camera and the line at the shallower angle.
   - name: near-left
     azimuth_degrees: 205.0
-    elevation_degrees: -27.0
-    distance_meters: 0.95
-    lookat_meters: [-0.04, -0.05, 0.43]
+    elevation_degrees: -32.0
+    distance_meters: 3.10
+    lookat_meters: [0.0, 0.0, 1.08]
     fovy_degrees: 40.0
   - name: near-right
     azimuth_degrees: 148.0
-    elevation_degrees: -25.0
-    distance_meters: 0.90
-    lookat_meters: [0.01, -0.04, 0.43]
+    elevation_degrees: -30.0
+    distance_meters: 3.00
+    lookat_meters: [0.0, 0.0, 1.08]
     fovy_degrees: 42.0
   - name: low-three-quarter
     azimuth_degrees: 218.0
-    elevation_degrees: -23.0
-    distance_meters: 1.10
-    lookat_meters: [-0.02, -0.05, 0.42]
+    elevation_degrees: -28.0
+    distance_meters: 3.40
+    lookat_meters: [0.0, 0.0, 1.05]
     fovy_degrees: 38.0

@@ -21,12 +21,17 @@ import numpy as np
 from clave.world.config import require, require_range
 from clave.world.objects import ObjectSpec, channels, parse
 
-ARM_MODEL = Path("assets") / "scara" / "irb910sc.xml"
+ARM_MODEL = Path("src") / "clave" / "world" / "mjcf" / "irb910sc.xml"
 """The SCARA, in the geometry of an ABB IRB 910SC-3/0.65.
 
 CLAVE owns this model rather than pinning one. D-10 in docs/decisions.md
 records why: a SCARA is RRPR, every open arm model is all-revolute, and locking
 joints on a revolute arm never produces a prismatic axis.
+
+It lives under `src/` rather than `assets/`, which is the convention FRET uses
+for the same kind of file. `assets/` holds what `scripts/import_scene_assets.py`
+converts out of a submodule or a pinned download, and is ignored by git because
+every byte in it is derived. This model is authored, so a clone has to carry it.
 """
 
 PARKED_Z = 0.05
@@ -108,7 +113,7 @@ class SceneLayout:
 
 
 def _arm_spec(root: Path) -> Any:
-    """Load the manipulator from the pinned submodule.
+    """Load the manipulator.
 
     Args:
         root: Repository root.
@@ -117,16 +122,16 @@ def _arm_spec(root: Path) -> Any:
         The manipulator spec.
 
     Raises:
-        FileNotFoundError: If the submodule is not checked out, naming the
-            command that fixes it.
+        FileNotFoundError: If the model is absent, which means a broken
+            checkout rather than a missing submodule: this file is committed.
     """
     import mujoco
 
     path = root / ARM_MODEL
     if not path.is_file():
         raise FileNotFoundError(
-            f"{ARM_MODEL} is missing. The ROBOTIS menagerie submodule is not "
-            f"checked out. Run: git submodule update --init --recursive"
+            f"{ARM_MODEL} is missing. It is committed to this repository "
+            f"rather than generated, so a checkout that lacks it is broken."
         )
     return mujoco.MjSpec.from_file(str(path))
 

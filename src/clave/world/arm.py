@@ -1,7 +1,7 @@
 """Actuating the manipulator.
 
 The arm is a SCARA in the geometry of an ABB IRB 910SC-3/0.65, built as
-`assets/scara/irb910sc.xml` and mounted inverted above the belt.
+`src/clave/world/mjcf/irb910sc.xml` and mounted inverted above the belt.
 
 Its inverse kinematics are closed form, which is the point. A SCARA's first two
 axes are a planar two-link chain, so the joint angles that put the tool at a

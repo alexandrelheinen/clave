@@ -21,14 +21,14 @@ fn envelope() -> Envelope {
 }
 
 const ENVELOPE_JSON: &str = r#"{
-  "shoulder_meters": [1.5, 0.0, 1.408],
+  "shoulder_meters": [0.0, 0.0, 1.408],
   "link_meters": [0.400, 0.250],
   "reach_meters": [0.222, 0.650],
   "shoulder_limit_radians": 2.443461,
   "elbow_limit_radians": 2.617994,
   "tool_above_belt_meters": [0.030, 0.210],
   "belt_surface_z_meters": 0.90,
-  "belt_x_meters": [0.0, 3.0],
+  "belt_x_meters": [-1.5, 1.5],
   "belt_y_meters": [-0.5, 0.5]
 }"#;
 
@@ -58,10 +58,10 @@ fn wire(x: f64, y: f64, z: f64, confidence: f64) -> String {
 
 /// A point inside every check: on the belt surface, within reach, on the belt.
 fn reachable() -> String {
-    // 0.35 m in front of the shoulder at (1.5, 0), clear of the 0.222 m dead
+    // 0.35 m in front of the shoulder at the origin, clear of the 0.222 m dead
     // zone, inside the 0.650 m outer radius, and inside the wedge axis 1 can
     // turn to. At 0.10 m above the belt, which the spline stroke covers.
-    wire(1.85, 0.0, 1.00, 0.90)
+    wire(0.35, 0.0, 1.00, 0.90)
 }
 
 #[test]
@@ -108,7 +108,7 @@ fn a_point_beyond_reach_is_overridden_naming_the_check() {
     // AC-SAFETY-01 and AC-SAFETY-04. The point is on the belt and inside the
     // stroke; only the distance from the shoulder disqualifies it, at 1.2 m
     // against an outer radius of 0.650 m.
-    let proposal = Proposal::decode(wire(2.7, 0.0, 1.00, 0.90).as_bytes()).unwrap();
+    let proposal = Proposal::decode(wire(1.20, 0.0, 1.00, 0.90).as_bytes()).unwrap();
     let verdict = envelope().judge(&proposal, &resolver()).unwrap();
     assert_eq!(verdict.overridden_check(), Some(Check::Reach));
 }
@@ -116,7 +116,7 @@ fn a_point_beyond_reach_is_overridden_naming_the_check() {
 #[test]
 fn a_point_below_the_belt_surface_is_overridden() {
     // AC-SAFETY-02.
-    let proposal = Proposal::decode(wire(1.85, 0.0, 0.80, 0.90).as_bytes()).unwrap();
+    let proposal = Proposal::decode(wire(0.35, 0.0, 0.80, 0.90).as_bytes()).unwrap();
     let verdict = envelope().judge(&proposal, &resolver()).unwrap();
     assert_eq!(verdict.overridden_check(), Some(Check::BeltSurface));
 }
@@ -126,7 +126,7 @@ fn a_point_off_the_belt_is_overridden() {
     // AC-SAFETY-03.
     // Reachable, and 0.55 m across against a belt half width of 0.50 m, so the
     // extent check is what refuses it rather than the reach check.
-    let proposal = Proposal::decode(wire(1.50, 0.55, 1.00, 0.90).as_bytes()).unwrap();
+    let proposal = Proposal::decode(wire(0.00, 0.55, 1.00, 0.90).as_bytes()).unwrap();
     let verdict = envelope().judge(&proposal, &resolver()).unwrap();
     assert_eq!(verdict.overridden_check(), Some(Check::BeltExtent));
 }
@@ -155,7 +155,7 @@ fn every_point_in_a_swept_grid_reaches_exactly_one_verdict() {
     for xi in -12_i32..=12 {
         for yi in -6_i32..=6 {
             for zi in -2_i32..=4 {
-                let x = 1.5 + f64::from(xi) * 0.1;
+                let x = f64::from(xi) * 0.1;
                 let y = f64::from(yi) * 0.1;
                 let z = 0.90 + f64::from(zi) * 0.05;
                 let proposal = Proposal::decode(wire(x, y, z, 0.90).as_bytes()).unwrap();
@@ -175,7 +175,7 @@ fn every_point_in_a_swept_grid_reaches_exactly_one_verdict() {
 fn a_low_confidence_proposal_is_rejected_rather_than_overridden() {
     // AC-SAFETY-07. The point is inside the envelope, so the safety layer has
     // nothing to say; the routing policy sends it to the reject channel.
-    let proposal = Proposal::decode(wire(1.85, 0.0, 1.00, 0.20).as_bytes()).unwrap();
+    let proposal = Proposal::decode(wire(0.35, 0.0, 1.00, 0.20).as_bytes()).unwrap();
     let verdict = envelope().judge(&proposal, &resolver()).unwrap();
     let Verdict::Accepted { decision, routed } = verdict else {
         panic!("a low confidence proposal was counted as a safety override");
@@ -188,7 +188,7 @@ fn a_low_confidence_proposal_is_rejected_rather_than_overridden() {
 fn the_envelope_names_a_missing_configuration_key() {
     // AC-SAFETY-05. No geometric constant lives in this crate, so a key that
     // is absent has to fail rather than fall back.
-    let error = Envelope::from_json(br#"{"shoulder_meters": [1.5, 0.0, 1.408]}"#).unwrap_err();
+    let error = Envelope::from_json(br#"{"shoulder_meters": [0.0, 0.0, 1.408]}"#).unwrap_err();
     assert!(
         format!("{error}").contains("link_meters"),
         "the error does not name the missing key: {error}"

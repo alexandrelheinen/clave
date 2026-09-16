@@ -95,9 +95,9 @@ def test_the_runtime_hands_every_published_decision_to_its_sink(
     with Bridge(
         runtime_binary, BridgePaths.under(tmp_path), runtime_config, seen.append
     ) as bridge:
-        assert bridge.submit(build(1.85, 0.0, 1.00, 0.9)).accepted
-        assert bridge.submit(build(2.70, 0.0, 1.00, 0.9)).overridden
-        assert bridge.submit(build(1.85, 0.0, 1.00, 0.1)).accepted
+        assert bridge.submit(build(0.35, 0.0, 1.00, 0.9)).accepted
+        assert bridge.submit(build(1.20, 0.0, 1.00, 0.9)).overridden
+        assert bridge.submit(build(0.35, 0.0, 1.00, 0.1)).accepted
         assert bridge.decisions_received == 2
 
     assert len(seen) == 2, "the sink saw a different count from the bridge"

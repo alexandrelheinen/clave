@@ -207,7 +207,7 @@ def runtime_config(world: dict[str, Any], routing: RoutingPolicy) -> dict[str, A
         "elbow_limit_radians": armmod.ELBOW_LIMIT_RADIANS,
         "tool_above_belt_meters": above,
         "belt_surface_z_meters": surface,
-        "belt_x_meters": [0.0, length],
+        "belt_x_meters": [-length / 2.0, length / 2.0],
         "belt_y_meters": [-width / 2.0, width / 2.0],
         "channels": routing.channels,
         "reject_channel": routing.reject_channel,

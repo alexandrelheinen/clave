@@ -35,11 +35,17 @@ def test_the_thumbnail_is_sixteen_by_nine() -> None:
 
 
 def test_every_camera_sits_inside_the_stated_ranges() -> None:
-    """The ranges are what keep the arm readable rather than a dark smudge."""
+    """The ranges are what keep the arm readable rather than a dark smudge.
+
+    The distance bound tracks the line it frames rather than a fixed number.
+    It was 0.8 to 1.8 m for a 1.20 m belt with a 0.25 m arm; the line is now
+    3.00 m long with an arm whose mounting face is 1.66 m up, and a camera
+    still inside the old bound would sit inside the gantry.
+    """
     scenario = StillScenario.load(STILLS / "thumbnail.yml")
     assert len(scenario.cameras) >= 3
     for camera in scenario.cameras:
-        assert 0.8 <= camera.distance <= 1.8, camera.name
+        assert 2.2 <= camera.distance <= 4.0, camera.name
         assert -35.0 <= camera.elevation <= -10.0, camera.name
         assert 20.0 <= camera.fovy <= 60.0, camera.name
     # Three points of view rather than one frame rendered three times.

@@ -46,7 +46,7 @@ itself, because a numeric default buried in Python is a default nobody reviews.
 ### The arm
 
 A SCARA in the geometry of an ABB IRB 910SC-3/0.65, built as
-`assets/scara/irb910sc.xml`. D-10 in [decisions.md](decisions.md) records why
+`src/clave/world/mjcf/irb910sc.xml`. D-10 in [decisions.md](decisions.md) records why
 the model is built here rather than adapted from an existing one.
 
 Its four axes are shoulder rotation, elbow rotation, spline travel and spline

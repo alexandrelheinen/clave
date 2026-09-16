@@ -368,7 +368,7 @@ reference a maintained upstream model rather than vendor a hand-built one, which
 is why the manipulator, the meshes and the conveyor modules all arrive through
 pinned submodules.
 
-**What was scoped**: `assets/scara/irb910sc.xml` is written in this repository
+**What was scoped**: `src/clave/world/mjcf/irb910sc.xml` is written in this repository
 instead of adapted from a model in MuJoCo Menagerie, the ROBOTIS collection, or
 the `robot_descriptions` catalog.
 
@@ -458,3 +458,46 @@ one.
 **Reversal condition**: adopting an asset source that actually contains beverage
 and container packaging closes this. Until one lands, a claim that CLAVE sorts
 eleven material classes is not supportable by the world it runs.
+
+## D-12: the behavior-cloning baseline barely transfers to a realistic line
+
+**Date**: 2026-09-16 · **Step**: the SCARA migration
+
+**The standard**: `workflow/tdd.md` and the project's own reporting rules say a
+demonstration shows what the system does rather than what it was hoped to do.
+
+**What was scoped**: `runs/demos/trained-models.mp4` records a configuration
+that publishes 5 decisions over 25 simulated seconds. That is a working loop
+running on a policy that is mostly wrong, and the number is reported rather than
+presented as a success.
+
+**What was measured**: retraining both candidates on a world-matched dataset,
+the classifier is fine and the policy is weak. `resnet50-baseline` reaches 0.997
+confidence on held-out frames, well clear of the 0.30 presence floor. The policy
+regresses a pick point 0.445 m from the expert's choice on average, and the
+runtime associates a prediction to an object only within 0.12 m, so only 7 of
+134 demonstrations produce a usable proposal.
+
+Dataset size is what moved it off zero and not much further. At 150 frames and
+26 demonstrations the policy proposed nothing at all in a 25 second run. At 982
+frames and 134 demonstrations it proposes enough to publish 5 decisions, while
+the mean error moved only from 0.434 m to 0.445 m. Training to convergence does
+not help either: the loss plateaus at 0.0126 after 150 epochs and stays there.
+
+**Why**: the baseline is a 0.02 M parameter network chosen at v0.4.0 as the
+deliberate simple comparator, and it worked while the reachable workspace was
+0.24 m across. It is now 1.3 m across, and 0.44 m of error is about what
+predicting the mean of that spread produces. The model has learned roughly the
+mean, which is the expected behavior of a network that small regressing world
+coordinates over a range that large from a 96 by 96 frame.
+
+**What is not scoped**: the classifier, the scripted expert, the safety layer
+and the publisher all work. `runs/demos/sorting-line.mp4` shows the scripted
+expert publishing 6 decisions with zero safety overrides, and the trained
+configuration publishes 5 with zero overrides at 54.5 ms median latency, so the
+path from frame to published decision is intact end to end.
+
+**Reversal condition**: a policy that predicts a pick point relative to the
+object rather than in world coordinates, or one with capacity matched to the
+workspace, should close this. Either is a model change rather than a
+configuration change, so it belongs in its own step.

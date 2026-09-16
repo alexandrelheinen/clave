@@ -85,7 +85,7 @@ def test_the_envelope_is_derived_from_the_world_rather_than_restated() -> None:
     width = float(config.require(belt, "width_meters", "belt"))
     # Derived, not restated: the assertion reads the world rather than repeating
     # numbers that would have to be edited here every time the line is rescaled.
-    assert derived["belt_x_meters"] == [0.0, length]
+    assert derived["belt_x_meters"] == [-length / 2.0, length / 2.0]
     assert derived["belt_y_meters"] == [-width / 2.0, width / 2.0]
     assert derived["belt_surface_z_meters"] == float(
         config.require(belt, "surface_height_meters", "belt")
