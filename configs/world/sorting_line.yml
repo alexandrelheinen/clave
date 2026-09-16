@@ -53,7 +53,7 @@ spawn:
   # Objects are recycled from a fixed pool, because a compiled MuJoCo model
   # cannot gain bodies at run time. The pool bounds how many objects can be on
   # the belt at once.
-  pool_size: 18
+  pool_size: 22
   # Objects enter this far inside the belt's leading edge. Spawning exactly on
   # the edge lets an object tip off before the belt drive engages.
   entry_margin_meters: 0.08
@@ -257,6 +257,40 @@ objects:
     mesh: third_party/scanned_objects/models/Now_Designs_Snack_Bags_Bicycle_2_count/model.obj
     texture: third_party/scanned_objects/models/Now_Designs_Snack_Bags_Bicycle_2_count/texture.png
     density_kg_per_m3: [40, 90]
+
+  # The four YCB packages the 55.7 mm jaw excluded. A suction cup has no
+  # opening, so what bounds an object now is the 0.180 m spline stroke, and all
+  # four clear it. The master chef can is 102.5 mm across and was the largest
+  # thing the old gripper refused outright.
+  - name: master_chef_can
+    material_class: M-06
+    shape: mesh
+    mesh: third_party/ycb_sim/meshes/002_master_chef_can.msh
+    texture: third_party/ycb_sim/textures/002_master_chef_can.png
+    density_kg_per_m3: [180, 320]
+
+  - name: tomato_soup_can
+    material_class: M-06
+    shape: mesh
+    mesh: third_party/ycb_sim/meshes/005_tomato_soup_can.msh
+    texture: third_party/ycb_sim/textures/005_tomato_soup_can.png
+    density_kg_per_m3: [180, 320]
+
+  - name: potted_meat_can
+    material_class: M-06
+    shape: mesh
+    mesh: third_party/ycb_sim/meshes/010_potted_meat_can.msh
+    texture: third_party/ycb_sim/textures/010_potted_meat_can.png
+    density_kg_per_m3: [180, 320]
+
+  # Taken as HDPE. A squeeze bottle of this shape is usually HDPE or LDPE, and
+  # the label noise that inference carries is the trade D-09 already recorded.
+  - name: mustard_bottle
+    material_class: M-02
+    shape: mesh
+    mesh: third_party/ycb_sim/meshes/006_mustard_bottle.msh
+    texture: third_party/ycb_sim/textures/006_mustard_bottle.png
+    density_kg_per_m3: [80, 140]
 
   - name: tuna_fish_can
     material_class: M-06
