@@ -5,7 +5,7 @@
 # defaults below produce a few hundred frames in about a minute.
 
 recording:
-  rollouts: 6
+  rollouts: 36
   seconds_per_rollout: 20.0
   capture_interval_seconds: 0.5
   frame_height: 240

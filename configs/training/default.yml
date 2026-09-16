@@ -7,14 +7,14 @@ training:
   candidate: resnet50-baseline
   dataset: datasets/synthetic
   checkpoints: runs
-  epochs: 3
+  epochs: 150
   batch_size: 4
   learning_rate: 0.0003
   seed: 0
   # Where the arm's reachable window ends, half the reachable window the world
   # reports. The scripted expert is replayed against this to produce
   # demonstrations, so a stale value here teaches picks that cannot be made.
-  window_exit_meters: 0.207
+  window_exit_meters: 0.213
   # ACT predicts a chunk of future actions. v0.4.0 benchmarked the upstream
   # default of 100; captures here are half a second apart, so 100 would reach
   # far past the 1.13 second reachable window and be almost all padding.

@@ -22,7 +22,7 @@ def layout(speed: float, offset: float) -> SceneLayout:
     """
     return SceneLayout(
         belt=BeltGeometry(length=3.0, width=1.0, surface_height=0.90, speed=speed),
-        arm_shoulder=(1.5, offset, 1.408),
+        arm_shoulder=(0.0, offset, 1.408),
         shoulder_drop=0.251,
         reach_min=armmod.REACH_MIN_METERS,
         reach_max=armmod.REACH_MAX_METERS,
