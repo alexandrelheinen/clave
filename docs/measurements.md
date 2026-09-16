@@ -115,6 +115,36 @@ across it, so 0.165 mm per pixel is the floor. The wide camera is four times
 coarser and cannot decode a barcode at all; the narrow cameras reach 1.9 pixels
 per module, which is marginal by design.
 
+## The object set
+
+Selection is bounded by the spline stroke rather than by an effector opening: the
+tool reaches an object top between 0.030 m and 0.210 m above the belt, and
+nothing about a suction cup limits width.
+
+| | Old bound, 55.7 mm jaw | New bound, 0.180 m stroke |
+| --- | --- | --- |
+| Scanned models admitted | 153 of 1,030 | 836 of 1,030 |
+| YCB packages admitted | 4 of 9 | 8 of 9 |
+| Objects in the set | 14 | 18 |
+| Classes covered | 4 of 11 | 4 of 11 |
+
+The four YCB packages the jaw refused, measured from the compiled mesh:
+
+| Mesh | Footprint | Height | Class |
+| --- | --- | --- | --- |
+| `002_master_chef_can` | 102.5 by 103.2 mm | 140.8 mm | `M-06` |
+| `005_tomato_soup_can` | 67.8 by 67.9 mm | 101.8 mm | `M-06` |
+| `010_potted_meat_can` | 57.7 by 85.2 mm | 101.7 mm | `M-06` |
+| `006_mustard_bottle` | 57.7 by 95.9 mm | 191.4 mm | `M-02` |
+
+`003_cracker_box` is the one package still refused, at 214.5 mm against a
+210 mm ceiling.
+
+Class coverage did not move, and `D-11` records why: searching both collections
+for the missing types returns no PET bottle, no individual aluminum can, no
+glass container, no corrugated box and no beverage carton. One bottle exists
+among the 836 models that fit. The effector was never the binding constraint.
+
 ## Validation gates
 
 The two timing gates are derived rather than chosen. The rest are targets set

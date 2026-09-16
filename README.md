@@ -134,20 +134,26 @@ is the whole problem CLAVE exists to solve.
 
 | Class | Objects | Source |
 | --- | --- | --- |
-| `M-02` HDPE | 5 supplement tubs and toiletry bottles | Scanned Objects |
+| `M-02` HDPE | 6 supplement tubs, toiletry bottles and a mustard bottle | Scanned Objects and YCB |
 | `M-04` Other plastic | 2, a sprinkles jar and snack bags | Scanned Objects |
-| `M-06` Ferrous metal | 1 tuna can | YCB |
+| `M-06` Ferrous metal | 4 food cans | YCB |
 | `M-09` Paperboard | 6 cartons | YCB and Scanned Objects |
 
-Seven classes have no object. The set was chosen against a 55.7 mm parallel
-gripper, which nothing made of those materials fits: a soda can is 66 mm across
-and no glass container in either collection is under 52 mm. `D-09` in
-[decisions.md](docs/decisions.md) records that trade.
+The selection bound is now the **0.180 m spline stroke** rather than a gripper
+opening: the tool reaches an object top between 0.030 m and 0.210 m above the
+belt, and nothing about the arm limits how wide an object may be. That took the
+candidate pool from 153 models to 836, and admitted four YCB packages the old
+55.7 mm jaw refused, including a 102.5 mm master chef can.
 
-The SCARA lifted the constraint and the object set has not yet been rebuilt
-under it. Nothing about the arm now bounds an object's width, so re-running the
-mesh selection should recover most of those classes. Until that happens the set
-still reflects a gripper the line no longer has.
+**Seven classes still have no object, and the gripper was never the reason.**
+Probing both pinned collections for them finds nothing: no PET bottle, no
+individual aluminum can, no glass container, no corrugated box, no beverage
+carton. Google Scanned Objects is a retail-shelf scan of toys, shoes,
+supplements and electronics, and the pinned YCB subset is ten manipulation
+benchmark items. Exactly one bottle exists among the 836 models that fit. Those
+classes need a new asset source rather than a wider effector, which `D-11` in
+[decisions.md](docs/decisions.md) records alongside the `D-09` trade it
+supersedes.
 
 ### Submodule sizes
 

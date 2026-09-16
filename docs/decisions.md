@@ -419,3 +419,42 @@ than an invention here.
 **Reversal condition**: if a validated SCARA model appears in Menagerie or
 `robot_descriptions` under a usable license, adopt it and delete this asset. If
 CLAVE takes on force control, re-derive the inertias first.
+
+## D-11: a wider effector does not recover the missing material classes
+
+**Date**: 2026-09-16 · **Step**: the SCARA migration
+
+**The standard**: `AC-ASSET-02` asks the object set to cover at least six
+material classes. `D-09` recorded that it covers four, and named the 55.7 mm
+gripper as the cause.
+
+**What was scoped**: the object set covers four classes after the re-selection,
+the same four as before. `AC-ASSET-02` remains unmet.
+
+**What changed and what did not**: the SCARA carries a suction cup rather than a
+parallel jaw, so the selection bound is the 0.180 m spline stroke rather than a
+gripper opening, and no width limit applies at all. Measuring every one of the
+1,030 scanned models and the pinned YCB subset against the new bound put 836 of
+them inside it, against 153 under the old one. Four YCB packages the jaw had
+refused are now in the set: a 102.5 mm master chef can, a tomato soup can, a
+potted meat can and a mustard bottle. Ferrous metal went from one object to
+four, which matters because the benchmark recorded it as the weakest supported
+class.
+
+**Why the classes stayed empty**: they were never blocked by the effector.
+Searching both collections for the missing types returns nothing usable. There
+is no PET bottle, no individual aluminum beverage can, no glass container, no
+corrugated box and no beverage carton. What the "jar" search finds is a shelf of
+JarroDophilus supplement bottles, which are HDPE. What the "can" search finds is
+12-pack trays, which are corrugated multipacks rather than the cans inside them.
+Exactly one bottle exists among the 836 models that fit.
+
+`D-09` attributed the gap to the gripper, and this measurement shows that was
+the wrong cause. Google Scanned Objects is a retail-shelf scan of toys, shoes,
+supplements and electronics, and the pinned YCB subset is ten manipulation
+benchmark items. Neither is a waste stream, and no change to the arm makes them
+one.
+
+**Reversal condition**: adopting an asset source that actually contains beverage
+and container packaging closes this. Until one lands, a claim that CLAVE sorts
+eleven material classes is not supportable by the world it runs.
