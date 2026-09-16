@@ -173,6 +173,51 @@ figures beside the digest they came from.
 """
 
 
+def _light_for_presentation(
+    mujoco: Any, spec: Any, world: Any, presentation: dict[str, Any]
+) -> None:
+    """Light the scene for a photograph rather than for a dataset.
+
+    Every value comes from the still's own configuration. Nothing here is read
+    when a caller does not ask for it, so a dataset recorded from this world is
+    lit by the single overhead light above and by nothing else.
+
+    Args:
+        mujoco: The imported module.
+        spec: The model spec, which owns the skybox and the headlight.
+        world: The worldbody the extra lights attach to.
+        presentation: The `lighting` section of a still scenario.
+    """
+    headlight = presentation.get("headlight")
+    if headlight:
+        for channel in ("ambient", "diffuse", "specular"):
+            value = headlight.get(channel)
+            if value is not None:
+                setattr(spec.visual.headlight, channel, [float(v) for v in value])
+
+    background = presentation.get("background")
+    if background:
+        spec.add_texture(
+            name="presentation_sky",
+            type=mujoco.mjtTexture.mjTEXTURE_SKYBOX,
+            builtin=mujoco.mjtBuiltin.mjBUILTIN_GRADIENT,
+            width=512,
+            height=512,
+            rgb1=[float(v) for v in require(background, "top", "background")],
+            rgb2=[float(v) for v in require(background, "bottom", "background")],
+        )
+
+    for index, light in enumerate(presentation.get("lights", [])):
+        world.add_light(
+            name=f"presentation_light_{index}",
+            pos=[float(v) for v in require(light, "position_meters", "lights")],
+            dir=[float(v) for v in require(light, "direction", "lights")],
+            diffuse=[float(v) for v in require(light, "diffuse", "lights")],
+            specular=[float(v) for v in light.get("specular", [0.1, 0.1, 0.1])],
+            castshadow=bool(light.get("cast_shadow", True)),
+        )
+
+
 def _dress(mujoco: Any, spec: Any, world: Any, raw: dict[str, Any], root: Path) -> bool:
     """Lay the floor and stand the scene dressing on it.
 
@@ -465,7 +510,10 @@ def _add_belt_legs(
 
 
 def build(
-    raw: dict[str, Any], rng: np.random.Generator, root: Path
+    raw: dict[str, Any],
+    rng: np.random.Generator,
+    root: Path,
+    presentation: dict[str, Any] | None = None,
 ) -> tuple[Any, Any, SceneLayout]:
     """Assemble the model.
 
@@ -473,6 +521,13 @@ def build(
         raw: The parsed world configuration.
         rng: Generator used to resolve ranges and size pooled objects.
         root: Repository root, used to find the submodule.
+        presentation: Extra lights, a headlight setting and a background, for a
+            still that has to be legible on a web page. Default `None` adds
+            nothing, so the world every dataset, training run, validation pass
+            and benchmark consumes is the one this argument does not touch.
+            Lighting changes what a render looks like and nothing a body does,
+            but the frames a model trains on are renders, which is why this is
+            an argument here rather than a key in the world configuration.
 
     Returns:
         The compiled model, its data, and the resolved layout.
@@ -505,6 +560,8 @@ def build(
 
     world = mujoco_spec.worldbody
     world.add_light(pos=[0.0, 0.0, 2.0], dir=[0.0, 0.0, -1.0])
+    if presentation:
+        _light_for_presentation(mujoco, mujoco_spec, world, presentation)
 
     plan = replace(plan, dressed=_dress(mujoco, mujoco_spec, world, raw, root))
 
