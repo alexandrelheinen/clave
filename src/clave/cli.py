@@ -436,6 +436,43 @@ def _demo(root: Path, name: str, out: Path, runtime: Path) -> int:
     return 0
 
 
+def _still(root: Path, name: str, out: Path) -> int:
+    """Capture a still of the world and report where the frames went.
+
+    Args:
+        root: Repository root.
+        name: Scenario name, matching a file under configs/stills/.
+        out: Where the PNGs go.
+
+    Returns:
+        A process exit code.
+    """
+    from clave.demo.still import StillError, StillScenario, capture
+
+    stills = root / "configs" / "stills"
+    for candidate in (name, name.replace("-", "_")):
+        path = stills / f"{candidate}.yml"
+        if path.is_file():
+            break
+    else:
+        available = sorted(
+            entry.stem.replace("_", "-") for entry in stills.glob("*.yml")
+        )
+        raise StillError(f"no still named {name!r}. Available: {', '.join(available)}")
+    scenario = StillScenario.load(path)
+    print(f"  {scenario.description}")
+    print()
+    written = capture(root, scenario, out)
+    print(
+        f"  seed            {scenario.seed}, captured at "
+        f"{scenario.capture_at_seconds:.2f} simulated seconds"
+    )
+    print(f"  size            {scenario.width} x {scenario.height}")
+    for file in written:
+        print(f"  wrote           {file}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run a CLAVE command.
 
@@ -485,6 +522,9 @@ def main(argv: list[str] | None = None) -> int:
         "--config", type=Path, default=Path("configs/benchmark/default.yml")
     )
     bench_suite.add_argument("--out", type=Path, default=Path("runs/benchmark"))
+    still = sub.add_parser("still", help="capture a still of the world")
+    still.add_argument("scenario", nargs="?", default="thumbnail")
+    still.add_argument("--out", type=Path, default=Path("runs/stills"))
     demo = sub.add_parser("demo", help="run one named scenario and record it")
     demo.add_argument("scenario", nargs="?", default="sorting-line")
     demo.add_argument("--out", type=Path, default=Path("runs/demos"))
@@ -514,6 +554,8 @@ def main(argv: list[str] | None = None) -> int:
             return _record_dataset(args.root, args.out, args.seed)
         if args.command == "train":
             return _train(args.root, args.config, args.candidate)
+        if args.command == "still":
+            return _still(args.root, args.scenario, args.out)
         if args.command == "demo":
             return _demo(args.root, args.scenario, args.out, args.runtime)
         if args.command == "benchmark":

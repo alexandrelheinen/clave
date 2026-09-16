@@ -36,9 +36,13 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install offscreen GL for MuJoCo
+      # MuJoCo needs a GL backend to render offscreen, and the demo videos and
+      # the stills go through ffmpeg. Without ffmpeg those tests skip, which
+      # leaves the one property they exist to prove, that nothing is drawn on a
+      # frame, unchecked on every run.
+      - name: Install offscreen GL and the encoder
         if: hashFiles('pyproject.toml') != ''
-        run: sudo apt-get update && sudo apt-get install -y libosmesa6 libgl1
+        run: sudo apt-get update && sudo apt-get install -y libosmesa6 libgl1 ffmpeg
 
       - name: Install Python toolchain
         if: hashFiles('pyproject.toml') != ''

@@ -74,6 +74,16 @@ and prints one comparison, with an evidence pack beside it. Read
 table, because two of the five headline metrics cannot be measured yet and the
 document says why.
 
+```bash
+python -m clave.cli still thumbnail
+```
+
+Captures three 1920 by 1080 frames of a real rollout, lit for a page rather
+than for a dataset. The lighting and the cameras live in `configs/stills/` and
+reach the world as an argument, so `configs/world/sorting_line.yml`, which data
+generation, training, validation and the benchmark all read, is untouched by
+them.
+
 Smaller commands: `clave run-sitl` for one loop with latency, `clave record-dataset`
 to record rollouts, `clave train --candidate <name>` to train one, and
 `clave validate-run --outcomes <file>` to score records against the gates.
