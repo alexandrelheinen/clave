@@ -328,8 +328,11 @@ lands, not when its spec is written.
 | benchmark-suite | Approved | Approved | Approved | Delivered, tagged v1.0.0 |
 | every other spec | Not started | Not started | Not started | Not started |
 
-v0.1.0 delivered [docs/research/training-infrastructure-review.md](../../docs/research/training-infrastructure-review.md).
-Two of its acceptance criteria are partially unmet and recorded in that
+v0.1.0 delivered its review. The step reports that carried it and the ones after
+it were distilled into [docs/architecture.md](../../docs/architecture.md) and
+[docs/measurements.md](../../docs/measurements.md) once they had outlived their
+narrative; git and the tags hold the originals.
+Two of its acceptance criteria are partially unmet and were recorded in that
 document's open questions rather than closed silently: the compute budget waits
 on a maintainer input, and release-date verification is incomplete.
 

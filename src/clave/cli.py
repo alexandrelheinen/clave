@@ -13,7 +13,6 @@ from pathlib import Path
 from clave.corpus.artifacts import record_digest, verify
 from clave.corpus.manifest import Manifest
 from clave.errors import ClaveError
-from clave.research.tables import check_all
 
 DEFAULT_MANIFEST = Path("corpora/manifest.toml")
 DEFAULT_GATES = Path("configs/validation/gates.yml")
@@ -45,23 +44,6 @@ def _verify_manifest(root: Path) -> int:
             print(f"  FAILED   {name}: {result.status.value}")
             failures += 1
     return 1 if failures else 0
-
-
-def _check_research(root: Path) -> int:
-    """Check the research documents against their declared schemas.
-
-    Args:
-        root: Repository root.
-
-    Returns:
-        A process exit code.
-    """
-    problems = check_all(root)
-    for problem in problems:
-        print(f"  FAILED   {problem}")
-    if not problems:
-        print("  ok       research tables match their schemas")
-    return 1 if problems else 0
 
 
 def _record(root: Path, name: str, path: Path) -> int:
@@ -486,7 +468,6 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--root", type=Path, default=Path.cwd())
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("verify-manifest", help="verify every locally present artifact")
-    sub.add_parser("check-research", help="check research document table schemas")
     record = sub.add_parser("record-digest", help="report a digest for review")
     record.add_argument("name")
     record.add_argument("path", type=Path)
@@ -544,8 +525,6 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "verify-manifest":
             return _verify_manifest(args.root)
-        if args.command == "check-research":
-            return _check_research(args.root)
         if args.command == "bench-candidates":
             return _bench_candidates(args.warmup, args.repetitions)
         if args.command == "world-probe":

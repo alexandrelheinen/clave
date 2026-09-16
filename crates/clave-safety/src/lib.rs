@@ -16,7 +16,7 @@
 //! checkable, and a test checks it.
 //!
 //! The cost is a process boundary and the latency it adds, which is measured
-//! rather than assumed. `docs/research/sitl-runtime.md` reports the figure.
+//! rather than assumed. `docs/measurements.md` reports the figure.
 //!
 //! # Hardened lint tier
 //!

@@ -126,7 +126,7 @@ so moving a gate means editing a file that shows up in a diff.
 | `pick-success-rate` | at least 0.90 | Target |
 | `misroute-rate` | at most 0.05 | Target. Tighter than the pick gate because a misroute contaminates a bale while a missed pick costs one pick |
 | `named-confusion:CONF-NN`, one per confusion | at most 0.35 | Target. Looser on purpose, see below |
-| `decision-latency-p99` | at most 0.45 s | Derived from the 1.13 s per-object budget in [sorting-world](research/sorting-world.md) and the 391.7 ms measured in [model-candidates](research/model-candidates.md) |
+| `decision-latency-p99` | at most 0.45 s | Derived from the 1.13 s per-object budget and the 391.7 ms perception latency in [measurements.md](measurements.md) |
 | `cycle-time-p99` | at most 1.13 s | Derived: the reachable window divided by the fastest configured belt speed |
 | `generalization-drop` | at most 0.10 | Target. A candidate that only memorized shows a large positive drop |
 

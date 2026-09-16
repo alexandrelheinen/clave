@@ -48,8 +48,6 @@ else
 
   echo "--- corpus manifest ---"
   "${PY_RUN}python" -m clave.cli verify-manifest
-  echo "--- research documents ---"
-  "${PY_RUN}python" -m clave.cli check-research
   echo "python OK"
 fi
 

@@ -17,14 +17,6 @@ def test_verify_manifest_passes_on_the_real_repository(
     assert "ok       smoke" in capsys.readouterr().out
 
 
-def test_check_research_passes_on_the_real_repository(
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """AC-CHECK-01: the checker passes against the delivered document."""
-    assert main(["--root", str(ROOT), "check-research"]) == 0
-    assert "ok" in capsys.readouterr().out
-
-
 def test_verify_manifest_fails_when_bytes_changed(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
