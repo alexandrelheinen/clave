@@ -14,6 +14,7 @@ import yaml
 
 from clave.runtime import loop
 from clave.runtime.inference import ScriptedPredictor, associate
+from clave.world import arm as armmod
 from clave.world import config
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -84,17 +85,28 @@ def test_the_envelope_is_derived_from_the_world_rather_than_restated() -> None:
     width = float(config.require(belt, "width_meters", "belt"))
     # Derived, not restated: the assertion reads the world rather than repeating
     # numbers that would have to be edited here every time the line is rescaled.
-    assert derived["belt_x_meters"] == [-length / 2.0, length / 2.0]
+    assert derived["belt_x_meters"] == [0.0, length]
     assert derived["belt_y_meters"] == [-width / 2.0, width / 2.0]
     assert derived["belt_surface_z_meters"] == float(
         config.require(belt, "surface_height_meters", "belt")
     )
-    assert derived["arm_base_meters"] == [
-        float(value) for value in config.require(arm, "base_position_meters", "arm")
+    mount = [float(v) for v in config.require(arm, "mount_position_meters", "arm")]
+    drop = float(config.require(arm, "shoulder_drop_meters", "arm"))
+    # The shoulder, not the mounting face: the reach test is radial about axis 1.
+    assert derived["shoulder_meters"] == [mount[0], mount[1], mount[2] - drop]
+    assert derived["reach_meters"] == [
+        float(config.require(arm, "reach_min_meters", "arm")),
+        float(config.require(arm, "reach_max_meters", "arm")),
     ]
-    assert derived["reach_radius_meters"] == float(
-        config.require(arm, "reach_radius_meters", "arm")
-    )
+    assert derived["tool_above_belt_meters"] == [
+        float(v) for v in config.require(arm, "tool_above_belt_meters", "arm")
+    ]
+    # The link lengths and the stops come from the model the world loads, so
+    # the safety layer applies the same two-link arithmetic rather than an
+    # approximation of it.
+    assert derived["link_meters"] == [armmod.ARM1_METERS, armmod.ARM2_METERS]
+    assert derived["shoulder_limit_radians"] == armmod.SHOULDER_LIMIT_RADIANS
+    assert derived["elbow_limit_radians"] == armmod.ELBOW_LIMIT_RADIANS
 
 
 def test_a_percentile_is_an_observed_sample_rather_than_an_interpolation() -> None:

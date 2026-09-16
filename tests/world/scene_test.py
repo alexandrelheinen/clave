@@ -131,12 +131,43 @@ def test_a_module_count_of_zero_is_refused() -> None:
         scene.build(raw, np.random.default_rng(0), ROOT)
 
 
-def test_the_arm_keeps_its_pedestal_whatever_draws_the_belt() -> None:
+def test_the_arm_keeps_its_gantry_whatever_draws_the_belt() -> None:
     """The modules replace the belt's legs, not the arm's support."""
     pytest.importorskip("mujoco")
     import mujoco
 
     raw = config.load(CONFIG)
     model, _, _ = scene.build(raw, np.random.default_rng(0), ROOT)
-    for part in ("arm_pedestal", "arm_pedestal_plate", "arm_pedestal_foot"):
+    for part in (
+        "arm_gantry_upright_left",
+        "arm_gantry_upright_right",
+        "arm_gantry_beam",
+    ):
         assert mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, part) >= 0
+
+
+def test_the_gantry_stands_clear_of_the_arm_sweep() -> None:
+    """A portal that blocks the manipulator it carries is worse than none.
+
+    The uprights were first placed at the belt edge, which put them inside the
+    0.650 m annulus; the arm drove into them and stalled short of every target
+    beyond, which reads exactly like a reach failure and is not one.
+    """
+    pytest.importorskip("mujoco")
+    import mujoco
+
+    from clave.world import arm as armmod
+
+    raw = config.load(CONFIG)
+    model, _, plan = scene.build(raw, np.random.default_rng(0), ROOT)
+    for side in ("left", "right"):
+        geom = mujoco.mj_name2id(
+            model, mujoco.mjtObj.mjOBJ_GEOM, f"arm_gantry_upright_{side}"
+        )
+        position = model.geom_pos[geom]
+        distance = float(
+            np.hypot(
+                position[0] - plan.arm_shoulder[0], position[1] - plan.arm_shoulder[1]
+            )
+        )
+        assert distance > armmod.REACH_MAX_METERS

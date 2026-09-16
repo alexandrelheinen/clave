@@ -26,8 +26,6 @@ from clave.errors import ClaveError
 ENCODER = "ffmpeg"
 """Writes the PNG. No imaging library enters the wheel for one frame."""
 
-GRIPPER_OPEN = 0.019
-"""The gripper joint's upper limit in the pinned manipulator."""
 
 ARM_GAIN = 0.35
 """How much of each solved inverse kinematics step to apply, as v0.6.2 uses."""
@@ -67,7 +65,6 @@ class StillScenario:
         description: What the frame is meant to show.
         seed: Seed the rollout runs from.
         capture_at_seconds: Simulated instant the frame is taken at.
-        open_gripper: Whether to command the gripper open through the approach.
         width: Frame width in pixels.
         height: Frame height in pixels.
         lighting: Extra lights, headlight and background, passed to the world
@@ -79,7 +76,6 @@ class StillScenario:
     description: str
     seed: int
     capture_at_seconds: float
-    open_gripper: bool
     width: int
     height: int
     lighting: dict[str, Any]
@@ -108,7 +104,6 @@ class StillScenario:
             description=str(_require(still, "description", "still")).strip(),
             seed=int(_require(still, "seed", "still")),
             capture_at_seconds=float(_require(still, "capture_at_seconds", "still")),
-            open_gripper=bool(still.get("open_gripper", True)),
             width=int(_require(still, "width", "still")),
             height=int(_require(still, "height", "still")),
             lighting=dict(raw.get("lighting") or {}),
@@ -264,8 +259,6 @@ def capture(root: Path, scenario: StillScenario, out: Path) -> list[Path]:
             armmod.step_toward(
                 model, data, indices, np.array(chosen.position), gain=ARM_GAIN
             )
-            if scenario.open_gripper:
-                data.ctrl[indices.gripper_actuator] = GRIPPER_OPEN
 
     renderer = mujoco.Renderer(model, height=scenario.height, width=scenario.width)
     written: list[Path] = []

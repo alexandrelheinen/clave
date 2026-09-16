@@ -6,10 +6,12 @@ is built, so the configuration and object set are readable without it.
 
 from clave.world.arm import (
     ArmIndices,
+    ReachError,
     end_effector_position,
     joint_positions,
     locate,
-    set_gripper,
+    reachable,
+    solve,
     step_toward,
 )
 from clave.world.belt import Conveyor, ReachReport, SpawnedObject, reach_report
@@ -23,6 +25,7 @@ __all__ = [
     "Conveyor",
     "ObjectSpec",
     "Range",
+    "ReachError",
     "ReachReport",
     "SceneLayout",
     "SpawnedObject",
@@ -32,7 +35,8 @@ __all__ = [
     "end_effector_position",
     "joint_positions",
     "locate",
-    "set_gripper",
+    "reachable",
+    "solve",
     "step_toward",
     "layout",
     "load",

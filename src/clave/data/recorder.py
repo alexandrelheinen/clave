@@ -21,6 +21,13 @@ from clave.data.expert import decide
 from clave.world import arm as armmod
 from clave.world import belt, config, scene
 
+DETECTION_CAMERA = "gate_wide"
+"""Which sensor the frame comes from.
+
+Named rather than indexed, because the line carries several cameras and the
+code camera next to it sees a strip a tenth as wide.
+"""
+
 ARM_GAIN = 0.35
 """How much of each solved inverse kinematics step to apply.
 
@@ -169,8 +176,8 @@ def record(
 
         if data.time < next_capture:
             continue
-        renderer.update_scene(data, camera="overhead")
-        segmenter.update_scene(data, camera="overhead")
+        renderer.update_scene(data, camera=DETECTION_CAMERA)
+        segmenter.update_scene(data, camera=DETECTION_CAMERA)
         boxes = _boxes_from_segmentation(model, segmenter.render())
         examples.append(
             Example(

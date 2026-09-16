@@ -34,18 +34,95 @@ MuJoCo world ──frame + joints──► Predictor ──Proposal (JSON)──
 
 `clave.world`, holding `scene`, `belt`, `arm`, `objects` and `config`.
 
-A MuJoCo model built from YAML: a conveyor, scanned waste objects, a ROBOTIS
-manipulator, and the bins each material class routes to. Every tunable comes
-from configuration, and a missing key fails at load naming itself, because a
-numeric default buried in Python is a default nobody reviews.
+A MuJoCo model built from YAML: a conveyor, scanned waste objects, a SCARA
+manipulator on an overhead gantry, and the bins each material class routes to.
+Every tunable comes from configuration, and a missing key fails at load naming
+itself, because a numeric default buried in Python is a default nobody reviews.
 
 | In | Out |
 | --- | --- |
-| Scene configuration and a seed | Rendered frame, arm joint angles, object labels with position and material class, reachable window geometry |
+| Scene configuration and a seed | Rendered frames from each configured camera, arm joint values, object labels with position and material class, reachable window geometry |
 
-The arm moves under damped least squares inverse kinematics in
-[arm.py](../src/clave/world/arm.py), applying a fraction of each solved step.
-Nothing grasps: the gripper opens and closes but has never held an object.
+### The arm
+
+A SCARA in the geometry of an ABB IRB 910SC-3/0.65, built as
+`assets/scara/irb910sc.xml`. D-10 in [decisions.md](decisions.md) records why
+the model is built here rather than adapted from an existing one.
+
+Its four axes are shoulder rotation, elbow rotation, spline travel and spline
+rotation: **RRPR**. The prismatic third axis is what a stack of revolute joints
+cannot imitate, and the fourth axis is why this arm replaced its predecessor. A
+serial arm whose only vertical-axis joint is at the shoulder spends it pointing
+at the object and has none left to orient the tool, so it cannot align a jaw or
+a cup to an object's minor axis. A SCARA's fourth axis does exactly that,
+independently of where the tool sits.
+
+Inverse kinematics are closed form. The first two axes are a planar two-link
+chain, so joint values follow from the law of cosines with no iteration, and
+therefore nothing to converge or stall. `clave.world.arm.reaches` is the single
+geometric test, called both by the world and, through the envelope, by the
+safety layer, so the proposer and the checker cannot read the same geometry two
+different ways.
+
+**Reachability is not just a radius.** The workspace is an annulus from 0.222 m
+to 0.650 m, with a wedge missing behind the shoulder where axis 1 stops at 140
+degrees, extruded over the 0.180 m spline stroke. A sphere would admit points
+under the shoulder that axis 2 cannot fold to, and points behind the arm that
+axis 1 cannot turn to face.
+
+#### Where it is mounted, and what else was considered
+
+The arm hangs inverted from a gantry over the belt centerline, which is what
+ABB's own IRB 910INV variant exists for.
+
+| Option | Belt width covered | Why not chosen |
+| --- | --- | --- |
+| **Inverted over the centerline** | the full 1.00 m | chosen |
+| Floor pedestal beside the belt | 0.428 m | The base must stand at least the 0.222 m dead-zone radius from the near edge and reaches only 0.650 m past it, so most of the belt is unreachable |
+| Inverted, offset to one side | between the two | Buys nothing over centerline mounting and puts the dead zone over a working strip instead of the middle |
+| Two arms, one per side | the full width, twice the throughput | A second manipulator is a throughput decision rather than a reach one, and the first one already covers the width |
+
+The dead zone under the spline costs pick *time* rather than coverage, because
+the belt carries an object through it and out the far side. That makes the
+centerline the worst case for pick time and the best case for coverage, which
+is the trade the table above settles.
+
+The gantry uprights stand clear of the 0.650 m annulus. Standing them at the
+belt edge, which looks natural, puts them inside the arm's own sweep, where the
+arm drives into them and stalls short of every target beyond.
+
+### Sensing
+
+Cameras are a list in configuration, each with an `id`, a `role`, a position
+and an optical description. Nothing downstream reads a camera directly: the
+tracker fuses by role, and [perception-contract.md](perception-contract.md)
+specifies the record every consumer actually reads.
+
+All of them look straight down. A nadir view keeps the image plane parallel to
+the belt, so pixel to world is a scale factor rather than a homography that
+varies across the frame, an object's footprint in pixels is its footprint on the
+belt, and a barcode lies parallel to the sensor where it is most legible.
+Objects travel in a single layer, so from directly above nothing occludes
+anything. A tilt buys a little height information and costs all of that, so the
+tilted views in this repository are for presentation stills only.
+
+The cameras form a **gate** upstream of the arm. An object is seen once, under
+controlled light, and is then carried to the arm by a belt whose speed is known,
+so the tracker propagates it by dead reckoning rather than re-detecting it in
+every frame.
+
+| Sensor | Role | Covers | Resolution on the belt |
+| --- | --- | --- | --- |
+| `gate_wide` | detection | 1.252 m across | 0.652 mm per pixel |
+| `gate_code_left`, `_center`, `_right` | code | 0.342 m each | 0.178 mm per pixel |
+
+The split is forced by arithmetic rather than chosen. An EAN-13 narrow module is
+about 0.33 mm, and decoding wants roughly two pixels across it, so 0.165 mm per
+pixel is the floor. The wide camera is four times coarser than that, which is
+ample for detecting and classifying an object and useless for reading its
+barcode. Three narrow-lens cameras tile the width at 1.9 pixels per module,
+which is marginal on purpose: it is the cheapest arrangement that decodes at
+all, and a line-scan camera is the alternative if it proves too tight.
 
 ### Predictor
 

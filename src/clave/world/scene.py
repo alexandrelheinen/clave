@@ -21,10 +21,13 @@ import numpy as np
 from clave.world.config import require, require_range
 from clave.world.objects import ObjectSpec, channels, parse
 
-ARM_MODEL = Path(
-    "third_party/robotis_mujoco_menagerie/robotis_open_manipulator_x/"
-    "open_manipulator_x.xml"
-)
+ARM_MODEL = Path("assets") / "scara" / "irb910sc.xml"
+"""The SCARA, in the geometry of an ABB IRB 910SC-3/0.65.
+
+CLAVE owns this model rather than pinning one. D-10 in docs/decisions.md
+records why: a SCARA is RRPR, every open arm model is all-revolute, and locking
+joints on a revolute arm never produces a prismatic axis.
+"""
 
 PARKED_Z = 0.05
 """Height at which pooled objects wait before they are spawned.
@@ -71,8 +74,16 @@ class SceneLayout:
 
     Attributes:
         belt: Belt geometry and speed.
-        arm_base: Where the manipulator stands, in meters.
-        reach_radius: The manipulator's reachable radius, in meters.
+        arm_shoulder: Where the SCARA's first axis sits, in meters. The reach
+            test is radial about this point, so it is the shoulder rather than
+            the mounting face.
+        shoulder_drop: How far the shoulder sits below the mounting face, in
+            meters, so a caller can recover the mount the arm hangs from.
+        reach_min: Inner radius of the annulus the tool sweeps, in meters.
+        reach_max: Outer radius of that annulus, in meters.
+        tool_above_belt: Lowest and highest the tool point can sit above the
+            belt surface, which is the spline stroke expressed where a caller
+            can use it.
         channels: Channel identifiers, one bin each.
         objects: The object set the pool draws from.
         pool_size: How many object bodies exist.
@@ -84,8 +95,11 @@ class SceneLayout:
     """
 
     belt: BeltGeometry
-    arm_base: tuple[float, float, float]
-    reach_radius: float
+    arm_shoulder: tuple[float, float, float]
+    shoulder_drop: float
+    reach_min: float
+    reach_max: float
+    tool_above_belt: tuple[float, float]
     channels: tuple[str, ...]
     objects: tuple[ObjectSpec, ...]
     pool_size: int
@@ -146,11 +160,16 @@ def layout(raw: dict[str, Any], rng: np.random.Generator) -> SceneLayout:
         surface_height=float(require(belt_cfg, "surface_height_meters", "belt")),
         speed=require_range(belt_cfg, "speed_meters_per_second", "belt").sample(rng),
     )
-    base = require(arm_cfg, "base_position_meters", "arm")
+    mount = require(arm_cfg, "mount_position_meters", "arm")
+    drop = float(require(arm_cfg, "shoulder_drop_meters", "arm"))
+    reach = require(arm_cfg, "tool_above_belt_meters", "arm")
     return SceneLayout(
         belt=belt,
-        arm_base=(float(base[0]), float(base[1]), float(base[2])),
-        reach_radius=float(require(arm_cfg, "reach_radius_meters", "arm")),
+        arm_shoulder=(float(mount[0]), float(mount[1]), float(mount[2]) - drop),
+        shoulder_drop=drop,
+        reach_min=float(require(arm_cfg, "reach_min_meters", "arm")),
+        reach_max=float(require(arm_cfg, "reach_max_meters", "arm")),
+        tool_above_belt=(float(reach[0]), float(reach[1])),
         channels=channels(specs),
         objects=specs,
         pool_size=int(require(spawn_cfg, "pool_size", "spawn")),
@@ -427,34 +446,43 @@ def _add_supports(
     if belt_legs:
         _add_belt_legs(mujoco, world, plan, leg, inset, frame_depth, steel)
 
-    # The pedestal the manipulator is bolted to, from the floor to its base.
+    # The gantry the manipulator hangs from. The arm is mounted inverted over
+    # the belt, so what carries it is a portal spanning the belt rather than a
+    # pedestal beside it: two uprights outside the belt edges and a crossbeam
+    # the mounting face bolts to.
     column = float(require(structure, "pedestal_radius_meters", "structure"))
     plate = float(require(structure, "pedestal_plate_radius_meters", "structure"))
     plate_thickness = float(
         require(structure, "pedestal_plate_thickness_meters", "structure")
     )
-    mount = plan.arm_base[2]
+    mount_x, mount_y, mount_z = plan.arm_shoulder
+    mount_z += plan.shoulder_drop
+    # The uprights have to clear the belt and the arm's own sweep. Standing
+    # them at the belt edge alone puts them inside the 0.650 m annulus, where
+    # the arm drives into them and stalls short of every target beyond: a
+    # portal that blocks the manipulator it carries is worse than no portal.
+    span = max(plan.belt.width / 2.0 + 0.12, plan.reach_max + column + 0.05)
+    for side, sign in (("left", 1.0), ("right", -1.0)):
+        world.add_geom(
+            name=f"arm_gantry_upright_{side}",
+            type=mujoco.mjtGeom.mjGEOM_CYLINDER,
+            size=[column, mount_z / 2.0, 0.0],
+            pos=[mount_x, mount_y + sign * span, mount_z / 2.0],
+            rgba=steel,
+        )
+        world.add_geom(
+            name=f"arm_gantry_foot_{side}",
+            type=mujoco.mjtGeom.mjGEOM_CYLINDER,
+            size=[plate * 1.2, 0.008, 0.0],
+            pos=[mount_x, mount_y + sign * span, 0.008],
+            rgba=[0.22, 0.23, 0.26, 1.0],
+        )
     world.add_geom(
-        name="arm_pedestal",
-        type=mujoco.mjtGeom.mjGEOM_CYLINDER,
-        size=[column, (mount - plate_thickness) / 2.0, 0.0],
-        pos=[plan.arm_base[0], plan.arm_base[1], (mount - plate_thickness) / 2.0],
+        name="arm_gantry_beam",
+        type=mujoco.mjtGeom.mjGEOM_BOX,
+        size=[plate, span, plate_thickness],
+        pos=[mount_x, mount_y, mount_z + plate_thickness],
         rgba=steel,
-    )
-    world.add_geom(
-        name="arm_pedestal_plate",
-        type=mujoco.mjtGeom.mjGEOM_CYLINDER,
-        size=[plate, plate_thickness / 2.0, 0.0],
-        pos=[plan.arm_base[0], plan.arm_base[1], mount - plate_thickness / 2.0],
-        rgba=[0.22, 0.23, 0.26, 1.0],
-    )
-    # A foot, so the pedestal reads as bolted down rather than balanced.
-    world.add_geom(
-        name="arm_pedestal_foot",
-        type=mujoco.mjtGeom.mjGEOM_CYLINDER,
-        size=[plate * 1.2, 0.008, 0.0],
-        pos=[plan.arm_base[0], plan.arm_base[1], 0.008],
-        rgba=[0.22, 0.23, 0.26, 1.0],
     )
 
 
@@ -541,7 +569,7 @@ def build(
     plan = layout(raw, rng)
     bins_cfg = require(raw, "bins")
     spawn_cfg = require(raw, "spawn")
-    camera_cfg = require(raw, "camera")
+    camera_cfg = require(raw, "cameras")
 
     mujoco_spec = mujoco.MjSpec()
     mujoco_spec.option.timestep = plan.timestep
@@ -680,19 +708,24 @@ def build(
                 rgba=[0.7, 0.5, 0.3, 1.0],
             )
 
-    height = require_range(camera_cfg, "height_above_belt_meters", "camera")
-    # A MuJoCo camera already looks along its own negative z, so an identity
-    # orientation at this height points straight down at the belt. Rotating it
-    # by 180 degrees about x, which looks correct at a glance, aims it at the
-    # sky and renders a uniformly black frame.
-    world.add_camera(
-        name="overhead",
-        pos=[0.0, 0.0, plan.belt.surface_height + height.sample(rng)],
-        fovy=require_range(camera_cfg, "fovy_degrees", "camera").sample(rng),
-    )
+    # Every sensor in the configuration becomes a camera named by its id, so
+    # the tracker asks for `gate_wide` rather than for camera index 0. A MuJoCo
+    # camera already looks along its own negative z, so an identity orientation
+    # points it straight down at the belt. Rotating it by 180 degrees about x,
+    # which looks correct at a glance, aims it at the sky and renders black.
+    for sensor in camera_cfg:
+        position = require(sensor, "position_meters", "cameras")
+        world.add_camera(
+            name=str(require(sensor, "id", "cameras")),
+            pos=[float(position[0]), float(position[1]), float(position[2])],
+            fovy=float(require(sensor, "fovy_degrees", "cameras")),
+        )
 
     frame = world.add_frame()
-    frame.pos = list(plan.arm_base)
+    # The model hangs from its mounting face, so the attachment point is the
+    # mount rather than the shoulder the reach test uses.
+    mount_cfg = require(require(raw, "arm"), "mount_position_meters", "arm")
+    frame.pos = [float(mount_cfg[0]), float(mount_cfg[1]), float(mount_cfg[2])]
     with warnings.catch_warnings():
         # The manipulator declares its own impratio and cone; this scene already
         # adopted both above, so the conflict notice carries no information.

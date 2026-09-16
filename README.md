@@ -98,14 +98,14 @@ measurements that set them.
 
 | Part | Dimension |
 | --- | --- |
-| Belt | 1.20 m long, 0.32 m wide, surface at 0.35 m |
-| Belt speed | 0.02 to 0.05 m/s, randomized per run |
-| Conveyor modules | **4 modules of 0.300 m**, spanning the 1.20 m belt |
-| Arm | ROBOTIS OpenMANIPULATOR-X, 0.22 m from the belt centerline |
-| Effector workspace | 0.25 m declared, 0.266 m measured by a joint sweep |
-| Reachable window | 0.237 m of belt, 4.7 to 11.9 s per object |
-| Gripper opening | 55.7 mm measured; objects are bounded at 50 mm |
-| Objects | 8 parametric primitives and 4 scanned YCB packages |
+| Belt | 3.00 m long, 1.00 m wide, surface at 0.90 m |
+| Belt speed | 0.25 to 0.35 m/s, randomized per run |
+| Conveyor modules | **10 modules of 0.300 m**, spanning the 3.00 m belt |
+| Arm | SCARA in ABB IRB 910SC-3/0.65 geometry, inverted over the belt centerline |
+| Effector workspace | an annulus 0.222 m to 0.650 m, less the wedge axis 1 cannot turn to, over a 0.180 m stroke |
+| Reachable window | 0.428 m of belt on the centerline, 1.4 to 3.8 s per object depending on lateral position |
+| Sensing | one detection camera and three barcode cameras, all nadir, at a gate 1.00 m upstream |
+| Objects | 14 scanned packages |
 
 ### The conveyor modules
 
@@ -139,9 +139,15 @@ is the whole problem CLAVE exists to solve.
 | `M-06` Ferrous metal | 1 tuna can | YCB |
 | `M-09` Paperboard | 6 cartons | YCB and Scanned Objects |
 
-Seven classes have no object, because nothing made of them fits a 55.7 mm
-gripper: a soda can is 66 mm across and no glass container in either collection
-is under 52 mm. `D-09` in [decisions.md](docs/decisions.md) records the trade.
+Seven classes have no object. The set was chosen against a 55.7 mm parallel
+gripper, which nothing made of those materials fits: a soda can is 66 mm across
+and no glass container in either collection is under 52 mm. `D-09` in
+[decisions.md](docs/decisions.md) records that trade.
+
+The SCARA lifted the constraint and the object set has not yet been rebuilt
+under it. Nothing about the arm now bounds an object's width, so re-running the
+mesh selection should recover most of those classes. Until that happens the set
+still reflects a gripper the line no longer has.
 
 ### Submodule sizes
 
@@ -151,7 +157,7 @@ it the scanned objects.
 | Submodule | Checked out | What it supplies |
 | --- | --- | --- |
 | `third_party/scanned_objects` | 2.0 GB | 1,030 scanned household objects, 11 used |
-| `third_party/robotis_mujoco_menagerie` | 185 MB | The OpenMANIPULATOR arms |
+| `third_party/robotis_mujoco_menagerie` | 185 MB | Sibling ROBOTIS arms, kept for comparison |
 | `third_party/ycb_sim` | 24 MB | 10 YCB packages, 4 used |
 | `third_party/aws-robomaker-small-warehouse-world` | 17 MB | Warehouse props and textures |
 | `standards/guidelines`, `standards/cc-sdd` | Under 10 MB | The shared guidelines and the SDD toolkit |
@@ -209,7 +215,7 @@ between them.
 FRET is the integration edge. CLAVE publishes a decision, FRET's planner
 nodes consume it, and those nodes call ARCO as a synchronous library rather
 than reaching CLAVE directly. FRET also supplies the MuJoCo world CLAVE
-trains against, including the OpenMANIPULATOR arms and the pinned mesh
+trains against, including the sibling ROBOTIS arms and the pinned mesh
 submodules. BOSSA carries telemetry once a hardware era opens, which is
 outside the v1.x line. What CLAVE takes from each sibling is itemized in the
 [roadmap](.kiro/steering/roadmap.md#what-clave-reuses-from-the-family).
