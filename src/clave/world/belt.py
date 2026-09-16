@@ -12,12 +12,12 @@ stop, so an unpicked object is a throughput loss rather than a fault.
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
 
+from clave.world import arm
 from clave.world.config import Range
 from clave.world.scene import PARKED_X, PARKED_Z, SceneLayout
 
@@ -27,14 +27,17 @@ class ReachReport:
     """What the geometry implies about whether a pick is possible at all.
 
     Attributes:
-        reach_radius: The manipulator's reachable radius, in meters.
-        belt_offset: Lateral distance from the arm base to the belt centerline.
-        window_length: Belt length inside the reachable radius, in meters.
+        reach_min: Inner radius of the annulus the tool sweeps, in meters.
+        reach_max: Outer radius of that annulus, in meters.
+        belt_offset: Lateral distance from the shoulder to the belt centerline.
+        window_length: Belt length a centerline object spends inside the
+            annulus, in meters, with the dead zone already deducted.
         belt_speed: Belt speed in meters per second.
         time_budget: Seconds an object spends inside the window.
     """
 
-    reach_radius: float
+    reach_min: float
+    reach_max: float
     belt_offset: float
     window_length: float
     belt_speed: float
@@ -47,23 +50,33 @@ class ReachReport:
 
 
 def within_reach(position: tuple[float, float, float], plan: SceneLayout) -> bool:
-    """Whether the effector can reach a point, in three dimensions.
+    """Whether the tool can reach a point.
 
-    The reachable window is the chord the reachable sphere cuts through the
-    belt centerline, and an object is rarely on the centerline. Testing only
-    the coordinate along belt travel calls an object reachable when it sits at
-    the window's edge and off to the far side, where the effector cannot go.
-    That is what the safety layer kept overriding, and the demonstrations
-    recorded from it taught picks that could not be executed.
+    A SCARA sweeps an annulus rather than a sphere, and its vertical travel is
+    a separate axis, so reachability factors into two independent tests: the
+    radial distance from the shoulder in the horizontal plane, and the height
+    above the belt. Testing a sphere would call a point reachable directly
+    under the shoulder, where axis 2 cannot fold tightly enough to put the tool.
+
+    The inner radius is not a defect to work around. An object inside it is
+    carried out of it by the belt, so the dead zone costs pick time rather than
+    coverage.
 
     Args:
         position: The object's position, in world meters.
-        plan: The resolved scene layout, carrying the arm base and its reach.
+        plan: The resolved scene layout, carrying the shoulder and the
+            workspace.
 
     Returns:
-        Whether the point lies inside the reachable sphere.
+        Whether the tool can be placed on the object.
     """
-    return math.dist(position, plan.arm_base) <= plan.reach_radius
+    lowest, highest = plan.tool_above_belt
+    above = position[2] - plan.belt.surface_height
+    if not lowest <= above <= highest:
+        return False
+    return arm.reaches(
+        (plan.arm_shoulder[0], plan.arm_shoulder[1]), position[0], position[1]
+    )
 
 
 def reach_report(plan: SceneLayout) -> ReachReport:
@@ -79,18 +92,30 @@ def reach_report(plan: SceneLayout) -> ReachReport:
     Returns:
         The report. `window_length` is zero when the belt never enters reach.
     """
-    offset = abs(plan.arm_base[1])
-    radius = plan.reach_radius
-    if radius <= offset:
-        return ReachReport(radius, offset, 0.0, plan.belt.speed, 0.0)
-    half_chord = math.sqrt(radius * radius - offset * offset)
-    window = 2.0 * half_chord
+    offset = abs(plan.arm_shoulder[1])
+    # Swept rather than solved. The annulus alone gives a chord in closed form,
+    # but axis 1 stops at plus or minus 140 degrees and cuts a wedge out of it,
+    # which the chord formula does not see and which halves the window on the
+    # centerline. So the window is measured the same way the safety layer will
+    # measure it, by asking the shared reachability test.
+    step = 0.002
+    hits = 0
+    x = 0.0
+    while x <= plan.belt.length:
+        # The belt centerline is y = 0; `offset` is how far the shoulder sits
+        # from it, which the sweep sees through the shoulder position rather
+        # than by being passed as a coordinate.
+        if arm.reaches((plan.arm_shoulder[0], plan.arm_shoulder[1]), x, 0.0):
+            hits += 1
+        x += step
+    window = hits * step
     return ReachReport(
-        reach_radius=radius,
+        reach_min=plan.reach_min,
+        reach_max=plan.reach_max,
         belt_offset=offset,
         window_length=window,
         belt_speed=plan.belt.speed,
-        time_budget=window / plan.belt.speed,
+        time_budget=window / plan.belt.speed if plan.belt.speed else 0.0,
     )
 
 

@@ -14,81 +14,94 @@ physics:
   timestep_seconds: 0.002
 
 belt:
-  # The line is sized for the manipulator it has rather than for a picture of a
-  # recovery facility. A solved workspace sweep put the effector 0.266 m from
-  # its base in the grasp band, so a belt wider than the arm can cross carries
-  # objects nothing can pick. docs/measurements.md has the sweep.
-  length_meters: 1.20
-  # Wider than one arm can cover on purpose. A real line is sized by throughput
-  # rather than by a single manipulator's reach, and covering the far side is a
-  # second arm's job rather than a reason to narrow the belt. The safety layer
-  # already refuses a pick outside the workspace, so the uncovered strip costs
-  # throughput and nothing else.
-  width_meters: 0.32
-  surface_height_meters: 0.35
-  # Half of what v1.0.1 set, which was already at the effector's own useful
-  # speed of roughly 0.10 m/s. An object now crosses the workspace slowly
-  # enough to watch, and the arm has several seconds of margin rather than
-  # none.
-  speed_meters_per_second: [0.02, 0.05]
+  # Sized as a recovery-facility picking line rather than as a desk model. The
+  # arm is a SCARA whose workspace is an annulus 0.222 m to 0.650 m wide with a
+  # wedge missing behind the shoulder, where axis 1 stops at 140 degrees. A
+  # sweep confirms every lateral position on a 1.00 m belt is reachable at some
+  # point in its travel. docs/measurements.md carries it.
+  length_meters: 3.00
+  # Fully covered, which the previous belt was not. A swept check finds all 51
+  # lateral samples across this width reachable, so nothing here is written off
+  # as a second arm's job the way the previous line's far strip was.
+  width_meters: 1.00
+  # Ergonomic picking-line height. A manual sort station puts the belt near a
+  # standing operator's waist, and a robot retrofitted onto such a line
+  # inherits it.
+  surface_height_meters: 0.90
+  # A robotic sorting line rather than a manual one. Manual picking lines run
+  # slower because a human reaches at roughly 1 pick per 2 s; published
+  # robotic sorters sustain 60 to 140 picks per minute. At 0.30 m/s an object
+  # stays inside the workspace for 1.4 s on the centerline and up to 3.8 s at
+  # a third of the way out, which docs/measurements.md tabulates. The
+  # centerline is the worst case rather than the best, because the dead zone
+  # sits directly under the arm.
+  speed_meters_per_second: [0.25, 0.35]
   # Side guides keep tipped cylinders from rolling off. A real line has them.
   guide_height_meters: 0.04
   # The belt is drawn as a row of conveyor modules from the CC BY 4.0 Open-RMF
   # model, scaled to the belt this file configures. The count and the length
-  # above have to agree: four modules of 0.300 m make the 1.20 m belt. The
+  # above have to agree: ten modules of 0.300 m make the 3.00 m belt. The
   # module is published at 0.500 by 0.504 by 0.502 m and each axis is scaled
   # independently, which the README tabulates.
   #
   # The physics is unchanged. The belt an object rests on is still the box
   # above, and the modules are visual geometry with no collision, so the module
   # count moves nothing that was ever measured.
-  modules: 4
+  modules: 10
 
 spawn:
   # Objects are recycled from a fixed pool, because a compiled MuJoCo model
   # cannot gain bodies at run time. The pool bounds how many objects can be on
   # the belt at once.
-  pool_size: 14
+  pool_size: 18
   # Objects enter this far inside the belt's leading edge. Spawning exactly on
   # the edge lets an object tip off before the belt drive engages.
   entry_margin_meters: 0.08
   interval_seconds: [0.8, 2.5]
-  # Inside the belt's half width, so nothing spawns against a side guide.
-  # Spanning the whole belt means some objects land on the strip the single
-  # arm cannot reach, which is the honest consequence of a belt wider than one
-  # manipulator.
-  lateral_offset_meters: [-0.13, 0.13]
+  # Inside the belt's half width, so nothing spawns against a side guide. The
+  # whole span is now reachable, so unlike the previous line this range does
+  # not deliberately place objects the arm has to refuse.
+  lateral_offset_meters: [-0.42, 0.42]
   drop_height_meters: [0.01, 0.03]
 
 arm:
-  # Placed beside the belt, facing it. The OpenMANIPULATOR-X is a 4 degree of
-  # freedom arm with a parallel gripper, loaded from the pinned submodule.
+  # A SCARA in the geometry of an ABB IRB 910SC-3/0.65, mounted inverted over
+  # the belt centerline. assets/scara/irb910sc.xml is the model and D-10
+  # records why it is built here rather than adapted from an existing arm: a
+  # SCARA is RRPR and every open arm model is all-revolute, so no amount of
+  # locking joints produces its prismatic vertical axis.
   #
-  # Beside the belt rather than over it. Doubling the belt width put the old
-  # 0.14 m offset inside the belt's own footprint, which left the pedestal
-  # passing through the conveyor. The base now clears the belt edge by the
-  # width of its mounting plate, and the centerline sits 0.22 m away, inside
-  # the 0.266 m the workspace sweep measured.
+  # Inverted rather than on a floor pedestal. ABB ships the IRB 910INV for
+  # exactly this. Hanging the arm over the centerline makes the workspace
+  # symmetric about the belt, so one arm covers the full width; a pedestal
+  # beside the belt covers a strip only 0.428 m wide, because the base has to
+  # sit at least the 0.222 m dead-zone radius from the near edge and can reach
+  # only 0.650 m past it. docs/architecture.md tabulates both options.
   #
-  # The far half of the belt is outside the workspace and is meant to be: a
-  # second arm covers it. An object landing there is a throughput loss the
-  # safety layer already refuses to turn into a pick.
-  base_position_meters: [0.0, -0.22, 0.35]
-  # The solved workspace, not the link geometry. Forward kinematics over 83,521
-  # joint combinations put the effector at most 0.266 m from its base in the
-  # grasp band; 0.25 m keeps a margin under that. The old 0.38 m was an upper
-  # bound v0.5.0 recorded as one and nothing had checked since.
-  reach_radius_meters: 0.25
-  # The widest object the gripper can close on. The fingers of the pinned
-  # OpenMANIPULATOR-X leave 55.7 mm of clear opening at the joint's upper
-  # limit, measured from their mesh vertices, and this sits 5.7 mm under that
-  # so there is room to approach rather than exactly enough to close.
-  #
-  # It was 45 mm while every object was a primitive whose size this file chose.
-  # The scanned sugar box measures 45.2 mm, which fits the real gripper and not
-  # the older bound, so the bound moved to where the measurement puts it. The
-  # five YCB objects left out are 60.1 mm and wider and are still refused.
-  max_grasp_width_meters: 0.050
+  # This is the mounting face. The shoulder axis sits 0.251 m below it and the
+  # tool point travels from 0.549 m to 0.729 m below it, which is the 0.180 m
+  # stroke ABB publishes.
+  mount_position_meters: [1.50, 0.0, 1.659]
+  # From the model, not chosen here: the shoulder is this far under the
+  # mounting face, and the reach test needs the shoulder rather than the mount.
+  shoulder_drop_meters: 0.251
+  # The annulus the tool sweeps. The outer radius is arm 1 plus arm 2,
+  # 0.400 + 0.250. The inner radius is where axis 2 stops at 150 degrees, which
+  # folds the tool no closer than this to the shoulder. On a conveyor the dead
+  # zone costs pick time rather than coverage: the belt carries an object
+  # through it and out the far side.
+  reach_min_meters: 0.222
+  reach_max_meters: 0.650
+  # Where the tool point can be, relative to the belt surface. Fully extended
+  # it reaches an object top 0.030 m above the belt; fully retracted it clears
+  # one 0.210 m tall. An object taller than that is struck by the retracted
+  # tool, which is a real property of a 0.180 m stroke rather than a modeling
+  # shortcut, and the object set is bounded to respect it.
+  tool_above_belt_meters: [0.030, 0.210]
+  # The widest object the end effector handles. A suction cup has no opening,
+  # so this bounds what the pick geometry assumes rather than what a jaw can
+  # close on, and it is wide because the arm no longer sets the limit.
+  max_grasp_width_meters: 0.180
 
 bins:
   # One bin per distinct channel across the object set below.
@@ -141,9 +154,52 @@ environment:
       position_meters: [1.25, 1.05, 0.0]
       yaw_degrees: 0.0
 
-camera:
-  height_above_belt_meters: [0.45, 0.60]
-  fovy_degrees: [45.0, 60.0]
+# Every sensor that observes the belt. The tracker fuses by `role` and never
+# by `id`, so adding, moving or removing a camera changes this list and nothing
+# in clave.tracker. docs/architecture.md states that contract.
+#
+# All of them look straight down. A nadir view keeps the image plane parallel to
+# the belt, so pixel to world is a scale factor rather than a homography that
+# varies across the frame, an object's footprint in pixels is its footprint on
+# the belt, and a barcode lies parallel to the sensor where it is most legible.
+# Objects travel in a single layer, so nothing occludes anything from directly
+# above. A tilt buys a little height information and costs all of that.
+#
+# The cameras sit at a gate 1.00 m upstream of the arm. An object is seen once,
+# under controlled light, and is then carried to the arm by a belt whose speed
+# is known, so the tracker propagates it by dead reckoning instead of
+# re-detecting it every frame.
+cameras:
+  # Detection, classification and segmentation over the full belt width.
+  # 1.252 m across at 0.652 mm per pixel, which resolves an object footprint
+  # comfortably and a barcode not at all.
+  - id: gate_wide
+    role: detection
+    position_meters: [0.50, 0.0, 1.750]
+    fovy_degrees: 45.0
+    resolution: [1920, 1080]
+
+  # Barcode reading. A 0.33 mm EAN-13 module needs roughly two pixels to
+  # decode, so 0.165 mm per pixel is the floor, and the wide camera is four
+  # times coarser than that. Three narrow-lens cameras tile the width at
+  # 0.342 m each, giving 0.178 mm per pixel, or 1.9 pixels per module. That is
+  # marginal by design: it is the cheapest arrangement that decodes at all, and
+  # a line-scan camera is the alternative if it proves too tight.
+  - id: gate_code_left
+    role: code
+    position_meters: [0.50, 0.342, 1.630]
+    fovy_degrees: 15.0
+    resolution: [1920, 1080]
+  - id: gate_code_center
+    role: code
+    position_meters: [0.50, 0.0, 1.630]
+    fovy_degrees: 15.0
+    resolution: [1920, 1080]
+  - id: gate_code_right
+    role: code
+    position_meters: [0.50, -0.342, 1.630]
+    fovy_degrees: 15.0
+    resolution: [1920, 1080]
 
 lighting:
   diffuse: [0.45, 0.80]

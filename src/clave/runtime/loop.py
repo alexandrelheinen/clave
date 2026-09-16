@@ -25,6 +25,13 @@ from clave.taxonomy import BY_ID
 from clave.world import arm as armmod
 from clave.world import belt, config, scene
 
+DETECTION_CAMERA = "gate_wide"
+"""Which sensor the frame comes from.
+
+Named rather than indexed, because the line carries several cameras and the
+code camera next to it sees a strip a tenth as wide.
+"""
+
 NANOS_PER_SECOND = 1_000_000_000
 """Nanoseconds in a second, for the monotonic times the boundary carries."""
 
@@ -174,16 +181,33 @@ def runtime_config(world: dict[str, Any], routing: RoutingPolicy) -> dict[str, A
     conveyor = config.require(world, "belt")
     length = float(config.require(conveyor, "length_meters", "belt"))
     width = float(config.require(conveyor, "width_meters", "belt"))
-    base = [
-        float(value) for value in config.require(arm, "base_position_meters", "arm")
+    mount = [
+        float(value) for value in config.require(arm, "mount_position_meters", "arm")
+    ]
+    drop = float(config.require(arm, "shoulder_drop_meters", "arm"))
+    surface = float(config.require(conveyor, "surface_height_meters", "belt"))
+    above = [
+        float(value) for value in config.require(arm, "tool_above_belt_meters", "arm")
     ]
     return {
-        "arm_base_meters": base,
-        "reach_radius_meters": float(config.require(arm, "reach_radius_meters", "arm")),
-        "belt_surface_z_meters": float(
-            config.require(conveyor, "surface_height_meters", "belt")
-        ),
-        "belt_x_meters": [-length / 2.0, length / 2.0],
+        # The shoulder, not the mounting face: the reach test is radial about
+        # axis 1, which sits below the face the arm bolts to.
+        "shoulder_meters": [mount[0], mount[1], mount[2] - drop],
+        # The link lengths travel with the envelope so the safety layer applies
+        # the same two-link arithmetic clave.world.arm applies, rather than an
+        # approximation of it. A sphere over-permits behind the arm, where the
+        # stop on axis 1 cannot turn to face, and under it, where axis 2 cannot
+        # fold tightly enough.
+        "link_meters": [armmod.ARM1_METERS, armmod.ARM2_METERS],
+        "reach_meters": [
+            float(config.require(arm, "reach_min_meters", "arm")),
+            float(config.require(arm, "reach_max_meters", "arm")),
+        ],
+        "shoulder_limit_radians": armmod.SHOULDER_LIMIT_RADIANS,
+        "elbow_limit_radians": armmod.ELBOW_LIMIT_RADIANS,
+        "tool_above_belt_meters": above,
+        "belt_surface_z_meters": surface,
+        "belt_x_meters": [0.0, length],
         "belt_y_meters": [-width / 2.0, width / 2.0],
         "channels": routing.channels,
         "reject_channel": routing.reject_channel,
@@ -432,7 +456,7 @@ def run(
                 continue
             next_capture = data.time + settings.capture_interval_seconds
 
-            renderer.update_scene(data, camera="overhead")
+            renderer.update_scene(data, camera=DETECTION_CAMERA)
             frame = renderer.render().astype(np.uint8)
             # The clock starts once the frame exists. Rendering is what a
             # camera does on a real line, so charging it to the pipeline would

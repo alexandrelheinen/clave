@@ -358,3 +358,64 @@ which adds nothing new to the class list; at 85 mm it gains drinking cups for
 so those two classes need a different source rather than a different arm.
 Restoring the primitives would satisfy the criterion in the same commit that
 undoes the reason for this entry.
+
+## D-10: the SCARA is built rather than adapted from an existing arm model
+
+**Date**: 2026-09-16 · **Step**: the SCARA migration
+
+**The standard**: `docs/guidelines.md` and the family's asset policy say to
+reference a maintained upstream model rather than vendor a hand-built one, which
+is why the manipulator, the meshes and the conveyor modules all arrive through
+pinned submodules.
+
+**What was scoped**: `assets/scara/irb910sc.xml` is written in this repository
+instead of adapted from a model in MuJoCo Menagerie, the ROBOTIS collection, or
+the `robot_descriptions` catalog.
+
+**Why not lock axes on an existing arm.** The obvious cheap route is to take a
+Franka Panda, an FR3, an LBR iiwa 14 or a UFactory Lite 6 and freeze joints
+until four remain. It does not work, and the reason is topology rather than
+tuning. A SCARA is **RRPR**: two revolute axes about the vertical, one
+*prismatic* vertical axis, then one revolute about the vertical. Every arm named
+above is all-revolute, RRRRRR or RRRRRRR. Freezing a joint removes a degree of
+freedom; it never converts a revolute joint into a prismatic one, so the P in
+RRPR has no source. What a locked six-axis arm actually produces is a four-axis
+all-revolute arm whose vertical motion comes from coordinated pitch joints, so
+height and radius stay coupled: it moves inward as it moves down. A SCARA's
+vertical axis is decoupled by construction, and that decoupling is the property
+the pick depends on.
+
+The workspaces differ in shape as well as size. A SCARA sweeps an annulus,
+0.222 m to 0.650 m here, extruded over a 0.180 m stroke. A locked revolute arm
+sweeps a spherical shell with singularities in different places. Reach coverage,
+which is what CLAVE measures, would be measured on the wrong solid.
+
+The speeds differ by more than an order of magnitude where it counts. ABB
+publishes axis 4 at 2400 deg/s and a 1 kg picking cycle of 0.385 s. A Panda's
+joints run near 150 deg/s. Picks per minute is the headline number of a sorting
+line, so simulating a Panda and labeling it a SCARA would put a figure in the
+benchmark that no SCARA would ever produce.
+
+**What this gives up**, stated plainly: vendor-validated inertia tensors,
+collision meshes matching the real housings, and joint friction and damping
+identified against hardware. The model carries link lengths, joint ranges, joint
+speeds, stroke and footprint from ABB's published specification, and inertias
+inferred from primitive geometry at a uniform density.
+
+**Why that is acceptable here**: CLAVE measures reachability and timing. It runs
+no torque control, no force control and no contact-rich manipulation, so
+inertial accuracy changes settling behavior rather than whether a point falls
+inside the workspace. The moment CLAVE does force control, this model needs
+re-derivation from a real inertial model, and that is a reversal condition
+rather than a detail.
+
+**Precedent**: FRET built its own SCARA the same way, as
+`src/fret/urdf/scara.xacro`, a parametric model over primitives with independent
+kinematic parameters, L1 0.325 m and L2 0.275 m over a 0.200 m stroke. That file
+was removed when FRET moved to the OpenMANIPULATOR-X. Building from published
+kinematics is the family's established approach for this class of arm rather
+than an invention here.
+
+**Reversal condition**: if a validated SCARA model appears in Menagerie or
+`robot_descriptions` under a usable license, adopt it and delete this asset. If
+CLAVE takes on force control, re-derive the inertias first.

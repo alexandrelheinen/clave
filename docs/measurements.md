@@ -38,46 +38,82 @@ more than three orders of magnitude. Both remain in the registry, because a
 machine with an accelerator would measure them differently and the registry
 records what was screened rather than what survived.
 
-## Workspace geometry
+## The manipulator
 
-The manipulator's declared reach came from link geometry and was recorded as an
-upper bound nobody had checked. A solved pose sweep in the grasp band, 5 to
-60 mm above the belt surface, checked it.
+A SCARA in the geometry of an ABB IRB 910SC-3/0.65. Every figure below is from
+ABB's published product specification, not from this project, which is what
+makes the model checkable against something outside it.
 
 | Quantity | Value |
 | --- | --- |
-| Farthest solved pose from the arm base | 0.266 m |
-| Solved poses at 0.22 m lateral offset | 289, x from -0.084 to +0.108 |
-| Solved poses at 0.18 m lateral offset | 408, x from -0.166 to +0.190 |
-| Solved poses at 0.30 m and beyond | none |
+| Arm 1, shoulder to elbow | 0.400 m on the 0.65 variant; 0.200 and 0.300 on the others |
+| Arm 2, elbow to spline | 0.250 m on all three variants |
+| Axis 1, shoulder rotation | plus or minus 140 degrees, 415 deg/s |
+| Axis 2, elbow rotation | plus or minus 150 degrees, 659 deg/s |
+| Axis 3, spline travel | 0.180 m, 1.02 m/s, 250 N down force |
+| Axis 4, spline rotation | plus or minus 400 degrees, 2400 deg/s |
+| Payload | 3 kg rated, 6 kg maximum |
+| 1 kg picking cycle | 0.385 s |
+| Repeatability | 0.015 mm on axes 1 and 2 |
+| Base footprint | 160 by 160 mm |
 
-The gripper joint runs from -0.010 m to 0.019 m with both fingers mirroring it,
-which opens to **55.7 mm**. Every object in the original set was wider than that,
-so none of them could be grasped. The object set is now sized to fit, at 38 to
-44 mm of grasp width, which leaves roughly 10 mm of approach margin.
+Two of those decide the shape of the workspace. The link lengths set an outer
+radius of 0.650 m, and the 150 degree stop on axis 2 folds the tool no closer
+than **0.222 m** to the shoulder, which is the dead zone. The 140 degree stop on
+axis 1 removes a wedge behind the arm.
 
-That constrains what the line represents, and the constraint is worth stating
-plainly: these are small containers. A line sorting real household packaging
-needs a gripper opening two to three times wider, and every number on this page
-would move with it.
+That wedge is not a detail. Ignoring it and treating the workspace as a plain
+annulus overstates the pick window on the belt centerline by a factor of two,
+which a sweep caught and the closed-form chord did not.
+
+## Workspace, as swept
+
+Reachability measured through the same test the safety layer applies, at
+0.30 m/s.
+
+| Lateral position | Travel inside the workspace | Pick time |
+| --- | --- | --- |
+| centerline | 0.428 m | 1.43 s |
+| 0.10 m out | 0.746 m | 2.49 s |
+| 0.20 m out | 0.974 m | 3.25 s |
+| 0.30 m out | 1.130 m | 3.77 s |
+| 0.40 m out | 1.024 m | 3.41 s |
+| 0.50 m out, belt edge | 0.830 m | 2.77 s |
+
+Every one of 51 lateral samples across the 1.00 m belt is reachable somewhere in
+its travel, so the belt is covered end to end. The centerline is the worst case
+for pick time rather than the best, because the dead zone sits directly under
+the arm and an object crossing the centerline spends part of its travel inside
+it.
 
 ## The world
 
 | Quantity | Value | Read by |
 | --- | --- | --- |
-| Belt length | 1.20 m | `configs/world/sorting_line.yml` |
-| Belt width | 0.16 m | same |
-| Belt speed | 0.04 to 0.10 m/s | same |
-| Arm offset from belt centerline | 0.14 m | same |
-| Declared reach | 0.25 m, under the 0.266 m measured | safety envelope |
-| Reachable window | 0.414 m | derived from the above |
-| Time budget per object | 4.14 s at the fastest belt speed | window divided by belt speed |
+| Belt length | 3.00 m | `configs/world/sorting_line.yml` |
+| Belt width | 1.00 m | same |
+| Belt surface height | 0.90 m | same |
+| Belt speed | 0.25 to 0.35 m/s | same |
+| Arm mounting face | 1.659 m, over the belt centerline | same |
+| Shoulder | 0.251 m below the mounting face, at 1.408 m | derived |
+| Tool travel | belt surface plus 0.030 m to plus 0.210 m | the 0.180 m stroke, positioned |
 
-Reachability is a distance rather than a coordinate. `clave.world.belt.within_reach`
-measures object to arm base in three dimensions, and the conveyor, the recorder
-and the runtime all use it. Testing a coordinate against the window called
-objects reachable off to the far side of the belt where the effector cannot go,
-which made the expert and the safety layer disagree about the same geometry.
+The tool reaches an object top 0.030 m above the belt fully extended and clears
+one 0.210 m tall fully retracted. An object taller than 0.210 m is struck by the
+retracted tool, which is a real consequence of a 0.180 m stroke rather than a
+modeling shortcut.
+
+## Sensing
+
+| Sensor | Role | Field across the belt | Resolution |
+| --- | --- | --- | --- |
+| `gate_wide` | detection | 1.252 m | 0.652 mm per pixel |
+| three code cameras | code | 0.342 m each | 0.178 mm per pixel |
+
+An EAN-13 narrow module is about 0.33 mm and decoding wants roughly two pixels
+across it, so 0.165 mm per pixel is the floor. The wide camera is four times
+coarser and cannot decode a barcode at all; the narrow cameras reach 1.9 pixels
+per module, which is marginal by design.
 
 ## Validation gates
 

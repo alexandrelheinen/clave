@@ -31,6 +31,7 @@ in context.
 | Project constitution, quality gates, merge policy | [CONTRIBUTING.md](CONTRIBUTING.md) |
 | What each block does, its inputs and outputs | [docs/architecture.md](docs/architecture.md) |
 | Every measured number a gate or a config value rests on | [docs/measurements.md](docs/measurements.md) |
+| How a waste object is described, independently of which sensor saw it | [docs/perception-contract.md](docs/perception-contract.md) |
 | Coding notes specific to CLAVE | [docs/guidelines.md](docs/guidelines.md) |
 | Standards, toolchain, and how to install it | [standards/README.md](standards/README.md) |
 | A skill or plugin telling you to do what the guidelines forbid | [integrations/toolkits.md](standards/guidelines/integrations/toolkits.md) |

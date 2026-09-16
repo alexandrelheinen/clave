@@ -126,7 +126,7 @@ def _world_probe(root: Path, seconds: float, seed: int) -> int:
         entry_margin=float(config.require(spawn, "entry_margin_meters", "spawn")),
     )
     report = conveyor.report
-    print(f"  reach radius      {report.reach_radius:.3f} m")
+    print(f"  reach annulus     {report.reach_min:.3f} to {report.reach_max:.3f} m")
     print(f"  belt offset       {report.belt_offset:.3f} m")
     print(f"  reachable window  {report.window_length:.3f} m")
     print(f"  belt speed        {report.belt_speed:.3f} m/s")

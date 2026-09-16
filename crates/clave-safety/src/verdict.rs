@@ -10,8 +10,12 @@ use clave_routing::Routed;
 /// picking off it. Those are three different faults.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Check {
-    /// The point lies further from the arm base than the effector reaches.
+    /// The point lies outside the annulus the tool sweeps, or inside the wedge
+    /// the stop on axis 1 removes from it.
     Reach,
+    /// The point is outside the spline's travel: too close to the belt for the
+    /// tool to extend that far, or too high for it to retract clear.
+    Stroke,
     /// The point lies below the belt surface.
     BeltSurface,
     /// The point lies outside the belt's extent.
@@ -24,6 +28,7 @@ impl Check {
     pub const fn name(self) -> &'static str {
         match self {
             Self::Reach => "reach",
+            Self::Stroke => "stroke",
             Self::BeltSurface => "belt_surface",
             Self::BeltExtent => "belt_extent",
         }

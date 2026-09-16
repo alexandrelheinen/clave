@@ -41,7 +41,14 @@ def test_every_randomizable_belt_and_spawn_value_is_a_range() -> None:
     require_range(raw["belt"], "speed_meters_per_second", "belt")
     require_range(raw["spawn"], "interval_seconds", "spawn")
     require_range(raw["spawn"], "lateral_offset_meters", "spawn")
-    require_range(raw["camera"], "fovy_degrees", "camera")
+    # Cameras are fixed installations rather than randomized quantities: a
+    # sensor that moves between runs cannot be calibrated, so each entry
+    # carries scalars and the list itself is what varies between lines.
+    assert raw["cameras"], "the shipped line declares at least one sensor"
+    for sensor in raw["cameras"]:
+        assert {"id", "role", "position_meters", "fovy_degrees", "resolution"} <= set(
+            sensor
+        )
 
 
 def test_an_object_wider_than_the_gripper_is_refused() -> None:

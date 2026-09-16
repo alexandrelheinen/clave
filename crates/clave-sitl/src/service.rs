@@ -39,6 +39,9 @@ pub struct RunCounters {
     pub overridden_belt_surface: u64,
     /// Proposals overridden because the point lies off the belt.
     pub overridden_belt_extent: u64,
+    /// Proposals overridden because the point lies outside the spline stroke,
+    /// either too close to the belt to extend to or too high to retract clear.
+    pub overridden_stroke: u64,
     /// Datagrams that could not be read as a proposal at all.
     pub refused: u64,
     /// Decisions handed to the publisher.
@@ -151,6 +154,10 @@ impl<S: DecisionSink> Service<S> {
                     clave_safety::Check::BeltExtent => {
                         self.counters.overridden_belt_extent =
                             self.counters.overridden_belt_extent.saturating_add(1);
+                    }
+                    clave_safety::Check::Stroke => {
+                        self.counters.overridden_stroke =
+                            self.counters.overridden_stroke.saturating_add(1);
                     }
                 }
                 Outcome::Overridden {
