@@ -5,8 +5,8 @@ corpus labels are coarser than the taxonomy, so a mapping loses information, and
 the loss is recorded rather than resolved by picking a class.
 
 TrashNet and ZeroWaste are fetched, digested in `corpora/manifest.toml`, and
-read here. What each archive holds and what its mapping costs are recorded in
-`docs/research/corpus-ingestion.md`. The remaining shortlisted corpora are
+read here. What each archive holds and what its mapping costs are recorded
+alongside the layouts below. The remaining shortlisted corpora are
 unfetched, and declaring a layout for one before its bytes are in hand would be
 a guess, so :data:`CORPUS_LAYOUTS` and :data:`CORPUS_ANNOTATIONS` describe only
 what has been read.

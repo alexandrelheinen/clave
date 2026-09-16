@@ -15,7 +15,3 @@ class ManifestError(ClaveError):
 
 class UnknownArtifactError(ClaveError):
     """A run referenced an artifact that the manifest does not describe."""
-
-
-class TableCheckError(ClaveError):
-    """A research document table does not match its declared schema."""

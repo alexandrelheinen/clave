@@ -137,8 +137,7 @@ two separately, because they have different causes and different fixes.
 
 ## Corpus label mappings
 
-One table per corpus shortlisted in
-[the v0.1.0 review](research/training-infrastructure-review.md).
+One table per corpus in the shortlist.
 
 ### ZeroWaste
 
@@ -163,8 +162,7 @@ stand where CLAVE has ten recoverable classes.
 not among the annotated foreground types, and residue is unlabeled background,
 so neither receives a positive example.
 
-ZeroWaste advanced at [v0.1.2](research/training-infrastructure-review.md) once
-the maintainer confirmed CLAVE is personal research, which satisfies its
+ZeroWaste advanced once the maintainer confirmed CLAVE is personal research, which satisfies its
 NonCommercial term. It is now the strongest corpus in the shortlist: an
 operating recovery-facility conveyor, localization annotations, and roughly five
 times SpectralWaste's labeled volume. Its four labels are coarse, but they are

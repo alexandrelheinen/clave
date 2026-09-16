@@ -70,9 +70,9 @@ python -m clave.cli benchmark
 
 Runs every configuration in `configs/benchmark/default.yml` over the same seeds
 and prints one comparison, with an evidence pack beside it. Read
-[docs/research/benchmark.md](docs/research/benchmark.md) before reading the
-table, because two of the five headline metrics cannot be measured yet and the
-document says why.
+[docs/measurements.md](docs/measurements.md) before reading the table, because
+two of the five headline metrics cannot be measured yet and that document says
+why.
 
 ```bash
 python -m clave.cli still thumbnail
@@ -93,7 +93,7 @@ to record rollouts, `clave train --candidate <name>` to train one, and
 Every number below is configuration in
 [configs/world/sorting_line.yml](configs/world/sorting_line.yml), and every one
 of them is sized to the manipulator rather than to a photograph of a recovery
-facility. [world-scale.md](docs/research/world-scale.md) carries the
+facility. [docs/measurements.md](docs/measurements.md) carries the
 measurements that set them.
 
 | Part | Dimension |
@@ -222,7 +222,8 @@ outside the v1.x line. What CLAVE takes from each sibling is itemized in the
 | [docs/guidelines.md](docs/guidelines.md) | Coding notes specific to CLAVE, on top of the shared baseline |
 | [standards/](standards/README.md) | Shared guidelines, the SDD method, and the agent toolchain |
 | [.kiro/steering/roadmap.md](.kiro/steering/roadmap.md) | The ladder to v1.0.0, its release criteria, and the spec dependency order |
-| [docs/research/](docs/research/) | One report per roadmap step, each stating what it measured and what it did not |
+| [docs/architecture.md](docs/architecture.md) | What each block does, its inputs and outputs, and what is deliberately absent |
+| [docs/measurements.md](docs/measurements.md) | Every measured number a gate or a configuration value rests on |
 | [docs/decisions.md](docs/decisions.md) | Why a gate or a constraint was scoped the way it is |
 | `crates/` | The decision contract, the routing policy, the publisher, the safety layer, the runtime |
 | `src/clave/` | The world, the data pipeline, training, validation, the runtime, the benchmark, the demos |

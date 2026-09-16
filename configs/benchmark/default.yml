@@ -9,7 +9,7 @@
 # turning a box into a world pick point needs a camera model CLAVE has not
 # built. sam2 and diffusion-policy were disqualified on measured latency at
 # v0.4.0, and ppo-mlp has no reward to learn from until something executes a
-# pick. docs/research/benchmark.md carries every one of those reasons.
+# pick. docs/measurements.md carries every one of those reasons.
 
 benchmark:
   # Twenty-four seeds, because three was not enough for the comparison to say

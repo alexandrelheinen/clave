@@ -231,7 +231,7 @@ def test_the_fetched_trashnet_archive_matches_its_manifest_digest() -> None:
     trashnet_archive() is None, reason="TrashNet has not been fetched locally"
 )
 def test_the_fetched_trashnet_archive_holds_its_recorded_composition() -> None:
-    """The counts in docs/research/corpus-ingestion.md come from these bytes."""
+    """The ingestion counts come from these bytes."""
     path = trashnet_archive()
     assert path is not None
     with CorpusArchive(path, "trashnet") as archive:
@@ -509,7 +509,7 @@ def test_the_fetched_zerowaste_archive_matches_its_manifest_digest() -> None:
     zerowaste_archive() is None, reason="ZeroWaste has not been fetched locally"
 )
 def test_the_fetched_zerowaste_archive_holds_its_recorded_composition() -> None:
-    """The counts in docs/research/corpus-ingestion.md come from these bytes."""
+    """The ingestion counts come from these bytes."""
     path = zerowaste_archive()
     assert path is not None
     with LocalizedArchive(path, "zerowaste") as archive:

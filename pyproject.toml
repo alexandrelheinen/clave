@@ -109,7 +109,7 @@ branch = true
 # The candidate adapters are three-line shims calling upstream constructors, and
 # they cannot execute without multi-gigabyte optional libraries the gate does
 # not install. Their real test is the benchmark sweep, whose committed output is
-# docs/research/model-candidates.md. Recorded in docs/decisions.md.
+# docs/measurements.md. Recorded in docs/decisions.md.
 omit = ["src/clave/candidates/perception.py", "src/clave/candidates/policy.py"]
 
 [tool.coverage.report]

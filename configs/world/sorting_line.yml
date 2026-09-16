@@ -17,7 +17,7 @@ belt:
   # The line is sized for the manipulator it has rather than for a picture of a
   # recovery facility. A solved workspace sweep put the effector 0.266 m from
   # its base in the grasp band, so a belt wider than the arm can cross carries
-  # objects nothing can pick. docs/research/world-scale.md has the sweep.
+  # objects nothing can pick. docs/measurements.md has the sweep.
   length_meters: 1.20
   # Wider than one arm can cover on purpose. A real line is sized by throughput
   # rather than by a single manipulator's reach, and covering the far side is a
