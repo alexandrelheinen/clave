@@ -1,0 +1,118 @@
+# The three figures the project page publishes.
+#
+# Presentation only. Every value here lights, frames or explains the scene and
+# none of it reaches configs/world/sorting_line.yml, which data generation,
+# training, validation and the benchmark all read. The world is built with the
+# same configuration they use and is handed the lighting and the annotations as
+# arguments, so a dataset recorded from this world carries neither.
+#
+# What each frame shows is a real rollout: the world runs from the seed below
+# until the instant below, with the scripted expert driving the arm exactly as
+# the recorder does, and the frame is whatever the renderer produced at that
+# moment. Nothing is drawn on it afterwards. The ring, the window edges and the
+# class markers are geometry standing in the scene, which is why they carry
+# perspective and take shadow, and every quantity they express is read from the
+# resolved layout or from the reachability sweep the safety layer consults.
+
+still:
+  name: clave
+  description: >-
+    The sorting line with the reach annulus, the edges of the reachable window
+    and a marker over each package in the color of the channel it routes to.
+  seed: 1
+  capture_at_seconds: 20.5
+  width: 1920
+  height: 1080
+
+annotations:
+  # One color per channel the object set needs. A channel the object set has
+  # and this map does not is an error rather than a default color, because a
+  # figure that draws one class in grey teaches a reader the wrong legend.
+  channel_colors:
+    CH-HDPE: [0.16, 0.70, 0.95]
+    CH-FIBER: [0.95, 0.68, 0.20]
+    CH-PLASTIC-OTHER: [0.82, 0.38, 0.86]
+    CH-FERROUS: [0.36, 0.84, 0.50]
+  # The bins carry the same colors, so a reader can follow a marker to the bin
+  # its class routes to without a caption.
+  color_bins: true
+  reach_ring:
+    # Both radii: the outer one bounds the annulus and the inner one is the
+    # dead zone the belt carries an object out of.
+    rgba: [0.28, 0.88, 0.96, 0.85]
+    thickness_meters: 0.016
+    segment_count: 180
+  window_edges:
+    rgba: [0.92, 0.95, 1.00, 0.28]
+    thickness_meters: 0.014
+    height_meters: 0.45
+  class_markers:
+    radius_meters: 0.032
+    height_above_meters: 0.16
+
+lighting:
+  # A dark scene reads as a hole punched in a light web page. These values lift
+  # the whole frame into the mid-tones without blowing out the printed labels,
+  # which are the reason the objects are photographs rather than shapes.
+  headlight:
+    ambient: [0.25, 0.24, 0.23]
+    diffuse: [0.28, 0.27, 0.26]
+    specular: [0.12, 0.12, 0.12]
+  background:
+    top: [0.30, 0.31, 0.34]
+    bottom: [0.46, 0.44, 0.42]
+  lights:
+    - position_meters: [0.30, -1.90, 3.20]
+      direction: [0.45, 0.62, -0.85]
+      diffuse: [0.50, 0.48, 0.44]
+      specular: [0.22, 0.22, 0.22]
+      cast_shadow: true
+    - position_meters: [2.70, 2.10, 2.30]
+      direction: [-0.55, -0.62, -0.56]
+      diffuse: [0.26, 0.25, 0.28]
+      specular: [0.05, 0.05, 0.05]
+      cast_shadow: false
+    # A second key from the bins' side. The arm-side key leaves the conveyor's
+    # far face unlit, and one of the three figures is shot from that side
+    # because it is the only side the bins can be seen from.
+    - position_meters: [-1.60, 2.40, 2.10]
+      direction: [0.45, -0.70, -0.55]
+      diffuse: [0.40, 0.39, 0.37]
+      specular: [0.10, 0.10, 0.10]
+      cast_shadow: false
+    - position_meters: [2.30, -0.90, 1.60]
+      direction: [-0.75, 0.30, -0.58]
+      diffuse: [0.26, 0.22, 0.16]
+      specular: [0.04, 0.04, 0.04]
+      cast_shadow: false
+
+cameras:
+  # One camera per figure, named for the file it writes: clave-line.png,
+  # clave-overhead.png and clave-window.png, which are the names the project
+  # page already points at.
+  # The line from the bins' side, which is the only side they are visible from:
+  # they stand on the floor at 0.25 m from the belt and the belt is 0.90 m
+  # high, so any camera on the arm's side has the conveyor between it and them.
+  # The arm reaches toward the camera over the belt.
+  - name: line
+    azimuth_degrees: 332.0
+    elevation_degrees: -26.0
+    distance_meters: 4.00
+    lookat_meters: [0.0, 0.05, 1.00]
+    fovy_degrees: 42.0
+  # Straight down, with the belt across the frame rather than along it, so the
+  # ring and the belt both fit a sixteen by nine plate.
+  - name: overhead
+    azimuth_degrees: 90.0
+    elevation_degrees: -88.0
+    distance_meters: 3.30
+    lookat_meters: [0.0, 0.0, 0.92]
+    fovy_degrees: 45.0
+  # Near belt height and along the line, which is the angle where the two window
+  # planes read as the walls of a window rather than as lines.
+  - name: window
+    azimuth_degrees: 206.0
+    elevation_degrees: -13.0
+    distance_meters: 3.45
+    lookat_meters: [0.15, -0.20, 1.02]
+    fovy_degrees: 38.0

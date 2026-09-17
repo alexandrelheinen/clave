@@ -613,3 +613,43 @@ stays a copy.
 **Reversal condition**: Menagerie publishing per-model repositories or releases,
 or `actions/checkout` gaining sparse submodule support, makes pinning cheap
 enough to prefer.
+
+## D-15: a published figure may carry geometry, never an overlay
+
+**Date**: 2026-09-17 · **Step**: the published visuals
+
+**The standard**: [agents/claude.md](../standards/guidelines/agents/claude.md),
+No fabricated evidence, forbids post-processed overlays on captured output and
+decorative output presented as real feedback. A test sends one flat gray frame
+through the encoder and reads the same gray back, which proves nothing is drawn
+on a frame after the renderer made it.
+
+**What was scoped**: the three figures the project page publishes carry a ring
+at the arm's reach radii, a plane at each end of the reachable window, and a
+marker over each package in the color of the channel it routes to.
+
+**Why**: a still of the line shows a belt and an arm, and the page's argument is
+about where the arm can reach and how long an object stays there. A reader
+cannot see a workspace. The choice is between explaining it and publishing a
+figure that illustrates nothing.
+
+**Why this is not an overlay**: every one of those shapes is geometry standing
+in the scene before the model is compiled, so the renderer produces it with the
+perspective, occlusion and shadow of everything else, and the encoder still
+writes exactly the pixels it was handed. The flat-gray test is untouched.
+
+**What is not scoped**: the quantities. A radius is read from the resolved
+layout, a window edge from the same sweep the safety layer consults, and a
+marker's color from the taxonomy channel of the object it stands over. Nothing
+in the still's own file states a distance, so a figure cannot describe a
+workspace the world does not have.
+
+**What it costs**: the annotations reach the scene as an argument whose default
+adds nothing, the same way presentation lighting does, and they add no body, no
+coordinate, no degree of freedom and no mass. A test asserts that against a
+world built without them. The videos carry none of this: they run the measured
+loop, and the trained models read the frames it renders.
+
+**Reversal condition**: a figure whose annotation cannot be derived from the
+world would have to be drawn somewhere else and labeled as a diagram, not
+published as a render.
