@@ -149,7 +149,7 @@ impl Envelope {
         }
         let above = point.z_meters() - self.base.z_meters();
         if above < self.tool_above_base_meters.0 || above > self.tool_above_base_meters.1 {
-            return Some(Check::Stroke);
+            return Some(Check::ToolHeight);
         }
         if !on_belt(point.x_meters(), self.belt_x_meters)
             || !on_belt(point.y_meters(), self.belt_y_meters)
