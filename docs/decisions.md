@@ -653,3 +653,70 @@ loop, and the trained models read the frames it renders.
 **Reversal condition**: a figure whose annotation cannot be derived from the
 world would have to be drawn somewhere else and labeled as a diagram, not
 published as a render.
+
+## D-16: the gate is specified as commercial optics, and the belt is covered
+
+**Date**: 2026-09-17 · **Step**: Block D, ahead of `perception-record`
+
+**The standard**: [CONTRIBUTING.md](../CONTRIBUTING.md), Physical fidelity, asks
+that hardware appearing in what CLAVE publishes come from something real rather
+than be authored here. `docs/architecture.md` states that the cameras form a
+gate the belt passes through.
+
+**What was measured**: the gate did not cover the belt, and no document said so.
+Stepping one object laterally and reading the segmentation render, `gate_wide`
+returned pixels over 0.800 m of a 1.00 m belt while `spawn.lateral_offset_meters`
+places objects out to 0.42 m, so the detection camera could not see every object
+it exists to detect. The three code cameras covered 73 percent with a dead band
+of about 0.10 m on each side where no barcode could be read at all.
+
+**Why it went unnoticed**: `fovy` is a vertical field of view, so it sets the
+image height axis, and for a nadir camera whose image is wider than it is tall
+that axis lies across the belt. Every figure this project quoted as what a
+camera "covers across" was the along-travel extent, which is the larger of the
+two. The tables read as though the gate covered 1.252 m of a 1.00 m belt.
+
+**What was scoped**: a camera now names the parts it is built from and the field
+of view is derived from them. `configs/world/sorting_line.yml` carries a
+`sensors` catalog and a `lenses` catalog, and each camera names one of each plus
+which belt axis its long sensor side spans. `fovy_degrees` is no longer a
+configurable key, and a test refuses one.
+
+The parts are a Sony IMX264, 2/3 inch, 2448 by 2048 at a 3.45 micrometre pitch,
+and Fujinon HF-XA-5M C-mount lenses, which are specified for exactly that sensor
+class. `gate_wide` takes the 8 mm at a 1.042 m standoff and the code cameras
+take the 16 mm at 0.730 m. Every camera is turned a quarter turn so its long
+axis lies across the belt.
+
+**What that buys**: both roles now cover the full width, swept and recorded in
+[measurements.md](measurements.md). The code cameras stand 0.33 m apart while
+each sees 0.385 m, so they overlap rather than butt together, and they resolve
+0.157 mm per pixel against a 0.165 mm floor. Decode yield went from 2.2 percent
+of objects to 4.4 percent, with every crossing now readable rather than 64
+percent of them.
+
+**Why turning the cameras was most of it**: a sensor laid out along belt travel
+spends its long side on a direction the object crosses anyway and leaves its
+short side to cover the width it has to see. That was free to correct and it is
+the larger half of the gain; the lens and the standoff supply the rest.
+
+**What it costs**: every frame `gate_wide` renders is different, so the world
+digest changes and the checkpoints trained at v0.7.0 saw a gate that no longer
+exists. That cost is smaller than it looks. `D-12` already records those models
+as barely transferring, at 0.445 m of policy error, and the recorded dataset
+under `datasets/synthetic` already carried a `config_digest` that did not match
+the working tree and four arm joints where the `UR10e` has six, so it described
+the previous manipulator's world before this change touched anything.
+
+**What is not scoped**: the render sizes. The models still see 320 by 240, which
+is a landscape aspect against a portrait sensor, so a rendered frame spans more
+belt along travel than the sensor would. Across-belt coverage is unaffected,
+because it depends only on `fovy` and the standoff, and the decode figures above
+were measured at the sensor's own 2448 pixels. Matching the render aspect to the
+sensor changes what every trained model sees and belongs with the step that
+retrains them.
+
+**Reversal condition**: a line whose belt is wider than 1.10 m, or a standoff
+the building cannot give, needs a different focal length from the same series
+rather than a wider angle invented here. The catalog is the constraint, and a
+camera naming a part the catalog does not declare now fails at load.

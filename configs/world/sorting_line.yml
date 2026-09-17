@@ -161,6 +161,11 @@ environment:
 # by `id`, so adding, moving or removing a camera changes this list and nothing
 # in clave.tracker. docs/architecture.md states that contract.
 #
+# A camera names the parts it is built from rather than a field of view. An
+# angle is a consequence of a sensor and a lens, and one written directly is a
+# number nobody can check against a catalog, so `fovy` is derived and never
+# configured. Changing the lens on a line changes one key here.
+#
 # All of them look straight down. A nadir view keeps the image plane parallel to
 # the belt, so pixel to world is a scale factor rather than a homography that
 # varies across the frame, an object's footprint in pixels is its footprint on
@@ -170,52 +175,76 @@ environment:
 #
 # The belt is centred on the origin and runs from x = -1.50 to +1.50, with
 # travel towards +x, so the arm stands over the origin and the gate sits
-# upstream of it at x = -1.00. An object is seen once,
-# under controlled light, and is then carried to the arm by a belt whose speed
-# is known, so the tracker propagates it by dead reckoning instead of
-# re-detecting it every frame.
+# upstream of it at x = -1.00. An object is seen once, under controlled light,
+# and is then carried to the arm by a belt whose speed is known, so the tracker
+# propagates it by dead reckoning instead of re-detecting it every frame.
+
+sensors:
+  # Sony IMX264: 2/3 inch, 5.0 MP global shutter, Pregius second generation,
+  # carried by Basler ace, LUCID Phoenix, JAI GO-X and others. Global shutter
+  # matters on a moving belt: a rolling shutter skews a barcode into something
+  # no decoder will read.
+  imx264:
+    pixels: [2448, 2048]
+    pixel_pitch_micrometers: 3.45
+
+lenses:
+  # Fujinon HF-XA-5M, C-mount, specified for a 2/3 inch sensor at this exact
+  # 3.45 micrometre pitch, so the lens and the sensor above are a matched pair
+  # rather than two parts that happen to thread together. The series runs 6, 8,
+  # 12, 16, 25, 35 and 50 mm; only the two this line uses are declared.
+  hf8xa-5m:
+    focal_length_millimeters: 8.0
+  hf16xa-5m:
+    focal_length_millimeters: 16.0
+
 cameras:
-  # Detection, classification and segmentation. 0.652 mm per pixel, which
-  # resolves an object footprint comfortably and a barcode not at all.
-  #
-  # It does NOT cover the belt. fovy is a vertical field of view, so it sets
-  # the across-belt axis for a nadir camera: 0.704 m across against 1.252 m
-  # along travel, and a sweep reads pixels from y = -0.400 m to +0.380 m on a
-  # 1.00 m belt. Objects spawn out to 0.42 m, so some are never detected.
-  # Covering the width here needs about 62 degrees. That changes every rendered
-  # frame and the input distribution of every trained checkpoint, so it is
-  # recorded in docs/measurements.md rather than changed in passing.
+  # `long_axis` is which belt axis the sensor's longer side spans. It is the
+  # cheapest parameter on this page and it was the wrong way round: a 16 by 9
+  # or 4 by 3 sensor laid out along belt travel wastes its long side on a
+  # direction the object crosses anyway, and spends its short side on the width
+  # it has to cover. Turning every camera a quarter turn is what makes the
+  # numbers below fit at all.
+
+  # Detection, classification and segmentation across the whole belt.
+  # 8.446 mm of sensor at 8 mm focal length over a 1.042 m standoff gives
+  # 1.100 m across a 1.000 m belt, so the width is covered with 50 mm of margin
+  # at each edge, at 0.449 mm per pixel. Objects spawn out to 0.42 m and every
+  # one of them is now in frame.
   - id: gate_wide
     role: detection
-    position_meters: [-1.00, 0.0, 1.750]
-    fovy_degrees: 45.0
-    resolution: [1920, 1080]
+    sensor: imx264
+    lens: hf8xa-5m
+    long_axis: across
+    position_meters: [-1.00, 0.0, 1.942]
 
-  # Barcode reading. A 0.33 mm EAN-13 module needs roughly two pixels to
-  # decode, so 0.165 mm per pixel is the floor, and the wide camera is four
-  # times coarser than that. The three narrow-lens cameras give 0.178 mm per
-  # pixel, or 1.9 pixels per module, which is marginal by design: it is the
-  # cheapest arrangement that decodes at all, and a line-scan camera is the
-  # alternative if it proves too tight.
+  # Barcode reading. An EAN-13 narrow module is about 0.33 mm and decoding
+  # wants roughly two pixels across it, so 0.165 mm per pixel is the floor.
+  # A 16 mm lens over the same 0.730 m standoff gives 0.385 m across at
+  # 0.157 mm per pixel, which clears the floor rather than sitting on it.
   #
-  # They sample the width rather than tile it. Each sees 0.192 m across the
-  # belt and they stand 0.342 m apart, so a sweep finds dead bands near
-  # y = 0.12 m to 0.22 m on each side where no barcode can be read at all.
+  # Three of them at 0.33 m spacing span -0.523 m to +0.523 m with 56 mm of
+  # overlap between neighbours, so the belt is tiled rather than sampled. The
+  # previous arrangement stood them 0.342 m apart while each saw 0.192 m, which
+  # left a dead band on each side where no barcode could be read at all.
   - id: gate_code_left
     role: code
-    position_meters: [-1.00, 0.342, 1.630]
-    fovy_degrees: 15.0
-    resolution: [1920, 1080]
+    sensor: imx264
+    lens: hf16xa-5m
+    long_axis: across
+    position_meters: [-1.00, 0.33, 1.630]
   - id: gate_code_center
     role: code
+    sensor: imx264
+    lens: hf16xa-5m
+    long_axis: across
     position_meters: [-1.00, 0.0, 1.630]
-    fovy_degrees: 15.0
-    resolution: [1920, 1080]
   - id: gate_code_right
     role: code
-    position_meters: [-1.00, -0.342, 1.630]
-    fovy_degrees: 15.0
-    resolution: [1920, 1080]
+    sensor: imx264
+    lens: hf16xa-5m
+    long_axis: across
+    position_meters: [-1.00, -0.33, 1.630]
 
 lighting:
   diffuse: [0.45, 0.80]

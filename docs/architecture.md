@@ -130,27 +130,32 @@ controlled light, and is then carried to the arm by a belt whose speed is known,
 so the tracker propagates it by dead reckoning rather than re-detecting it in
 every frame.
 
-| Sensor | Role | Across the belt | Along travel | Resolution on the belt |
-| --- | --- | --- | --- | --- |
-| `gate_wide` | detection | 0.704 m | 1.252 m | 0.652 mm per pixel |
-| `gate_code_left`, `_center`, `_right` | code | 0.192 m each | 0.342 m each | 0.178 mm per pixel |
+| Sensor | Role | Parts | Across the belt | Along travel | Resolution |
+| --- | --- | --- | --- | --- | --- |
+| `gate_wide` | detection | IMX264 + Fujinon 8 mm | 1.100 m | 0.920 m | 0.449 mm per pixel |
+| `gate_code_left`, `_center`, `_right` | code | IMX264 + Fujinon 16 mm | 0.385 m each | 0.322 m each | 0.157 mm per pixel |
 
-Neither row covers the 1.00 m belt. `fovy` is a vertical field of view and so
-sets the across-belt axis for a nadir camera, which makes the across figure the
-smaller of the two. A sweep puts `gate_wide` at 0.800 m of the width and the
-three code cameras at 73 percent of it with a dead band on each side, against
-objects that spawn out to 0.42 m from the centerline.
-[measurements.md](measurements.md) carries the sweep and what closing the gap
-would cost.
+A camera names the parts it is built from and the field of view is derived, so
+an angle in this repository cannot drift away from hardware anybody could order.
+The sensor is a Sony IMX264, 2/3 inch and 2448 by 2048 at a 3.45 micrometre
+pitch; the lenses are Fujinon HF-XA-5M, specified for that sensor class.
 
-The split is forced by arithmetic rather than chosen. An EAN-13 narrow module is
-about 0.33 mm, and decoding wants roughly two pixels across it, so 0.165 mm per
-pixel is the floor. The wide camera is four times coarser than that, which is
-ample for detecting and classifying an object and useless for reading its
-barcode. The three narrow-lens cameras reach 1.9 pixels per module, which is
-marginal on purpose: it is the cheapest arrangement that decodes at all, and a
-line-scan camera is the alternative. They are spaced further apart than each one
-sees, so they sample the width rather than tile it.
+The long sensor axis lies across the belt rather than along it. `fovy` is a
+vertical field of view and therefore sets the across-belt axis for a nadir
+camera, so a sensor laid out along travel spends its long side on the direction
+the object crosses anyway and leaves its short side to cover the width. Turning
+every camera a quarter turn is most of why the gate covers the belt at all.
+
+Both roles cover the full 1.00 m width, swept and recorded in
+[measurements.md](measurements.md). The three code cameras stand 0.33 m apart
+while each sees 0.385 m across, so they overlap and tile the belt instead of
+sampling it.
+
+The split between the two roles is forced by arithmetic rather than chosen. An
+EAN-13 narrow module is about 0.33 mm, and decoding wants roughly two pixels
+across it, so 0.165 mm per pixel is the floor. The wide camera is nearly three
+times coarser than that, which is ample for detecting and classifying an object
+and useless for reading its barcode. The code cameras reach 0.157 mm per pixel.
 
 ### Predictor
 

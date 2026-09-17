@@ -19,7 +19,7 @@ from typing import Any
 import numpy as np
 
 from clave.world import arm
-from clave.world.config import require, require_range
+from clave.world.config import WorldConfigError, require, require_range
 from clave.world.objects import ObjectSpec, channels, parse
 
 ARM_MODEL = Path("third_party") / "mujoco_menagerie_ur10e" / "ur10e.xml"
@@ -46,7 +46,13 @@ PARKED_X = 3.0
 """How far to the side pooled objects wait, clear of the belt and the camera."""
 
 OFFSCREEN_WIDTH = 1920
-"""Widest frame any renderer attached to this model can produce."""
+"""Floor on the widest frame any renderer attached to this model can produce.
+
+A sensor declaring more pixels than this raises it, because a camera that
+cannot be rendered at its own resolution is a camera whose stated resolution
+means nothing. `configs/world/sorting_line.yml` declares 2448 by 2048, and the
+1920 default silently capped it.
+"""
 
 OFFSCREEN_HEIGHT = 1080
 """Tallest frame any renderer attached to this model can produce."""
@@ -690,6 +696,90 @@ def _stiffen_arm_actuators(mujoco: Any, model: Any) -> None:
         model.actuator_biasprm[actuator][2] *= math.sqrt(ARM_GAIN_SCALE)
 
 
+def sensor_span_millimeters(
+    camera: dict[str, Any], sensors: dict[str, Any], lenses: dict[str, Any]
+) -> tuple[float, float]:
+    """Return how much sensor lies across the belt and along it, in millimeters.
+
+    A camera declares the parts it is built from rather than an angle, so the
+    geometry is read off a catalog entry a buyer could order. `long_axis` says
+    which belt axis the sensor's longer side spans, because a sensor laid out
+    along belt travel spends its long side on a direction the object crosses
+    anyway and its short side on the width it has to cover.
+
+    Args:
+        camera: One entry from the `cameras` list.
+        sensors: The `sensors` catalog.
+        lenses: The `lenses` catalog.
+
+    Returns:
+        The sensor extent across the belt and along it, in millimeters.
+
+    Raises:
+        ConfigError: If a key is absent, or the camera names a part the
+            catalogs do not declare, or `long_axis` is neither `across` nor
+            `along`.
+    """
+    name = str(require(camera, "sensor", "cameras"))
+    if name not in sensors:
+        raise WorldConfigError(
+            f"camera {camera.get('id')!r} names sensor {name!r}, "
+            f"which `sensors` does not declare"
+        )
+    pixels = require(sensors[name], "pixels", f"sensors.{name}")
+    pitch = float(require(sensors[name], "pixel_pitch_micrometers", f"sensors.{name}"))
+    sides = sorted(
+        (int(pixels[0]) * pitch / 1000.0, int(pixels[1]) * pitch / 1000.0), reverse=True
+    )
+    long_axis = str(require(camera, "long_axis", "cameras"))
+    if long_axis == "across":
+        return sides[0], sides[1]
+    if long_axis == "along":
+        return sides[1], sides[0]
+    raise WorldConfigError(
+        f"camera {camera.get('id')!r} has long_axis {long_axis!r}; "
+        f"it spans the belt either 'across' or 'along'"
+    )
+
+
+def field_of_view(
+    camera: dict[str, Any], sensors: dict[str, Any], lenses: dict[str, Any]
+) -> float:
+    """Return the vertical field of view a camera's parts produce, in degrees.
+
+    MuJoCo's `fovy` is a vertical field of view, so it sets the image height
+    axis, and for a camera looking straight down that axis is the one across
+    the belt. Deriving it from the sensor and the lens rather than configuring
+    it is what keeps the angle from drifting away from hardware anybody could
+    buy.
+
+    Args:
+        camera: One entry from the `cameras` list.
+        sensors: The `sensors` catalog.
+        lenses: The `lenses` catalog.
+
+    Returns:
+        The vertical field of view in degrees.
+
+    Raises:
+        ConfigError: If a key is absent, or the camera names a lens the catalog
+            does not declare, or the focal length is not positive.
+    """
+    across, _ = sensor_span_millimeters(camera, sensors, lenses)
+    name = str(require(camera, "lens", "cameras"))
+    if name not in lenses:
+        raise WorldConfigError(
+            f"camera {camera.get('id')!r} names lens {name!r}, "
+            f"which `lenses` does not declare"
+        )
+    focal = float(require(lenses[name], "focal_length_millimeters", f"lenses.{name}"))
+    if focal <= 0.0:
+        raise WorldConfigError(
+            f"lens {name!r} has focal length {focal!r}, which forms no image"
+        )
+    return 2.0 * math.degrees(math.atan(across / (2.0 * focal)))
+
+
 def build(
     raw: dict[str, Any],
     rng: np.random.Generator,
@@ -744,11 +834,21 @@ def build(
     # The offscreen framebuffer bounds what any renderer attached to this model
     # can produce, and MuJoCo defaults it to 640 by 480. That is enough for the
     # 320 by 240 frames the models see and not enough for a demonstration
-    # video. This is a ceiling on rendering rather than a property of the world,
-    # which is why it sits here rather than in the configuration: changing it
-    # changes no trajectory and no measurement.
-    mujoco_spec.visual.global_.offwidth = OFFSCREEN_WIDTH
-    mujoco_spec.visual.global_.offheight = OFFSCREEN_HEIGHT
+    # video. It is a ceiling on rendering rather than a property of the world,
+    # so changing it changes no trajectory and no measurement.
+    #
+    # It is raised to whatever the declared sensors need. A camera that cannot
+    # be rendered at its own resolution has a resolution that means nothing,
+    # and the 1920 floor silently capped the 2448 the shipped sensor declares.
+    offscreen = max(
+        (
+            max(int(value) for value in require(entry, "pixels", "sensors"))
+            for entry in require(raw, "sensors").values()
+        ),
+        default=0,
+    )
+    mujoco_spec.visual.global_.offwidth = max(OFFSCREEN_WIDTH, offscreen)
+    mujoco_spec.visual.global_.offheight = max(OFFSCREEN_HEIGHT, offscreen)
 
     world = mujoco_spec.worldbody
     world.add_light(pos=[0.0, 0.0, 2.0], dir=[0.0, 0.0, -1.0])
@@ -885,7 +985,7 @@ def build(
         world.add_camera(
             name=str(require(sensor, "id", "cameras")),
             pos=[float(position[0]), float(position[1]), float(position[2])],
-            fovy=float(require(sensor, "fovy_degrees", "cameras")),
+            fovy=field_of_view(sensor, require(raw, "sensors"), require(raw, "lenses")),
         )
 
     if annotations:

@@ -136,48 +136,57 @@ twice that. At the configured belt speeds the window is 5.92 s of travel at
 
 ## Sensing
 
-| Sensor | Role | Across the belt | Along belt travel | Resolution |
-| --- | --- | --- | --- | --- |
-| `gate_wide` | detection | 0.704 m | 1.252 m | 0.652 mm per pixel |
-| three code cameras | code | 0.192 m each | 0.342 m each | 0.178 mm per pixel |
+| Sensor | Role | Parts | Across the belt | Along travel | Resolution |
+| --- | --- | --- | --- | --- | --- |
+| `gate_wide` | detection | IMX264 + 8 mm, 1.042 m standoff | 1.100 m | 0.920 m | 0.449 mm per pixel |
+| three code cameras | code | IMX264 + 16 mm, 0.730 m standoff | 0.385 m each | 0.322 m each | 0.157 mm per pixel |
 
-Two columns rather than one, because the two axes differ and conflating them
-understates nothing and overstates the coverage badly. `fovy` is a vertical
-field of view, so it sets the image height axis, and for a nadir camera whose
-image is 16 by 9 that axis lies across the belt while the longer one lies along
-travel. The figures quoted as coverage before this table separated them were the
-along-travel extents.
+Every camera names the parts it is built from and the angle is derived, so no
+field of view in this project can drift from hardware somebody could order. The
+sensor is a Sony IMX264, 2/3 inch, 2448 by 2048 at a 3.45 micrometre pitch, so
+an active area of 8.446 by 7.066 mm. The lenses are Fujinon HF-XA-5M, C-mount,
+specified for a 2/3 inch sensor at that exact pitch. The resolutions above
+assume a render at the sensor's own 2448 pixels; a coarser render spreads the
+same field over fewer pixels and resolves proportionally less.
 
-Swept rather than trusted to that arithmetic. Stepping an object laterally at
-20 mm and reading the segmentation render, `gate_wide` returns pixels for
-positions from -0.400 m to +0.380 m, and the code cameras for -0.460 m to
--0.220 m, -0.100 m to +0.100 m and +0.240 m to +0.460 m. The swept spans exceed
-the arithmetic ones because an object has width, so one centered just outside a
-frame still shows pixels inside it.
+The long sensor axis lies **across** the belt. `fovy` is a vertical field of
+view, so it sets the image height axis, and for a nadir camera that axis is the
+across-belt one. Laying the long side along travel spends it on a direction the
+object crosses anyway and leaves the short side to cover the width, which is
+what the line did before these figures were measured.
 
 | Coverage of the 1.00 m belt width | Swept |
 | --- | --- |
-| `gate_wide` | 0.800 m, 78 percent |
-| the three code cameras together | 73 percent, with dead bands near 0.12 m to 0.22 m each side |
+| `gate_wide` | 1.000 m, 100 percent |
+| the three code cameras together | 100 percent, overlapping between 0.13 m and 0.20 m each side |
 
-Neither covers the belt. Objects spawn out to 0.42 m from the centerline, so
-the detection camera does not see every object on the line, and a third of the
-width can never present a barcode to any code camera. Covering the full width
-at the configured standoff needs `gate_wide` near 62 degrees rather than 45.
-That is a change to the world rather than to a document, so it is recorded
-rather than made here.
+Swept rather than trusted to the arithmetic. One object is stepped laterally at
+10 mm and the segmentation render is read at each position. `gate_wide` returns
+pixels across the whole width. The code cameras return them over -0.500 m to
+-0.130 m, -0.200 m to +0.200 m and +0.130 m to +0.500 m, so they overlap rather
+than butt together and the belt is tiled rather than sampled.
 
 An EAN-13 narrow module is about 0.33 mm and decoding wants roughly two pixels
-across it, so 0.165 mm per pixel is the floor. The wide camera is four times
-coarser and cannot decode a barcode at all; the narrow cameras reach 1.9 pixels
-per module, which is marginal by design.
+across it, so 0.165 mm per pixel is the floor. The wide camera is nearly three
+times coarser and cannot decode a barcode at all; the code cameras reach
+0.157 mm per pixel, which clears the floor rather than sitting on it.
 
-Measured decode yield, with a stock detector over five seeds: of 45 objects
-crossing the gate, 29 fell inside a code camera's swept band and one decoded, as
-`037600138727` on the potted meat can. That is 3.4 percent per readable
-presentation and 2.2 percent per object on the belt. Cropping to the object's
-segmentation bounds before decoding returns zero, because the crop clips the
-barcode's quiet zone.
+The offscreen framebuffer is sized from the declared sensors. MuJoCo defaults it
+to 640 by 480 and this project raised it to 1920 by 1080, which silently capped
+a 2448 pixel sensor. A camera that cannot be rendered at its own resolution has
+a resolution that means nothing.
+
+Measured decode yield, with a stock OpenCV detector over five seeds at the
+sensor's native resolution: of 45 objects crossing the gate, all 45 fell inside
+a code camera's band and 2 decoded, as `037600138727` and `077623000618`, both
+on steel cans. That is 4.4 percent, and both denominators now coincide because
+the gate covers the belt.
+
+The yield is low and the cause is not the optics. A barcode wrapped around a can
+foreshortens non-linearly under a nadir view, and most packages present no
+readable symbol from directly above at all, which is why a real line uses
+omnidirectional readers. Cropping to the object's segmentation bounds before
+decoding returns zero, because the crop clips the barcode's quiet zone.
 
 ## The object set
 
