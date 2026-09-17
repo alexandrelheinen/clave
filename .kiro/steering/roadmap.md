@@ -238,6 +238,39 @@ Beyond v1.0.0, the v1.x line continues in simulation for work that needs no
 hardware. A hardware era would open at v2.0.0 and has no plan in this document,
 matching how FRET separates its own eras.
 
+### Block D: perception identity
+
+v1.0.0 shipped a loop that runs end to end while `docs/architecture.md` records,
+under what is absent, that object identity is ground truth from the simulator.
+Everything downstream already speaks as though a tracker existed. This block
+makes those sentences true.
+
+| Version | Spec | What lands |
+| --- | --- | --- |
+| v1.1.0 | `perception-record` | The perception contract as code: the belt frame, the clock, evidence and its payloads, the sensor adapters, the barcode decoder, the fusion rules, and `WasteObject` |
+| v1.2.0 | `learned-tracker` | The association rule as a trained model, the tracking stage the platform lacks, and the runtime swap away from `associate()` |
+
+**v1.1.0 release criteria.** `clave.tracker` produces a `WasteObject` from
+evidence. An observation taken at one instant propagates to a later one by belt
+speed, proved by a test that moves the clock rather than the object. A `Code`
+associates to an object rather than to a position, and resolves to a bill of
+materials rather than to a material. The material posterior combines visual
+evidence with a code-derived prior, and the code never overrides a confident
+visual reading. Adding a camera edits `configs/world/sorting_line.yml` and
+nothing else, proved by a test rather than asserted. A runtime configured for
+hardware refuses `GroundTruth` at the adapter boundary. The belt frame the
+documents describe is the belt frame the code uses. The barcode decode yield is
+measured on rendered frames and published whatever it is.
+
+**v1.2.0 release criteria.** A tracking candidate is registered, trained from
+one command, and holds one identity across the frames of one rollout with that
+identity derived from observation rather than read from the simulator. A test
+proves `object_id` is a training label and never an inference input. The
+behavior when two objects cross, or touch and segment as one, is stated and
+tested rather than left undefined. The runtime consumes `WasteObject` and no
+longer calls `associate()`. The model's identity recovery is reported against
+the ground-truth associator, including when the comparison is unflattering.
+
 ## Boundary Strategy
 
 - **Why this split**: the study blocks produce documents, the foundation blocks
@@ -296,6 +329,59 @@ outstanding. The section stays because the entries record what was corrected
 and why, which a later reader needs in order to trust the sibling boundaries
 the ladder rests on.
 
+Five defects found while reading the code ahead of Block D. None of them needs a
+spec and none belongs to the tracker, so four were repaired separately from the
+tracker work and the fifth is recorded here against the spec that closes it.
+
+- [x] The belt frame the documents describe is not the one the code uses.
+  `docs/perception-contract.md`, `crates/clave-decision/src/pose.rs` and
+  `configs/runtime/sitl.yml` all put the origin at the upstream edge of the
+  working area with `z` up from the belt surface. Every coordinate on the wire
+  is MuJoCo world: the belt runs from -1.50 m to +1.50 m, the arm base sits at
+  (0, -0.70, 0.90) and the belt surface is at 0.90 m. The documents were
+  corrected to the frame rather than the frame moved to the documents, because
+  the committed golden vectors are frozen by rule and every measured coordinate
+  in `docs/measurements.md` is expressed against it. This matters more than its
+  size suggests: the first invariant of the contract Block D implements is that
+  there is one frame.
+- [x] `window_exit_meters: 0.213` in `configs/training/default.yml` is stale. A
+  sweep of the compiled model puts the reachable window at 2.07 m running
+  -1.034 m to +1.034 m, so the exit coordinate is 1.034 m. The scripted expert
+  is replayed against this value to produce every demonstration, so at 0.213 it
+  is told the window ends 0.82 m before it does. The comment beside the value
+  says a stale number there teaches picks that cannot be made, which is what it
+  is doing. The runtime derives its own figure separately, as
+  `window_length / 2.0` in `clave.runtime.loop`, and gets 1.035; both should
+  read the measured edge so the trainer and the runtime cannot disagree.
+- [x] `Check::Stroke` in `crates/clave-safety/src/verdict.rs` names the previous
+  manipulator, and so do its doc comments, two comments in
+  `crates/clave-safety/tests/safety_test.rs`, and the counter
+  `overridden_stroke` in `crates/clave-sitl/src/service.rs`. A UR10e has no
+  spline and no wedge removed by a stop on axis 1, because axis 1 turns plus or
+  minus 360 degrees. The check itself is sound and tests the measured vertical
+  band, `tool_above_base_meters`. Separately `docs/architecture.md` says three
+  checks run where four do. `AC-MIGRATE-01` covers this. The variant is now
+  `Check::ToolHeight`, reporting as `tool_height` and counted as
+  `overridden_tool_height`. Nothing asserted the old name and no test drove the
+  check, so the rename would have passed silently; both gaps are closed. The two
+  run records under `runs/demos/` keep the former key, because they record runs
+  that happened under it.
+- [x] The rollouts under `datasets/synthetic` were recorded against the previous
+  manipulator. Their `config_digest` is `9fd32bba` against the working tree's
+  `f43162ff`, and their `arm_joints` carries four entries where the `UR10e` has
+  six. Nothing is wrong with the data as a record of the run that made it, so
+  there is nothing to repair; what would be wrong is training on it. This is
+  recorded rather than fixed, and `AC-TRACK-30` in `learned-tracker` makes the
+  digest mismatch fail a training run loudly instead of fitting a world that no
+  longer exists.
+- [ ] `association_radius_meters: 0.12` in `configs/runtime/sitl.yml` was sized
+  for a 0.16 m wide belt, as its own comment says, and the belt is 1.00 m wide.
+  Widening it would be a false fix: `D-12` records the policy at 0.445 m of
+  error, so a gate wide enough to admit those proposals would admit wrong
+  associations rather than recover right ones. The real repair is that the
+  radius stops being a global constant and becomes the track's own propagated
+  footprint plus a gate, which is `perception-record` rather than a config edit.
+
 ## Specs (dependency order)
 
 - [x] training-infrastructure-review -- Survey waste datasets, candidate architectures, and training infrastructure, and name what advances. Dependencies: none
@@ -309,6 +395,8 @@ the ladder rests on.
 - [x] sitl-runtime -- Close the loop in Rust: inference, safety override, decision publication, and the p99 latency benchmark. Dependencies: training-application, sorting-world
 - [x] decision-publisher -- Publish the decision on a ROS 2 topic in the shape FRET's PickPlaceFSM consumes, so FRET can drive the manipulator without CLAVE gaining a planner, a controller or a second simulator. Dependencies: sitl-runtime
 - [x] benchmark-suite -- Compare every candidate in one reproducible benchmark and record the chosen configuration. Dependencies: sitl-runtime, validation-harness
+- [ ] perception-record -- Build the perception contract as code: the belt frame, the clock, evidence and its payloads, the sensor adapters, the barcode decoder, the fusion rules, and the record every consumer reads. Dependencies: sorting-world, data-pipeline, pick-decision-contract
+- [ ] learned-tracker -- Supply the association rule as a trained model over a physical state, open the tracking stage the platform lacks, and take identity away from the simulator. Dependencies: perception-record, model-candidates, training-application
 
 Checkboxes above track the roadmap step, which closes when its deliverable
 lands, not when its spec is written.
@@ -326,6 +414,8 @@ lands, not when its spec is written.
 | sitl-runtime | Approved | Approved | Approved | Delivered, tagged v0.9.0 |
 | decision-publisher | Approved | Approved | Approved | Delivered, tagged v0.10.0 |
 | benchmark-suite | Approved | Approved | Approved | Delivered, tagged v1.0.0 |
+| perception-record | Not started | Not started | Not started | Not started |
+| learned-tracker | Not started | Not started | Not started | Not started |
 | every other spec | Not started | Not started | Not started | Not started |
 
 v0.1.0 delivered its review. The step reports that carried it and the ones after
@@ -347,6 +437,8 @@ Authoring waves, given those dependencies:
 | 5 | training-application |
 | 6 | sitl-runtime |
 | 7 | benchmark-suite |
+| 8 | perception-record |
+| 9 | learned-tracker |
 
 ## What CLAVE reuses from the family
 
