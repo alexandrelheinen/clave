@@ -27,11 +27,10 @@ video:
   # An oblique view down the belt, which shows the objects arriving and the arm
   # reaching across them. The overhead camera the model sees is a different
   # view and a worse one to watch.
-  # Re-aimed for the SCARA line. The arm now hangs from a gantry with its
-  # mounting face 1.66 m up over the belt centre, and the belt runs 3.00 m
-  # rather than 1.20 m, so a
-  # camera framed for the old desk-sized world saw the floor beside it.
+  # Re-aimed for the UR10e line. The arm stands on a pedestal beside the belt
+  # at y = -0.70 and the belt runs 3.00 m rather than 1.20 m, so a camera
+  # framed for the old desk-sized world saw the floor beside it.
   azimuth_degrees: 150.0
   elevation_degrees: -18.0
   distance_meters: 3.10
-  lookat_meters: [0.0, 0.0, 1.05]
+  lookat_meters: [0.0, -0.25, 1.02]

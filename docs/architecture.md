@@ -34,8 +34,9 @@ MuJoCo world ──frame + joints──► Predictor ──Proposal (JSON)──
 
 `clave.world`, holding `scene`, `belt`, `arm`, `objects` and `config`.
 
-A MuJoCo model built from YAML: a conveyor, scanned waste objects, a SCARA
-manipulator on an overhead gantry, and the bins each material class routes to.
+A MuJoCo model built from YAML: a conveyor, scanned waste objects, a UR10e
+manipulator on a pedestal beside the belt, and the bins each material class
+routes to.
 Every tunable comes from configuration, and a missing key fails at load naming
 itself, because a numeric default buried in Python is a default nobody reviews.
 
@@ -45,51 +46,69 @@ itself, because a numeric default buried in Python is a default nobody reviews.
 
 ### The arm
 
-A SCARA in the geometry of an ABB IRB 910SC-3/0.65, built as
-`src/clave/world/mjcf/irb910sc.xml`. D-10 in [decisions.md](decisions.md) records why
-the model is built here rather than adapted from an existing one.
+A Universal Robots UR10e, adopted from MuJoCo Menagerie and vendored under
+`third_party/mujoco_menagerie_ur10e/`. `D-13` in [decisions.md](decisions.md)
+records why a validated model derived from manufacturer CAD outranked an arm
+authored here, and `D-14` why one model is copied rather than a 2.3 GB
+collection pinned to obtain 35 MB of it.
 
-Its four axes are shoulder rotation, elbow rotation, spline travel and spline
-rotation: **RRPR**. The prismatic third axis is what a stack of revolute joints
-cannot imitate, and the fourth axis is why this arm replaced its predecessor. A
-serial arm whose only vertical-axis joint is at the shoulder spends it pointing
-at the object and has none left to orient the tool, so it cannot align a jaw or
-a cup to an object's minor axis. A SCARA's fourth axis does exactly that,
-independently of where the tool sits.
+**Six axes serve a four-axis task.** The line needs a position over the belt and
+a rotation of the tool about the vertical, with the tool held pointing down. Two
+degrees of freedom are surplus. That is deliberate and it is the price of the
+fidelity requirement in [CONTRIBUTING.md](../CONTRIBUTING.md): the machines that
+suit this task exactly, a SCARA or a delta, have no validated open model.
 
-Inverse kinematics are closed form. The first two axes are a planar two-link
-chain, so joint values follow from the law of cosines with no iteration, and
-therefore nothing to converge or stall. `clave.world.arm.reaches` is the single
-geometric test, called both by the world and, through the envelope, by the
-safety layer, so the proposer and the checker cannot read the same geometry two
-different ways.
+**There is no prismatic axis and none can be made.** Locking revolute joints
+removes freedom; it never produces translation along a fixed axis. A vertical
+descent is a task-space constraint instead: inverse kinematics is solved at each
+waypoint with the tool axis held down, which is what an industrial linear move
+does.
 
-**Reachability is not just a radius.** The workspace is an annulus from 0.222 m
-to 0.650 m, with a wedge missing behind the shoulder where axis 1 stops at 140
-degrees, extruded over the 0.180 m spline stroke. A sphere would admit points
-under the shoulder that axis 2 cannot fold to, and points behind the arm that
-axis 1 cannot turn to face.
+Reachability follows from that. A six-axis arm under an orientation constraint
+has no closed-form workspace, so the region the system trusts was **measured by
+sweeping the compiled model**, not derived from link lengths:
 
-#### Where it is mounted, and what else was considered
-
-The arm hangs inverted from a gantry over the belt centerline, which is what
-ABB's own IRB 910INV variant exists for.
-
-| Option | Belt width covered | Why not chosen |
+| Bound | Trusted | Measured |
 | --- | --- | --- |
-| **Inverted over the centerline** | the full 1.00 m | chosen |
-| Floor pedestal beside the belt | 0.428 m | The base must stand at least the 0.222 m dead-zone radius from the near edge and reaches only 0.650 m past it, so most of the belt is unreachable |
-| Inverted, offset to one side | between the two | Buys nothing over centerline mounting and puts the dead zone over a working strip instead of the middle |
-| Two arms, one per side | the full width, twice the throughput | A second manipulator is a throughput decision rather than a reach one, and the first one already covers the width |
+| Inner radius | 0.25 m | unreachable inside 0.200 m |
+| Outer radius | 1.25 m | 1.266 m to 1.309 m by bearing |
+| Vertical band about the base | -0.05 m to +0.45 m | solutions past both ends |
 
-The dead zone under the spline costs pick *time* rather than coverage, because
-the belt carries an object through it and out the far side. That makes the
-centerline the worst case for pick time and the best case for coverage, which
-is the trade the table above settles.
+Every trusted bound sits inside the measured one, so the region under-permits
+rather than over-permits. `clave.world.arm.reaches` applies it, and the safety
+envelope carries the same numbers, so the proposer and the checker cannot read
+the same geometry two ways. A test re-sweeps the region and fails if any point
+it admits stops solving.
 
-The gantry uprights stand clear of the 0.650 m annulus. Standing them at the
-belt edge, which looks natural, puts them inside the arm's own sweep, where the
-arm drives into them and stalls short of every target beyond.
+Unlike the arm it replaced, axis 1 turns plus or minus 360 degrees, so the
+annulus has no missing wedge.
+
+#### Where it stands
+
+Beside the belt, on a pedestal, at 0.70 m from the centreline.
+
+| Option | Belt coverage | Why not chosen |
+| --- | --- | --- |
+| **Pedestal beside the belt, 0.60 to 0.75 m out** | the full 1.00 m | chosen |
+| Pedestal at 0.85 m or further | misses the far edge | Past 0.75 m the far edge leaves the annulus |
+| Inverted on a gantry | almost nothing | A six-axis arm above a plane is near-singular pointing straight down; a sweep found 3 of 27 sample points reachable |
+| A smaller arm such as the UR5e | needs a narrower belt | 0.923 m of reach misses the far edge at every offset tried |
+
+The pedestal is a parallelepiped from the floor to the arm's mounting face. It
+is machine frame and nothing measures it, but an arm floating at working height
+describes no installation anybody could build. Its half-diagonal stays inside
+the 0.25 m inner radius, so the arm cannot drive into the support carrying it.
+
+#### Cycle time
+
+The line carries a budget of **1.0 second** from a published decision to the
+effector reaching the pick point, set by `AC-CYCLE-01`. It is a target rather
+than a derivation: published pick-and-place cycles put delta robots near 0.3 s,
+SCARAs at 0.28 to 0.50 s, six-axis industrial arms at 0.4 to 0.8 s, and
+collaborative arms behind all three.
+
+**It is unmeasured, not met.** Nothing in CLAVE grasps, so the harness reports
+cycle time as unmeasured rather than passing a gate vacuously.
 
 ### Sensing
 

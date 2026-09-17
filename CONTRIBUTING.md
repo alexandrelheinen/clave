@@ -101,6 +101,31 @@ or better. Those are not per-PR negotiations.
 No secrets in the tree, ever. Commit format and PR hygiene follow
 [workflow/commits.md](standards/guidelines/workflow/commits.md).
 
+## Physical fidelity
+
+Any hardware that appears in a frame CLAVE publishes comes from a maintained
+upstream model carrying manufacturer CAD. It is never authored here out of
+primitives.
+
+This is a requirement rather than a preference, and it ranks with the quality
+gates above. CLAVE's output is not only numbers: the stills and videos are how
+the project is read by anyone who does not run it, and a manipulator built from
+capsules reads as a toy however correct its kinematics are. A model nobody
+outside this repository has validated also carries no independent evidence that
+its geometry matches the machine it claims to be.
+
+Two consequences follow, and both are accepted deliberately.
+
+The choice of manipulator is constrained by what upstream collections actually
+publish rather than by what suits the task best. Where the ideal machine has no
+validated model, CLAVE takes the best available one and records what that costs
+in [docs/decisions.md](docs/decisions.md).
+
+A geometric claim about the arm is checked against the compiled model rather
+than against a number in a configuration file or a datasheet. Reach, workspace
+and clearance are measured by sweeping the model, because that is the only
+version of the arm the simulation actually runs.
+
 ## Definition of Ready and Definition of Done
 
 **Ready**

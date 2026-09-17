@@ -15,10 +15,10 @@ physics:
 
 belt:
   # Sized as a recovery-facility picking line rather than as a desk model. The
-  # arm is a SCARA whose workspace is an annulus 0.222 m to 0.650 m wide with a
-  # wedge missing behind the shoulder, where axis 1 stops at 140 degrees. A
-  # sweep confirms every lateral position on a 1.00 m belt is reachable at some
-  # point in its travel. docs/measurements.md carries it.
+  # arm is a UR10e whose trusted workspace is an annulus 0.25 m to 1.25 m about
+  # its base, measured by sweeping the compiled model with the tool held
+  # vertical. A sweep confirms every lateral position on a 1.00 m belt is
+  # reachable at some point in its travel. docs/measurements.md carries it.
   length_meters: 3.00
   # Fully covered, which the previous belt was not. A swept check finds all 51
   # lateral samples across this width reachable, so nothing here is written off
@@ -30,11 +30,9 @@ belt:
   surface_height_meters: 0.90
   # A robotic sorting line rather than a manual one. Manual picking lines run
   # slower because a human reaches at roughly 1 pick per 2 s; published
-  # robotic sorters sustain 60 to 140 picks per minute. At 0.30 m/s an object
-  # stays inside the workspace for 1.4 s on the centerline and up to 3.8 s at
-  # a third of the way out, which docs/measurements.md tabulates. The
-  # centerline is the worst case rather than the best, because the dead zone
-  # sits directly under the arm.
+  # robotic sorters sustain 60 to 140 picks per minute. At 0.31 m/s an object
+  # stays inside the arm's annulus for 3.3 s crossing the centerline, which is
+  # ample against the 1.0 second cycle budget AC-CYCLE-01 sets.
   speed_meters_per_second: [0.25, 0.35]
   # Side guides keep tipped cylinders from rolling off. A real line has them.
   guide_height_meters: 0.04
@@ -65,42 +63,38 @@ spawn:
   drop_height_meters: [0.01, 0.03]
 
 arm:
-  # A SCARA in the geometry of an ABB IRB 910SC-3/0.65, mounted inverted over
-  # the belt centerline. src/clave/world/mjcf/irb910sc.xml is the model and D-10
-  # records why it is built here rather than adapted from an existing arm: a
-  # SCARA is RRPR and every open arm model is all-revolute, so no amount of
-  # locking joints produces its prismatic vertical axis.
+  # A Universal Robots UR10e, adopted from MuJoCo Menagerie and vendored under
+  # third_party/mujoco_menagerie_ur10e/. D-13 records why a validated model
+  # derived from manufacturer CAD outranked the SCARA authored here, and what it
+  # costs: the arm is slower, and two of its six axes go unused.
   #
-  # Inverted rather than on a floor pedestal. ABB ships the IRB 910INV for
-  # exactly this. Hanging the arm over the centerline makes the workspace
-  # symmetric about the belt, so one arm covers the full width; a pedestal
-  # beside the belt covers a strip only 0.428 m wide, because the base has to
-  # sit at least the 0.222 m dead-zone radius from the near edge and can reach
-  # only 0.650 m past it. docs/architecture.md tabulates both options.
+  # Beside the belt, on a pedestal, not overhead. A six-axis arm inverted above
+  # a plane is near-singular pointing straight down; a sweep with the tool held
+  # vertical found 3 of 27 sample points reachable that way against full belt
+  # coverage from the side.
   #
-  # This is the mounting face. The shoulder axis sits 0.251 m below it and the
-  # tool point travels from 0.549 m to 0.729 m below it, which is the 0.180 m
-  # stroke ABB publishes.
-  mount_position_meters: [0.0, 0.0, 1.659]
-  # From the model, not chosen here: the shoulder is this far under the
-  # mounting face, and the reach test needs the shoulder rather than the mount.
-  shoulder_drop_meters: 0.251
-  # The annulus the tool sweeps. The outer radius is arm 1 plus arm 2,
-  # 0.400 + 0.250. The inner radius is where axis 2 stops at 150 degrees, which
-  # folds the tool no closer than this to the shoulder. On a conveyor the dead
-  # zone costs pick time rather than coverage: the belt carries an object
-  # through it and out the far side.
-  reach_min_meters: 0.222
-  reach_max_meters: 0.650
-  # Where the tool point can be, relative to the belt surface. Fully extended
-  # it reaches an object top 0.030 m above the belt; fully retracted it clears
-  # one 0.210 m tall. An object taller than that is struck by the retracted
-  # tool, which is a real property of a 0.180 m stroke rather than a modeling
-  # shortcut, and the object set is bounded to respect it.
-  tool_above_belt_meters: [0.030, 0.210]
-  # The widest object the end effector handles. A suction cup has no opening,
-  # so this bounds what the pick geometry assumes rather than what a jaw can
-  # close on, and it is wide because the arm no longer sets the limit.
+  # This is the top of the pedestal, which is the arm's own base. 0.70 m from
+  # the centreline puts the whole 1.00 m belt inside the annulus below, with the
+  # working range running 0.60 m to 0.75 m.
+  base_position_meters: [0.0, -0.70, 0.90]
+  # The pedestal's footprint. Its half-diagonal stays inside `reach_min_meters`,
+  # so the arm cannot drive into the support carrying it.
+  pedestal_footprint_meters: [0.30, 0.30]
+  # The annulus the arm is trusted over, measured by sweeping the compiled model
+  # with the tool held vertical rather than derived from link lengths: a
+  # six-axis arm under an orientation constraint has no closed-form workspace.
+  # The sweep put the inner limit at 0.200 m and the outer between 1.266 m and
+  # 1.309 m by bearing; these sit inside both, so the trusted region is strictly
+  # smaller than the reachable one. docs/measurements.md carries the sweep.
+  reach_min_meters: 0.25
+  reach_max_meters: 1.25
+  # Where the flange is trusted, relative to the arm's own base rather than to
+  # the belt, because that is the frame the sweep measured in. Solutions exist
+  # well past both ends; these stop short on purpose.
+  tool_above_base_meters: [-0.05, 0.45]
+  # The widest object the end effector handles. The effector is specified
+  # separately, so this bounds what the pick geometry assumes rather than what
+  # any particular jaw can close on.
   max_grasp_width_meters: 0.180
 
 bins:

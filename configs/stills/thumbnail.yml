@@ -16,16 +16,17 @@ still:
   description: >-
     The manipulator mid-reach over the belt with six scanned packages on it,
     covering all four material classes the object set has.
-  # Found by sweeping 40 seeds and every 250th step of a 40 second run for a
-  # moment with five to seven packages on the belt, all four classes present,
-  # and at least one inside the reachable window. This one carries six packages
-  # with four of them reachable and 295 mm between the closest pair, which was
+  # Found by sweeping 16 seeds and every 250th step of a 26 second run for a
+  # moment with five to eight packages on the belt, all four classes present,
+  # and at least three inside the arm's annulus. This one carries seven packages
+  # with six of them reachable and 275 mm between the closest pair, which was
   # the widest spacing any qualifying moment had.
   #
-  # The previous seed and instant were swept against the old desk-sized world
-  # and carry no meaning in this one: at 14.5 s a single package is on the belt.
-  seed: 29
-  capture_at_seconds: 8.5
+  # A seed and instant swept against one manipulator carry no meaning under
+  # another: the previous arm's moment put a single package in reach of this
+  # one, because the annulus grew from 0.43 m of belt to 1.04 m.
+  seed: 1
+  capture_at_seconds: 20.5
   width: 1920
   height: 1080
 
@@ -67,27 +68,27 @@ lighting:
 cameras:
   # Three-quarter views down the length of the belt, from the arm's side.
   # Azimuth is measured from the belt axis, so 180 looks straight down it and
-  # these sit 25 to 40 degrees off that. Re-aimed for the SCARA line: the arm
-  # stands over the belt centre with its mounting face 1.66 m up, and the belt runs
-  # 3.00 m, so the old framing pointed at empty floor. The elevations are
-  # steeper than the old world's because the warehouse dressing did not move
-  # with the belt: a pallet jack stands at (-1.45, -1.10) and sat squarely
-  # between the near-left camera and the line at the shallower angle.
+  # these sit 25 to 40 degrees off that. Re-aimed for the UR10e line: the arm
+  # stands on a pedestal at y = -0.70 rather than over the belt, so the frame
+  # centres between the arm and the line instead of on the belt alone. The
+  # elevations stay steep because the warehouse dressing did not move with the
+  # belt: a pallet jack stands at (-2.00, -1.65) and a shallower angle puts it
+  # between the near-left camera and the machine.
   - name: near-left
     azimuth_degrees: 205.0
-    elevation_degrees: -32.0
-    distance_meters: 3.10
-    lookat_meters: [0.0, 0.0, 1.08]
+    elevation_degrees: -30.0
+    distance_meters: 3.60
+    lookat_meters: [0.0, -0.25, 1.05]
     fovy_degrees: 40.0
   - name: near-right
     azimuth_degrees: 148.0
-    elevation_degrees: -30.0
-    distance_meters: 3.00
-    lookat_meters: [0.0, 0.0, 1.08]
+    elevation_degrees: -28.0
+    distance_meters: 3.40
+    lookat_meters: [0.0, -0.25, 1.05]
     fovy_degrees: 42.0
   - name: low-three-quarter
     azimuth_degrees: 218.0
     elevation_degrees: -28.0
     distance_meters: 3.40
-    lookat_meters: [0.0, 0.0, 1.05]
+    lookat_meters: [0.0, -0.25, 1.02]
     fovy_degrees: 38.0

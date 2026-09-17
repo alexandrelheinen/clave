@@ -101,11 +101,11 @@ measurements that set them.
 | Belt | 3.00 m long, 1.00 m wide, surface at 0.90 m |
 | Belt speed | 0.25 to 0.35 m/s, randomized per run |
 | Conveyor modules | **10 modules of 0.300 m**, spanning the 3.00 m belt |
-| Arm | SCARA in ABB IRB 910SC-3/0.65 geometry, inverted over the belt centerline |
-| Effector workspace | an annulus 0.222 m to 0.650 m, less the wedge axis 1 cannot turn to, over a 0.180 m stroke |
-| Reachable window | 0.428 m of belt on the centerline, 1.4 to 3.8 s per object depending on lateral position |
+| Arm | Universal Robots UR10e, on a pedestal 0.70 m off the belt centerline |
+| Effector workspace | an annulus 0.25 m to 1.25 m about the base, over a 0.50 m vertical band, measured by sweeping the model with the tool held vertical |
+| Reachable window | 1.036 m of belt on the centerline, 3.3 s per object at 0.31 m/s |
 | Sensing | one detection camera and three barcode cameras, all nadir, at a gate 1.00 m upstream |
-| Objects | 14 scanned packages |
+| Objects | 18 scanned packages |
 
 ### The conveyor modules
 
@@ -139,11 +139,12 @@ is the whole problem CLAVE exists to solve.
 | `M-06` Ferrous metal | 4 food cans | YCB |
 | `M-09` Paperboard | 6 cartons | YCB and Scanned Objects |
 
-The selection bound is now the **0.180 m spline stroke** rather than a gripper
-opening: the tool reaches an object top between 0.030 m and 0.210 m above the
-belt, and nothing about the arm limits how wide an object may be. That took the
-candidate pool from 153 models to 836, and admitted four YCB packages the old
-55.7 mm jaw refused, including a 102.5 mm master chef can.
+The set was selected against the previous arm's **0.180 m spline stroke** rather
+than a gripper opening, which took the candidate pool from 153 models to 836 and
+admitted four YCB packages the old 55.7 mm jaw refused, including a 102.5 mm
+master chef can. The UR10e's vertical band is 0.50 m, so that bound no longer
+binds; the end effector is specified separately and is what will set the next
+one.
 
 **Seven classes still have no object, and the gripper was never the reason.**
 Probing both pinned collections for them finds nothing: no PET bottle, no

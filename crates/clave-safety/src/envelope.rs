@@ -18,26 +18,22 @@ use crate::verdict::{Check, Verdict};
 
 /// The volume inside which a pick may be attempted.
 ///
-/// The arm is a SCARA, so the volume is an annulus with a wedge missing,
-/// extruded over the spline stroke, intersected with the belt extent. Each
-/// piece is a real limit of the machine rather than a convenient
-/// approximation: the annulus comes from the two link lengths, the missing
-/// wedge from the stop on axis 1, and the extrusion from the stroke on axis 3.
+/// The arm is a six-axis `UR10e` held with its tool vertical, so the volume is an
+/// annulus about its base, within a vertical band, intersected with the belt
+/// extent.
 ///
-/// A sphere would be the easy shape and the wrong one. It admits points
-/// directly under the shoulder, where axis 2 cannot fold tightly enough to
-/// put the tool, and points behind the arm that axis 1 cannot turn to face.
+/// None of those bounds comes from link lengths, because a six-axis arm under an
+/// orientation constraint has no closed-form workspace. They were measured by
+/// sweeping the compiled model and sit strictly inside what the sweep found
+/// reachable, so this envelope under-permits rather than over-permits.
 /// Admitting a point the arm cannot reach is how a proposer and a checker come
 /// to disagree about the same geometry, which this project has already paid
 /// for once.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Envelope {
-    shoulder: BeltPoint,
-    link_meters: (f64, f64),
+    base: BeltPoint,
     reach_meters: (f64, f64),
-    shoulder_limit_radians: f64,
-    elbow_limit_radians: f64,
-    tool_above_belt_meters: (f64, f64),
+    tool_above_base_meters: (f64, f64),
     belt_surface_z_meters: f64,
     belt_x_meters: (f64, f64),
     belt_y_meters: (f64, f64),
@@ -76,15 +72,11 @@ impl Envelope {
             serde_json::from_slice(bytes).map_err(|error| SafetyError::Malformed {
                 reason: error.to_string(),
             })?;
-        let base = triple(&value, "shoulder_meters")?;
-        let links = interval(&value, "link_meters")?;
+        let base = triple(&value, "base_meters")?;
         let envelope = Self {
-            shoulder: BeltPoint::new(base[0], base[1], base[2]),
-            link_meters: links,
+            base: BeltPoint::new(base[0], base[1], base[2]),
             reach_meters: interval(&value, "reach_meters")?,
-            shoulder_limit_radians: number(&value, "shoulder_limit_radians")?,
-            elbow_limit_radians: number(&value, "elbow_limit_radians")?,
-            tool_above_belt_meters: interval(&value, "tool_above_belt_meters")?,
+            tool_above_base_meters: interval(&value, "tool_above_base_meters")?,
             belt_surface_z_meters: number(&value, "belt_surface_z_meters")?,
             belt_x_meters: interval(&value, "belt_x_meters")?,
             belt_y_meters: interval(&value, "belt_y_meters")?,
@@ -93,10 +85,10 @@ impl Envelope {
         Ok(envelope)
     }
 
-    /// Returns the point axis 1 turns about, in belt frame meters.
+    /// Returns where the arm's base stands, in belt frame meters.
     #[must_use]
-    pub const fn shoulder(&self) -> BeltPoint {
-        self.shoulder
+    pub const fn base(&self) -> BeltPoint {
+        self.base
     }
 
     /// Returns the inner and outer radii of the annulus the tool sweeps.
@@ -155,8 +147,8 @@ impl Envelope {
         if point.z_meters() < self.belt_surface_z_meters {
             return Some(Check::BeltSurface);
         }
-        let above = point.z_meters() - self.belt_surface_z_meters;
-        if above < self.tool_above_belt_meters.0 || above > self.tool_above_belt_meters.1 {
+        let above = point.z_meters() - self.base.z_meters();
+        if above < self.tool_above_base_meters.0 || above > self.tool_above_base_meters.1 {
             return Some(Check::Stroke);
         }
         if !on_belt(point.x_meters(), self.belt_x_meters)
@@ -174,59 +166,18 @@ impl Envelope {
     /// greater than any radius. The arithmetic here cannot produce an
     /// acceptance it should not.
     fn within_reach(&self, point: BeltPoint) -> bool {
-        let dx = point.x_meters() - self.shoulder.x_meters();
-        let dy = point.y_meters() - self.shoulder.y_meters();
+        let dx = point.x_meters() - self.base.x_meters();
+        let dy = point.y_meters() - self.base.y_meters();
         let radius = dx.hypot(dy);
         let (inner, outer) = self.reach_meters;
-        if !(radius >= inner && radius <= outer) {
-            return false;
-        }
-        let (first, second) = self.link_meters;
-        // Law of cosines on the planar two-link chain, the same arithmetic
-        // `clave.world.arm.reaches` performs. The clamp absorbs the rounding
-        // that puts a target exactly at the reach limit a hair outside the
-        // domain of acos, which would otherwise yield NaN and compare false.
-        let cosine = (radius.mul_add(radius, -first.mul_add(first, second * second)))
-            / (2.0 * first * second);
-        let magnitude = cosine.clamp(-1.0, 1.0).acos();
-        let bearing = dy.atan2(dx);
-        // One elbow configuration often clears the stop on axis 1 where the
-        // mirror does not, so both are tried before the point is refused.
-        [magnitude, -magnitude].into_iter().any(|elbow| {
-            if elbow.abs() > self.elbow_limit_radians {
-                return false;
-            }
-            let carried = (second * elbow.sin()).atan2(first + second * elbow.cos());
-            let shoulder = bearing - carried;
-            let wrapped = shoulder.sin().atan2(shoulder.cos());
-            wrapped.abs() <= self.shoulder_limit_radians
-        })
+        radius >= inner && radius <= outer
     }
 
     /// Refuses an envelope that describes no usable volume.
     fn validate(&self) -> Result<(), SafetyError> {
-        for (key, value) in [
-            ("shoulder_limit_radians", self.shoulder_limit_radians),
-            ("elbow_limit_radians", self.elbow_limit_radians),
-        ] {
-            if !(value.is_finite() && value > 0.0) {
-                return Err(SafetyError::InvalidEnvelope {
-                    reason: format!("{key} is not a positive finite number"),
-                });
-            }
-        }
-        // The two link lengths are a pair rather than an ordered interval:
-        // arm 1 is longer than arm 2, so an ordering test would refuse the
-        // real machine. Both must simply be positive.
-        let (first, second) = self.link_meters;
-        if !(first.is_finite() && second.is_finite() && first > 0.0 && second > 0.0) {
-            return Err(SafetyError::InvalidEnvelope {
-                reason: "link_meters does not name two positive lengths".to_owned(),
-            });
-        }
         for (key, (low, high)) in [
             ("reach_meters", self.reach_meters),
-            ("tool_above_belt_meters", self.tool_above_belt_meters),
+            ("tool_above_base_meters", self.tool_above_base_meters),
             ("belt_x_meters", self.belt_x_meters),
             ("belt_y_meters", self.belt_y_meters),
         ] {

@@ -35,8 +35,19 @@ code camera next to it sees a strip a tenth as wide.
 NANOS_PER_SECOND = 1_000_000_000
 """Nanoseconds in a second, for the monotonic times the boundary carries."""
 
-ARM_GAIN = 0.35
-"""How much of each solved inverse kinematics step to apply, as v0.6.2 uses."""
+ARM_GAIN = 1.0
+"""How much of each solved step to command.
+
+One, meaning the solved angles are commanded outright. The arm's own position
+actuators already implement a proportional-derivative loop, so interpolating the
+setpoint on top of them adds a second lag, and a target riding a belt at 0.31 m/s
+exposes it: at 0.35 the tool settled 1.13 m behind the object it was following,
+against 35 mm when the setpoint is commanded directly.
+
+The previous arm hid this. It was light and its targets were nearly static at the
+scale its workspace covered, so a fractional setpoint looked like smoothing
+rather than lag.
+"""
 
 
 class RuntimeConfigError(ClaveError):
@@ -181,32 +192,28 @@ def runtime_config(world: dict[str, Any], routing: RoutingPolicy) -> dict[str, A
     conveyor = config.require(world, "belt")
     length = float(config.require(conveyor, "length_meters", "belt"))
     width = float(config.require(conveyor, "width_meters", "belt"))
-    mount = [
-        float(value) for value in config.require(arm, "mount_position_meters", "arm")
+    base = [
+        float(value) for value in config.require(arm, "base_position_meters", "arm")
     ]
-    drop = float(config.require(arm, "shoulder_drop_meters", "arm"))
-    surface = float(config.require(conveyor, "surface_height_meters", "belt"))
-    above = [
-        float(value) for value in config.require(arm, "tool_above_belt_meters", "arm")
+    band = [
+        float(value) for value in config.require(arm, "tool_above_base_meters", "arm")
     ]
     return {
-        # The shoulder, not the mounting face: the reach test is radial about
-        # axis 1, which sits below the face the arm bolts to.
-        "shoulder_meters": [mount[0], mount[1], mount[2] - drop],
-        # The link lengths travel with the envelope so the safety layer applies
-        # the same two-link arithmetic clave.world.arm applies, rather than an
-        # approximation of it. A sphere over-permits behind the arm, where the
-        # stop on axis 1 cannot turn to face, and under it, where axis 2 cannot
-        # fold tightly enough.
-        "link_meters": [armmod.ARM1_METERS, armmod.ARM2_METERS],
+        # Where the arm stands, which is the top of its pedestal. The reach test
+        # is radial about this point.
+        "base_meters": base,
+        # The annulus and the vertical band, both measured by sweeping the
+        # compiled model with the tool held vertical rather than derived from
+        # link lengths. A six-axis arm under an orientation constraint has no
+        # closed-form workspace, so there is nothing to derive them from.
         "reach_meters": [
             float(config.require(arm, "reach_min_meters", "arm")),
             float(config.require(arm, "reach_max_meters", "arm")),
         ],
-        "shoulder_limit_radians": armmod.SHOULDER_LIMIT_RADIANS,
-        "elbow_limit_radians": armmod.ELBOW_LIMIT_RADIANS,
-        "tool_above_belt_meters": above,
-        "belt_surface_z_meters": surface,
+        "tool_above_base_meters": band,
+        "belt_surface_z_meters": float(
+            config.require(conveyor, "surface_height_meters", "belt")
+        ),
         "belt_x_meters": [-length / 2.0, length / 2.0],
         "belt_y_meters": [-width / 2.0, width / 2.0],
         "channels": routing.channels,

@@ -27,8 +27,19 @@ ENCODER = "ffmpeg"
 """Writes the PNG. No imaging library enters the wheel for one frame."""
 
 
-ARM_GAIN = 0.35
-"""How much of each solved inverse kinematics step to apply, as v0.6.2 uses."""
+ARM_GAIN = 1.0
+"""How much of each solved step to command.
+
+One, meaning the solved angles are commanded outright. The arm's own position
+actuators already implement a proportional-derivative loop, so interpolating the
+setpoint on top of them adds a second lag, and a target riding a belt at 0.31 m/s
+exposes it: at 0.35 the tool settled 1.13 m behind the object it was following,
+against 35 mm when the setpoint is commanded directly.
+
+The previous arm hid this. It was light and its targets were nearly static at the
+scale its workspace covered, so a fractional setpoint looked like smoothing
+rather than lag.
+"""
 
 
 class StillError(ClaveError):

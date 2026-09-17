@@ -90,23 +90,20 @@ def test_the_envelope_is_derived_from_the_world_rather_than_restated() -> None:
     assert derived["belt_surface_z_meters"] == float(
         config.require(belt, "surface_height_meters", "belt")
     )
-    mount = [float(v) for v in config.require(arm, "mount_position_meters", "arm")]
-    drop = float(config.require(arm, "shoulder_drop_meters", "arm"))
-    # The shoulder, not the mounting face: the reach test is radial about axis 1.
-    assert derived["shoulder_meters"] == [mount[0], mount[1], mount[2] - drop]
+    base = [float(v) for v in config.require(arm, "base_position_meters", "arm")]
+    # The arm's mounting face, which is what the reach test is radial about.
+    assert derived["base_meters"] == base
     assert derived["reach_meters"] == [
         float(config.require(arm, "reach_min_meters", "arm")),
         float(config.require(arm, "reach_max_meters", "arm")),
     ]
-    assert derived["tool_above_belt_meters"] == [
-        float(v) for v in config.require(arm, "tool_above_belt_meters", "arm")
+    assert derived["tool_above_base_meters"] == [
+        float(v) for v in config.require(arm, "tool_above_base_meters", "arm")
     ]
-    # The link lengths and the stops come from the model the world loads, so
-    # the safety layer applies the same two-link arithmetic rather than an
-    # approximation of it.
-    assert derived["link_meters"] == [armmod.ARM1_METERS, armmod.ARM2_METERS]
-    assert derived["shoulder_limit_radians"] == armmod.SHOULDER_LIMIT_RADIANS
-    assert derived["elbow_limit_radians"] == armmod.ELBOW_LIMIT_RADIANS
+    # AC-REACH-05: the envelope carries the region clave.world.arm applies, so
+    # the checker cannot admit a point the world calls unreachable.
+    assert derived["reach_meters"] == [armmod.REACH_MIN_METERS, armmod.REACH_MAX_METERS]
+    assert derived["tool_above_base_meters"] == list(armmod.TOOL_ABOVE_BASE_METERS)
 
 
 def test_a_percentile_is_an_observed_sample_rather_than_an_interpolation() -> None:
