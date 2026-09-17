@@ -30,9 +30,11 @@ runtime:
   # on the far side of the belt from the one the policy meant.
   association_radius_meters: 0.12
   # The coordinate frame a pick point is expressed in, carried into every
-  # published message. The belt frame has its origin at the upstream edge of
-  # the working area, with x along belt travel, y across the belt and z normal
-  # to the surface, which is what the decision contract already states.
+  # published message. The belt frame has its origin at the center of the belt
+  # under the arm, with x along belt travel, y across the belt and z measured
+  # from the floor. A 3.00 m belt runs from x = -1.50 to x = +1.50 and its
+  # surface sits at z = 0.90, which is what the decision contract states and
+  # what the safety envelope derived from the world configuration enforces.
   belt_frame: belt
 
 routing:

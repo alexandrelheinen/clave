@@ -122,6 +122,13 @@ detections:
   id: '4815162342'
 ```
 
-A PET bottle at 0.412 m along the belt, 0.085 m to one side, 0.031 m above the
-belt frame origin, rotated 1.047 radians about the belt normal, routed to
-channel 3, reachable from monotonic second 9 for a quarter of a second.
+A PET bottle at 0.412 m along the belt, 0.085 m to one side, rotated 1.047
+radians about the belt normal, routed to channel 3, reachable from monotonic
+second 9 for a quarter of a second.
+
+The coordinates exercise the encoding rather than describe a pick anybody could
+make. In the belt frame `z` is measured from the floor, so this vector's
+`z = 0.031` sits well below a belt surface at 0.90 and the safety layer would
+refuse it on `belt_surface`. That is deliberate: these bytes are frozen and test
+a decoder, and a vector whose numbers were adjusted to stay plausible as the
+line's geometry changed would prove nothing about either.
