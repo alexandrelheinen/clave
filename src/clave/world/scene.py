@@ -236,6 +236,136 @@ def _light_for_presentation(
         )
 
 
+def _annotation_color(annotations: dict[str, Any], channel: str) -> list[float] | None:
+    """The color a channel is drawn in, or None when the still names no colors.
+
+    Args:
+        annotations: The `annotations` section of a still scenario.
+        channel: The channel identifier to look up.
+
+    Returns:
+        A four-component color, or None.
+
+    Raises:
+        KeyError: Through `require`, if colors are declared and this channel is
+            not among them. A figure that silently draws one class in the
+            default color teaches a reader the wrong legend.
+    """
+    colors = annotations.get("channel_colors")
+    if not colors:
+        return None
+    rgb = [float(v) for v in require(colors, channel, "annotations.channel_colors")]
+    return [rgb[0], rgb[1], rgb[2], 1.0]
+
+
+def _annotate_for_presentation(
+    mujoco: Any,
+    world: Any,
+    plan: SceneLayout,
+    annotations: dict[str, Any],
+    bins: dict[str, Any],
+    markers: list[tuple[Any, str]],
+) -> None:
+    """Stand the explanatory geometry in the scene, for a figure.
+
+    This is what keeps a published figure a render rather than a diagram drawn
+    over one. The ring, the window edges and the class markers are geometry the
+    renderer sees, and every quantity they express is read from the resolved
+    layout or from the same reachability sweep the safety layer consults, never
+    from the scenario file.
+
+    Nothing here introduces a body, and every shape carries no mass and no
+    contact, so a world built with annotations has the bodies, coordinates and
+    degrees of freedom of one built without them, and an annotated object falls
+    exactly as an unannotated one does.
+
+    Args:
+        mujoco: The imported module.
+        world: The worldbody the ring and the edges attach to.
+        plan: The resolved scene layout.
+        annotations: The `annotations` section of a still scenario.
+        bins: Channel identifier to the bin geom, for recoloring.
+        markers: Each object body paired with the channel it routes to.
+    """
+    # Imported here rather than at module scope: the reachability sweep lives
+    # in the conveyor module, which reads this module's layout type, so naming
+    # it at the top would close a cycle.
+    from clave.world.belt import reach_report
+
+    inert = {"density": 0.0, "contype": 0, "conaffinity": 0}
+
+    if annotations.get("color_bins"):
+        for channel, geom in bins.items():
+            color = _annotation_color(annotations, channel)
+            if color is not None:
+                geom.rgba = color
+
+    ring = annotations.get("reach_ring")
+    if ring:
+        rgba = [float(v) for v in require(ring, "rgba", "annotations.reach_ring")]
+        thickness = float(require(ring, "thickness_meters", "annotations.reach_ring"))
+        count = int(require(ring, "segment_count", "annotations.reach_ring"))
+        # AC-VIS-03: the radii are the layout's, so a ring cannot outlive the
+        # workspace it describes.
+        for label, radius in (("inner", plan.reach_min), ("outer", plan.reach_max)):
+            for index in range(count):
+                angle = 2.0 * math.pi * index / count
+                world.add_geom(
+                    name=f"annotation_ring_{label}_{index}",
+                    type=mujoco.mjtGeom.mjGEOM_BOX,
+                    size=[radius * math.pi / count, thickness / 2.0, thickness / 2.0],
+                    pos=[
+                        plan.arm_base[0] + radius * math.cos(angle),
+                        plan.arm_base[1] + radius * math.sin(angle),
+                        plan.belt.surface_height + thickness,
+                    ],
+                    quat=[math.cos(angle / 2.0), 0.0, 0.0, math.sin(angle / 2.0)],
+                    rgba=rgba,
+                    **inert,
+                )
+
+    edges = annotations.get("window_edges")
+    if edges:
+        rgba = [float(v) for v in require(edges, "rgba", "annotations.window_edges")]
+        thickness = float(
+            require(edges, "thickness_meters", "annotations.window_edges")
+        )
+        height = float(require(edges, "height_meters", "annotations.window_edges"))
+        # AC-VIS-04: the sweep places these, so the figure and the safety layer
+        # cannot disagree about where an object enters and leaves reach.
+        for label, position in zip(
+            ("open", "close"), reach_report(plan).window_edges, strict=True
+        ):
+            world.add_geom(
+                name=f"annotation_window_{label}",
+                type=mujoco.mjtGeom.mjGEOM_BOX,
+                size=[thickness / 2.0, plan.belt.width / 2.0, height / 2.0],
+                pos=[position, 0.0, plan.belt.surface_height + height / 2.0],
+                rgba=rgba,
+                **inert,
+            )
+
+    tags = annotations.get("class_markers")
+    if tags:
+        radius = float(require(tags, "radius_meters", "annotations.class_markers"))
+        above = float(require(tags, "height_above_meters", "annotations.class_markers"))
+        # AC-VIS-05: the color is the object's own channel rather than a value
+        # the scenario assigns per slot, so the legend cannot drift from the
+        # object set.
+        for body, channel in markers:
+            color = _annotation_color(annotations, channel)
+            if color is None:
+                continue
+            body.add_geom(
+                name=f"{body.name}_marker",
+                type=mujoco.mjtGeom.mjGEOM_SPHERE,
+                size=[radius, 0.0, 0.0],
+                pos=[0.0, 0.0, above],
+                rgba=color,
+                **inert,
+            )
+
+
 def _dress(mujoco: Any, spec: Any, world: Any, raw: dict[str, Any], root: Path) -> bool:
     """Lay the floor and stand the scene dressing on it.
 
@@ -565,6 +695,7 @@ def build(
     rng: np.random.Generator,
     root: Path,
     presentation: dict[str, Any] | None = None,
+    annotations: dict[str, Any] | None = None,
 ) -> tuple[Any, Any, SceneLayout]:
     """Assemble the model.
 
@@ -579,6 +710,11 @@ def build(
             Lighting changes what a render looks like and nothing a body does,
             but the frames a model trains on are renders, which is why this is
             an argument here rather than a key in the world configuration.
+        annotations: Explanatory geometry for a published figure: the reach
+            ring, the window edges, and a marker over each object in the color
+            of the channel it routes to. It reaches the scene the same way
+            lighting does, and default `None` adds nothing, so no dataset,
+            training run or benchmark can see a marker.
 
     Returns:
         The compiled model, its data, and the resolved layout.
@@ -664,8 +800,9 @@ def build(
     spacing = float(require(bins_cfg, "spacing_meters", "bins"))
     offset = float(require(bins_cfg, "offset_from_belt_meters", "bins"))
     first = -spacing * (len(plan.channels) - 1) / 2.0
+    bins: dict[str, Any] = {}
     for index, channel in enumerate(plan.channels):
-        world.add_geom(
+        bins[channel] = world.add_geom(
             name=f"bin_{channel}",
             type=mujoco.mjtGeom.mjGEOM_BOX,
             size=bin_size,
@@ -696,12 +833,14 @@ def build(
                 name=f"asset_{spec.name}", textures=["", f"asset_{spec.name}"]
             )
 
+    markers: list[tuple[Any, str]] = []
     for index in range(plan.pool_size):
         template = plan.objects[index % len(plan.objects)]
         body = world.add_body(
             name=f"object_{index}",
             pos=[PARKED_X + 0.3 * index, PARKED_X, PARKED_Z],
         )
+        markers.append((body, template.channel))
         body.add_freejoint()
         size_a = template.size[0].sample(rng)
         size_b = template.size[1].sample(rng)
@@ -748,6 +887,9 @@ def build(
             pos=[float(position[0]), float(position[1]), float(position[2])],
             fovy=float(require(sensor, "fovy_degrees", "cameras")),
         )
+
+    if annotations:
+        _annotate_for_presentation(mujoco, world, plan, annotations, bins, markers)
 
     frame = world.add_frame()
     # The arm stands on its pedestal, so the attachment point is the pedestal's

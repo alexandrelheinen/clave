@@ -227,3 +227,108 @@ def test_the_arm_meshes_are_committed_rather_than_ignored() -> None:
     assert len(tracked) >= 20, (
         f"only {len(tracked)} arm meshes are tracked, so a clone cannot build the world"
     )
+
+
+def annotated() -> tuple[Any, Any, SceneLayout, dict[str, Any]]:
+    """Build the shipped world with the published figures' annotations."""
+    import yaml
+
+    scenario = yaml.safe_load((ROOT / "configs" / "stills" / "clave.yml").read_text())
+    annotations = scenario["annotations"]
+    raw = config.load(CONFIG)
+    model, data, plan = scene.build(
+        raw, np.random.default_rng(0), ROOT, annotations=annotations
+    )
+    return model, data, plan, annotations
+
+
+def geom_named(model: Any, name: str) -> int:
+    """The id of a geom, or -1 when the model has none by that name."""
+    import mujoco
+
+    return int(mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, name))
+
+
+def test_annotations_add_geometry_and_no_freedom() -> None:
+    """AC-VIS-01 and AC-VIS-02.
+
+    The figures are renders, so the explanation has to be geometry the renderer
+    sees. What it must not be is a change to the world: a marker that added a
+    body, a coordinate or a degree of freedom would put the published figure in
+    a different simulation from the one every measurement runs in.
+    """
+    pytest.importorskip("mujoco")
+    _, _, plain, _, _ = built(0)
+    model, _, _, _ = annotated()
+    assert model.ngeom > plain.ngeom
+    assert (model.nbody, model.nq, model.nv) == (plain.nbody, plain.nq, plain.nv)
+    assert geom_named(plain, "annotation_window_open") < 0
+    assert geom_named(model, "annotation_window_open") >= 0
+
+
+def test_the_ring_stands_at_the_radii_the_layout_carries() -> None:
+    """AC-VIS-03: a ring cannot outlive the workspace it describes."""
+    pytest.importorskip("mujoco")
+    model, _, plan, _ = annotated()
+    for label, radius in (("inner", plan.reach_min), ("outer", plan.reach_max)):
+        geom = geom_named(model, f"annotation_ring_{label}_0")
+        assert geom >= 0, label
+        position = model.geom_pos[geom]
+        offset = np.hypot(
+            position[0] - plan.arm_base[0], position[1] - plan.arm_base[1]
+        )
+        assert offset == pytest.approx(radius, abs=1e-6), label
+
+
+def test_the_window_edges_stand_where_the_sweep_puts_them() -> None:
+    """AC-VIS-04: the figure and the safety layer read one measurement."""
+    pytest.importorskip("mujoco")
+    model, _, plan, _ = annotated()
+    opens, closes = belt.reach_report(plan).window_edges
+    assert model.geom_pos[geom_named(model, "annotation_window_open")][0] == (
+        pytest.approx(opens)
+    )
+    assert model.geom_pos[geom_named(model, "annotation_window_close")][0] == (
+        pytest.approx(closes)
+    )
+
+
+def test_a_marker_carries_its_channel_color_and_no_mass() -> None:
+    """AC-VIS-05.
+
+    The color is read from the object's own channel rather than assigned per
+    pool slot, so the legend cannot drift from the object set. The mass is what
+    keeps an annotated object falling exactly as an unannotated one does.
+    """
+    pytest.importorskip("mujoco")
+    import mujoco
+
+    _, _, plain, _, plan = built(0)
+    model, _, _, annotations = annotated()
+    colors = annotations["channel_colors"]
+    for index in range(plan.pool_size):
+        geom = geom_named(model, f"object_{index}_marker")
+        assert geom >= 0, index
+        channel = plan.objects[index % len(plan.objects)].channel
+        assert list(model.geom_rgba[geom][:3]) == pytest.approx(colors[channel])
+        body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, f"object_{index}")
+        assert model.body_mass[body] == pytest.approx(plain.body_mass[body])
+
+
+def test_a_channel_with_no_color_is_refused() -> None:
+    """A figure that draws one class in the default color teaches a wrong legend."""
+    pytest.importorskip("mujoco")
+    raw = config.load(CONFIG)
+    with pytest.raises(Exception, match="CH-"):
+        scene.build(
+            raw,
+            np.random.default_rng(0),
+            ROOT,
+            annotations={
+                "channel_colors": {"CH-HDPE": [1.0, 0.0, 0.0]},
+                "class_markers": {
+                    "radius_meters": 0.03,
+                    "height_above_meters": 0.16,
+                },
+            },
+        )

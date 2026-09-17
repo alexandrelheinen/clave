@@ -80,6 +80,8 @@ class StillScenario:
         height: Frame height in pixels.
         lighting: Extra lights, headlight and background, passed to the world
             rather than written into it.
+        annotations: Explanatory geometry the scene stands up for a figure,
+            passed the same way and empty by default.
         cameras: The points of view to render.
     """
 
@@ -90,6 +92,7 @@ class StillScenario:
     width: int
     height: int
     lighting: dict[str, Any]
+    annotations: dict[str, Any]
     cameras: tuple[StillCamera, ...]
 
     @classmethod
@@ -118,6 +121,7 @@ class StillScenario:
             width=int(_require(still, "width", "still")),
             height=int(_require(still, "height", "still")),
             lighting=dict(raw.get("lighting") or {}),
+            annotations=dict(raw.get("annotations") or {}),
             cameras=tuple(_camera(entry) for entry in cameras),
         )
 
@@ -230,7 +234,13 @@ def capture(root: Path, scenario: StillScenario, out: Path) -> list[Path]:
 
     raw = config.load(root / "configs" / "world" / "sorting_line.yml")
     rng = np.random.default_rng(scenario.seed)
-    model, data, plan = scene.build(raw, rng, root, presentation=scenario.lighting)
+    model, data, plan = scene.build(
+        raw,
+        rng,
+        root,
+        presentation=scenario.lighting,
+        annotations=scenario.annotations,
+    )
     spawn = config.require(raw, "spawn")
     conveyor = belt.Conveyor(
         plan,

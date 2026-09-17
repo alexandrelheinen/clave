@@ -234,3 +234,52 @@ def test_a_camera_needs_three_numbers_to_look_at(tmp_path: Path) -> None:
     path.write_text(yaml.safe_dump(raw))
     with pytest.raises(StillError, match="three numbers"):
         StillScenario.load(path)
+
+
+def test_the_published_figures_are_named_as_the_page_names_them() -> None:
+    """AC-VIS-06: one scenario, one command, the three files the page points at."""
+    scenario = StillScenario.load(STILLS / "clave.yml")
+    written = [f"{scenario.name}-{camera.name}.png" for camera in scenario.cameras]
+    assert written == ["clave-line.png", "clave-overhead.png", "clave-window.png"]
+    assert scenario.width * 9 == scenario.height * 16
+
+
+def test_the_figures_carry_annotations_and_the_thumbnail_does_not() -> None:
+    """The annotations are a property of the figure, not of every still."""
+    figures = StillScenario.load(STILLS / "clave.yml")
+    assert figures.annotations
+    assert set(figures.annotations) >= {
+        "channel_colors",
+        "reach_ring",
+        "window_edges",
+        "class_markers",
+    }
+    assert not StillScenario.load(STILLS / "thumbnail.yml").annotations
+
+
+def test_no_annotation_reaches_the_shared_world() -> None:
+    """The world every measurement reads must carry no explanatory geometry."""
+    world = yaml.safe_load(
+        (ROOT / "configs" / "world" / "sorting_line.yml").read_text()
+    )
+    assert "annotations" not in world
+
+
+def test_the_figures_show_the_manipulator_the_repository_simulates() -> None:
+    """AC-VIS-07: established by the model the scene loads, not by inspection."""
+    pytest.importorskip("mujoco")
+    import mujoco
+
+    from clave.world import arm, config, scene
+
+    raw = config.load(ROOT / "configs" / "world" / "sorting_line.yml")
+    scenario = StillScenario.load(STILLS / "clave.yml")
+    model, _, _ = scene.build(
+        raw,
+        np.random.default_rng(scenario.seed),
+        ROOT,
+        presentation=scenario.lighting,
+        annotations=scenario.annotations,
+    )
+    for joint in arm.ARM_JOINTS:
+        assert mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, joint) >= 0, joint
