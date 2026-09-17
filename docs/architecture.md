@@ -204,9 +204,10 @@ check could not have told it.
 | Proposal, plus an `Envelope` read from configuration | `Verdict::Accepted`, or `Overridden` naming the check that refused |
 
 The envelope holds the arm base, the reach radius, the belt surface height and
-the belt extents. Three checks run against it: `Reach`, `BeltSurface` and
-`BeltExtent`. A proposal that survives all three becomes a decision; one that
-does not is overridden and the failing check travels back to the caller.
+the belt extents. Four checks run against it: `Reach`, `ToolHeight`,
+`BeltSurface` and `BeltExtent`. A proposal that survives all four becomes a
+decision; one that does not is overridden and the failing check travels back to
+the caller.
 
 ### Routing
 

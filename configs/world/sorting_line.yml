@@ -263,10 +263,11 @@ objects:
     texture: third_party/scanned_objects/models/Now_Designs_Snack_Bags_Bicycle_2_count/texture.png
     density_kg_per_m3: [40, 90]
 
-  # The four YCB packages the 55.7 mm jaw excluded. A suction cup has no
-  # opening, so what bounds an object now is the 0.180 m spline stroke, and all
-  # four clear it. The master chef can is 102.5 mm across and was the largest
-  # thing the old gripper refused outright.
+  # The four YCB packages the 55.7 mm jaw excluded. What bounds an object now is
+  # `arm.max_grasp_width_meters` at 0.180 m, and all four clear it. The master
+  # chef can is 102.5 mm across and was the largest thing the old gripper
+  # refused outright. The end effector is specified separately and is what will
+  # set the next bound.
   - name: master_chef_can
     material_class: M-06
     shape: mesh

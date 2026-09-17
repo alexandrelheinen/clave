@@ -10,12 +10,22 @@ use clave_routing::Routed;
 /// picking off it. Those are three different faults.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Check {
-    /// The point lies outside the annulus the tool sweeps, or inside the wedge
-    /// the stop on axis 1 removes from it.
+    /// The point lies outside the annulus the tool sweeps about the arm base.
+    ///
+    /// The annulus has no missing wedge. Axis 1 of the `UR10e` turns plus or
+    /// minus 360 degrees, so the only bounds are the inner and outer radii,
+    /// both measured by sweeping the compiled model with the tool held
+    /// vertical.
     Reach,
-    /// The point is outside the spline's travel: too close to the belt for the
-    /// tool to extend that far, or too high for it to retract clear.
-    Stroke,
+    /// The point lies outside the vertical band the tool is trusted over,
+    /// either below its floor or above its ceiling.
+    ///
+    /// The band is `tool_above_base_meters`, measured relative to the arm's own
+    /// base because that is the frame the sweep measured in. There is no
+    /// prismatic axis to travel along: a vertical move is inverse kinematics
+    /// solved at each waypoint with the tool axis held down, so what this check
+    /// bounds is where a solution was found rather than how far a slide extends.
+    ToolHeight,
     /// The point lies below the belt surface.
     BeltSurface,
     /// The point lies outside the belt's extent.
@@ -28,7 +38,7 @@ impl Check {
     pub const fn name(self) -> &'static str {
         match self {
             Self::Reach => "reach",
-            Self::Stroke => "stroke",
+            Self::ToolHeight => "tool_height",
             Self::BeltSurface => "belt_surface",
             Self::BeltExtent => "belt_extent",
         }

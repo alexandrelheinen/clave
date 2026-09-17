@@ -14,8 +14,9 @@ use clave_safety::{Check, Envelope, Proposal, SafetyError, Verdict};
 
 const REJECT: ChannelId = ChannelId::new(0);
 
-/// An envelope roughly matching the shipped world: the arm sits beside the
-/// belt, the belt surface is at 0.35 m, and the working area is two meters long.
+/// An envelope matching the shipped world: the arm sits on a pedestal beside
+/// the belt at 0.70 m from the centerline, the belt surface is at 0.90 m, and
+/// the belt is 3.00 m long by 1.00 m wide.
 fn envelope() -> Envelope {
     Envelope::from_json(ENVELOPE_JSON.as_bytes()).unwrap()
 }
@@ -55,9 +56,10 @@ fn wire(x: f64, y: f64, z: f64, confidence: f64) -> String {
 
 /// A point inside every check: on the belt surface, within reach, on the belt.
 fn reachable() -> String {
-    // 0.35 m in front of the shoulder at the origin, clear of the 0.222 m dead
-    // zone, inside the 0.650 m outer radius, and inside the wedge axis 1 can
-    // turn to. At 0.10 m above the belt, which the spline stroke covers.
+    // On the belt centerline over the arm, so 0.70 m from the shoulder: clear
+    // of the 0.25 m inner radius and inside the 1.25 m outer one. At 0.05 m
+    // above the belt surface, inside the trusted vertical band of -0.05 m to
+    // +0.45 m about the base.
     wire(0.0, 0.0, 0.95, 0.90)
 }
 
@@ -102,9 +104,9 @@ fn a_malformed_payload_is_reported_rather_than_fatal() {
 
 #[test]
 fn a_point_beyond_reach_is_overridden_naming_the_check() {
-    // AC-SAFETY-01 and AC-SAFETY-04. The point is on the belt and inside the
-    // stroke; only the distance from the shoulder disqualifies it, at 1.2 m
-    // against an outer radius of 0.650 m.
+    // AC-SAFETY-01 and AC-SAFETY-04. The point is at the belt surface height
+    // and inside the trusted vertical band; only the distance from the shoulder
+    // disqualifies it, at 2.90 m against an outer radius of 1.25 m.
     let proposal = Proposal::decode(wire(0.0, 2.20, 0.95, 0.90).as_bytes()).unwrap();
     let verdict = envelope().judge(&proposal, &resolver()).unwrap();
     assert_eq!(verdict.overridden_check(), Some(Check::Reach));
@@ -116,6 +118,20 @@ fn a_point_below_the_belt_surface_is_overridden() {
     let proposal = Proposal::decode(wire(0.0, 0.0, 0.80, 0.90).as_bytes()).unwrap();
     let verdict = envelope().judge(&proposal, &resolver()).unwrap();
     assert_eq!(verdict.overridden_check(), Some(Check::BeltSurface));
+}
+
+#[test]
+fn a_point_above_the_trusted_vertical_band_is_overridden() {
+    // AC-SAFETY-02. Reachable at 0.70 m from the shoulder and above the belt
+    // surface, so only the height disqualifies it: 1.40 m is 0.50 m above a
+    // base at 0.90 m, against a trusted ceiling of 0.45 m.
+    //
+    // Only the ceiling is reachable through this check. The band's floor sits
+    // at 0.85 m and the belt surface at 0.90 m, so any point low enough to fail
+    // the floor fails `BeltSurface` first, which runs before it.
+    let proposal = Proposal::decode(wire(0.0, 0.0, 1.40, 0.90).as_bytes()).unwrap();
+    let verdict = envelope().judge(&proposal, &resolver()).unwrap();
+    assert_eq!(verdict.overridden_check(), Some(Check::ToolHeight));
 }
 
 #[test]
@@ -222,6 +238,7 @@ fn each_check_carries_a_stable_name_a_counter_can_use() {
     // AC-SAFETY-04. An operator reading a rising override count needs to know
     // whether the model reaches too far, aims into the belt, or picks off it.
     assert_eq!(Check::Reach.name(), "reach");
+    assert_eq!(Check::ToolHeight.name(), "tool_height");
     assert_eq!(Check::BeltSurface.name(), "belt_surface");
     assert_eq!(Check::BeltExtent.name(), "belt_extent");
 }
