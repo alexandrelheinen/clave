@@ -166,9 +166,11 @@ class NadirOptics:
         assuming one.
 
         The render height is an argument rather than the sensor's declared
-        resolution, because the two differ: the cameras declare 1920 by 1080
-        and `configs/data/recording.yml` renders 320 by 240. A factor fitted to
-        one and applied to the other is wrong by the ratio.
+        resolution, because the two differ: the cameras declare an IMX264 at
+        2448 by 2048 and `configs/data/recording.yml` renders 320 by 240. A
+        factor fitted to one and applied to the other is wrong by the ratio,
+        and that gap is not academic. Measured at 1080 pixels the shipped code
+        cameras decode no barcode at all; measured at their own 2448 they do.
 
         Args:
             surface_height: Height of the imaged surface, in belt frame meters.

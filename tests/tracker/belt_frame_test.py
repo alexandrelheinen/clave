@@ -22,6 +22,10 @@ from clave.tracker.belt_frame import (
     elapsed_seconds,
     propagate,
 )
+from clave.world.config import load, require
+from clave.world.scene import field_of_view
+
+ROOT = Path(__file__).resolve().parents[2]
 
 NANOS_PER_SECOND = 1_000_000_000
 
@@ -129,14 +133,28 @@ def test_a_footprint_that_declines_to_state_a_yaw_says_so() -> None:
 def test_the_nadir_scale_factor_matches_the_configured_detection_camera() -> None:
     """AC-TRACK-46.
 
-    docs/measurements.md records gate_wide at 0.652 mm per pixel at the belt
-    surface. The optics are derived from configuration rather than restated, so
-    this fails if either drifts.
+    The optics are read from the shipped configuration rather than restated
+    here, so this fails when the line is re-lensed and the figure in
+    docs/measurements.md is not.
+
+    An earlier version of this test hardcoded the camera height and the field
+    of view and claimed in its own docstring to be derived from configuration.
+    It passed unchanged through a change of sensor, lens, standoff and mounting
+    angle, which is what a test asserting a number nobody reads does.
     """
-    optics = NadirOptics(camera_height=1.750, fovy_degrees=45.0)
-    assert optics.meters_per_pixel(
-        surface_height=0.90, render_height=1080
-    ) == pytest.approx(0.000652, abs=5e-7)
+    raw = load(ROOT / "configs" / "world" / "sorting_line.yml")
+    surface = float(require(require(raw, "belt"), "surface_height_meters", "belt"))
+    wide = next(c for c in require(raw, "cameras") if str(c["role"]) == "detection")
+    pixels = max(require(require(raw, "sensors")[str(wide["sensor"])], "pixels"))
+
+    optics = NadirOptics(
+        camera_height=float(wide["position_meters"][2]),
+        fovy_degrees=field_of_view(
+            wide, require(raw, "sensors"), require(raw, "lenses")
+        ),
+    )
+    measured = optics.meters_per_pixel(surface_height=surface, render_height=pixels)
+    assert measured * 1000.0 == pytest.approx(0.449, abs=5e-4)
 
 
 def test_the_scale_factor_is_taken_at_the_object_and_not_at_the_belt() -> None:
@@ -146,6 +164,7 @@ def test_the_scale_factor_is_taken_at_the_object_and_not_at_the_belt() -> None:
     0.10 m object inflates its footprint by 13.3 percent, and that error reaches
     grasp_width and the mass band.
     """
+    # Literal optics on purpose: this is the arithmetic, not the shipped line.
     optics = NadirOptics(camera_height=1.750, fovy_degrees=45.0)
     at_belt = optics.meters_per_pixel(surface_height=0.90, render_height=1080)
     at_object = optics.meters_per_pixel(surface_height=1.00, render_height=1080)
