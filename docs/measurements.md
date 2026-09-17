@@ -136,15 +136,48 @@ twice that. At the configured belt speeds the window is 5.92 s of travel at
 
 ## Sensing
 
-| Sensor | Role | Field across the belt | Resolution |
-| --- | --- | --- | --- |
-| `gate_wide` | detection | 1.252 m | 0.652 mm per pixel |
-| three code cameras | code | 0.342 m each | 0.178 mm per pixel |
+| Sensor | Role | Across the belt | Along belt travel | Resolution |
+| --- | --- | --- | --- | --- |
+| `gate_wide` | detection | 0.704 m | 1.252 m | 0.652 mm per pixel |
+| three code cameras | code | 0.192 m each | 0.342 m each | 0.178 mm per pixel |
+
+Two columns rather than one, because the two axes differ and conflating them
+understates nothing and overstates the coverage badly. `fovy` is a vertical
+field of view, so it sets the image height axis, and for a nadir camera whose
+image is 16 by 9 that axis lies across the belt while the longer one lies along
+travel. The figures quoted as coverage before this table separated them were the
+along-travel extents.
+
+Swept rather than trusted to that arithmetic. Stepping an object laterally at
+20 mm and reading the segmentation render, `gate_wide` returns pixels for
+positions from -0.400 m to +0.380 m, and the code cameras for -0.460 m to
+-0.220 m, -0.100 m to +0.100 m and +0.240 m to +0.460 m. The swept spans exceed
+the arithmetic ones because an object has width, so one centered just outside a
+frame still shows pixels inside it.
+
+| Coverage of the 1.00 m belt width | Swept |
+| --- | --- |
+| `gate_wide` | 0.800 m, 78 percent |
+| the three code cameras together | 73 percent, with dead bands near 0.12 m to 0.22 m each side |
+
+Neither covers the belt. Objects spawn out to 0.42 m from the centerline, so
+the detection camera does not see every object on the line, and a third of the
+width can never present a barcode to any code camera. Covering the full width
+at the configured standoff needs `gate_wide` near 62 degrees rather than 45.
+That is a change to the world rather than to a document, so it is recorded
+rather than made here.
 
 An EAN-13 narrow module is about 0.33 mm and decoding wants roughly two pixels
 across it, so 0.165 mm per pixel is the floor. The wide camera is four times
 coarser and cannot decode a barcode at all; the narrow cameras reach 1.9 pixels
 per module, which is marginal by design.
+
+Measured decode yield, with a stock detector over five seeds: of 45 objects
+crossing the gate, 29 fell inside a code camera's swept band and one decoded, as
+`037600138727` on the potted meat can. That is 3.4 percent per readable
+presentation and 2.2 percent per object on the belt. Cropping to the object's
+segmentation bounds before decoding returns zero, because the crop clips the
+barcode's quiet zone.
 
 ## The object set
 
