@@ -396,7 +396,15 @@ def run(
         config.require_range(spawn, "drop_height_meters", "spawn"),
         entry_margin=float(config.require(spawn, "entry_margin_meters", "spawn")),
     )
-    half_window = conveyor.report.window_length / 2.0
+    # The swept downstream edge, not half the window's length. Those agree only
+    # while the arm stands at the belt centre, so the second is a latent defect
+    # that moving the arm would expose.
+    exit_coordinate = belt.window_exit(conveyor.plan)
+    if exit_coordinate is None:
+        raise RuntimeConfigError(
+            "the belt never enters the arm's reach, so this world can publish "
+            "no decision"
+        )
     indices = armmod.locate(model)
     renderer = mujoco.Renderer(
         model, height=settings.frame_height, width=settings.frame_width
@@ -439,7 +447,7 @@ def run(
         for _ in range(int(settings.seconds / plan.timestep)):
             mujoco.mj_step(model, data)
             conveyor.step(model, data)
-            labels = _labels(model, data, conveyor, half_window)
+            labels = _labels(model, data, conveyor, exit_coordinate)
             reachable = [label for label in labels if label.in_reachable_window]
             if reachable:
                 armmod.step_toward(
@@ -475,14 +483,15 @@ def run(
                 float(angle) for angle in armmod.joint_positions(model, data, indices)
             )
             truth.update({label.object_id: label.material_class for label in labels})
-            prediction = predictor.predict(frame, joints, labels, half_window)
+            prediction = predictor.predict(frame, joints, labels, exit_coordinate)
             if prediction is None:
                 report.silent_frames += 1
                 continue
 
             now = time.monotonic_ns()
             remaining = max(
-                0.0, (half_window - prediction.point[0]) / conveyor.report.belt_speed
+                0.0,
+                (exit_coordinate - prediction.point[0]) / conveyor.report.belt_speed,
             )
             outcome = bridge.submit(
                 Proposal(
@@ -574,7 +583,7 @@ def _publisher(settings: RuntimeSettings, report: RunReport) -> Any:
 
 
 def _labels(
-    model: Any, data: Any, conveyor: belt.Conveyor, half_window: float
+    model: Any, data: Any, conveyor: belt.Conveyor, exit_coordinate: float
 ) -> tuple[Any, ...]:
     """Read every active object's label straight from the world."""
     import mujoco
