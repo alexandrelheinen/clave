@@ -26,9 +26,11 @@ that converts that camera's output into evidence.
 Everything below rests on two properties, and neither is negotiable.
 
 **One frame.** Every observation is expressed in the belt frame: `x` along belt
-travel, `y` across it, `z` up from the belt surface, origin at the upstream
-edge on the centerline. A sensor reports in its own frame, and the adapter that
-wraps it converts. A consumer never sees pixels or camera coordinates.
+travel, `y` across it, `z` from the floor the line stands on, origin at the
+center of the belt on the centerline, under the arm. A 3.00 m belt runs from
+`x = -1.50` to `x = +1.50`, its surface sits at `z = 0.90`, and the sensing gate
+is upstream at `x = -1.00`. A sensor reports in its own frame, and the adapter
+that wraps it converts. A consumer never sees pixels or camera coordinates.
 
 **One clock.** Every observation carries the monotonic instant it was taken.
 Because the belt speed is known, an observation at `t0` can be propagated to any

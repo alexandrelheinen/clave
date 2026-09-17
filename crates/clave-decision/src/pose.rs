@@ -4,10 +4,18 @@ use crate::window::MonotonicNanos;
 
 /// A point in the belt frame, in meters.
 ///
-/// The belt frame has its origin at the upstream edge of the working area,
-/// with `x` running along belt travel, `y` across the belt, and `z` normal to
-/// the belt surface. The frame is the one the line is calibrated in, and it is
-/// the same frame the effector is commanded in.
+/// The belt frame has its origin at the center of the belt, under the arm, with
+/// `x` running along belt travel, `y` across the belt, and `z` measured from the
+/// floor the line stands on rather than from the belt surface. A 3.00 m belt
+/// therefore runs from `x = -1.50` to `x = +1.50`, and its surface sits at
+/// `z = 0.90`. The frame is the one the line is calibrated in, and it is the
+/// same frame the effector is commanded in.
+///
+/// The origin is where it is because the world places it there, not because a
+/// belt center is a better datum than a belt edge. Every coordinate this
+/// project has measured, every committed golden vector and the safety
+/// envelope's own bounds are expressed against it, so the documents were
+/// corrected to the frame rather than the frame moved to the documents.
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[expect(
     clippy::struct_field_names,
