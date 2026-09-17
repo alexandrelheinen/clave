@@ -46,9 +46,20 @@ def test_every_randomizable_belt_and_spawn_value_is_a_range() -> None:
     # carries scalars and the list itself is what varies between lines.
     assert raw["cameras"], "the shipped line declares at least one sensor"
     for sensor in raw["cameras"]:
-        assert {"id", "role", "position_meters", "fovy_degrees", "resolution"} <= set(
-            sensor
-        )
+        assert {
+            "id",
+            "role",
+            "position_meters",
+            "sensor",
+            "lens",
+            "long_axis",
+        } <= set(sensor)
+        # A camera names the parts it is built from. An angle written directly
+        # is a number nobody can check against a catalog, so `fovy` is derived
+        # and must not appear here.
+        assert "fovy_degrees" not in sensor, sensor["id"]
+        assert sensor["sensor"] in raw["sensors"]
+        assert sensor["lens"] in raw["lenses"]
 
 
 def test_an_object_wider_than_the_gripper_is_refused() -> None:
