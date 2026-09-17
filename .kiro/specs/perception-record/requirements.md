@@ -64,6 +64,21 @@ set, settled by `D-11`. The R2 upload application.
   checkpoint, which is what keeps it testable on a machine with no deep
   learning framework, the property `learning-platform` established and every
   step since has kept.
+- **The posterior has only one producer today, and it is the simulator.** No
+  per-instance classifier exists: the model in `clave.runtime.inference` is
+  whole-frame and multi-label, and the line carries no spectral sensor. So
+  `material`, and the `density` and mass band that follow from it, are
+  restatements of `GroundTruth.material_class` until a `Material` producer
+  lands. `AC-TRACK-49` requires the record to say so rather than let a reader
+  assume otherwise, because a record that quietly launders a simulator label
+  into a perceived one is the exact failure this spec exists to end.
+- **The sensing gate does not cover the belt it stands over.** Measured by
+  sweeping objects across the belt and reading the segmentation render,
+  `gate_wide` images 0.800 m of the 1.00 m width and the three code cameras
+  image 73 percent of it with two dead bands near y = 0.12 m to 0.22 m on each
+  side. This caps `AC-TRACK-15` geometrically and it is a defect in the world
+  rather than in the tracker, so it is recorded against `sorting-world` and this
+  spec measures against the gate as it stands rather than repairing it.
 
 ## Acceptance criteria
 
@@ -74,7 +89,9 @@ with `x` along belt travel, `y` across it, `z` measured from the floor, and the
 origin at the center of the belt on the centerline.
 
 `AC-TRACK-02`: When a sensor reports in its own frame, the adapter wrapping it
-shall convert, and no consumer shall receive pixel or camera coordinates.
+shall convert, and no consumer of `WasteObject` shall receive pixel or camera
+coordinates. An instance mask is pixel-indexed by definition, so it may travel
+inside `Evidence`, which is adapter-side, and shall not appear in the record.
 
 `AC-TRACK-03`: The system shall carry a monotonic instant on every observation.
 
@@ -97,8 +114,9 @@ instruction, a channel or a grasp.
 `AC-TRACK-08`: When a runtime is configured for hardware, the adapter boundary
 shall refuse `GroundTruth`, naming the source that offered it.
 
-`AC-TRACK-09`: When a payload variant is added, a consumer that does not know it
-shall keep working, proved by a test that adds one.
+`AC-TRACK-09`: When evidence carries a payload no fusion rule knows, the system
+shall report the miss and leave the track otherwise unchanged, and the emitted
+`WasteObject` shall keep its shape, proved by a test that folds one.
 
 `AC-TRACK-10`: When the detection camera renders a frame, the `Detection`
 adapter shall report an oriented footprint in the belt frame and an instance
@@ -156,17 +174,66 @@ shall narrow that band when a GTIN resolved to a packaging mass.
 `AC-TRACK-23`: The system shall leave `channel` to the routing policy rather
 than resolving it in perception.
 
-`AC-TRACK-24`: When belt travel invalidates the pose, `valid_until` shall say
-so.
+`AC-TRACK-24`: The system shall set `valid_until` to the instant the propagated
+footprint centre reaches the reachable window exit at 1.034 m, which is the
+sweep recorded in `docs/measurements.md` rather than a tolerance chosen here.
 
 ### The abstraction holds
 
-`AC-TRACK-25`: When a camera is added, moved or removed, the change shall be
-confined to `configs/world/sorting_line.yml`, proved by a test that adds one and
-asserts the record is unchanged in shape.
+`AC-TRACK-25`: When a camera of an existing role is added or moved, the change
+shall be confined to `configs/world/sorting_line.yml`, proved by a test that
+adds one and asserts the record is unchanged in shape. A new role, or a sensor
+whose output shape differs, costs one adapter and nothing else, which is what
+the contract's change table states.
+
+`AC-TRACK-25b`: When no camera produces a role the tracker was configured to
+fuse, the system shall say so at load rather than emit records silently missing
+that evidence.
 
 `AC-TRACK-26`: When the association implementation is replaced, nothing above
 the protocol shall change, which is the property `learned-tracker` depends on.
+
+### What the first draft of this spec got wrong
+
+These criteria were added after an adversarial design review refuted claims the
+earlier draft rested on. They are numbered from 45 because `AC-TRACK-27` through
+`AC-TRACK-44` belong to `learned-tracker` and ids are never reused.
+
+`AC-TRACK-45`: When the `Detection` adapter reads a segmentation render, it
+shall discard the geometry name that render is keyed by, and no value derivable
+from `ObjectLabel.object_id` shall reach a `Track` or a `WasteObject` through
+the detection path.
+
+`AC-TRACK-46`: When a pixel footprint is converted into the belt frame, the
+system shall scale it at the object's estimated upper surface rather than at the
+belt plane, and shall record where that height came from.
+
+`AC-TRACK-47`: When the decode yield is reported, the system shall state both
+denominators, meaning decodes per object crossing the gate and decodes per
+object inside a code camera's measured lateral band.
+
+`AC-TRACK-48`: The system shall place the `GroundTruth` refusal on the only path
+by which evidence enters a track, so that no caller reaches a track without
+passing it.
+
+`AC-TRACK-49`: When any field of `WasteObject` derives from `GroundTruth` rather
+than from a sensor, the record shall disclose that, so a reader can separate
+what was perceived from what was supplied without reading the code.
+
+`AC-TRACK-50`: The system shall state how every adapter derives its
+`confidence`, and no adapter shall report a constant without naming in its
+documentation why the constant is correct.
+
+`AC-TRACK-51`: When a class receives zero weight from every folded payload, the
+posterior shall remain a proper distribution under a floor that is configuration
+rather than a constant in code.
+
+`AC-TRACK-52`: When the barcode decoder runs in the quality gate, it shall
+decode a committed fixture, so that a zero rendered yield reports a property of
+the optics rather than a broken decoder.
+
+`AC-TRACK-53`: When evidence arrives out of order, meaning an observation older
+than the track's last update, the system shall not weight it above a newer one.
 
 ## Traceability
 
@@ -199,28 +266,61 @@ far side of the seam. Shipping the ground-truth implementation here means
 `learned-tracker` is measured against a working system rather than against
 nothing, and it means this spec can be validated before any model exists.
 
-**What the `Detection` adapter actually sees.** `src/clave/data/recorder.py`
-derives exact per-object pixel bounds from a MuJoCo segmentation render, which
-is what an instance segmenter produces. The adapter converts those bounds to a
-belt-frame footprint through the nadir scale factor, which is a scale factor
-rather than a homography because every camera looks straight down. The
-simulator therefore supplies a per-frame mask and no cross-frame identity. That
-is a real removal of identity from the simulator and it is not a removal of
-segmentation from it, and the module documentation says so rather than leaving
-a reader to infer it.
+**What the `Detection` adapter actually sees, and the trap in it.**
+`src/clave/data/recorder.py` derives exact per-object pixel bounds from a MuJoCo
+segmentation render, which is what an instance segmenter produces. The adapter
+converts those bounds to a belt-frame footprint.
 
-**Why the barcode decoder is worth building even at a low yield.** The YCB
-package textures carry real printed UPC-A symbols, and one renders legibly
+The conversion needs a height and cannot use a constant. Under a nadir camera
+the scale factor is set by the object's upper surface rather than by the belt
+plane, so applying the belt-plane factor inflates the footprint of a 0.10 m
+object by 13.3 percent and a 0.15 m one by 21.4 percent. That error feeds
+`grasp_point`, `grasp_width` and the mass band, which is why the contract pairs
+`Height` with `Detection` and why `AC-TRACK-10` cannot be satisfied by a
+multiplication.
+
+The trap is identity. `_boxes_from_segmentation` keys its result on the MuJoCo
+geometry name, which is `object_<slot>`, and `clave.world.belt.Conveyor._place`
+makes that slot the same integer as `SpawnedObject.index`, which
+`clave.runtime.loop._labels` then hands out as `ObjectLabel.object_id`. The mask
+key and the simulator's object identity are the same number. So the segmentation
+render does carry cross-frame identity, and an adapter that passes the key
+through would hand the tracker the answer while appearing to perceive it.
+`AC-TRACK-45` requires the key to be discarded at the adapter boundary and a
+test to prove nothing downstream can recover it.
+
+What remains true is narrower and worth stating exactly. The simulator supplies
+a per-frame instance mask, which is what a real segmenter supplies; it also
+supplies a name that a real segmenter would not, and that name is thrown away.
+Nothing here removes segmentation from the simulator, and no number this
+produces is evidence that pixels were segmented by a model.
+
+**Why the barcode decoder is worth building at the yield it actually has.** The
+YCB package textures carry real printed UPC-A symbols, and they render legibly
 through the gate code camera at roughly 1.9 pixels per module, matching the
-figure `docs/measurements.md` already derives from the EAN-13 module width. A
-stock detector reads one of seven YCB textures at full 4096 by 4096 resolution
-before curvature, pose and gate-camera sampling take their cut, so the rendered
-yield will be lower than that. The fusion rules are therefore tested against
-constructed `Code` evidence and hold whatever the decoder achieves, and
-`AC-TRACK-15` requires the achieved number to be published rather than the
-hoped-for one. A barcode wrapped around a can foreshortens non-linearly under a
-nadir view, which is a real property of the sensor arrangement rather than a
-defect in the decoder, and it is why a real line uses omnidirectional readers.
+figure `docs/measurements.md` derives from the EAN-13 module width. The path
+works end to end: over five seeds a stock detector read `037600138727` off a
+rendered gate frame, a genuine Hormel GTIN on the potted meat can, correctly an
+`M-06`.
+
+The yield is the finding. Of 45 gate crossings, 29 fell inside a code camera's
+measured lateral band and one decoded, which is 3.4 percent per readable
+presentation and 2.2 percent per object on the belt. `AC-TRACK-47` requires both
+denominators because a single figure here is misleading in either direction.
+Rectification does not rescue it: cropping to the object's segmentation bounds
+drops the yield to zero by clipping the barcode's quiet zone, and upscaling that
+crop fourfold only returns it to what the raw frame already gave, so the adapter
+decodes the full gate frame and carries no rectification step it cannot justify.
+
+Two causes are separable and both are real. A barcode wrapped around a can
+foreshortens non-linearly under a nadir view, which is a property of the sensor
+arrangement rather than a defect in the decoder and is why a real line uses
+omnidirectional readers. And the three code cameras do not tile the belt, so a
+third of the width is never presented to one at all.
+
+The fusion rules are therefore tested against constructed `Code` evidence and
+hold whatever the decoder achieves, and `AC-TRACK-52` keeps a committed fixture
+on the gate so a future zero is read as optics rather than as breakage.
 
 **Why mass is a band.** Density times footprint volume is weak, because a
 bottle empty or half full differs tenfold and that difference decides whether a
