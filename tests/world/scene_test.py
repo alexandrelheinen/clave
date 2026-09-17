@@ -204,3 +204,26 @@ def test_the_arm_model_is_committed_rather_than_ignored() -> None:
         f"{scene.ARM_MODEL} is not tracked by git, so a clone cannot build the "
         f"world: {tracked.stderr.strip()}"
     )
+
+
+def test_the_arm_meshes_are_committed_rather_than_ignored() -> None:
+    """A clone has to carry the arm's meshes, and CI proved that is not automatic.
+
+    The model file was tracked while its `assets/` directory was not, because
+    `.gitignore` carried an unanchored `assets/` rule meant for one generated
+    directory at the repository root. It matched the vendored manipulator's own
+    mesh directory too, and every test that builds a world failed on a fresh
+    checkout while passing here. This asserts what git tracks, not what happens
+    to be on this disk.
+    """
+    meshes = subprocess.run(
+        ["git", "ls-files", str(scene.ARM_MODEL.parent / "assets")],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    tracked = [line for line in meshes.stdout.splitlines() if line.strip()]
+    assert len(tracked) >= 20, (
+        f"only {len(tracked)} arm meshes are tracked, so a clone cannot build the world"
+    )
