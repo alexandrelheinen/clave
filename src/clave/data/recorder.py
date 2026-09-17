@@ -18,6 +18,7 @@ import numpy as np
 
 from clave.data.examples import Example, ObjectLabel, Origin, Rollout
 from clave.data.expert import decide
+from clave.errors import ClaveError
 from clave.world import arm as armmod
 from clave.world import belt, config, scene
 
@@ -41,6 +42,10 @@ The previous arm hid this. It was light and its targets were nearly static at th
 scale its workspace covered, so a fractional setpoint looked like smoothing
 rather than lag.
 """
+
+
+class RecordingError(ClaveError):
+    """A world cannot produce the demonstrations a recording needs."""
 
 
 def _ensure_software_rendering() -> None:
@@ -93,7 +98,7 @@ def _labels_for(
     model: Any,
     data: Any,
     conveyor: belt.Conveyor,
-    half_window: float,
+    exit_coordinate: float,
     boxes: dict[str, tuple[int, int, int, int]],
 ) -> tuple[ObjectLabel, ...]:
     """Read every active object's label straight from the world."""
@@ -158,7 +163,15 @@ def record(
         config.require_range(spawn, "drop_height_meters", "spawn"),
         entry_margin=float(config.require(spawn, "entry_margin_meters", "spawn")),
     )
-    half_window = conveyor.report.window_length / 2.0
+    # The swept downstream edge, not half the window's length. Those agree only
+    # while the arm stands at the belt centre, and the expert replayed below
+    # ranks objects by their distance to this coordinate.
+    exit_coordinate = belt.window_exit(conveyor.plan)
+    if exit_coordinate is None:
+        raise RecordingError(
+            "the belt never enters the arm's reach, so no demonstration can be "
+            "recorded from this world"
+        )
 
     indices = armmod.locate(model)
     renderer = mujoco.Renderer(model, height=height, width=width)
@@ -166,7 +179,6 @@ def record(
     segmenter.enable_segmentation_rendering()
     examples: list[Example] = []
     next_capture = 0.0
-    half_window = conveyor.report.window_length / 2.0
     for _ in range(int(seconds / plan.timestep)):
         mujoco.mj_step(model, data)
         conveyor.step(model, data)
@@ -174,8 +186,8 @@ def record(
         # Drive the arm toward whatever the scripted expert would pick. Without
         # this the manipulator never moves, its joint angles are constant, and
         # the proprioception recorded below carries no information at all.
-        labels_now = _labels_for(model, data, conveyor, half_window, {})
-        chosen = decide(labels_now, half_window)
+        labels_now = _labels_for(model, data, conveyor, exit_coordinate, {})
+        chosen = decide(labels_now, exit_coordinate)
         if chosen is not None:
             armmod.step_toward(
                 model, data, indices, np.array(chosen.position), gain=ARM_GAIN
@@ -189,7 +201,7 @@ def record(
         examples.append(
             Example(
                 frame=renderer.render().astype(np.uint8),
-                labels=_labels_for(model, data, conveyor, half_window, boxes),
+                labels=_labels_for(model, data, conveyor, exit_coordinate, boxes),
                 simulated_time=float(data.time),
                 seed=seed,
                 config_digest=config_digest,

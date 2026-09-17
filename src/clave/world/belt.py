@@ -130,6 +130,29 @@ def reach_report(plan: SceneLayout) -> ReachReport:
     )
 
 
+def window_exit(plan: SceneLayout) -> float | None:
+    """Return the belt coordinate at which the reachable window closes.
+
+    The scripted expert ranks objects by how little time they have left, which
+    is their distance to this coordinate, so a wrong value here teaches picks
+    that cannot be made.
+
+    It is the swept downstream edge rather than half the window's length. Those
+    two agree only while the arm stands at the belt centre: move the arm and the
+    window moves with it, leaving half the length naming a coordinate the arm
+    cannot reach.
+
+    Args:
+        plan: The resolved scene layout.
+
+    Returns:
+        The downstream edge in world meters, or None when the belt never enters
+        reach and there is no edge to name.
+    """
+    report = reach_report(plan)
+    return report.window_edges[1] if report.reachable else None
+
+
 @dataclass
 class SpawnedObject:
     """One object riding the belt.
