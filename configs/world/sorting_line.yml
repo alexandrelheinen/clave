@@ -175,9 +175,16 @@ environment:
 # is known, so the tracker propagates it by dead reckoning instead of
 # re-detecting it every frame.
 cameras:
-  # Detection, classification and segmentation over the full belt width.
-  # 1.252 m across at 0.652 mm per pixel, which resolves an object footprint
-  # comfortably and a barcode not at all.
+  # Detection, classification and segmentation. 0.652 mm per pixel, which
+  # resolves an object footprint comfortably and a barcode not at all.
+  #
+  # It does NOT cover the belt. fovy is a vertical field of view, so it sets
+  # the across-belt axis for a nadir camera: 0.704 m across against 1.252 m
+  # along travel, and a sweep reads pixels from y = -0.400 m to +0.380 m on a
+  # 1.00 m belt. Objects spawn out to 0.42 m, so some are never detected.
+  # Covering the width here needs about 62 degrees. That changes every rendered
+  # frame and the input distribution of every trained checkpoint, so it is
+  # recorded in docs/measurements.md rather than changed in passing.
   - id: gate_wide
     role: detection
     position_meters: [-1.00, 0.0, 1.750]
@@ -186,10 +193,14 @@ cameras:
 
   # Barcode reading. A 0.33 mm EAN-13 module needs roughly two pixels to
   # decode, so 0.165 mm per pixel is the floor, and the wide camera is four
-  # times coarser than that. Three narrow-lens cameras tile the width at
-  # 0.342 m each, giving 0.178 mm per pixel, or 1.9 pixels per module. That is
-  # marginal by design: it is the cheapest arrangement that decodes at all, and
-  # a line-scan camera is the alternative if it proves too tight.
+  # times coarser than that. The three narrow-lens cameras give 0.178 mm per
+  # pixel, or 1.9 pixels per module, which is marginal by design: it is the
+  # cheapest arrangement that decodes at all, and a line-scan camera is the
+  # alternative if it proves too tight.
+  #
+  # They sample the width rather than tile it. Each sees 0.192 m across the
+  # belt and they stand 0.342 m apart, so a sweep finds dead bands near
+  # y = 0.12 m to 0.22 m on each side where no barcode can be read at all.
   - id: gate_code_left
     role: code
     position_meters: [-1.00, 0.342, 1.630]
