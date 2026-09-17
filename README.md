@@ -103,7 +103,7 @@ measurements that set them.
 | Conveyor modules | **10 modules of 0.300 m**, spanning the 3.00 m belt |
 | Arm | Universal Robots UR10e, on a pedestal 0.70 m off the belt centerline |
 | Effector workspace | an annulus 0.25 m to 1.25 m about the base, over a 0.50 m vertical band, measured by sweeping the model with the tool held vertical |
-| Reachable window | 1.036 m of belt on the centerline, 3.3 s per object at 0.31 m/s |
+| Reachable window | 2.071 m of belt on the centerline, 6.6 s per object at 0.31 m/s |
 | Sensing | one detection camera and three barcode cameras, all nadir, at a gate 1.00 m upstream |
 | Objects | 18 scanned packages |
 

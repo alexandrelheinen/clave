@@ -32,6 +32,8 @@ class ReachReport:
         belt_offset: Lateral distance from the shoulder to the belt centerline.
         window_length: Belt length a centerline object spends inside the
             annulus, in meters, with the dead zone already deducted.
+        window_edges: Where along the belt the window opens and closes, in
+            world meters. Both are zero when the belt never enters reach.
         belt_speed: Belt speed in meters per second.
         time_budget: Seconds an object spends inside the window.
     """
@@ -40,6 +42,7 @@ class ReachReport:
     reach_max: float
     belt_offset: float
     window_length: float
+    window_edges: tuple[float, float]
     belt_speed: float
     time_budget: float
 
@@ -94,15 +97,26 @@ def reach_report(plan: SceneLayout) -> ReachReport:
     # test the safety layer applies. A closed-form chord would be correct for
     # this arm's annulus, and was wrong for the last one; measuring costs
     # milliseconds once and cannot drift.
+    #
+    # AC-REACH-07: the sweep spans the belt's own extent. Objects ride from
+    # -length/2 to +length/2, so a sweep starting at the origin measures the
+    # downstream half and reports a window half the size of the one the arm
+    # actually has.
     step = 0.002
     hits = 0
-    x = 0.0
-    while x <= plan.belt.length:
+    first = last = 0.0
+    seen = False
+    x = -plan.belt.length / 2.0
+    while x <= plan.belt.length / 2.0:
         # The belt centerline is y = 0; `offset` is how far the shoulder sits
         # from it, which the sweep sees through the shoulder position rather
         # than by being passed as a coordinate.
         if arm.reaches((plan.arm_base[0], plan.arm_base[1]), x, 0.0):
             hits += 1
+            last = x
+            if not seen:
+                first = x
+                seen = True
         x += step
     window = hits * step
     return ReachReport(
@@ -110,6 +124,7 @@ def reach_report(plan: SceneLayout) -> ReachReport:
         reach_max=plan.reach_max,
         belt_offset=offset,
         window_length=window,
+        window_edges=(first, last),
         belt_speed=plan.belt.speed,
         time_budget=window / plan.belt.speed if plan.belt.speed else 0.0,
     )
