@@ -329,9 +329,10 @@ outstanding. The section stays because the entries record what was corrected
 and why, which a later reader needs in order to trust the sibling boundaries
 the ladder rests on.
 
-Five defects found while reading the code ahead of Block D. None of them needs a
-spec and none belongs to the tracker, so four were repaired separately from the
-tracker work and the fifth is recorded here against the spec that closes it.
+Six defects found while reading the code ahead of Block D. None of them needs a
+spec and none belongs to the tracker, so the repairable ones were fixed
+separately from the tracker work and the rest are recorded here against the
+specs that close them.
 
 - [x] The belt frame the documents describe is not the one the code uses.
   `docs/perception-contract.md`, `crates/clave-decision/src/pose.rs` and
@@ -374,6 +375,26 @@ tracker work and the fifth is recorded here against the spec that closes it.
   recorded rather than fixed, and `AC-TRACK-30` in `learned-tracker` makes the
   digest mismatch fail a training run loudly instead of fitting a world that no
   longer exists.
+- [ ] The sensing gate does not cover the belt it stands over, and the
+  documents describe its coverage on the wrong axis. `fovy` is a vertical field
+  of view, so it sets the image height axis, which for these nadir cameras is
+  **across** the belt. `docs/architecture.md` and `docs/measurements.md` label
+  the along-travel extent as what each camera "covers across", which is how this
+  went unnoticed. Measured by sweeping objects laterally and reading the
+  segmentation render: `gate_wide` images y from -0.400 m to +0.380 m, meaning
+  0.800 m of a 1.00 m belt, while `spawn.lateral_offset_meters` places objects
+  out to 0.42 m, so the detection camera does not see every object it is
+  supposed to detect. The three code cameras image 73 percent of the width with
+  two dead bands near 0.12 m to 0.22 m on each side, so they do not tile it and
+  a third of the belt can never present a barcode.
+
+  The documentation error is repaired with the other fixes. The optics are not.
+  Covering the full width at the configured standoff needs `gate_wide` at about
+  62 degrees rather than 45, which changes every rendered frame, the world
+  digest and the input distribution every trained checkpoint saw. That is a
+  `sorting-world` change with a real blast radius rather than a stale comment,
+  so it is measured and recorded here for a decision rather than made quietly.
+  `perception-record` measures against the gate as it stands and says so.
 - [ ] `association_radius_meters: 0.12` in `configs/runtime/sitl.yml` was sized
   for a 0.16 m wide belt, as its own comment says, and the belt is 1.00 m wide.
   Widening it would be a false fix: `D-12` records the policy at 0.445 m of
