@@ -11,12 +11,9 @@ use clave_decision::{MaterialClass, codec};
 use clave_sitl::{ServeConfig, serve};
 
 const CONFIG: &str = r#"{
-  "shoulder_meters": [0.0, 0.0, 1.408],
-  "link_meters": [0.400, 0.250],
-  "reach_meters": [0.222, 0.650],
-  "shoulder_limit_radians": 2.443461,
-  "elbow_limit_radians": 2.617994,
-  "tool_above_belt_meters": [0.030, 0.210],
+  "base_meters": [0.0, -0.70, 0.90],
+  "reach_meters": [0.25, 1.25],
+  "tool_above_base_meters": [-0.05, 0.45],
   "belt_surface_z_meters": 0.90,
   "belt_x_meters": [-1.5, 1.5],
   "belt_y_meters": [-0.5, 0.5],
@@ -91,10 +88,10 @@ fn the_runtime_decides_publishes_and_counts_over_real_sockets() {
     let sender = UnixDatagram::unbound().unwrap();
     sender.connect(&listen).unwrap();
     for payload in [
-        wire(0.35, 0.0, 1.00, 0.90), // accepted and sorted
-        wire(1.20, 0.0, 1.00, 0.90), // beyond reach
+        wire(0.0, 0.0, 0.95, 0.90),  // accepted and sorted
+        wire(0.0, 2.20, 0.95, 0.90), // beyond reach
         "{ not json".to_owned(),     // refused
-        wire(0.35, 0.0, 1.00, 0.20), // routed to reject on confidence
+        wire(0.0, 0.0, 0.95, 0.20),  // routed to reject on confidence
     ] {
         sender.send(payload.as_bytes()).unwrap();
     }

@@ -1,19 +1,26 @@
 """Actuating the manipulator.
 
-The arm is a SCARA in the geometry of an ABB IRB 910SC-3/0.65, built as
-`src/clave/world/mjcf/irb910sc.xml` and mounted inverted above the belt.
+The arm is a Universal Robots UR10e, adopted from MuJoCo Menagerie and vendored
+under `third_party/mujoco_menagerie_ur10e/`. `D-13` in `docs/decisions.md`
+records why a validated model outranked the SCARA that was authored here, and
+what that trade costs.
 
-Its inverse kinematics are closed form, which is the point. A SCARA's first two
-axes are a planar two-link chain, so the joint angles that put the tool at a
-Cartesian point follow from the law of cosines rather than from an iterative
-solve. The previous arm used damped least squares and stalled short of poses a
-workspace sweep had already proven reachable; that failure mode does not exist
-here, because there is no iteration to converge.
+It is a six-axis revolute arm operated for a four-axis task: a position over the
+belt and a rotation of the tool about the vertical, with the tool held pointing
+down. Two degrees of freedom are surplus, which is deliberate and recorded.
 
-The fourth axis is what earns the arm its place. It rotates the tool about the
-vertical, independently of where the tool sits, so a jaw or a suction cup can be
-aligned to an object's minor axis. A serial arm whose only yaw joint is at the
-shoulder spends it pointing at the object and has none left for orientation.
+**There is no prismatic axis and none can be made.** Locking revolute joints
+removes freedom; it never produces translation along a fixed axis. A vertical
+descent is therefore a task-space constraint rather than a joint: inverse
+kinematics is solved at each waypoint with the tool axis held down, which is
+what an industrial linear move does.
+
+One consequence runs through this module. A six-axis arm holding its tool
+vertical has no closed-form workspace, so [reaches] applies an annulus measured
+by sweeping the compiled model rather than derived from link lengths. The sweep
+lives in `docs/measurements.md` and a test re-runs it, because a region that
+drifts from the arm it describes is how a proposer and a checker come to
+disagree.
 """
 
 from __future__ import annotations
@@ -27,32 +34,79 @@ from numpy.typing import NDArray
 
 from clave.errors import ClaveError
 
-ARM_JOINTS = ("arm_Joint1", "arm_Joint2", "arm_Joint3", "arm_Joint4")
-"""Shoulder rotation, elbow rotation, spline travel, spline rotation."""
+ARM_JOINTS = (
+    "arm_shoulder_pan_joint",
+    "arm_shoulder_lift_joint",
+    "arm_elbow_joint",
+    "arm_wrist_1_joint",
+    "arm_wrist_2_joint",
+    "arm_wrist_3_joint",
+)
+"""The six axes, base outward, as the vendored model names them."""
 
-TOOL_SITE = "arm_tool_point"
-"""Site at the tool flange, which is the point every target is expressed for."""
+ARM_ACTUATORS = (
+    "arm_shoulder_pan",
+    "arm_shoulder_lift",
+    "arm_elbow",
+    "arm_wrist_1",
+    "arm_wrist_2",
+    "arm_wrist_3",
+)
+"""Position actuators, in joint order."""
 
-ARM1_METERS = 0.400
-"""Shoulder to elbow, from the ABB specification for the 0.65 m variant."""
+BASE_BODY = "arm_base"
+"""The body bolted to the pedestal, which every trusted bound is measured from.
 
-ARM2_METERS = 0.250
-"""Elbow to spline, identical on all three variants."""
-
-REACH_MAX_METERS = ARM1_METERS + ARM2_METERS
-"""Fully extended reach, 0.650 m."""
-
-REACH_MIN_METERS = 0.222
-"""Radius of the dead zone under the spline.
-
-Axis 2 stops at plus or minus 150 degrees, so the tool cannot fold closer to
-the shoulder than this. On a conveyor the dead zone costs pick time rather than
-coverage, because the belt carries an object through it and out the far side.
+Not the shoulder-pan anchor, which sits 0.181 m above it. The sweep that set
+those bounds measured from the mounting face, so this must too or the vertical
+band is wrong by that offset.
 """
+
+TOOL_SITE = "arm_attachment_site"
+"""The flange an end effector bolts to, which every target is expressed for."""
+
+REACH_MIN_METERS = 0.25
+"""Inner radius of the usable annulus, measured about the base column.
+
+A sweep found the tool unreachable inside 0.200 m with the tool held vertical
+and reachable at 0.200 m exactly. This sits above that, so the region a caller
+trusts is strictly inside the region the arm can serve.
+"""
+
+REACH_MAX_METERS = 1.25
+"""Outer radius of the usable annulus.
+
+The same sweep put the furthest solvable point between 1.266 m and 1.309 m
+depending on bearing. This sits below the smallest of those, for the same
+reason.
+"""
+
+TOOL_ABOVE_BASE_METERS = (-0.05, 0.45)
+"""Vertical band the tool is trusted in, relative to the arm's own base.
+
+Swept at 0.70 m radius, solutions exist from the base plane to 0.55 m above it
+and below. The band stops short at both ends so the trusted region stays inside
+the measured one.
+"""
+
+SHOULDER_PAN_UNLIMITED = True
+"""Axis 1 travels plus or minus 360 degrees, so the annulus has no missing wedge.
+
+The arm this replaced stopped at 140 degrees and lost a wedge behind itself,
+which halved the pick window on the belt centreline and was invisible to a
+closed-form chord. Nothing of that kind applies here, and the constant exists so
+a reader does not go looking for it.
+"""
+
+_DOWN = np.array([0.0, 0.0, -1.0])
+"""The tool axis is held along this, which is what makes the task four-axis."""
+
+_DAMPING = 0.06
+"""Damping for the least squares solve, which keeps it stable near a singularity."""
 
 
 class ReachError(ClaveError):
-    """A target lies outside the arm's workspace."""
+    """A target lies outside the arm's workspace, or no solution was found."""
 
 
 @dataclass(frozen=True)
@@ -60,13 +114,13 @@ class ArmIndices:
     """Where the arm lives inside the model's arrays.
 
     Attributes:
-        joint_ids: Model joint ids of the four axes, in order.
+        joint_ids: Model joint ids of the six axes, base outward.
         dof_indices: Velocity-space indices of those joints.
-        actuator_ids: Position actuators driving those joints, in order.
-        tool_site: Site id of the tool point.
-        base_position: World position of the shoulder axis.
-        tool_offset: Signed tool height below the shoulder at zero spline
-            travel. Negative, because the arm hangs.
+        actuator_ids: Position actuators driving them, in joint order.
+        tool_site: Site id of the flange.
+        tool_body: Body id the flange belongs to, which the Jacobian needs.
+        base_position: World position of the arm's mounting face, which is the
+            top of its pedestal.
         lower: Lower joint limits.
         upper: Upper joint limits.
     """
@@ -75,119 +129,84 @@ class ArmIndices:
     dof_indices: tuple[int, ...]
     actuator_ids: tuple[int, ...]
     tool_site: int
+    tool_body: int
     base_position: NDArray[np.float64]
-    tool_offset: float
     lower: NDArray[np.float64]
     upper: NDArray[np.float64]
 
 
-SHOULDER_LIMIT_RADIANS = 2.443461
-"""Axis 1 stops at plus or minus 140 degrees.
+def reaches(base_xy: tuple[float, float], x: float, y: float) -> bool:
+    """Whether a point lies in the annulus the arm is trusted over.
 
-This cuts a wedge out of the annulus behind the shoulder, so being inside the
-annulus is necessary and not sufficient. Ignoring it overstates the pick window
-on the belt centerline by a factor of two, which a sweep caught and an analytic
-chord formula did not.
-"""
-
-ELBOW_LIMIT_RADIANS = 2.617994
-"""Axis 2 stops at plus or minus 150 degrees, which is what sets the dead zone."""
-
-
-def reaches(shoulder_xy: tuple[float, float], x: float, y: float) -> bool:
-    """Whether the planar chain can put the tool at a point, limits included.
-
-    Pure geometry, so the reachability test the world applies and the one the
-    solver applies cannot drift apart. They did once before, on the previous
-    arm: the scripted expert and the safety layer read the same geometry
-    through two different tests and only one of them was right, which showed up
+    Pure geometry, so the test the world applies and the one the safety envelope
+    applies cannot drift apart. They did once, on an earlier arm, and showed up
     as a 47 percent override rate.
 
+    This is a region proven by sweep rather than a solve. Running inverse
+    kinematics per call would cost milliseconds and give a different answer on
+    different seeds, since the solve is iterative; a fixed region is cheap,
+    deterministic and shared. What keeps it honest is the test that re-sweeps it.
+
     Args:
-        shoulder_xy: Where axis 1 sits, in world meters.
+        base_xy: Where the arm's base column stands, in world meters.
         x: Target x, in world meters.
         y: Target y, in world meters.
 
     Returns:
-        Whether some elbow configuration reaches the point within the limits.
+        Whether the point lies between the inner and outer radii.
     """
-    dx, dy = x - shoulder_xy[0], y - shoulder_xy[1]
-    radius = math.hypot(dx, dy)
-    if not REACH_MIN_METERS <= radius <= REACH_MAX_METERS:
-        return False
-    cosine = (radius**2 - ARM1_METERS**2 - ARM2_METERS**2) / (
-        2.0 * ARM1_METERS * ARM2_METERS
-    )
-    magnitude = math.acos(max(-1.0, min(1.0, cosine)))
-    bearing = math.atan2(dy, dx)
-    for elbow in (magnitude, -magnitude):
-        if abs(elbow) > ELBOW_LIMIT_RADIANS:
-            continue
-        shoulder = _wrap(
-            bearing
-            - math.atan2(
-                ARM2_METERS * math.sin(elbow),
-                ARM1_METERS + ARM2_METERS * math.cos(elbow),
-            )
-        )
-        if abs(shoulder) <= SHOULDER_LIMIT_RADIANS:
-            return True
-    return False
+    radius = math.hypot(x - base_xy[0], y - base_xy[1])
+    return REACH_MIN_METERS <= radius <= REACH_MAX_METERS
 
 
 def locate(model: Any) -> ArmIndices:
-    """Find the arm's joints, actuators and tool site in a compiled model.
+    """Find the arm's joints, actuators and flange in a compiled model.
 
     Args:
         model: The compiled model.
 
     Returns:
-        The indices and the fixed geometry the solver needs.
+        The indices and the base position the solver needs.
 
     Raises:
         KeyError: If a joint, actuator or site is absent, naming it.
     """
     import mujoco
 
-    def joint(name: str) -> int:
-        found = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, name)
+    def lookup(kind: Any, name: str, what: str) -> int:
+        found = mujoco.mj_name2id(model, kind, name)
         if found < 0:
-            raise KeyError(f"joint {name!r} is not in the model")
+            raise KeyError(f"{what} {name!r} is not in the model")
         return int(found)
 
-    def actuator(name: str) -> int:
-        found = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, name)
-        if found < 0:
-            raise KeyError(f"actuator {name!r} is not in the model")
-        return int(found)
-
-    joint_ids = tuple(joint(name) for name in ARM_JOINTS)
-    site = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, TOOL_SITE)
-    if site < 0:
-        raise KeyError(f"site {TOOL_SITE!r} is not in the model")
+    joint_ids = tuple(
+        lookup(mujoco.mjtObj.mjOBJ_JOINT, name, "joint") for name in ARM_JOINTS
+    )
+    base_body = lookup(mujoco.mjtObj.mjOBJ_BODY, BASE_BODY, "body")
+    actuator_ids = tuple(
+        lookup(mujoco.mjtObj.mjOBJ_ACTUATOR, name, "actuator") for name in ARM_ACTUATORS
+    )
+    site = lookup(mujoco.mjtObj.mjOBJ_SITE, TOOL_SITE, "site")
 
     data = mujoco.MjData(model)
     mujoco.mj_forward(model, data)
-    shoulder = np.array(data.xanchor[joint_ids[0]], dtype=np.float64)
-    tool = np.array(data.site_xpos[site], dtype=np.float64)
 
     return ArmIndices(
         joint_ids=joint_ids,
         dof_indices=tuple(int(model.jnt_dofadr[j]) for j in joint_ids),
-        actuator_ids=tuple(actuator(name) for name in ARM_JOINTS),
-        tool_site=int(site),
-        base_position=shoulder,
-        tool_offset=float(tool[2] - shoulder[2]),
+        actuator_ids=actuator_ids,
+        tool_site=site,
+        tool_body=int(model.site_bodyid[site]),
+        base_position=np.array(data.xpos[base_body], dtype=np.float64),
         lower=np.array([model.jnt_range[j][0] for j in joint_ids]),
         upper=np.array([model.jnt_range[j][1] for j in joint_ids]),
     )
 
 
 def joint_positions(model: Any, data: Any, arm: ArmIndices) -> NDArray[np.float64]:
-    """Read the arm's joint values.
+    """Read the arm's joint angles, in radians, base outward.
 
-    This is the proprioception a vision-only policy lacks. Axes 1, 2 and 4 are
-    radians; axis 3 is meters of spline travel.
+    This is the proprioception a vision-only policy lacks.
 
     Args:
         model: The compiled model.
@@ -195,108 +214,154 @@ def joint_positions(model: Any, data: Any, arm: ArmIndices) -> NDArray[np.float6
         arm: The arm indices.
 
     Returns:
-        Joint values in joint order.
+        Six joint angles in joint order.
     """
     return np.array([float(data.qpos[model.jnt_qposadr[j]]) for j in arm.joint_ids])
 
 
 def end_effector_position(data: Any, arm: ArmIndices) -> NDArray[np.float64]:
-    """Read where the tool point currently is, in world coordinates."""
+    """Read where the flange currently is, in world coordinates."""
     return np.array(data.site_xpos[arm.tool_site], dtype=np.float64)
 
 
 def solve(
+    model: Any,
+    data: Any,
     arm: ArmIndices,
     target: NDArray[np.float64],
     yaw: float = 0.0,
-    elbow_left: bool = True,
+    attempts: int = 6,
+    iterations: int = 300,
 ) -> NDArray[np.float64]:
-    """Solve the joint values that put the tool at a Cartesian target.
+    """Solve joint angles putting the flange at a target with the tool down.
 
-    The first two axes form a planar two-link chain, so the elbow angle comes
-    from the law of cosines and the shoulder angle from the difference between
-    the bearing to the target and the elbow's own contribution. The third axis
-    is prismatic and resolves by subtraction. The fourth absorbs whatever the
-    first two left, which is what makes the tool's yaw independent of where the
-    tool sits.
+    Damped least squares on the stacked position and orientation Jacobian. The
+    orientation term drives the tool's own z axis onto the world's downward
+    vertical, which is the constraint that makes a six-axis arm behave as the
+    four-axis task wants. Restarting from random configurations is what gets
+    past the local minima an iterative solve on a redundant arm falls into.
+
+    The solve does not touch `data`'s committed state: it works on a scratch
+    copy and returns angles, so a caller's simulation is never advanced by
+    asking a question.
 
     Args:
-        arm: The arm indices, carrying the base position and tool offset.
-        target: Desired tool position in world coordinates.
+        model: The compiled model.
+        data: Its state, read for a warm start and not modified.
+        arm: The arm indices.
+        target: Desired flange position in world coordinates.
         yaw: Desired tool rotation about the vertical, in radians.
-        elbow_left: Which of the two mirror solutions to take.
+        attempts: Random restarts before giving up. One means warm start only,
+            which is what a controller tracking a moving target wants.
+        iterations: Descent steps per attempt.
 
     Returns:
-        Joint values in joint order, every one inside its limit.
+        Six joint angles, every one inside its limit.
 
     Raises:
-        ReachError: If the target lies outside the annulus, outside the
-            spline's travel, or needs a shoulder angle past the stop in either
-            elbow configuration, naming which of the three failed.
+        ReachError: If the target lies outside the trusted annulus, or if no
+            attempt converged, naming which.
     """
-    offset = np.asarray(target, dtype=np.float64) - arm.base_position
-    radius = math.hypot(float(offset[0]), float(offset[1]))
+    import mujoco
 
-    if radius > REACH_MAX_METERS or radius < REACH_MIN_METERS:
+    if not reaches(
+        (float(arm.base_position[0]), float(arm.base_position[1])),
+        float(target[0]),
+        float(target[1]),
+    ):
+        radius = math.hypot(
+            float(target[0]) - float(arm.base_position[0]),
+            float(target[1]) - float(arm.base_position[1]),
+        )
         raise ReachError(
-            f"target is {radius:.3f} m from the shoulder, outside the "
-            f"{REACH_MIN_METERS:.3f} m to {REACH_MAX_METERS:.3f} m annulus"
+            f"target is {radius:.3f} m from the base, outside the "
+            f"{REACH_MIN_METERS:.2f} m to {REACH_MAX_METERS:.2f} m annulus"
         )
 
-    # The spline hangs from the arm, so travel is the shortfall between where
-    # the tool sits at zero travel and where it is wanted.
-    travel = float(offset[2]) - arm.tool_offset
-    if not arm.lower[2] - 1e-9 <= travel <= arm.upper[2] + 1e-9:
+    lowest, highest = TOOL_ABOVE_BASE_METERS
+    above = float(target[2]) - float(arm.base_position[2])
+    if not lowest <= above <= highest:
         raise ReachError(
-            f"target needs {travel:.3f} m of spline travel, outside the "
-            f"{arm.lower[2]:.3f} m to {arm.upper[2]:.3f} m stroke"
+            f"target sits {above:+.3f} m from the base, outside the trusted "
+            f"{lowest:+.2f} m to {highest:+.2f} m band"
         )
 
-    # Law of cosines on the two-link chain. The clip absorbs the rounding that
-    # puts a target exactly at the reach limit a hair outside the domain.
-    cosine = (radius**2 - ARM1_METERS**2 - ARM2_METERS**2) / (
-        2.0 * ARM1_METERS * ARM2_METERS
-    )
-    magnitude = math.acos(max(-1.0, min(1.0, cosine)))
-    bearing = math.atan2(float(offset[1]), float(offset[0]))
+    wanted = np.array(
+        [math.cos(yaw), math.sin(yaw), 0.0], dtype=np.float64
+    )  # Where the tool's x axis should point once it is facing down.
+    scratch = mujoco.MjData(model)
+    scratch.qpos[:] = data.qpos
+    start = joint_positions(model, data, arm)
+    rng = np.random.default_rng(0)
 
-    # Try the requested elbow first, then its mirror. Being inside the annulus
-    # is necessary but not sufficient: axis 1 stops at plus or minus 140
-    # degrees, which cuts a wedge out of the annulus behind the shoulder, and
-    # one elbow configuration often clears the limit where the other does not.
-    # Clipping a solution to the limit instead would return joint values whose
-    # tool is somewhere other than the target, which is a silent wrong answer.
-    order = (magnitude, -magnitude) if elbow_left else (-magnitude, magnitude)
-    for elbow in order:
-        shoulder = _wrap(
-            bearing
-            - math.atan2(
-                ARM2_METERS * math.sin(elbow),
-                ARM1_METERS + ARM2_METERS * math.cos(elbow),
+    for attempt in range(attempts):
+        seed = (
+            start if attempt == 0 else rng.uniform(arm.lower, arm.upper).clip(-2.8, 2.8)
+        )
+        for slot, joint in enumerate(arm.joint_ids):
+            scratch.qpos[model.jnt_qposadr[joint]] = seed[slot]
+
+        for _ in range(iterations):
+            mujoco.mj_forward(model, scratch)
+            frame = scratch.site_xmat[arm.tool_site].reshape(3, 3)
+            position_error = target - scratch.site_xpos[arm.tool_site]
+            # Two rotation terms: put the tool axis down, then spin it to yaw.
+            axis_error = np.cross(frame[:, 2], _DOWN)
+            yaw_error = np.cross(frame[:, 0], wanted) * 0.5
+            rotation_error = axis_error + yaw_error
+
+            if (
+                np.linalg.norm(position_error) < 1e-3
+                and np.linalg.norm(rotation_error) < 1e-2
+            ):
+                return np.array(
+                    [float(scratch.qpos[model.jnt_qposadr[j]]) for j in arm.joint_ids]
+                )
+
+            jacp = np.zeros((3, model.nv))
+            jacr = np.zeros((3, model.nv))
+            mujoco.mj_jacSite(model, scratch, jacp, jacr, arm.tool_site)
+            columns = list(arm.dof_indices)
+            stacked = np.vstack([jacp[:, columns], jacr[:, columns]])
+            error = np.concatenate([position_error, rotation_error])
+            square = stacked @ stacked.T + (_DAMPING**2) * np.eye(6)
+            delta = stacked.T @ np.linalg.solve(square, error)
+
+            current = np.array(
+                [float(scratch.qpos[model.jnt_qposadr[j]]) for j in arm.joint_ids]
             )
-        )
-        if not arm.lower[0] <= shoulder <= arm.upper[0]:
-            continue
-        if not arm.lower[1] <= elbow <= arm.upper[1]:
-            continue
-        # Axis 4 carries the tool's absolute yaw minus what axes 1 and 2 already
-        # contributed, which is the whole reason this arm can orient a tool.
-        spin = _wrap(yaw - shoulder - elbow)
-        if not arm.lower[3] <= spin <= arm.upper[3]:
-            continue
-        return np.array([shoulder, elbow, travel, spin], dtype=np.float64)
+            stepped = np.clip(current + 0.5 * delta, arm.lower, arm.upper)
+            for slot, joint in enumerate(arm.joint_ids):
+                scratch.qpos[model.jnt_qposadr[joint]] = stepped[slot]
 
     raise ReachError(
-        f"target at {radius:.3f} m and bearing {math.degrees(bearing):.1f} deg "
-        f"needs a shoulder angle outside the "
-        f"{math.degrees(arm.lower[0]):.0f} to {math.degrees(arm.upper[0]):.0f} "
-        f"degree range, in either elbow configuration"
+        f"no solution converged for {np.round(target, 3).tolist()} with the tool "
+        f"vertical, after {attempts} restarts"
     )
 
 
-def _wrap(angle: float) -> float:
-    """Fold an angle into minus pi to pi, so a limit test means what it says."""
-    return math.atan2(math.sin(angle), math.cos(angle))
+_TRACKING: dict[int, NDArray[np.float64]] = {}
+"""The joint angles each model's arm was last commanded toward.
+
+A controller follows a target that moves with the belt, roughly 0.6 mm per
+physics step. Solving that afresh every step repeats a global search ten thousand
+times a rollout; keying a memo on the target does not help either, because the
+target is different every step. What does help is that the previous answer is
+almost the next one, so the descent warm starts from it and converges in a few
+iterations.
+
+Keyed on the model's id, so two worlds in one process do not share a warm start.
+A wrong entry costs iterations and not correctness: the descent still runs
+against the target it was given.
+"""
+
+_TRACKING_ITERATIONS = 8
+"""Descent steps per control call when warm starting.
+
+Enough to follow a target moving under a millimetre a step, and few enough that
+a rollout stays affordable. The first call for a model has nothing to warm start
+from and pays for a full solve instead.
+"""
 
 
 def step_toward(
@@ -307,30 +372,47 @@ def step_toward(
     gain: float,
     yaw: float = 0.0,
 ) -> NDArray[np.float64]:
-    """Move the commanded joint values one step toward a Cartesian target.
+    """Move the commanded joint angles one step toward a Cartesian target.
 
-    Solves the target exactly, then commands a fraction of the way there so the
-    actuators are not asked for a step they cannot track. A target outside the
-    workspace leaves the command where it was rather than driving the arm at a
-    limit, because the safety layer, not the controller, is what refuses an
-    impossible pick.
+    The first call for a model solves properly, with the restarts [solve] uses
+    to escape local minima. Every call after that warm starts from the previous
+    answer and takes a few descent steps, because a target carried by a belt
+    moves well under a millimetre per physics step and the previous answer is
+    therefore almost the next one.
+
+    That distinction is the difference between a rollout that records in seconds
+    and one that does not finish. Solving per step ran a global search ten
+    thousand times; memoising on the target did not help, because a target that
+    moves every step misses every time.
+
+    A target outside the trusted region leaves the command untouched, because
+    refusing an impossible pick is the safety layer's job and not the
+    controller's.
 
     Args:
         model: The compiled model.
         data: Its state, with forward kinematics already current.
         arm: The arm indices.
-        target: Desired tool position in world coordinates.
-        gain: Fraction of the remaining joint error to apply per step.
+        target: Desired flange position in world coordinates.
+        gain: Fraction of the remaining joint error to command per step.
         yaw: Desired tool rotation about the vertical, in radians.
 
     Returns:
-        The commanded joint values after the step.
+        The commanded joint angles after the step.
     """
     current = joint_positions(model, data, arm)
-    try:
-        wanted = solve(arm, target, yaw=yaw)
-    except ReachError:
+    if not reachable(arm, target):
         return current
+
+    warm = _TRACKING.get(id(model))
+    if warm is None:
+        try:
+            wanted = solve(model, data, arm, target, yaw=yaw)
+        except ReachError:
+            return current
+    else:
+        wanted = _descend(model, arm, warm, target, yaw, _TRACKING_ITERATIONS)
+    _TRACKING[id(model)] = wanted
 
     commanded = current + gain * (wanted - current)
     clipped: NDArray[np.float64] = np.clip(commanded, arm.lower, arm.upper)
@@ -339,19 +421,83 @@ def step_toward(
     return clipped
 
 
+def _descend(
+    model: Any,
+    arm: ArmIndices,
+    seed: NDArray[np.float64],
+    target: NDArray[np.float64],
+    yaw: float,
+    iterations: int,
+) -> NDArray[np.float64]:
+    """Take damped least squares steps from a seed toward a target.
+
+    Args:
+        model: The compiled model.
+        arm: The arm indices.
+        seed: Joint angles to start from.
+        target: Desired flange position in world coordinates.
+        yaw: Desired tool rotation about the vertical, in radians.
+        iterations: Descent steps to take.
+
+    Returns:
+        The joint angles reached, clipped to the limits. This is best effort
+        rather than a solution: a caller tracking a moving target gets another
+        call in two milliseconds.
+    """
+    import mujoco
+
+    wanted_axis = np.array([math.cos(yaw), math.sin(yaw), 0.0], dtype=np.float64)
+    scratch = mujoco.MjData(model)
+    for slot, joint in enumerate(arm.joint_ids):
+        scratch.qpos[model.jnt_qposadr[joint]] = seed[slot]
+    columns = list(arm.dof_indices)
+
+    for _ in range(iterations):
+        mujoco.mj_forward(model, scratch)
+        frame = scratch.site_xmat[arm.tool_site].reshape(3, 3)
+        position_error = target - scratch.site_xpos[arm.tool_site]
+        rotation_error = (
+            np.cross(frame[:, 2], _DOWN) + np.cross(frame[:, 0], wanted_axis) * 0.5
+        )
+        if (
+            np.linalg.norm(position_error) < 1e-3
+            and np.linalg.norm(rotation_error) < 1e-2
+        ):
+            break
+        jacp = np.zeros((3, model.nv))
+        jacr = np.zeros((3, model.nv))
+        mujoco.mj_jacSite(model, scratch, jacp, jacr, arm.tool_site)
+        stacked = np.vstack([jacp[:, columns], jacr[:, columns]])
+        error = np.concatenate([position_error, rotation_error])
+        square = stacked @ stacked.T + (_DAMPING**2) * np.eye(6)
+        delta = stacked.T @ np.linalg.solve(square, error)
+        here = np.array(
+            [float(scratch.qpos[model.jnt_qposadr[j]]) for j in arm.joint_ids]
+        )
+        stepped = np.clip(here + 0.5 * delta, arm.lower, arm.upper)
+        for slot, joint in enumerate(arm.joint_ids):
+            scratch.qpos[model.jnt_qposadr[joint]] = stepped[slot]
+
+    return np.array([float(scratch.qpos[model.jnt_qposadr[j]]) for j in arm.joint_ids])
+
+
 def reachable(arm: ArmIndices, target: NDArray[np.float64]) -> bool:
-    """Report whether a target lies inside the workspace.
+    """Report whether a target lies inside the trusted workspace.
 
     Args:
         arm: The arm indices.
         target: A position in world coordinates.
 
     Returns:
-        Whether [solve] would succeed for it, ignoring tool yaw, which axis 4
-        can always satisfy.
+        Whether the annulus and the height band both admit it. This is the
+        region test rather than a solve, so it is cheap and deterministic.
     """
-    try:
-        solve(arm, target)
-    except ReachError:
+    if not reaches(
+        (float(arm.base_position[0]), float(arm.base_position[1])),
+        float(target[0]),
+        float(target[1]),
+    ):
         return False
-    return True
+    lowest, highest = TOOL_ABOVE_BASE_METERS
+    above = float(target[2]) - float(arm.base_position[2])
+    return lowest <= above <= highest

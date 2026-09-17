@@ -29,15 +29,15 @@ def test_every_verdict_crosses_the_boundary_and_is_counted(
     """One round trip per proposal, and the runtime's own counts at the end."""
     paths = BridgePaths.under(tmp_path)
     with Bridge(runtime_binary, paths, runtime_config) as bridge:
-        sorted_outcome = bridge.submit(make_proposal(0.35, 0.0, 1.00, 0.9))
+        sorted_outcome = bridge.submit(make_proposal(0.0, 0.0, 0.95, 0.9))
         assert sorted_outcome.accepted
         assert sorted_outcome.channel == 1
 
-        overridden = bridge.submit(make_proposal(1.20, 0.0, 1.00, 0.9))
+        overridden = bridge.submit(make_proposal(0.0, 2.20, 0.95, 0.9))
         assert overridden.overridden
         assert overridden.check == "reach"
 
-        rejected = bridge.submit(make_proposal(0.35, 0.0, 1.00, 0.1))
+        rejected = bridge.submit(make_proposal(0.0, 0.0, 0.95, 0.1))
         assert rejected.accepted
         assert rejected.channel == 0
         assert rejected.reject_reason == "below_threshold"
@@ -60,4 +60,4 @@ def test_a_proposal_submitted_before_the_runtime_starts_is_refused(
     """A bridge that is not running says so rather than dropping the message."""
     bridge = Bridge(Path("unused"), BridgePaths.under(tmp_path), runtime_config)
     with pytest.raises(BridgeError, match="not running"):
-        bridge.submit(make_proposal(0.35, 0.0, 1.00, 0.9))
+        bridge.submit(make_proposal(0.0, 0.0, 0.95, 0.9))

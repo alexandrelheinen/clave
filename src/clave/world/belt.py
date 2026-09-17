@@ -27,7 +27,7 @@ class ReachReport:
     """What the geometry implies about whether a pick is possible at all.
 
     Attributes:
-        reach_min: Inner radius of the annulus the tool sweeps, in meters.
+        reach_min: Inner radius of the annulus the arm is trusted over.
         reach_max: Outer radius of that annulus, in meters.
         belt_offset: Lateral distance from the shoulder to the belt centerline.
         window_length: Belt length a centerline object spends inside the
@@ -52,11 +52,10 @@ class ReachReport:
 def within_reach(position: tuple[float, float, float], plan: SceneLayout) -> bool:
     """Whether the tool can reach a point.
 
-    A SCARA sweeps an annulus rather than a sphere, and its vertical travel is
-    a separate axis, so reachability factors into two independent tests: the
-    radial distance from the shoulder in the horizontal plane, and the height
-    above the belt. Testing a sphere would call a point reachable directly
-    under the shoulder, where axis 2 cannot fold tightly enough to put the tool.
+    The arm is trusted over an annulus about its base, within a vertical band,
+    both measured by sweeping the compiled model with the tool held vertical.
+    The region is smaller than what the arm can actually serve, on purpose: a
+    caller that trusts it is never surprised.
 
     The inner radius is not a defect to work around. An object inside it is
     carried out of it by the belt, so the dead zone costs pick time rather than
@@ -64,19 +63,17 @@ def within_reach(position: tuple[float, float, float], plan: SceneLayout) -> boo
 
     Args:
         position: The object's position, in world meters.
-        plan: The resolved scene layout, carrying the shoulder and the
+        plan: The resolved scene layout, carrying the arm base and the
             workspace.
 
     Returns:
         Whether the tool can be placed on the object.
     """
-    lowest, highest = plan.tool_above_belt
-    above = position[2] - plan.belt.surface_height
+    lowest, highest = plan.tool_above_base
+    above = position[2] - plan.arm_base[2]
     if not lowest <= above <= highest:
         return False
-    return arm.reaches(
-        (plan.arm_shoulder[0], plan.arm_shoulder[1]), position[0], position[1]
-    )
+    return arm.reaches((plan.arm_base[0], plan.arm_base[1]), position[0], position[1])
 
 
 def reach_report(plan: SceneLayout) -> ReachReport:
@@ -92,12 +89,11 @@ def reach_report(plan: SceneLayout) -> ReachReport:
     Returns:
         The report. `window_length` is zero when the belt never enters reach.
     """
-    offset = abs(plan.arm_shoulder[1])
-    # Swept rather than solved. The annulus alone gives a chord in closed form,
-    # but axis 1 stops at plus or minus 140 degrees and cuts a wedge out of it,
-    # which the chord formula does not see and which halves the window on the
-    # centerline. So the window is measured the same way the safety layer will
-    # measure it, by asking the shared reachability test.
+    offset = abs(plan.arm_base[1])
+    # Swept rather than solved, so the window is measured through exactly the
+    # test the safety layer applies. A closed-form chord would be correct for
+    # this arm's annulus, and was wrong for the last one; measuring costs
+    # milliseconds once and cannot drift.
     step = 0.002
     hits = 0
     x = 0.0
@@ -105,7 +101,7 @@ def reach_report(plan: SceneLayout) -> ReachReport:
         # The belt centerline is y = 0; `offset` is how far the shoulder sits
         # from it, which the sweep sees through the shoulder position rather
         # than by being passed as a coordinate.
-        if arm.reaches((plan.arm_shoulder[0], plan.arm_shoulder[1]), x, 0.0):
+        if arm.reaches((plan.arm_base[0], plan.arm_base[1]), x, 0.0):
             hits += 1
         x += step
     window = hits * step

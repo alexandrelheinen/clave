@@ -22,11 +22,11 @@ def layout(speed: float, offset: float) -> SceneLayout:
     """
     return SceneLayout(
         belt=BeltGeometry(length=3.0, width=1.0, surface_height=0.90, speed=speed),
-        arm_shoulder=(0.0, offset, 1.408),
-        shoulder_drop=0.251,
+        arm_base=(0.0, offset, 0.90),
         reach_min=armmod.REACH_MIN_METERS,
         reach_max=armmod.REACH_MAX_METERS,
-        tool_above_belt=(0.030, 0.210),
+        tool_above_base=(-0.05, 0.45),
+        pedestal=(0.30, 0.30),
         channels=("CH-PET",),
         objects=(),
         pool_size=0,
@@ -46,8 +46,15 @@ def test_the_report_states_the_annulus_window_and_budget() -> None:
 
 
 def test_a_belt_outside_reach_yields_no_window() -> None:
-    """A world where the arm cannot touch the belt must say so."""
-    report = belt.reach_report(layout(speed=0.2, offset=-0.9))
+    """A world where the arm cannot touch the belt must say so.
+
+    The offset has to clear the outer radius now. A UR10e reaches 1.25 m, so
+    the 0.9 m that stranded the previous arm leaves this one comfortably on
+    the belt.
+    """
+    report = belt.reach_report(
+        layout(speed=0.2, offset=-(armmod.REACH_MAX_METERS + 0.5))
+    )
     assert report.window_length == 0.0
     assert not report.reachable
 

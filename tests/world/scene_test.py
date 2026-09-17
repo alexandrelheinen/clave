@@ -132,27 +132,41 @@ def test_a_module_count_of_zero_is_refused() -> None:
         scene.build(raw, np.random.default_rng(0), ROOT)
 
 
-def test_the_arm_keeps_its_gantry_whatever_draws_the_belt() -> None:
-    """The modules replace the belt's legs, not the arm's support."""
+def test_the_arm_keeps_its_pedestal_whatever_draws_the_belt() -> None:
+    """AC-ARM-03: the arm stands on something, whatever draws the belt."""
     pytest.importorskip("mujoco")
     import mujoco
 
     raw = config.load(CONFIG)
     model, _, _ = scene.build(raw, np.random.default_rng(0), ROOT)
-    for part in (
-        "arm_gantry_upright_left",
-        "arm_gantry_upright_right",
-        "arm_gantry_beam",
-    ):
+    for part in ("arm_pedestal", "arm_pedestal_foot"):
         assert mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, part) >= 0
 
 
-def test_the_gantry_stands_clear_of_the_arm_sweep() -> None:
-    """A portal that blocks the manipulator it carries is worse than none.
+def test_the_pedestal_reaches_the_floor() -> None:
+    """AC-ARM-03: an arm floating at working height describes no installation."""
+    pytest.importorskip("mujoco")
+    import mujoco
 
-    The uprights were first placed at the belt edge, which put them inside the
-    0.650 m annulus; the arm drove into them and stalled short of every target
-    beyond, which reads exactly like a reach failure and is not one.
+    raw = config.load(CONFIG)
+    model, _, plan = scene.build(raw, np.random.default_rng(0), ROOT)
+    geom = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "arm_pedestal")
+    half_height = float(model.geom_size[geom][2])
+    centre_z = float(model.geom_pos[geom][2])
+    assert abs(centre_z - half_height) < 1e-9, (
+        "the pedestal does not stand on the floor"
+    )
+    assert abs((centre_z + half_height) - plan.arm_base[2]) < 1e-9, (
+        "the pedestal does not reach the arm it carries"
+    )
+
+
+def test_the_pedestal_stands_clear_of_the_arm_sweep() -> None:
+    """AC-ARM-04: a support the arm drives into is worse than none.
+
+    The gantry this replaced was first placed at the belt edge, inside the
+    arm's own annulus, where it stalled short of every target beyond. Here the
+    pedestal sits under the base, so what keeps it clear is the inner radius.
     """
     pytest.importorskip("mujoco")
     import mujoco
@@ -161,17 +175,14 @@ def test_the_gantry_stands_clear_of_the_arm_sweep() -> None:
 
     raw = config.load(CONFIG)
     model, _, plan = scene.build(raw, np.random.default_rng(0), ROOT)
-    for side in ("left", "right"):
-        geom = mujoco.mj_name2id(
-            model, mujoco.mjtObj.mjOBJ_GEOM, f"arm_gantry_upright_{side}"
-        )
-        position = model.geom_pos[geom]
-        distance = float(
-            np.hypot(
-                position[0] - plan.arm_shoulder[0], position[1] - plan.arm_shoulder[1]
-            )
-        )
-        assert distance > armmod.REACH_MAX_METERS
+    geom = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "arm_pedestal")
+    width, depth = float(model.geom_size[geom][0]), float(model.geom_size[geom][1])
+    half_diagonal = float(np.hypot(width, depth))
+    assert half_diagonal < armmod.REACH_MIN_METERS, (
+        f"the pedestal reaches {half_diagonal:.3f} m from the base, inside the "
+        f"{armmod.REACH_MIN_METERS:.2f} m the arm sweeps"
+    )
+    assert plan.pedestal == (width * 2.0, depth * 2.0)
 
 
 def test_the_arm_model_is_committed_rather_than_ignored() -> None:

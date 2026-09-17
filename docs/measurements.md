@@ -40,51 +40,76 @@ records what was screened rather than what survived.
 
 ## The manipulator
 
-A SCARA in the geometry of an ABB IRB 910SC-3/0.65. Every figure below is from
-ABB's published product specification, not from this project, which is what
-makes the model checkable against something outside it.
+A Universal Robots UR10e, from MuJoCo Menagerie at commit `8161bba2`. Published
+figures come from Universal Robots; swept figures were measured against the
+compiled model in this repository.
 
-| Quantity | Value |
-| --- | --- |
-| Arm 1, shoulder to elbow | 0.400 m on the 0.65 variant; 0.200 and 0.300 on the others |
-| Arm 2, elbow to spline | 0.250 m on all three variants |
-| Axis 1, shoulder rotation | plus or minus 140 degrees, 415 deg/s |
-| Axis 2, elbow rotation | plus or minus 150 degrees, 659 deg/s |
-| Axis 3, spline travel | 0.180 m, 1.02 m/s, 250 N down force |
-| Axis 4, spline rotation | plus or minus 400 degrees, 2400 deg/s |
-| Payload | 3 kg rated, 6 kg maximum |
-| 1 kg picking cycle | 0.385 s |
-| Repeatability | 0.015 mm on axes 1 and 2 |
-| Base footprint | 160 by 160 mm |
-
-Two of those decide the shape of the workspace. The link lengths set an outer
-radius of 0.650 m, and the 150 degree stop on axis 2 folds the tool no closer
-than **0.222 m** to the shoulder, which is the dead zone. The 140 degree stop on
-axis 1 removes a wedge behind the arm.
-
-That wedge is not a detail. Ignoring it and treating the workspace as a plain
-annulus overstates the pick window on the belt centerline by a factor of two,
-which a sweep caught and the closed-form chord did not.
-
-## Workspace, as swept
-
-Reachability measured through the same test the safety layer applies, at
-0.30 m/s.
-
-| Lateral position | Travel inside the workspace | Pick time |
+| Quantity | Value | Source |
 | --- | --- | --- |
-| centerline | 0.428 m | 1.43 s |
-| 0.10 m out | 0.746 m | 2.49 s |
-| 0.20 m out | 0.974 m | 3.25 s |
-| 0.30 m out | 1.130 m | 3.77 s |
-| 0.40 m out | 1.024 m | 3.41 s |
-| 0.50 m out, belt edge | 0.830 m | 2.77 s |
+| Axes | 6, all revolute | model |
+| Reach | 1.308 m, measured by sampling joint space | swept |
+| Payload | 12.5 kg | published |
+| Mass | 32.7 kg | model |
+| Axis 1 range | plus or minus 360 degrees | model |
+| Visual meshes | 20, from manufacturer CAD via the ROS-Industrial description | upstream |
 
-Every one of 51 lateral samples across the 1.00 m belt is reachable somewhere in
-its travel, so the belt is covered end to end. The centerline is the worst case
-for pick time rather than the best, because the dead zone sits directly under
-the arm and an object crossing the centerline spends part of its travel inside
-it.
+### Workspace, as swept
+
+A six-axis arm under an orientation constraint has no closed-form workspace, so
+this was measured rather than derived. Inverse kinematics was solved with the
+tool axis held vertical, from a base 0.70 m off the belt centreline, at an
+object top 0.05 m above the arm's mounting face.
+
+| Lateral position on the belt | Reachable span along the belt | Radius from base |
+| --- | --- | --- |
+| -0.500 m | -1.25 to +1.15 m | 0.200 to 1.266 m |
+| -0.250 m | -1.20 to +1.20 m | 0.450 to 1.282 m |
+| 0.000 m | -1.10 to +1.10 m | 0.700 to 1.304 m |
+| +0.250 m | -0.90 to +0.90 m | 0.950 to 1.309 m |
+| +0.500 m | -0.50 to +0.50 m | 1.200 to 1.300 m |
+
+Focused sweeps put the inner limit between 0.175 m, unreachable, and 0.200 m,
+reachable, and found solutions from the base plane to 0.55 m above it.
+
+The region the system trusts sits strictly inside all of that:
+
+| Bound | Trusted | Measured |
+| --- | --- | --- |
+| Inner radius | 0.25 m | 0.200 m |
+| Outer radius | 1.25 m | 1.266 m at worst bearing |
+| Vertical band about the base | -0.05 m to +0.45 m | past both ends |
+
+Under-permitting is the point. A checker that admits a point the arm cannot
+reach is how a proposer and a checker come to disagree, which cost this project
+a 47 percent override rate on an earlier arm.
+
+### Where it can stand
+
+Belt coverage with the tool held vertical, by pedestal offset from the centreline.
+
+| Offset | UR10e | UR5e |
+| --- | --- | --- |
+| 0.60 m | full 1.00 m belt | misses the far edge |
+| 0.70 m | full 1.00 m belt | misses the far edge |
+| 0.75 m | full 1.00 m belt | misses the far edge |
+| 0.85 m | misses the far edge | misses the far edge |
+
+Mounted inverted on a gantry above the belt, the UR10e reached 3 of 27 sample
+points: a six-axis arm pointing straight down while extended is near-singular.
+That is why this arm stands beside the line where the previous one hung over it.
+
+### Cycle time
+
+| Machine class | Published pick-and-place cycle |
+| --- | --- |
+| Delta | near 0.3 s, above 120 cycles per minute |
+| SCARA | 0.28 to 0.50 s at its sweet spot |
+| Six-axis industrial | 0.4 to 0.8 s |
+| Collaborative, including the UR10e | behind all three, limited by the safety envelope |
+
+CLAVE's budget is **1.0 second**, set by `AC-CYCLE-01` and enforced by
+`max_cycle_time_p99_seconds`. It is unmeasured rather than met: nothing grasps,
+so there is no placement to measure to.
 
 ## The world
 
@@ -94,14 +119,12 @@ it.
 | Belt width | 1.00 m | same |
 | Belt surface height | 0.90 m | same |
 | Belt speed | 0.25 to 0.35 m/s | same |
-| Arm mounting face | 1.659 m, over the belt centerline | same |
-| Shoulder | 0.251 m below the mounting face, at 1.408 m | derived |
-| Tool travel | belt surface plus 0.030 m to plus 0.210 m | the 0.180 m stroke, positioned |
+| Arm base, the pedestal top | 0.90 m, 0.70 m off the belt centerline | same |
+| Pedestal footprint | 0.30 by 0.30 m, floor to 0.90 m | same |
+| Tool band | base minus 0.05 m to base plus 0.45 m | swept, see above |
 
-The tool reaches an object top 0.030 m above the belt fully extended and clears
-one 0.210 m tall fully retracted. An object taller than 0.210 m is struck by the
-retracted tool, which is a real consequence of a 0.180 m stroke rather than a
-modeling shortcut.
+The pedestal's half-diagonal is 0.212 m, inside the 0.25 m inner radius, so the
+arm cannot drive into the support carrying it.
 
 ## Sensing
 
@@ -117,11 +140,12 @@ per module, which is marginal by design.
 
 ## The object set
 
-Selection is bounded by the spline stroke rather than by an effector opening: the
-tool reaches an object top between 0.030 m and 0.210 m above the belt, and
-nothing about a suction cup limits width.
+Selection was bounded by the previous arm's 0.180 m spline stroke. The UR10e's
+vertical band is 0.50 m, so that bound no longer binds, and the set below is
+inherited rather than re-derived. The end effector is specified separately and
+is what will set the next bound.
 
-| | Old bound, 55.7 mm jaw | New bound, 0.180 m stroke |
+| | 55.7 mm jaw | 0.180 m stroke |
 | --- | --- | --- |
 | Scanned models admitted | 153 of 1,030 | 836 of 1,030 |
 | YCB packages admitted | 4 of 9 | 8 of 9 |

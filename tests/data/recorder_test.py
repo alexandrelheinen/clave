@@ -11,6 +11,7 @@ import numpy as np
 import pytest
 
 from clave.data.examples import Rollout
+from clave.world import arm as armmod
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -141,5 +142,7 @@ def test_recorded_examples_carry_a_moving_arm() -> None:
     """The arm must actually move, or proprioception carries no information."""
     rollout = record_short(0, "proprio")
     joints = np.array([example.arm_joints for example in rollout.examples])
-    assert joints.shape[1] == 4
+    # Six, because the arm is a six-axis UR10e. The count is asserted rather
+    # than inferred so a silent change of manipulator fails here.
+    assert joints.shape[1] == len(armmod.ARM_JOINTS) == 6
     assert float(np.ptp(joints, axis=0).max()) > 1e-3

@@ -21,10 +21,8 @@
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let envelope = Envelope::from_json(
-//!     br#"{"shoulder_meters": [0.0, 0.0, 1.408], "link_meters": [0.4, 0.25],
-//!          "reach_meters": [0.222, 0.65], "shoulder_limit_radians": 2.443461,
-//!          "elbow_limit_radians": 2.617994,
-//!          "tool_above_belt_meters": [0.03, 0.21],
+//!     br#"{"base_meters": [0.0, -0.7, 0.9], "reach_meters": [0.25, 1.25],
+//!          "tool_above_base_meters": [-0.05, 0.45],
 //!          "belt_surface_z_meters": 0.9, "belt_x_meters": [-1.5, 1.5],
 //!          "belt_y_meters": [-0.5, 0.5]}"#,
 //! )?;

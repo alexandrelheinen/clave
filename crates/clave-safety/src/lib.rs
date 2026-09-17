@@ -34,10 +34,8 @@
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let envelope = Envelope::from_json(
-//!     br#"{"shoulder_meters": [0.0, 0.0, 1.408], "link_meters": [0.4, 0.25],
-//!          "reach_meters": [0.222, 0.65], "shoulder_limit_radians": 2.443461,
-//!          "elbow_limit_radians": 2.617994,
-//!          "tool_above_belt_meters": [0.03, 0.21],
+//!     br#"{"base_meters": [0.0, -0.7, 0.9], "reach_meters": [0.25, 1.25],
+//!          "tool_above_base_meters": [-0.05, 0.45],
 //!          "belt_surface_z_meters": 0.9, "belt_x_meters": [-1.5, 1.5],
 //!          "belt_y_meters": [-0.5, 0.5]}"#,
 //! )?;
@@ -47,11 +45,11 @@
 //!     Confidence::new(0.6)?,
 //! )?);
 //!
-//! // A point two thirds of a meter down the belt is beyond the arm's reach.
+//! // A point 2.2 m across the belt is well outside the arm's 1.25 m annulus.
 //! let proposal = Proposal::decode(
 //!     br#"{"version": 1, "object_id": 7, "material_class": "M-01",
-//!          "confidence": 0.91, "x_meters": 0.66, "y_meters": 0.0,
-//!          "z_meters": 0.36, "yaw_radians": 0.0, "reference_time_nanos": 1000,
+//!          "confidence": 0.91, "x_meters": 0.0, "y_meters": 2.2,
+//!          "z_meters": 0.95, "yaw_radians": 0.0, "reference_time_nanos": 1000,
 //!          "window_start_nanos": 1000, "window_end_nanos": 2000}"#,
 //! )?;
 //! let verdict = envelope.judge(&proposal, &resolver)?;

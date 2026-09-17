@@ -18,20 +18,16 @@ from typing import Any
 
 import numpy as np
 
+from clave.world import arm
 from clave.world.config import require, require_range
 from clave.world.objects import ObjectSpec, channels, parse
 
-ARM_MODEL = Path("src") / "clave" / "world" / "mjcf" / "irb910sc.xml"
-"""The SCARA, in the geometry of an ABB IRB 910SC-3/0.65.
-
-CLAVE owns this model rather than pinning one. D-10 in docs/decisions.md
-records why: a SCARA is RRPR, every open arm model is all-revolute, and locking
-joints on a revolute arm never produces a prismatic axis.
-
-It lives under `src/` rather than `assets/`, which is the convention FRET uses
-for the same kind of file. `assets/` holds what `scripts/import_scene_assets.py`
-converts out of a submodule or a pinned download, and is ignored by git because
-every byte in it is derived. This model is authored, so a clone has to carry it.
+ARM_MODEL = Path("third_party") / "mujoco_menagerie_ur10e" / "ur10e.xml"
+"""A Universal Robots UR10e, adopted from MuJoCo Menagerie rather than authored
+here. D-13 in docs/decisions.md records why a validated model derived from
+manufacturer CAD outranked the SCARA this replaced, and D-14 records why the
+one model is copied into third_party/ instead of pinning a 2.3 GB collection to
+obtain 35 MB of it.
 """
 
 PARKED_Z = 0.05
@@ -79,16 +75,14 @@ class SceneLayout:
 
     Attributes:
         belt: Belt geometry and speed.
-        arm_shoulder: Where the SCARA's first axis sits, in meters. The reach
-            test is radial about this point, so it is the shoulder rather than
-            the mounting face.
-        shoulder_drop: How far the shoulder sits below the mounting face, in
-            meters, so a caller can recover the mount the arm hangs from.
-        reach_min: Inner radius of the annulus the tool sweeps, in meters.
+        arm_base: Where the arm's base column stands, in meters. This is the
+            top of its pedestal, and the reach test is radial about it.
+        reach_min: Inner radius of the annulus the arm is trusted over.
         reach_max: Outer radius of that annulus, in meters.
-        tool_above_belt: Lowest and highest the tool point can sit above the
-            belt surface, which is the spline stroke expressed where a caller
-            can use it.
+        tool_above_base: Lowest and highest the flange is trusted at, relative
+            to the arm's own base rather than to the belt, because that is what
+            the sweep measured.
+        pedestal: Footprint of the support the arm stands on, in meters.
         channels: Channel identifiers, one bin each.
         objects: The object set the pool draws from.
         pool_size: How many object bodies exist.
@@ -100,11 +94,11 @@ class SceneLayout:
     """
 
     belt: BeltGeometry
-    arm_shoulder: tuple[float, float, float]
-    shoulder_drop: float
+    arm_base: tuple[float, float, float]
     reach_min: float
     reach_max: float
-    tool_above_belt: tuple[float, float]
+    tool_above_base: tuple[float, float]
+    pedestal: tuple[float, float]
     channels: tuple[str, ...]
     objects: tuple[ObjectSpec, ...]
     pool_size: int
@@ -165,16 +159,16 @@ def layout(raw: dict[str, Any], rng: np.random.Generator) -> SceneLayout:
         surface_height=float(require(belt_cfg, "surface_height_meters", "belt")),
         speed=require_range(belt_cfg, "speed_meters_per_second", "belt").sample(rng),
     )
-    mount = require(arm_cfg, "mount_position_meters", "arm")
-    drop = float(require(arm_cfg, "shoulder_drop_meters", "arm"))
-    reach = require(arm_cfg, "tool_above_belt_meters", "arm")
+    base = require(arm_cfg, "base_position_meters", "arm")
+    band = require(arm_cfg, "tool_above_base_meters", "arm")
+    pedestal = require(arm_cfg, "pedestal_footprint_meters", "arm")
     return SceneLayout(
         belt=belt,
-        arm_shoulder=(float(mount[0]), float(mount[1]), float(mount[2]) - drop),
-        shoulder_drop=drop,
+        arm_base=(float(base[0]), float(base[1]), float(base[2])),
         reach_min=float(require(arm_cfg, "reach_min_meters", "arm")),
         reach_max=float(require(arm_cfg, "reach_max_meters", "arm")),
-        tool_above_belt=(float(reach[0]), float(reach[1])),
+        tool_above_base=(float(band[0]), float(band[1])),
+        pedestal=(float(pedestal[0]), float(pedestal[1])),
         channels=channels(specs),
         objects=specs,
         pool_size=int(require(spawn_cfg, "pool_size", "spawn")),
@@ -451,43 +445,33 @@ def _add_supports(
     if belt_legs:
         _add_belt_legs(mujoco, world, plan, leg, inset, frame_depth, steel)
 
-    # The gantry the manipulator hangs from. The arm is mounted inverted over
-    # the belt, so what carries it is a portal spanning the belt rather than a
-    # pedestal beside it: two uprights outside the belt edges and a crossbeam
-    # the mounting face bolts to.
-    column = float(require(structure, "pedestal_radius_meters", "structure"))
-    plate = float(require(structure, "pedestal_plate_radius_meters", "structure"))
-    plate_thickness = float(
-        require(structure, "pedestal_plate_thickness_meters", "structure")
-    )
-    mount_x, mount_y, mount_z = plan.arm_shoulder
-    mount_z += plan.shoulder_drop
-    # The uprights have to clear the belt and the arm's own sweep. Standing
-    # them at the belt edge alone puts them inside the 0.650 m annulus, where
-    # the arm drives into them and stalls short of every target beyond: a
-    # portal that blocks the manipulator it carries is worse than no portal.
-    span = max(plan.belt.width / 2.0 + 0.12, plan.reach_max + column + 0.05)
-    for side, sign in (("left", 1.0), ("right", -1.0)):
-        world.add_geom(
-            name=f"arm_gantry_upright_{side}",
-            type=mujoco.mjtGeom.mjGEOM_CYLINDER,
-            size=[column, mount_z / 2.0, 0.0],
-            pos=[mount_x, mount_y + sign * span, mount_z / 2.0],
-            rgba=steel,
-        )
-        world.add_geom(
-            name=f"arm_gantry_foot_{side}",
-            type=mujoco.mjtGeom.mjGEOM_CYLINDER,
-            size=[plate * 1.2, 0.008, 0.0],
-            pos=[mount_x, mount_y + sign * span, 0.008],
-            rgba=[0.22, 0.23, 0.26, 1.0],
-        )
+    # The pedestal the manipulator is bolted to. The arm stands beside the belt
+    # rather than hanging over it: a six-axis arm inverted above a plane is
+    # near-singular pointing straight down, and a sweep found 3 of 27 sample
+    # points reachable that way. D-13 records it.
+    #
+    # A parallelepiped is the right amount of detail here. It is a machine frame
+    # and nothing measures it, but an arm floating at working height describes no
+    # installation anybody could build, so it has to stand on something.
+    width, depth = plan.pedestal
+    base_x, base_y, base_z = plan.arm_base
+    # The arm sweeps an annulus from `reach_min` outward, so a pedestal whose
+    # half-diagonal stays inside that radius cannot be struck by the arm it
+    # carries. AC-ARM-04.
     world.add_geom(
-        name="arm_gantry_beam",
+        name="arm_pedestal",
         type=mujoco.mjtGeom.mjGEOM_BOX,
-        size=[plate, span, plate_thickness],
-        pos=[mount_x, mount_y, mount_z + plate_thickness],
+        size=[width / 2.0, depth / 2.0, base_z / 2.0],
+        pos=[base_x, base_y, base_z / 2.0],
         rgba=steel,
+    )
+    # A foot, so it reads as bolted down rather than balanced.
+    world.add_geom(
+        name="arm_pedestal_foot",
+        type=mujoco.mjtGeom.mjGEOM_BOX,
+        size=[width * 0.75, depth * 0.75, 0.008],
+        pos=[base_x, base_y, 0.008],
+        rgba=[0.22, 0.23, 0.26, 1.0],
     )
 
 
@@ -542,6 +526,40 @@ def _add_belt_legs(
             )
 
 
+ARM_GAIN_SCALE = 10.0
+"""How much stiffer the arm's position actuators are made than as shipped.
+
+The vendored model's own README says its actuator values "have not been
+carefully tuned", and as shipped the arm droops 2.4 degrees at the shoulder
+under its own weight, which puts the tool 31 mm off a commanded target. Scaling
+the proportional and derivative terms together brings that to under 3 mm, which
+is loose beside the 0.05 mm a real UR10e repeats to and tight enough that a
+tracking error is not mistaken for a reach failure.
+
+This is applied to the compiled model rather than edited into
+`third_party/mujoco_menagerie_ur10e/`, because that directory is a verbatim copy
+and D-14 undertakes to keep it one.
+"""
+
+
+def _stiffen_arm_actuators(mujoco: Any, model: Any) -> None:
+    """Raise the arm's position gains on the compiled model.
+
+    Args:
+        mujoco: The imported module.
+        model: The compiled model, modified in place.
+    """
+    for name in arm.ARM_ACTUATORS:
+        actuator = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, name)
+        if actuator < 0:
+            continue
+        model.actuator_gainprm[actuator][0] *= ARM_GAIN_SCALE
+        # The position term and its damping move together, so the response
+        # stays critically damped rather than ringing.
+        model.actuator_biasprm[actuator][1] *= ARM_GAIN_SCALE
+        model.actuator_biasprm[actuator][2] *= math.sqrt(ARM_GAIN_SCALE)
+
+
 def build(
     raw: dict[str, Any],
     rng: np.random.Generator,
@@ -582,6 +600,11 @@ def build(
     # its grasp behavior was tuned with them.
     mujoco_spec.option.impratio = 10.0
     mujoco_spec.option.cone = mujoco.mjtCone.mjCONE_ELLIPTIC
+    # The manipulator ships with implicitfast, which is what its authors tuned
+    # its damping and armature against. Adopting it rather than overriding it
+    # keeps the arm behaving as the model it came from, and silences the attach
+    # conflict that otherwise reports the scene quietly winning that argument.
+    mujoco_spec.option.integrator = mujoco.mjtIntegrator.mjINT_IMPLICITFAST
     # The offscreen framebuffer bounds what any renderer attached to this model
     # can produce, and MuJoCo defaults it to 640 by 480. That is enough for the
     # 320 by 240 frames the models see and not enough for a demonstration
@@ -727,17 +750,18 @@ def build(
         )
 
     frame = world.add_frame()
-    # The model hangs from its mounting face, so the attachment point is the
-    # mount rather than the shoulder the reach test uses.
-    mount_cfg = require(require(raw, "arm"), "mount_position_meters", "arm")
-    frame.pos = [float(mount_cfg[0]), float(mount_cfg[1]), float(mount_cfg[2])]
+    # The arm stands on its pedestal, so the attachment point is the pedestal's
+    # top face.
+    frame.pos = list(plan.arm_base)
     with warnings.catch_warnings():
-        # The manipulator declares its own impratio and cone; this scene already
-        # adopted both above, so the conflict notice carries no information.
+        # The manipulator declares its own impratio, cone and integrator; this
+        # scene adopted all three above, so the conflict notice carries no
+        # information.
         warnings.simplefilter("ignore")
         mujoco_spec.attach(_arm_spec(root), prefix="arm_", frame=frame)
 
     model = mujoco_spec.compile()
+    _stiffen_arm_actuators(mujoco, model)
     _check_mesh_objects_fit(
         mujoco,
         model,

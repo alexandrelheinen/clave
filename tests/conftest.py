@@ -43,12 +43,9 @@ def runtime_binary() -> Path:
 def runtime_config() -> dict[str, Any]:
     """An envelope and routing policy matching the shipped world's geometry."""
     return {
-        "shoulder_meters": [0.0, 0.0, 1.408],
-        "link_meters": [0.400, 0.250],
-        "reach_meters": [0.222, 0.650],
-        "shoulder_limit_radians": 2.443461,
-        "elbow_limit_radians": 2.617994,
-        "tool_above_belt_meters": [0.030, 0.210],
+        "base_meters": [0.0, -0.70, 0.90],
+        "reach_meters": [0.25, 1.25],
+        "tool_above_base_meters": [-0.05, 0.45],
         "belt_surface_z_meters": 0.90,
         "belt_x_meters": [-1.5, 1.5],
         "belt_y_meters": [-0.5, 0.5],

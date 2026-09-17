@@ -501,3 +501,115 @@ path from frame to published decision is intact end to end.
 object rather than in world coordinates, or one with capacity matched to the
 workspace, should close this. Either is a model change rather than a
 configuration change, so it belongs in its own step.
+
+## D-13: the manipulator is a UR10e from Menagerie, and two of its axes go unused
+
+**Date**: 2026-09-16 · **Step**: the SCARA migration
+
+**This reverses D-10.** That entry argued a SCARA had to be built here because
+no validated model exists, and dismissed the cost with "appearance does not
+enter any measurement CLAVE takes". The premise was wrong rather than
+mispriced. CLAVE publishes stills and videos, those are how the project reads
+to anyone who does not run it, and the hand-built arm rendered as capsules on a
+stick. `CONTRIBUTING.md` now carries physical fidelity as a requirement, and
+this entry is what that requirement decides.
+
+**What was scoped**: the arm is a Universal Robots UR10e from MuJoCo Menagerie,
+on a pedestal beside the belt. The hand-built SCARA is deleted. `AC-ARM` claims
+about cycle time are withdrawn until something grasps.
+
+### Why this one
+
+**Practical.** Menagerie carries 72 models and not one parallel mechanism: no
+delta, no Stewart platform, no SCARA, no gantry. The machines that suit this
+task best are the ones nobody has published. Among what exists, the UR10e is
+the only arm that covers a 1.00 m belt. Sweeping inverse kinematics with the
+tool held vertical, it reaches every lateral position from a pedestal 0.60 m to
+0.75 m off the centreline. A UR5e misses the far edge at every offset tried,
+and every other candidate reaches under 0.95 m where the UR10e reaches 1.308 m.
+
+**Risk.** A delta is the right machine and was costed honestly. URDF cannot
+express a closed kinematic chain, so a delta description carries meshes and
+broken loops and nothing else; the loop closures would be hand-authored
+`equality/connect` constraints, which is exactly where MuJoCo users report
+instability, and closed chains usually want a smaller timestep than the 0.002 s
+this project runs. That is an unbounded schedule risk against a bounded one.
+
+**Reality.** Universal Robots arms are deployed in recycling and logistics, so
+the scene depicts a configuration somebody actually runs rather than a
+plausible-looking assembly. The model is BSD-3-Clause and maintained by people
+who are not us.
+
+**Precision.** The model is derived from the vendor's published URDF through a
+documented pipeline and carries 20 CAD meshes. Its geometry is checkable
+against something outside this repository, which is what no arm authored here
+can offer.
+
+### What it costs
+
+**It is slower, and that is the headline cost.** Published pick-and-place cycle
+times put delta robots near 0.3 s and above 120 cycles a minute, SCARAs at 0.28
+to 0.50 s at their sweet spot, six-axis industrial arms at 0.4 to 0.8 s, and
+collaborative arms such as the UR10e slowest of the four because their safety
+envelope limits acceleration. A line built on this arm gives up most of the
+throughput a delta would deliver.
+
+That cost is currently theoretical, which is why it is acceptable now and will
+not stay acceptable. Nothing in CLAVE grasps, and `D-12` records the policy at
+0.445 m of pick-point error, so the project cannot substantiate any
+picks-per-minute figure with any manipulator. The moment it can, this trade is
+worth reopening.
+
+**Two degrees of freedom go unused.** The task needs four: a position over the
+belt and a rotation of the tool about the vertical, with the tool held pointing
+down. The UR10e has six. The surplus is not wasted in the sense of being
+harmful, because redundancy buys obstacle avoidance the SCARA never had, but a
+reader should know the arm is deliberately operated below its capability and
+that no part of CLAVE exercises its full pose freedom.
+
+**Vertical motion is a task-space constraint rather than a joint.** No arm in
+Menagerie has a prismatic axis and none can be given one: locking revolute
+joints removes freedom and never creates translation. A vertical descent is
+achieved by solving inverse kinematics at every waypoint with the tool held
+down, which is what an industrial linear move does. It follows that the
+workspace is not a closed-form annulus and has to be swept numerically, which
+`clave.world.arm` does.
+
+**Reversal condition**: a validated delta or SCARA model appearing in Menagerie
+or an equivalent collection, or CLAVE reaching the point where throughput is
+measurable and the cycle time above becomes a real constraint rather than a
+note.
+
+## D-14: one Menagerie model is copied rather than the collection pinned
+
+**Date**: 2026-09-17 · **Step**: the manipulator migration
+
+**The standard**: [roadmap.md](../.kiro/steering/roadmap.md) says assets are
+referenced and never vendored. Meshes arrive through pinned submodules, which is
+how the ROBOTIS arms, the YCB objects and the scanned packages all reach this
+repository.
+
+**What was scoped**: `third_party/mujoco_menagerie_ur10e/` is a verbatim copy of
+one directory from MuJoCo Menagerie at commit `8161bba2`, committed here rather
+than pinned as a submodule.
+
+**Why**: Menagerie is a single repository holding 72 models and 2.3 GB. CLAVE
+uses one of them, 35 MB. CI checks out submodules recursively on every job, so
+pinning the collection would move 2.3 GB to obtain 1.5 percent of it, on every
+run, forever. There is no sparse form of a submodule that `actions/checkout`
+will honor.
+
+The files are ASCII OBJ rather than binaries, so this does not breach the
+separate rule that no binary lands in git. It costs a one-time 35 MB in history
+and nothing per clone after that.
+
+**What is not scoped**: the provenance. `PROVENANCE.md` in that directory names
+the upstream commit, keeps the model's own `LICENSE` and `CHANGELOG`, and states
+how to update it. Nothing in the directory is edited. The physical fidelity
+requirement in `CONTRIBUTING.md` asks for a model derived from manufacturer CAD
+and maintained outside this repository, and a copy satisfies both as long as it
+stays a copy.
+
+**Reversal condition**: Menagerie publishing per-model repositories or releases,
+or `actions/checkout` gaining sparse submodule support, makes pinning cheap
+enough to prefer.

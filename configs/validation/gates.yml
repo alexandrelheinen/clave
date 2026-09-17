@@ -58,11 +58,22 @@ gates:
   # motion and gives that median 58 ms of tail headroom.
   max_decision_latency_p99_seconds: 0.45
 
-  # Decision to placement, at the 99th percentile, in seconds. Derived: it is
-  # the reachable window divided by the fastest configured belt speed, which
-  # docs/measurements.md computes as 1.13 s. An object whose cycle
-  # exceeds this left the window before the arm reached it.
-  max_cycle_time_p99_seconds: 1.13
+  # Decision to placement, at the 99th percentile, in seconds. A target rather
+  # than a derivation, and AC-CYCLE-01 in
+  # .kiro/specs/manipulator-migration/requirements.md is where it comes from.
+  #
+  # It used to be the per-object budget the geometry produced, which made it a
+  # restatement of the belt speed rather than a demand on the system. One second
+  # is a demand: published pick-and-place cycle times put delta robots near
+  # 0.3 s, SCARAs at 0.28 to 0.50 s, six-axis industrial arms at 0.4 to 0.8 s,
+  # and collaborative arms such as the UR10e this line runs behind all of those.
+  # A second asks the arm for something near the top of its own class without
+  # asking its class for something it cannot do.
+  #
+  # Nothing in CLAVE grasps, so this is unmeasured rather than met. The harness
+  # reports it as unmeasured instead of passing it vacuously, which AC-CYCLE-03
+  # requires.
+  max_cycle_time_p99_seconds: 1.00
 
   # Accuracy lost going from object instances seen in training to instances
   # never seen. A candidate that only memorized shows a large positive drop.
