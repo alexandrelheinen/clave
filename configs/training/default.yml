@@ -11,10 +11,17 @@ training:
   batch_size: 4
   learning_rate: 0.0003
   seed: 0
-  # Where the arm's reachable window ends, half the reachable window the world
-  # reports. The scripted expert is replayed against this to produce
-  # demonstrations, so a stale value here teaches picks that cannot be made.
-  window_exit_meters: 0.213
+  # Where the arm's reachable window ends, in belt frame meters. The scripted
+  # expert is replayed against this to produce demonstrations, so a stale value
+  # here teaches picks that cannot be made.
+  #
+  # Measured, not derived. Sweeping the compiled model with the tool held
+  # vertical puts the window at 2.07 m of centerline running -1.034 m to
+  # +1.034 m, so the exit is the downstream edge at 1.034 m.
+  # docs/measurements.md carries the sweep. The value this replaced, 0.213, was
+  # the half-window of the 0.24 m workspace the previous arm had, and it told
+  # the expert the window closed 0.82 m before it does.
+  window_exit_meters: 1.034
   # ACT predicts a chunk of future actions. v0.4.0 benchmarked the upstream
   # default of 100; captures here are half a second apart, so 100 would reach
   # far past the 1.13 second reachable window and be almost all padding.
