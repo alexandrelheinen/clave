@@ -122,9 +122,17 @@ so there is no placement to measure to.
 | Arm base, the pedestal top | 0.90 m, 0.70 m off the belt centerline | same |
 | Pedestal footprint | 0.30 by 0.30 m, floor to 0.90 m | same |
 | Tool band | base minus 0.05 m to base plus 0.45 m | swept, see above |
+| Reachable window | 2.071 m of centerline, from -1.034 m to +1.034 m | swept, see below |
 
 The pedestal's half-diagonal is 0.212 m, inside the 0.25 m inner radius, so the
 arm cannot drive into the support carrying it.
+
+The window is swept at 2 mm along the belt centerline through the same
+reachability test the safety layer applies, over the belt's full extent rather
+than from the origin: the belt is centered on the origin, so a sweep that starts
+there measures the downstream half and reports 1.036 m for a window that is
+twice that. At the configured belt speeds the window is 5.92 s of travel at
+0.35 m/s and 8.28 s at 0.25 m/s, and 6.60 s at the 0.31 m/s a fixed seed draws.
 
 ## Sensing
 
@@ -188,7 +196,7 @@ result describes that result instead of gating it.
 | `max_unseen_accuracy_drop` | 0.10 | Target |
 
 **Both timing gates are now more conservative than the physics requires.** They
-were derived when the budget was 1.13 s; the budget is 4.14 s at the fastest
+were derived when the budget was 1.13 s; the budget is 5.92 s at the fastest
 belt speed the configuration allows. They are left where they are, because a
 tighter gate than the physics demands costs nothing and moving one is a decision
 with an entry in [decisions.md](decisions.md) rather than an edit.

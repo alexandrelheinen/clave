@@ -118,3 +118,29 @@ def test_an_unpicked_object_is_not_removed() -> None:
         mujoco.mj_step(model, data)
         conveyor.step(model, data)
     assert len(conveyor.active) >= before
+
+
+def test_the_window_covers_both_halves_of_the_belt() -> None:
+    """AC-REACH-07: the belt is centered on the origin, so the sweep must be.
+
+    A sweep that starts at the origin sees only the downstream half, which the
+    expert then halves again to obtain the edge an object leaves reach at. The
+    two ends are found here by asking the same test the safety layer asks,
+    rather than by a radius this test computes for itself.
+    """
+    plan = layout(speed=0.2, offset=-0.70)
+    step = 0.002
+    reachable = [
+        x * step
+        for x in range(
+            int(-plan.belt.length / 2.0 / step), int(plan.belt.length / 2.0 / step) + 1
+        )
+        if armmod.reaches((plan.arm_base[0], plan.arm_base[1]), x * step, 0.0)
+    ]
+    assert min(reachable) < 0.0, "nothing upstream of the arm is reachable"
+    span = max(reachable) - min(reachable)
+    report = belt.reach_report(plan)
+    assert report.window_length == pytest.approx(span, abs=2 * step)
+    # AC-VIS-04: the edges a figure draws are the ones the sweep found.
+    assert report.window_edges[0] == pytest.approx(min(reachable), abs=2 * step)
+    assert report.window_edges[1] == pytest.approx(max(reachable), abs=2 * step)
