@@ -176,11 +176,43 @@ to 640 by 480 and this project raised it to 1920 by 1080, which silently capped
 a 2448 pixel sensor. A camera that cannot be rendered at its own resolution has
 a resolution that means nothing.
 
-Measured decode yield, with a stock OpenCV detector over five seeds at the
-sensor's native resolution: of 45 objects crossing the gate, all 45 fell inside
-a code camera's band and 2 decoded, as `037600138727` and `077623000618`, both
-on steel cans. That is 4.4 percent, and both denominators now coincide because
-the gate covers the belt.
+Measured decode yield, over five seeds at the sensor's native resolution:
+
+| Denominator | Decodes | Yield |
+| --- | --- | --- |
+| Objects crossing the gate | 2 of 45 | 4.4 percent |
+| Objects inside a code camera's band | 2 of 45 | 4.4 percent |
+
+Both denominators coincide now that the gate covers the belt. They did not
+before: at the previous optics only 29 of 45 crossings were inside a band, and
+the same two decodes read as 3.4 percent or 2.2 percent depending on which was
+quoted. The measurement reports both for that reason.
+
+| Class | Crossings | Decoded |
+| --- | --- | --- |
+| `M-06` ferrous metal | 20 | 2 |
+| `M-02` HDPE | 15 | 0 |
+| `M-04` other plastic | 5 | 0 |
+| `M-09` paperboard | 5 | 0 |
+
+Every decode is a steel can, and the headline figure hides that. The two read
+were `037600138727` and `077623000618`, on the potted meat can and the master
+chef can.
+
+The decoder tries each frame at full scale and then at half, which recovers the
+sugar box from its texture and recovers nothing extra from a rendered gate
+frame. So the rendered yield is 2 either way, and the limit is not the reader.
+A barcode wrapped around a can foreshortens non-linearly under a nadir view, and
+most packages present no readable symbol from directly above at all, which is
+why a real line uses omnidirectional readers. Cropping to the object's
+segmentation bounds before decoding returns zero, because the crop clips the
+barcode's quiet zone.
+
+Five of the eighteen objects carry a symbol this project can read at all, which
+bounds the rendered figure before any optics argument: `silicon_bottle`,
+`pudding_box` and `sugar_box` from their textures, and `master_chef_can` and
+`potted_meat_can` only from rendered frames, because the render unwraps a
+cylinder the flat texture presents at an angle no detector reads.
 
 The yield is low and the cause is not the optics. A barcode wrapped around a can
 foreshortens non-linearly under a nadir view, and most packages present no
