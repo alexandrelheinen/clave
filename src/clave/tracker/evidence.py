@@ -323,16 +323,21 @@ class Evidence:
         """Refuse an envelope that disagrees with what it carries.
 
         Raises:
-            EvidenceError: If the confidence is not a probability, or the role
-                does not match the payload. A code read filed under the
-                detection role would be folded by the wrong rule, and nothing
-                downstream would say so.
+            EvidenceError: If the confidence is not a probability, if the
+                payload is not one the union carries, or if the role does not
+                match it. A code read filed under the detection role would be
+                folded by the wrong rule, and nothing downstream would say so.
         """
         if not math.isfinite(self.confidence) or not 0.0 <= self.confidence <= 1.0:
             raise EvidenceError(
                 f"confidence is {self.confidence!r}, which states no certainty"
             )
-        belongs = ROLE_OF[type(self.payload)]
+        belongs = ROLE_OF.get(type(self.payload))
+        if belongs is None:
+            raise EvidenceError(
+                f"{type(self.payload).__name__} is not a payload this union "
+                f"carries; adding one means adding it to Payload and to ROLE_OF"
+            )
         if self.role is not belongs:
             raise EvidenceError(
                 f"{type(self.payload).__name__} is reported under role "

@@ -1,0 +1,38 @@
+# How the tracker folds evidence into a belief.
+#
+# Every tunable here is configuration for the same reason the world's are: a
+# numeric default buried in Python is a default nobody reviews, and these two
+# decide whether a barcode can overturn a camera.
+
+posterior:
+  # No class ever reaches exactly zero. A class some evidence gave no weight is
+  # still a class the next reading could argue for, and a zero is unrecoverable
+  # under multiplication. The floor is what keeps the posterior a distribution
+  # rather than a set of survivors.
+  #
+  # AC-TRACK-51 asks for a floor and refuses to let it be a constant in code.
+  floor: 0.0005
+
+recency:
+  # How long a reading takes to lose half its weight, in seconds.
+  #
+  # Sized against the belt rather than chosen. An object crosses the 2.07 m
+  # reachable window in 6.6 s at the 0.31 m/s a fixed seed draws, and captures
+  # are 0.5 s apart, so a reading from the gate should still count when the
+  # object reaches the arm while a reading from a previous object should not.
+  # Two seconds puts a gate observation at about a tenth of its original weight
+  # by the time the arm sees the object.
+  half_life_seconds: 2.0
+
+mass:
+  # Where the density band comes from, which is nowhere in this file.
+  #
+  # configs/world/sorting_line.yml already declares a bulk density range per
+  # object, so the band for a material class is the union of the ranges its
+  # objects declare. Inventing a second set of numbers here would give the
+  # world and the tracker two answers for the same question.
+  #
+  # Seven of the eleven classes have no object, per D-11, so they have no band
+  # and the mass of an object in one of them is unknown rather than estimated.
+  # That is the honest reading and it is what AC-TRACK-22 asks the band to say.
+  densities_from_world: true
