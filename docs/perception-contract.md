@@ -129,11 +129,11 @@ WasteObject
   mass                 estimate
   mass_uncertainty     a band, not a number, and the reason is below
 
-  channel              resolved by the routing policy, not by perception
   evidence             which roles contributed, for auditing
+  simulated            which of these fields came from the simulator's label
 ```
 
-Three properties of this record are load-bearing.
+Four properties of this record are load-bearing.
 
 **No sensor appears in it.** `evidence` names roles rather than cameras, so a
 consumer can report that a decision used a code without knowing which of three
@@ -144,10 +144,21 @@ empty or half full differs tenfold, and that difference decides whether a
 suction cup holds. A single number would invite a consumer to trust it. Where a
 GTIN resolved, the packaging mass replaces the estimate and the band narrows.
 
-**The channel is resolved, not perceived.** Perception says what the object is;
-the routing policy says where that class goes on this line. Channel numbers
-belong to the operator, which is why they are configuration and why they live
-behind the same resolver the safety layer already calls.
+**The channel is absent, because it is resolved rather than perceived.**
+Perception says what the object is; the routing policy says where that class
+goes on this line. Channel numbers belong to the operator, which is why they are
+configuration and why they live behind the same resolver the safety layer
+already calls. This record carried a `channel` field until the tracker was
+built, and perception could only ever have written a null into it. A field that
+is always absent is worse than an absent field, so the consumer asks the
+resolver.
+
+**The record says what it did not perceive.** `simulated` names the fields that
+came from `GroundTruth` rather than from a sensor. No per-instance classifier
+exists yet, so a material folded from the simulator's label is the simulator's
+label, and a record that did not say so would launder a supplied value into a
+perceived one. That is the confusion this whole contract exists to end, so the
+disclosure is a field rather than a convention.
 
 ## What changes when the architecture changes
 
