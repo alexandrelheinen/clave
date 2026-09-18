@@ -416,7 +416,7 @@ specs that close them.
 - [x] sitl-runtime -- Close the loop in Rust: inference, safety override, decision publication, and the p99 latency benchmark. Dependencies: training-application, sorting-world
 - [x] decision-publisher -- Publish the decision on a ROS 2 topic in the shape FRET's PickPlaceFSM consumes, so FRET can drive the manipulator without CLAVE gaining a planner, a controller or a second simulator. Dependencies: sitl-runtime
 - [x] benchmark-suite -- Compare every candidate in one reproducible benchmark and record the chosen configuration. Dependencies: sitl-runtime, validation-harness
-- [ ] perception-record -- Build the perception contract as code: the belt frame, the clock, evidence and its payloads, the sensor adapters, the barcode decoder, the fusion rules, and the record every consumer reads. Dependencies: sorting-world, data-pipeline, pick-decision-contract
+- [x] perception-record -- Build the perception contract as code: the belt frame, the clock, evidence and its payloads, the sensor adapters, the barcode decoder, the fusion rules, and the record every consumer reads. Dependencies: sorting-world, data-pipeline, pick-decision-contract
 - [ ] learned-tracker -- Supply the association rule as a trained model over a physical state, open the tracking stage the platform lacks, and take identity away from the simulator. Dependencies: perception-record, model-candidates, training-application
 
 Checkboxes above track the roadmap step, which closes when its deliverable
@@ -435,7 +435,7 @@ lands, not when its spec is written.
 | sitl-runtime | Approved | Approved | Approved | Delivered, tagged v0.9.0 |
 | decision-publisher | Approved | Approved | Approved | Delivered, tagged v0.10.0 |
 | benchmark-suite | Approved | Approved | Approved | Delivered, tagged v1.0.0 |
-| perception-record | Not started | Not started | Not started | Not started |
+| perception-record | Approved | Approved | Approved | Implemented, not tagged |
 | learned-tracker | Not started | Not started | Not started | Not started |
 | every other spec | Not started | Not started | Not started | Not started |
 
