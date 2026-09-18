@@ -177,6 +177,14 @@ class Tracker:
         settings: The fusion floor, half life and density bands.
         belt_speed: Belt speed in meters per second.
         window_exit: Where the reachable window closes, in belt frame meters.
+        unmeasured_extent: How wide to assume a track is before anything has
+            measured it, in meters. A reading that carries no geometry, which
+            `GroundTruth` does not, still opens a track somewhere, and the
+            association gate scales with the track's own extent. Left at zero
+            that gate is nothing and no later detection can ever join, so the
+            two would run as separate tracks over one object. The caller passes
+            the widest object the line handles, which
+            `arm.max_grasp_width_meters` already states.
         resolve: Turns a decoded symbol into packaging components.
     """
 
@@ -185,6 +193,7 @@ class Tracker:
     settings: FusionSettings
     belt_speed: float
     window_exit: float
+    unmeasured_extent: float = 0.0
     resolve: Resolver | None = None
     _tracks: dict[int, Track] = field(default_factory=dict)
     _next_id: int = 1
@@ -202,7 +211,7 @@ class Tracker:
                 system rather than a habit of its callers.
         """
         admitted = self.intake.accept(evidence)
-        cue = _cue_of(admitted)
+        cue = _cue_of(admitted, self._extent())
         summaries = tuple(
             track.summarize(cue.observed_at_nanos, self.belt_speed)
             for track in self._tracks.values()
@@ -229,6 +238,23 @@ class Tracker:
             for track in sorted(self._tracks.values(), key=lambda t: t.track_id)
         )
 
+    def _extent(self) -> float:
+        """Return the width to assume before anything has measured one."""
+        return max(self.unmeasured_extent, 1e-6)
+
+    def _unmeasured(self) -> Footprint:
+        """Return the footprint a track carries before anything measures it.
+
+        The extent is what the association gate scales with, so a sentinel of
+        nothing means nothing can ever join. The line's widest handled object is
+        the honest assumption: it over-reaches rather than under-reaches, and a
+        real detection replaces it the moment one arrives.
+        """
+        extent = self._extent()
+        return Footprint(
+            center=(0.0, 0.0, 0.0), major_extent=extent, minor_extent=extent, yaw=0.0
+        )
+
     def _open(self, cue: Cue, at_nanos: int) -> Track:
         """Start a new track from one cue.
 
@@ -239,7 +265,7 @@ class Tracker:
         self._next_id += 1
         track = Track(
             track_id=track_id,
-            footprint=cue.footprint or _unlocated(),
+            footprint=cue.footprint or self._unmeasured(),
             observed_at_nanos=cue.observed_at_nanos,
             posterior=Posterior.uniform(),
             first_seen_nanos=at_nanos,
@@ -275,7 +301,7 @@ class Tracker:
         elif isinstance(payload, GroundTruth):
             track.label = payload.object_id
             track.simulated |= {"material"}
-            if track.footprint.center == _unlocated().center:
+            if track.footprint.center == self._unmeasured().center:
                 track.footprint = replace(track.footprint, center=payload.position)
                 track.observed_at_nanos = evidence.observed_at_nanos
 
@@ -311,7 +337,7 @@ class Tracker:
         )
 
 
-def _cue_of(evidence: Evidence) -> Cue:
+def _cue_of(evidence: Evidence, unmeasured_extent: float) -> Cue:
     """Return what an associator is allowed to see of one reading.
 
     Every field an implementation may read is filled here and nowhere else, so
@@ -319,6 +345,9 @@ def _cue_of(evidence: Evidence) -> Cue:
 
     Args:
         evidence: An admitted reading.
+        unmeasured_extent: How wide to call a reading that carries a position
+            but no extent, which `GroundTruth` does. The association gate
+            scales with it, so a sentinel here means nothing can ever join.
 
     Returns:
         The cue.
@@ -339,23 +368,15 @@ def _cue_of(evidence: Evidence) -> Cue:
     if isinstance(payload, GroundTruth):
         return Cue(
             observed_at_nanos=evidence.observed_at_nanos,
-            footprint=replace(_unlocated(), center=payload.position),
+            footprint=Footprint(
+                center=payload.position,
+                major_extent=unmeasured_extent,
+                minor_extent=unmeasured_extent,
+                yaw=0.0,
+            ),
             label=payload.object_id,
         )
     return Cue(observed_at_nanos=evidence.observed_at_nanos)
-
-
-def _unlocated() -> Footprint:
-    """A footprint standing for an object nothing has measured the extent of.
-
-    A reading that carries no geometry still has to open a track somewhere, and
-    the alternative is an optional footprint threaded through every consumer.
-    The extents are the smallest a box can state rather than zero, because a
-    `Footprint` refuses an extent of zero and should keep refusing one.
-    """
-    return Footprint(
-        center=(0.0, 0.0, 0.0), major_extent=1e-6, minor_extent=1e-6, yaw=0.0
-    )
 
 
 def elapsed(earlier_nanos: int, later_nanos: int) -> float:

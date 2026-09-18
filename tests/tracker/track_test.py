@@ -390,3 +390,64 @@ def test_two_objects_produce_two_tracks_with_distinct_identities() -> None:
     held.observe(label(object_id=4, class_id="M-09"), at_nanos=SECOND)
     records = held.settle(at_nanos=SECOND)
     assert len({record.track_id for record in records}) == 2
+
+
+def test_a_detection_joins_the_track_ground_truth_opened() -> None:
+    """AC-TRACK-16 and AC-TRACK-20.
+
+    The integration defect the unit tests all missed. Ground truth carries a
+    position but no extent, and the association gate scales with the track's own
+    extent, so a track opened by a label had a gate of nothing and no later
+    detection could ever join it. One object ran as two tracks, one carrying the
+    material and the other carrying the geometry, and every test here passed
+    because each used a stub associator that joins everything.
+
+    It took driving the real associator over a real rollout to see it, which is
+    the argument for doing that at all.
+    """
+    held = Tracker(
+        intake=Intake(
+            Deployment.SIMULATED,
+            load_sensors(load(ROOT / "configs" / "world" / "sorting_line.yml")),
+        ),
+        associator=SimulatorIdentity(),
+        settings=settings(),
+        belt_speed=BELT_SPEED,
+        window_exit=WINDOW_EXIT,
+        unmeasured_extent=0.180,
+    )
+    held.observe(label(object_id=3, class_id="M-06"), at_nanos=SECOND)
+    # A detection lands centimetres from where the label says the object is:
+    # the label gives the body origin and the adapter computes a centroid from
+    # pixels at the imaged surface. Placing both at one point would make any
+    # gate pass and prove nothing.
+    held.observe(detection(at=SECOND, x=-0.97), at_nanos=SECOND)
+
+    records = held.settle(at_nanos=SECOND)
+    assert len(records) == 1, "one object is one track, not two"
+    assert records[0].evidence == frozenset({Role.GROUND_TRUTH, Role.DETECTION})
+    assert records[0].material == "M-06"
+    assert records[0].height is not None, "the geometry reached the same track"
+
+
+def test_without_an_unmeasured_extent_the_two_would_not_have_met() -> None:
+    """AC-TRACK-16.
+
+    Guarding the fix rather than the symptom. At zero the gate is nothing, which
+    is exactly the state the demo exposed, so this pins why the parameter
+    exists.
+    """
+    held = Tracker(
+        intake=Intake(
+            Deployment.SIMULATED,
+            load_sensors(load(ROOT / "configs" / "world" / "sorting_line.yml")),
+        ),
+        associator=SimulatorIdentity(),
+        settings=settings(),
+        belt_speed=BELT_SPEED,
+        window_exit=WINDOW_EXIT,
+        unmeasured_extent=0.0,
+    )
+    held.observe(label(object_id=3, class_id="M-06"), at_nanos=SECOND)
+    held.observe(detection(at=SECOND, x=-0.97), at_nanos=SECOND)
+    assert len(held.settle(at_nanos=SECOND)) == 2
