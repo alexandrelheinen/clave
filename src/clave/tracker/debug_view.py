@@ -190,6 +190,8 @@ def annotate(
     surface_height: float,
     render: tuple[int, int],
     at_nanos: int,
+    beside: bool = False,
+    only_drawn: bool = False,
 ) -> tuple[Any, str]:
     """Return a copy of the frame with every record drawn beside it.
 
@@ -205,6 +207,14 @@ def annotate(
         surface_height: Height of the surface the records sit on.
         render: The frame size as `(width, height)` in pixels.
         at_nanos: The instant the records describe.
+        beside: Put the listing to the right of the image rather than under it.
+            Stacked is the readable layout for one frame; beside is the one that
+            fits a video, where a listing taller than the screen is no listing
+            at all.
+        only_drawn: List only the records whose footprint landed on the frame.
+            A track propagated off the belt has nothing to point at, so in a
+            video its entry is noise; auditing one frame, it is not, which is
+            why this is a choice rather than a rule.
 
     Returns:
         The annotated frame, and a one-line summary naming how many tracks were
@@ -223,38 +233,48 @@ def annotate(
             f"size given is {width} by {height}"
         )
 
-    panel = max(360, width)
-    rows = 1 + sum(len(described_fields(r)) + 2 for r in records)
-    canvas = np.full(
-        (height + 22 * rows + 60, max(width, panel), 3), 24, dtype=np.uint8
+    on_frame = tuple(
+        r for r in records if _lands_on_frame(r, camera, optics, surface_height, render)
     )
+    listed = on_frame if only_drawn else records
+    fields = len(described_fields(records[0])) if records else 0
+    needed = 96 + (17 * fields + 26) * max(len(listed), 1)
+
+    if beside:
+        canvas = np.full((max(height, needed), width + 780, 3), 24, dtype=np.uint8)
+    else:
+        canvas = np.full((height + needed, max(width, 780), 3), 24, dtype=np.uint8)
     canvas[:height, :width] = frame
 
     drawn = 0
     for record in records:
-        colour = colour_for(record.track_id)
         if _draw_footprint(cv2, canvas, record, camera, optics, surface_height, render):
             drawn += 1
 
-    # Below both header lines, so the listing never lands on top of them.
-    line = height + 72
+    left = width + 12 if beside else 8
+    top = 20 if beside else height + 20
+    font = cv2.FONT_HERSHEY_SIMPLEX
     cv2.putText(
-        canvas,
-        CAPTION,
-        (8, height + 16),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.42,
-        (200, 200, 200),
-        1,
-        cv2.LINE_AA,
+        canvas, CAPTION, (left, top), font, 0.42, (200, 200, 200), 1, cv2.LINE_AA
     )
-    for record in records:
+
+    off = len(records) - drawn
+    summary = f"t={at_nanos / 1e9:.2f}s  {len(records)} tracks open, {drawn} drawn" + (
+        f", {off} off frame" if off else ""
+    )
+    cv2.putText(
+        canvas, summary, (left, top + 26), font, 0.42, (170, 220, 170), 1, cv2.LINE_AA
+    )
+
+    # Below both header lines, so the listing never lands on top of them.
+    line = top + 60
+    for record in listed:
         colour = colour_for(record.track_id)
         cv2.putText(
             canvas,
             f"track {record.track_id}",
-            (8, line),
-            cv2.FONT_HERSHEY_SIMPLEX,
+            (left, line),
+            font,
             0.5,
             colour,
             1,
@@ -265,8 +285,8 @@ def annotate(
             cv2.putText(
                 canvas,
                 f"  {name:<20} {shown}",
-                (8, line),
-                cv2.FONT_HERSHEY_SIMPLEX,
+                (left, line),
+                font,
                 0.38,
                 (205, 205, 205),
                 1,
@@ -275,21 +295,27 @@ def annotate(
             line += 17
         line += 6
 
-    off = len(records) - drawn
-    summary = f"t={at_nanos / 1e9:.2f}s  {len(records)} tracks open, {drawn} drawn" + (
-        f", {off} off frame" if off else ""
-    )
-    cv2.putText(
-        canvas,
-        summary,
-        (8, height + 44),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.42,
-        (170, 220, 170),
-        1,
-        cv2.LINE_AA,
-    )
     return canvas, f"{CAPTION} | {summary}"
+
+
+def _lands_on_frame(
+    record: WasteObject,
+    camera: tuple[float, float, float],
+    optics: NadirOptics,
+    surface_height: float,
+    render: tuple[int, int],
+) -> bool:
+    """Whether a record's footprint centre falls inside the frame."""
+    width, height = render
+    column, row = to_pixels(
+        record.footprint.center[0],
+        record.footprint.center[1],
+        camera,
+        optics,
+        surface_height,
+        render,
+    )
+    return 0 <= column <= width and 0 <= row <= height
 
 
 def _draw_footprint(

@@ -69,6 +69,7 @@ def run(
     capture_interval: float = 0.5,
     render: tuple[int, int] = (640, 480),
     window: bool = True,
+    video: bool = False,
 ) -> DebugRunReport:
     """Drive the tracker over one rollout, annotating every capture.
 
@@ -81,6 +82,9 @@ def run(
         capture_interval: Simulated seconds between captures.
         render: Frame size as `(width, height)` in pixels.
         window: Open a live window when a display is available.
+        video: Lay the listing beside the image and show only the records that
+            landed on the frame, which is what fits a video. A listing taller
+            than the screen is no listing at all.
 
     Returns:
         The report.
@@ -198,6 +202,8 @@ def run(
                 surface + 0.05,
                 render,
                 at_nanos=now,
+                beside=video,
+                only_drawn=video,
             )
             drawn = summary.count("drawn") and int(
                 summary.split(" tracks open, ")[1].split(" ")[0]

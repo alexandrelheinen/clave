@@ -514,6 +514,8 @@ def main(argv: list[str] | None = None) -> int:
     dbg.add_argument("--seconds", type=float, default=14.0)
     dbg.add_argument("--seed", type=int, default=0)
     dbg.add_argument("--no-window", action="store_true")
+    dbg.add_argument("--video", action="store_true")
+    dbg.add_argument("--fps", type=int, default=4)
     demo = sub.add_parser("demo", help="run one named scenario and record it")
     demo.add_argument("scenario", nargs="?", default="sorting-line")
     demo.add_argument("--out", type=Path, default=Path("runs/demos"))
@@ -588,6 +590,7 @@ def _debug_tracker(root: Path, args: Any) -> int:
         seconds=args.seconds,
         seed=args.seed,
         window=not args.no_window,
+        video=args.video,
     )
     print()
     print(f"  captures        {report.captures}")
