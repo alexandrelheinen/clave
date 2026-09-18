@@ -1,0 +1,192 @@
+"""The seam, and the one implementation of it this spec ships.
+
+Everything the two-spec split promises rests on the three names here.
+`learned-tracker` replaces `SimulatorIdentity` with a trained model and changes
+nothing above the protocol, and that promise is only checkable because `Cue` is
+a closed type. What a learned model may look at is a dataclass a reviewer reads
+in one sitting, rather than a rule somebody is trusted to keep.
+
+An implementation is a pure function of its two arguments. It reads no clock,
+opens no file, draws no random number and keeps nothing between calls, so a
+replay of the same cues in the same order produces the same associations.
+Every track it receives has already been propagated to the cue's instant by the
+caller, so no implementation dead reckons and `belt_frame.propagate` has one
+call site. `Tracker` is what holds state.
+
+**`Cue` has no `previous` field, and the design document said it would.** The
+tracks argument already carries the previous state of every open track, and a
+seam whose whole value is being diffable should not carry the same thing twice.
+The maintainer's framing, that the model sees the footprint, the pick point, an
+optional code and the previous track state, is satisfied by `tracks`.
+
+**`Cue.label` is the one field that makes this seam imperfect, and it is
+deliberate.** A detection carries no identity, because `AC-TRACK-45` requires
+the adapter to throw away the only one it has. Ground truth legitimately does
+carry one, and the whole point of the shipped associator is that it uses it, so
+that `learned-tracker` has something to be measured against. The alternative,
+matching ground truth geometrically too, would mean this spec had already taken
+identity away from the simulator and left the next one with no baseline.
+`AC-TRACK-33` holds the learned model to building its input without this field.
+"""
+
+from __future__ import annotations
+
+import math
+from dataclasses import dataclass
+from typing import Protocol
+
+from clave.tracker.belt_frame import Footprint
+
+GATE_MULTIPLE = 1.5
+"""How far outside its own footprint a track will reach for an observation.
+
+A multiple of the track's own major extent rather than a fixed radius. That is
+what replaces `association_radius_meters`, which was sized for a belt six times
+narrower than the one the world now runs and which `D-12` records as part of why
+only 7 of 134 demonstrations produced a usable proposal. A gate that scales with
+the object cannot be wrong for the belt.
+"""
+
+
+@dataclass(frozen=True)
+class TrackSummary:
+    """One open track, as an associator is allowed to see it.
+
+    Attributes:
+        track_id: Its stable identity.
+        footprint: Where it is, already propagated to the cue's instant.
+        height: What it is believed to stand, or None.
+        digits: Every code associated to it so far.
+        label: The simulator's object id, when one was folded in. Present so
+            the shipped associator can match on it, and the field a learned
+            model must build its input without.
+        last_updated_nanos: When it last took evidence.
+    """
+
+    track_id: int
+    footprint: Footprint
+    height: float | None
+    digits: tuple[str, ...]
+    label: int | None
+    last_updated_nanos: int
+
+
+@dataclass(frozen=True)
+class Cue:
+    """Everything an associator may look at, and nothing else.
+
+    Attributes:
+        observed_at_nanos: When the observation was taken.
+        footprint: Where it was seen, as observed and not propagated.
+        digits: The decoded symbol, when the reading was a code.
+        pick_point: Where a policy proposed reaching, when one did.
+        height: A measured height, when one was taken.
+        label: The simulator's object id, on a ground-truth cue only.
+    """
+
+    observed_at_nanos: int
+    footprint: Footprint | None = None
+    digits: str | None = None
+    pick_point: tuple[float, float, float] | None = None
+    height: float | None = None
+    label: int | None = None
+
+
+@dataclass(frozen=True)
+class Association:
+    """Where one observation belongs.
+
+    Attributes:
+        track_id: The track it joins, or None to open a new one. Returning None
+            rather than the nearest track at any distance is what keeps an
+            observation of empty belt out of a real object's history.
+    """
+
+    track_id: int | None
+
+
+class Associator(Protocol):
+    """Decides which track an observation belongs to.
+
+    The one seam between the record and the rule that fills it.
+    """
+
+    @property
+    def name(self) -> str:
+        """What decided the association, recorded in the run report."""
+
+    def associate(self, cue: Cue, tracks: tuple[TrackSummary, ...]) -> Association:
+        """Place one observation.
+
+        Args:
+            cue: Everything the implementation may look at.
+            tracks: Every open track, already propagated to the cue's instant.
+
+        Returns:
+            The track it joins, or an association naming none.
+        """
+
+
+class SimulatorIdentity:
+    """Joins by the simulator's label, and by geometry where there is none.
+
+    This is not perception and its name says so. It exists to give the record a
+    working association rule before any model is trained, and to give
+    `learned-tracker` a baseline its identity recovery is reported against.
+
+    It is asymmetric on purpose. A ground-truth cue carries the simulator's
+    object id and matches on it exactly, which is the simulator supplying
+    identity through the path real sensors use. A detection carries no identity
+    at all, so it matches the nearest track inside a gate that scales with the
+    track's own footprint. Ground truth for the label, geometry for the pixels,
+    and the module name is the warning.
+    """
+
+    @property
+    def name(self) -> str:
+        """What decided the association."""
+        return "simulator-identity"
+
+    def associate(self, cue: Cue, tracks: tuple[TrackSummary, ...]) -> Association:
+        """Place one observation against the open tracks.
+
+        Args:
+            cue: The observation.
+            tracks: Every open track, propagated to the cue's instant.
+
+        Returns:
+            The track it joins, or an association naming none.
+        """
+        if cue.label is not None:
+            for track in tracks:
+                if track.label == cue.label:
+                    return Association(track_id=track.track_id)
+            return Association(track_id=None)
+        if cue.footprint is None:
+            return Association(track_id=None)
+        return Association(track_id=_nearest_within_gate(cue.footprint, tracks))
+
+
+def _nearest_within_gate(
+    footprint: Footprint, tracks: tuple[TrackSummary, ...]
+) -> int | None:
+    """Return the nearest track inside its own gate, or None.
+
+    Args:
+        footprint: Where the observation was seen.
+        tracks: Every open track, propagated to the same instant.
+
+    Returns:
+        The track's identity, or None when nothing is close enough. The gate is
+        a multiple of each track's own major extent, so a large package reaches
+        further than a small one and neither is measured against a constant
+        somebody chose for a different belt.
+    """
+    best: int | None = None
+    closest = math.inf
+    for track in tracks:
+        gate = GATE_MULTIPLE * track.footprint.major_extent
+        distance = math.dist(footprint.center[:2], track.footprint.center[:2])
+        if distance <= gate and distance < closest:
+            best, closest = track.track_id, distance
+    return best
