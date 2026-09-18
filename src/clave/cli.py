@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+from typing import Any
 
 from clave.corpus.artifacts import record_digest, verify
 from clave.corpus.manifest import Manifest
@@ -506,6 +507,13 @@ def main(argv: list[str] | None = None) -> int:
     still = sub.add_parser("still", help="capture a still of the world")
     still.add_argument("scenario", nargs="?", default="thumbnail")
     still.add_argument("--out", type=Path, default=Path("runs/stills"))
+    dbg = sub.add_parser(
+        "debug-tracker", help="annotate a rollout with everything the tracker believes"
+    )
+    dbg.add_argument("--out", type=Path, default=Path("runs/debug/tracker"))
+    dbg.add_argument("--seconds", type=float, default=14.0)
+    dbg.add_argument("--seed", type=int, default=0)
+    dbg.add_argument("--no-window", action="store_true")
     demo = sub.add_parser("demo", help="run one named scenario and record it")
     demo.add_argument("scenario", nargs="?", default="sorting-line")
     demo.add_argument("--out", type=Path, default=Path("runs/demos"))
@@ -535,6 +543,8 @@ def main(argv: list[str] | None = None) -> int:
             return _train(args.root, args.config, args.candidate)
         if args.command == "still":
             return _still(args.root, args.scenario, args.out)
+        if args.command == "debug-tracker":
+            return _debug_tracker(args.root, args)
         if args.command == "demo":
             return _demo(args.root, args.scenario, args.out, args.runtime)
         if args.command == "benchmark":
@@ -554,6 +564,44 @@ def main(argv: list[str] | None = None) -> int:
     except ClaveError as exc:
         print(f"  FAILED   {exc}", file=sys.stderr)
         return 1
+
+
+def _debug_tracker(root: Path, args: Any) -> int:
+    """Annotate a rollout with everything the tracker believes.
+
+    A diagnostic rather than a demonstration. It drives `clave.tracker` directly
+    because the tracker is deliberately not wired into the runtime loop yet, and
+    every frame it writes says so.
+
+    Args:
+        root: Repository root.
+        args: Parsed command line.
+
+    Returns:
+        Zero when the run completed.
+    """
+    from clave.tracker.debug_run import run
+
+    report = run(
+        root,
+        out=args.out if args.out.is_absolute() else root / args.out,
+        seconds=args.seconds,
+        seed=args.seed,
+        window=not args.no_window,
+    )
+    print()
+    print(f"  captures        {report.captures}")
+    print(f"  tracks open     {report.tracks}")
+    print(f"  drawn on last   {report.drawn}")
+    print(f"  frames written  {report.frames_written} to {report.output}")
+    if report.windowed:
+        print("  window          shown live")
+    else:
+        print(f"  window          none, {report.reason}")
+    print()
+    print("  These frames are a debug render of the tracker alone. They are not")
+    print("  the runtime loop's output and must not be published as a figure.")
+    return 0
 
 
 if __name__ == "__main__":  # pragma: no cover - process entry point

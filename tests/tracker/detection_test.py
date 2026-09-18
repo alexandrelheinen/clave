@@ -271,21 +271,42 @@ def test_a_camera_that_cannot_see_the_surface_is_refused() -> None:
         )
 
 
-def test_only_one_module_in_the_package_imports_mujoco() -> None:
+def test_nothing_in_the_package_imports_mujoco_at_module_scope() -> None:
     """AC-TRACK-10.
 
-    The adapter's input is run-length data a test can write, so every test in
-    this file runs without a render. One module bridges to MuJoCo and it does
-    so inside its functions, which is what keeps the package importable on a
-    machine with no simulator.
+    The property worth guarding is that the package imports on a machine with
+    no simulator, so the quality gate can read it without a render. Counting
+    which files mention MuJoCo is a proxy for that and a worse one: it broke
+    the moment a debug driver legitimately grew a simulator dependency, while
+    the property itself never moved.
+
+    So this asserts the property. Every module under `clave.tracker` imports,
+    and any file naming MuJoCo does so inside a function.
     """
+    import ast
+    import importlib
+
     package = Path(__file__).resolve().parents[2] / "src" / "clave" / "tracker"
-    importers = sorted(
-        path.relative_to(package).as_posix()
-        for path in package.rglob("*.py")
-        if "mujoco" in path.read_text()
-    )
-    assert importers == ["adapters/render.py"]
+    for path in sorted(package.rglob("*.py")):
+        module = (
+            "clave.tracker."
+            + path.relative_to(package).with_suffix("").as_posix().replace("/", ".")
+        ).removesuffix(".__init__")
+        importlib.import_module(module.removesuffix("."))
+
+        tree = ast.parse(path.read_text())
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Import | ast.ImportFrom):
+                continue
+            names = [alias.name for alias in node.names]
+            if isinstance(node, ast.ImportFrom) and node.module:
+                names.append(node.module)
+            if not any(name.split(".")[0] in {"mujoco", "cv2"} for name in names):
+                continue
+            assert node.col_offset > 0, (
+                f"{path.name} imports a simulator or vision library at module "
+                f"scope, so the package no longer imports without one"
+            )
 
 
 def test_the_adapter_finds_a_real_object_where_the_world_actually_put_it() -> None:
