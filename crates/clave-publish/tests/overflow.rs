@@ -1,7 +1,4 @@
 //! What the publisher does when the line runs faster than the consumer.
-//!
-//! Covers `AC-PUBLISH-03`, `AC-PUBLISH-04`, `AC-PUBLISH-05` and
-//! `AC-PUBLISH-06`.
 #![expect(clippy::unwrap_used, reason = "test assertions")]
 
 mod support;
@@ -18,7 +15,7 @@ fn capacity(value: usize) -> NonZeroUsize {
     NonZeroUsize::new(value).unwrap()
 }
 
-/// AC-PUBLISH-03: a full queue loses its oldest undelivered decision to make
+/// A full queue loses its oldest undelivered decision to make
 /// room, because the newest decision is the one still worth acting on.
 #[test]
 fn a_full_queue_discards_its_oldest_undelivered_decision() {
@@ -41,7 +38,7 @@ fn a_full_queue_discards_its_oldest_undelivered_decision() {
     assert_eq!(objects, vec![2, 3]);
 }
 
-/// AC-PUBLISH-04: every discard moves a counter an operator can read, and a
+/// Every discard moves a counter an operator can read, and a
 /// rising overflow count is a line running faster than its consumer.
 #[test]
 fn a_discarded_decision_is_counted_where_an_operator_can_read_it() {
@@ -61,7 +58,7 @@ fn a_discarded_decision_is_counted_where_an_operator_can_read_it() {
     assert_eq!(publisher.queued_count(), 4);
 }
 
-/// AC-PUBLISH-06: an expired decision moves its own counter, so an operator
+/// An expired decision moves its own counter, so an operator
 /// can tell a line that is overloaded from a line that is too slow to reach.
 #[test]
 fn an_expired_decision_is_counted_apart_from_an_overflowed_one() {
@@ -77,7 +74,7 @@ fn an_expired_decision_is_counted_apart_from_an_overflowed_one() {
     assert!(publisher.sink().frames().is_empty());
 }
 
-/// AC-PUBLISH-06: a decision that waited in the queue until its window closed
+/// A decision that waited in the queue until its window closed
 /// is discarded at the moment it would have been sent, not on a timer.
 #[test]
 fn a_queued_decision_whose_window_closes_while_it_waits_is_discarded() {
@@ -94,7 +91,7 @@ fn a_queued_decision_whose_window_closes_while_it_waits_is_discarded() {
     assert!(publisher.sink().frames().is_empty());
 }
 
-/// AC-PUBLISH-05: with no consumer reachable the publisher keeps producing and
+/// With no consumer reachable the publisher keeps producing and
 /// discarding under the same policy, and no call blocks.
 #[test]
 fn no_reachable_consumer_does_not_stall_the_pipeline() {
@@ -113,7 +110,7 @@ fn no_reachable_consumer_does_not_stall_the_pipeline() {
     assert_eq!(publisher.queued_count(), 3);
 }
 
-/// AC-PUBLISH-05: a consumer that starts reading again drains the queue, and
+/// A consumer that starts reading again drains the queue, and
 /// what it gets is the newest decisions rather than the stalest ones.
 #[test]
 fn a_consumer_that_resumes_reading_gets_the_newest_decisions() {
@@ -138,7 +135,7 @@ fn a_consumer_that_resumes_reading_gets_the_newest_decisions() {
     assert_eq!(publisher.queued_count(), 0);
 }
 
-/// AC-PUBLISH-05: backpressure is not an error, but a transport broken in a
+/// Backpressure is not an error, but a transport broken in a
 /// way a retry cannot fix is, and it reaches the caller without stalling.
 #[test]
 fn a_broken_transport_reaches_the_caller_as_an_error() {
@@ -153,7 +150,7 @@ fn a_broken_transport_reaches_the_caller_as_an_error() {
     assert_eq!(publisher.queued_count(), 1);
 }
 
-/// AC-PUBLISH-03: a queue of one still discards the oldest rather than
+/// A queue of one still discards the oldest rather than
 /// refusing the newest, which is the smallest case of the same policy.
 #[test]
 fn a_queue_of_one_still_discards_the_oldest() {
@@ -178,7 +175,7 @@ fn a_queue_of_one_still_discards_the_oldest() {
 }
 
 proptest! {
-    /// AC-PUBLISH-03 and AC-PUBLISH-04: across an arbitrary sequence of
+    /// Across an arbitrary sequence of
     /// publications and consumer stalls, what was published equals what was
     /// delivered plus what was discarded either way plus what is still queued.
     #[test]

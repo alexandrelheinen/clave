@@ -1,6 +1,4 @@
 //! The socket sink itself, apart from the policy in front of it.
-//!
-//! Covers `AC-PUBLISH-01`, `AC-PUBLISH-02` and `AC-PUBLISH-05`.
 #![expect(clippy::unwrap_used, reason = "test assertions")]
 
 mod support;
@@ -22,7 +20,7 @@ fn socket_path(name: &str) -> PathBuf {
     path
 }
 
-/// AC-PUBLISH-01: a consumer bound to a path receives what the sink sends to
+/// A consumer bound to a path receives what the sink sends to
 /// that path, which is how the two processes meet outside a test.
 #[test]
 fn a_sink_connected_to_a_path_reaches_the_consumer_bound_to_it() {
@@ -40,7 +38,7 @@ fn a_sink_connected_to_a_path_reaches_the_consumer_bound_to_it() {
     std::fs::remove_file(&path).unwrap();
 }
 
-/// AC-PUBLISH-05: a consumer that stops reading fills the kernel queue, and
+/// A consumer that stops reading fills the kernel queue, and
 /// the sink reports a refusal rather than waiting for room.
 #[test]
 fn a_full_kernel_queue_is_a_refusal_rather_than_a_wait() {
@@ -59,7 +57,7 @@ fn a_full_kernel_queue_is_a_refusal_rather_than_a_wait() {
     drop(consumer);
 }
 
-/// AC-PUBLISH-05: a consumer that has gone is a refusal too, so a dead
+/// A consumer that has gone is a refusal too, so a dead
 /// consumer never reaches the caller as an error.
 #[test]
 fn a_departed_consumer_is_a_refusal_rather_than_an_error() {
@@ -70,7 +68,7 @@ fn a_departed_consumer_is_a_refusal_rather_than_an_error() {
     assert_eq!(sink.try_send(&frame).unwrap(), SendOutcome::WouldBlock);
 }
 
-/// AC-PUBLISH-02: one record in, one record out. The kernel keeps the
+/// One record in, one record out. The kernel keeps the
 /// boundary, so a consumer never reassembles a frame or splits two.
 #[test]
 fn every_record_arrives_whole_and_on_its_own() {

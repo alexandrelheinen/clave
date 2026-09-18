@@ -47,10 +47,9 @@ itself, because a numeric default buried in Python is a default nobody reviews.
 ### The arm
 
 A Universal Robots UR10e, adopted from MuJoCo Menagerie and vendored under
-`third_party/mujoco_menagerie_ur10e/`. `D-13` in [decisions.md](decisions.md)
-records why a validated model derived from manufacturer CAD outranked an arm
-authored here, and `D-14` why one model is copied rather than a 2.3 GB
-collection pinned to obtain 35 MB of it.
+`third_party/mujoco_menagerie_ur10e/`. A validated model derived from
+manufacturer CAD outranked an arm authored here, and one model is copied rather
+than a 2.3 GB collection pinned to obtain 35 MB of it.
 
 **Six axes serve a four-axis task.** The line needs a position over the belt and
 a rotation of the tool about the vertical, with the tool held pointing down. Two
@@ -102,10 +101,10 @@ the 0.25 m inner radius, so the arm cannot drive into the support carrying it.
 #### Cycle time
 
 The line carries a budget of **1.0 second** from a published decision to the
-effector reaching the pick point, set by `AC-CYCLE-01`. It is a target rather
-than a derivation: published pick-and-place cycles put delta robots near 0.3 s,
-SCARAs at 0.28 to 0.50 s, six-axis industrial arms at 0.4 to 0.8 s, and
-collaborative arms behind all three.
+effector reaching the pick point. It is a target rather than a derivation:
+published pick-and-place cycles put delta robots near 0.3 s, SCARAs at 0.28 to
+0.50 s, six-axis industrial arms at 0.4 to 0.8 s, and collaborative arms behind
+all three.
 
 **It is unmeasured, not met.** Nothing in CLAVE grasps, so the harness reports
 cycle time as unmeasured rather than passing a gate vacuously.
@@ -286,11 +285,3 @@ nearby machinery.
   by omission.
 - **No hardware.** Nothing in this repository has touched a camera, a belt or
   an arm, and no number in it describes real world accuracy.
-
-## A note on dangling links
-
-`decisions.md` is append-only by rule, and some of its entries link to step
-reports that have since been removed. Those links are left broken rather than
-rewritten, because editing a landed decision entry is worse than a stale
-reference. The measurements those entries relied on are in
-[measurements.md](measurements.md).

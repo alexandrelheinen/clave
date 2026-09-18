@@ -1,6 +1,6 @@
 """The belt frame and the clock, which everything else in the tracker rests on.
 
-Covers `AC-TRACK-01`, `AC-TRACK-03`, `AC-TRACK-04` and `AC-TRACK-46`.
+
 
 Every test here works from integer literals. That is the point of banning
 `time.monotonic_ns` inside the package: propagation is provable by advancing a
@@ -41,12 +41,12 @@ def a_footprint(x: float = 0.0, y: float = 0.0) -> Footprint:
 
 
 def test_elapsed_seconds_converts_two_monotonic_instants() -> None:
-    """AC-TRACK-03. The clock is nanoseconds and the arithmetic is seconds."""
+    """The clock is nanoseconds and the arithmetic is seconds."""
     assert elapsed_seconds(1_000, 1_000 + NANOS_PER_SECOND // 2) == pytest.approx(0.5)
 
 
 def test_elapsed_seconds_is_negative_when_the_observation_is_older() -> None:
-    """AC-TRACK-03. Out of order is reported rather than hidden.
+    """Out of order is reported rather than hidden.
 
     Fusion clamps this at zero; the clock does not, because a caller that
     cannot tell the difference cannot weight it.
@@ -57,7 +57,7 @@ def test_elapsed_seconds_is_negative_when_the_observation_is_older() -> None:
 
 
 def test_propagating_an_observation_moves_it_along_belt_travel() -> None:
-    """AC-TRACK-04. Move the clock, never the object."""
+    """Move the clock, never the object."""
     observed = a_footprint(x=-1.00)
     carried = propagate(
         observed,
@@ -69,7 +69,7 @@ def test_propagating_an_observation_moves_it_along_belt_travel() -> None:
 
 
 def test_propagation_changes_nothing_across_the_belt_or_above_it() -> None:
-    """AC-TRACK-01 and AC-TRACK-04. Travel is along x alone."""
+    """Travel is along x alone."""
     observed = a_footprint(x=-0.50, y=0.21)
     carried = propagate(
         observed, belt_speed=0.31, observed_at_nanos=0, to_nanos=NANOS_PER_SECOND
@@ -81,7 +81,7 @@ def test_propagation_changes_nothing_across_the_belt_or_above_it() -> None:
 
 
 def test_propagating_to_the_instant_it_was_observed_returns_it_unmoved() -> None:
-    """AC-TRACK-04. Zero elapsed is not a special case, it is zero travel."""
+    """Zero elapsed is not a special case, it is zero travel."""
     observed = a_footprint(x=0.4)
     assert propagate(
         observed, belt_speed=0.31, observed_at_nanos=77, to_nanos=77
@@ -89,7 +89,7 @@ def test_propagating_to_the_instant_it_was_observed_returns_it_unmoved() -> None
 
 
 def test_propagating_backwards_carries_the_observation_upstream() -> None:
-    """AC-TRACK-04. The belt has a direction and the arithmetic respects it."""
+    """The belt has a direction and the arithmetic respects it."""
     carried = propagate(
         a_footprint(x=0.0),
         belt_speed=0.25,
@@ -100,13 +100,13 @@ def test_propagating_backwards_carries_the_observation_upstream() -> None:
 
 
 def test_a_negative_belt_speed_is_refused_naming_itself() -> None:
-    """AC-TRACK-04. A belt that runs backwards is a configuration fault."""
+    """A belt that runs backwards is a configuration fault."""
     with pytest.raises(FrameError, match="belt speed"):
         propagate(a_footprint(), belt_speed=-0.25, observed_at_nanos=0, to_nanos=1)
 
 
 def test_a_footprint_refuses_a_minor_extent_wider_than_its_major() -> None:
-    """AC-TRACK-01. The axes are named, so they cannot be swapped silently."""
+    """The axes are named, so they cannot be swapped silently."""
     with pytest.raises(FrameError, match="minor extent"):
         Footprint(
             center=(0.0, 0.0, 0.93), major_extent=0.05, minor_extent=0.09, yaw=0.0
@@ -114,7 +114,7 @@ def test_a_footprint_refuses_a_minor_extent_wider_than_its_major() -> None:
 
 
 def test_a_footprint_that_declines_to_state_a_yaw_says_so() -> None:
-    """AC-TRACK-01.
+    """A footprint that declines to state a yaw says so.
 
     A can is circular in plan under a nadir camera. A confident random yaw on a
     circular footprint is worse than an absent one, because the safety layer
@@ -131,7 +131,7 @@ def test_a_footprint_that_declines_to_state_a_yaw_says_so() -> None:
 
 
 def test_the_nadir_scale_factor_matches_the_configured_detection_camera() -> None:
-    """AC-TRACK-46.
+    """The nadir scale factor matches the configured detection camera.
 
     The optics are read from the shipped configuration rather than restated
     here, so this fails when the line is re-lensed and the figure in
@@ -158,7 +158,7 @@ def test_the_nadir_scale_factor_matches_the_configured_detection_camera() -> Non
 
 
 def test_the_scale_factor_is_taken_at_the_object_and_not_at_the_belt() -> None:
-    """AC-TRACK-46.
+    """The scale factor is taken at the object and not at the belt.
 
     This is the whole reason the criterion exists. Using the belt plane for a
     0.10 m object inflates its footprint by 13.3 percent, and that error reaches
@@ -173,7 +173,7 @@ def test_the_scale_factor_is_taken_at_the_object_and_not_at_the_belt() -> None:
 
 
 def test_the_scale_factor_follows_the_render_size_not_the_declared_resolution() -> None:
-    """AC-TRACK-46.
+    """The scale factor follows the render size not the declared resolution.
 
     configs/data/recording.yml renders 320 by 240 against cameras declaring
     1920 by 1080. A factor fitted to one and applied to the other is wrong by
@@ -187,14 +187,14 @@ def test_the_scale_factor_follows_the_render_size_not_the_declared_resolution() 
 
 
 def test_a_camera_below_the_surface_it_looks_at_is_refused() -> None:
-    """AC-TRACK-46. A negative standoff yields a negative scale factor."""
+    """A negative standoff yields a negative scale factor."""
     optics = NadirOptics(camera_height=0.80, fovy_degrees=45.0)
     with pytest.raises(FrameError, match="standoff"):
         optics.meters_per_pixel(surface_height=0.90, render_height=1080)
 
 
 def test_the_tracker_package_reads_no_clock_of_its_own() -> None:
-    """AC-TRACK-03.
+    """The tracker package reads no clock of its own.
 
     Every instant is an argument. A module that reaches for the clock makes
     propagation untestable from literals and makes a replay irreproducible.
@@ -218,7 +218,7 @@ def test_the_tracker_package_reads_no_clock_of_its_own() -> None:
 
 
 def test_the_footprint_carries_a_belt_frame_point_not_a_pixel() -> None:
-    """AC-TRACK-01.
+    """The footprint carries a belt frame point not a pixel.
 
     The belt frame has its origin at the belt centre with z from the floor, so
     a footprint resting on the belt sits near 0.90 and never near zero.

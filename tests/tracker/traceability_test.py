@@ -1,6 +1,6 @@
 """The two criteria nothing else guards.
 
-Covers `AC-TRACK-05` and `AC-TRACK-50`.
+
 
 Both were satisfied by the code and by review, and neither was named by a test,
 which the spec's own traceability rule forbids: an id has to be greppable in
@@ -24,7 +24,7 @@ BELT_FRAME_DOCUMENTS = (
 
 
 def test_no_document_describes_a_belt_frame_the_code_does_not_use() -> None:
-    """AC-TRACK-05.
+    """No document describes a belt frame the code does not use.
 
     All three of these put the origin at the upstream edge of the working area,
     with `z` measured up from the belt surface. Every coordinate on the wire is
@@ -42,7 +42,7 @@ def test_no_document_describes_a_belt_frame_the_code_does_not_use() -> None:
 
 
 def test_the_golden_vectors_were_not_touched_when_the_documents_were() -> None:
-    """AC-TRACK-05.
+    """The golden vectors were not touched when the documents were.
 
     The other half, and the reason the documents moved instead of the frame. A
     vector that changes proves nothing, which its own README says, so correcting
@@ -62,11 +62,11 @@ def test_the_golden_vectors_were_not_touched_when_the_documents_were() -> None:
 
 
 def test_every_adapter_says_where_its_confidence_comes_from() -> None:
-    """AC-TRACK-50.
+    """Every adapter says where its confidence comes from.
 
     An adapter reporting a bare constant tells a fusion rule how much to trust
     it without telling anybody why, and the weight it feeds is half of what
-    `AC-TRACK-19` rests on.
+    the ban on source priority rests on.
     """
     from clave.tracker.adapters.code import codes_from_frame
     from clave.tracker.adapters.detection import _confidence_of

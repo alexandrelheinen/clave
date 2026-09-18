@@ -1,7 +1,5 @@
 # The validation protocol, and the gates it applies
 
-> Roadmap step: v0.8.0 · Spec: [.kiro/specs/validation-harness/](../.kiro/specs/validation-harness/)
-
 This document states how a candidate is scored and what counts as passing. Both
 halves are written before any candidate exists, which is the point: a threshold
 chosen after seeing a result describes that result instead of gating it.
@@ -141,9 +139,8 @@ minimum support fails its gate as unmeasured. Without that rule a run covering
 three classes would clear eight gates on empty denominators, which is the quiet
 way a report becomes untrue.
 
-The named confusion gate is looser than the per-class accuracy gate deliberately,
-and the reason is recorded in [decisions.md](decisions.md) as `D-04`. These three
-separations are unavailable from a color image, so the gate asks whether the
+The named confusion gate is looser than the per-class accuracy gate
+deliberately. These three separations are unavailable from a color image, so the gate asks whether the
 model is worse than the sensor limit rather than whether it is perfect.
 
 ## What this does not prove
@@ -157,8 +154,7 @@ every records file carries.
 world's 1.13 second budget, which that document derives from link geometry rather
 than from a solved workspace and calls an upper bound. The accuracy gates rest on
 nothing measured at all. First contact with a trained candidate is expected to
-move at least one of them, and moving one is a spec change with an entry in
-[decisions.md](decisions.md).
+move at least one of them, and moving one is a spec change.
 
 **Nothing about the reject threshold.** The taxonomy defers the confidence
 threshold behind the reject channel to this step. It is a property of a trained

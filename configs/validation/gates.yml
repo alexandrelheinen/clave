@@ -11,8 +11,7 @@
 # are targets chosen before the first run, which is the point: a threshold
 # written after seeing a result describes that result instead of gating it.
 #
-# Moving a gate is a spec change with an entry in docs/decisions.md, not an
-# edit. See docs/validation-protocol.md.
+# Moving a gate is a spec change, not an edit. See docs/validation-protocol.md.
 
 gates:
   # Share of all records classified correctly. A target, not a prediction.
@@ -59,8 +58,7 @@ gates:
   max_decision_latency_p99_seconds: 0.45
 
   # Decision to placement, at the 99th percentile, in seconds. A target rather
-  # than a derivation, and AC-CYCLE-01 in
-  # .kiro/specs/manipulator-migration/requirements.md is where it comes from.
+  # than a derivation.
   #
   # It used to be the per-object budget the geometry produced, which made it a
   # restatement of the belt speed rather than a demand on the system. One second
@@ -71,8 +69,7 @@ gates:
   # asking its class for something it cannot do.
   #
   # Nothing in CLAVE grasps, so this is unmeasured rather than met. The harness
-  # reports it as unmeasured instead of passing it vacuously, which AC-CYCLE-03
-  # requires.
+  # reports it as unmeasured instead of passing it vacuously.
   max_cycle_time_p99_seconds: 1.00
 
   # Accuracy lost going from object instances seen in training to instances

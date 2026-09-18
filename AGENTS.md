@@ -2,10 +2,9 @@
 
 This file is a bridge only. **Do not add rules here.**
 
-Shared standards live in [standards/](standards/README.md): the
-[guidelines](standards/guidelines/) submodule for method, writing, naming,
-and language style, and the [cc-sdd](standards/cc-sdd/) submodule for the
-spec-driven workflow.
+Shared standards live in [standards/](standards/README.md), whose
+[guidelines](standards/guidelines/) submodule carries method, writing,
+naming, and per-language style.
 
 Start with these:
 
@@ -29,10 +28,12 @@ Precedence when documents disagree is defined in
 
 ## Method
 
-Specs come from cc-sdd. Enter through `/kiro-discovery <idea>` and let it
-route the work rather than assuming a feature is small enough to skip the
-spec. See
-[standards/README.md](standards/README.md#installing-cc-sdd).
+A feature gets a document under [docs/requirements/](docs/requirements/)
+before it gets code. Do not assume a change is small enough to skip the
+spec: the floor in
+[workflow/sdd.md](standards/guidelines/workflow/sdd.md#gating-rule) is a
+few written bullet points. Acceptance criterion ids are append-only and
+the tests that guard them reference them by id.
 
 ## Pre-push gate (mandatory)
 

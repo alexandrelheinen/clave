@@ -1,9 +1,8 @@
 """Actuating the manipulator.
 
 The arm is a Universal Robots UR10e, adopted from MuJoCo Menagerie and vendored
-under `third_party/mujoco_menagerie_ur10e/`. `D-13` in `docs/decisions.md`
-records why a validated model outranked the SCARA that was authored here, and
-what that trade costs.
+under `third_party/mujoco_menagerie_ur10e/`. A validated model outranked the
+SCARA that was authored here, and the trade costs something.
 
 It is a six-axis revolute arm operated for a four-axis task: a position over the
 belt and a rotation of the tool about the vertical, with the tool held pointing

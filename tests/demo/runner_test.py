@@ -1,7 +1,4 @@
-"""Tests for what one demonstration builds and prints.
-
-Covers `AC-DEMO-01`, `AC-DEMO-05` and `AC-DEMO-06`.
-"""
+"""Tests for what one demonstration builds and prints."""
 
 import shutil
 from pathlib import Path
@@ -44,7 +41,7 @@ def test_a_scripted_scenario_builds_the_teacher(tmp_path: Path) -> None:
 
 
 def test_the_summary_reports_what_the_scenario_did(tmp_path: Path) -> None:
-    """AC-DEMO-06: decisions published and what the safety layer overrode."""
+    """Decisions published and what the safety layer overrode."""
     scenario = Scenario.load(DEMOS / "sorting_line.yml", tmp_path)
     rendered = summary(scenario, played())
     assert "sorting-line" in rendered
@@ -55,7 +52,7 @@ def test_the_summary_reports_what_the_scenario_did(tmp_path: Path) -> None:
 
 
 def test_the_summary_names_a_recorded_video(tmp_path: Path) -> None:
-    """AC-DEMO-03: a person should be told where the recording went."""
+    """A person should be told where the recording went."""
     scenario = Scenario.load(DEMOS / "sorting_line.yml", tmp_path)
     rendered = summary(
         scenario, played(video_path="runs/demos/x.mp4", video_frames=489)
@@ -67,7 +64,7 @@ def test_the_summary_names_a_recorded_video(tmp_path: Path) -> None:
 def test_the_summary_says_when_no_encoder_recorded_anything(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """AC-DEMO-05: an absent encoder is stated, not silently skipped."""
+    """An absent encoder is stated, not silently skipped."""
     monkeypatch.setattr(shutil, "which", lambda _: None)
     scenario = Scenario.load(DEMOS / "sorting_line.yml", tmp_path)
     rendered = summary(scenario, played())
@@ -113,7 +110,7 @@ def _rendering_available() -> bool:
 def test_a_scenario_runs_end_to_end_and_writes_its_record(
     tmp_path: Path, runtime_binary: Path
 ) -> None:
-    """AC-DEMO-01: one scenario name is the whole input."""
+    """One scenario name is the whole input."""
     pytest.importorskip("mujoco")
     if not _rendering_available():
         pytest.skip("no offscreen GL backend here")

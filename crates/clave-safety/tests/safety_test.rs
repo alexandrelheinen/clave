@@ -1,7 +1,4 @@
 //! The inference boundary and the checks that can override a model.
-//!
-//! Covers `AC-BRIDGE-01` through `AC-BRIDGE-04`, `AC-SAFETY-01` through
-//! `AC-SAFETY-07`.
 #![expect(clippy::unwrap_used, reason = "test assertions")]
 #![expect(
     clippy::panic,
@@ -65,7 +62,6 @@ fn reachable() -> String {
 
 #[test]
 fn a_proposal_carries_every_field_across_the_boundary() {
-    // AC-BRIDGE-01.
     let proposal = Proposal::decode(reachable().as_bytes()).unwrap();
     assert_eq!(proposal.object().get(), 7);
     assert_eq!(proposal.class(), MaterialClass::Pet);
@@ -76,7 +72,7 @@ fn a_proposal_carries_every_field_across_the_boundary() {
 
 #[test]
 fn an_unrecognized_version_is_refused_by_version() {
-    // AC-BRIDGE-03. The version is read before any other field, so a payload
+    // The version is read before any other field, so a payload
     // whose later fields are nonsense still fails on the version.
     let payload = br#"{"version":99,"object_id":"not a number"}"#;
     let error = Proposal::decode(payload).unwrap_err();
@@ -88,7 +84,6 @@ fn an_unrecognized_version_is_refused_by_version() {
 
 #[test]
 fn a_malformed_payload_is_reported_rather_than_fatal() {
-    // AC-BRIDGE-04.
     for payload in [
         &b"not json at all"[..],
         br#"{"version":1}"#,
@@ -104,7 +99,7 @@ fn a_malformed_payload_is_reported_rather_than_fatal() {
 
 #[test]
 fn a_point_beyond_reach_is_overridden_naming_the_check() {
-    // AC-SAFETY-01 and AC-SAFETY-04. The point is at the belt surface height
+    // The point is at the belt surface height
     // and inside the trusted vertical band; only the distance from the shoulder
     // disqualifies it, at 2.90 m against an outer radius of 1.25 m.
     let proposal = Proposal::decode(wire(0.0, 2.20, 0.95, 0.90).as_bytes()).unwrap();
@@ -114,7 +109,6 @@ fn a_point_beyond_reach_is_overridden_naming_the_check() {
 
 #[test]
 fn a_point_below_the_belt_surface_is_overridden() {
-    // AC-SAFETY-02.
     let proposal = Proposal::decode(wire(0.0, 0.0, 0.80, 0.90).as_bytes()).unwrap();
     let verdict = envelope().judge(&proposal, &resolver()).unwrap();
     assert_eq!(verdict.overridden_check(), Some(Check::BeltSurface));
@@ -122,7 +116,7 @@ fn a_point_below_the_belt_surface_is_overridden() {
 
 #[test]
 fn a_point_above_the_trusted_vertical_band_is_overridden() {
-    // AC-SAFETY-02. Reachable at 0.70 m from the shoulder and above the belt
+    // Reachable at 0.70 m from the shoulder and above the belt
     // surface, so only the height disqualifies it: 1.40 m is 0.50 m above a
     // base at 0.90 m, against a trusted ceiling of 0.45 m.
     //
@@ -136,7 +130,6 @@ fn a_point_above_the_trusted_vertical_band_is_overridden() {
 
 #[test]
 fn a_point_off_the_belt_is_overridden() {
-    // AC-SAFETY-03.
     // Reachable, and 0.55 m across against a belt half width of 0.50 m, so the
     // extent check is what refuses it rather than the reach check.
     let proposal = Proposal::decode(wire(0.0, 0.55, 0.95, 0.90).as_bytes()).unwrap();
@@ -146,7 +139,6 @@ fn a_point_off_the_belt_is_overridden() {
 
 #[test]
 fn a_point_inside_the_envelope_is_accepted_with_a_publishable_decision() {
-    // AC-SAFETY-06.
     let proposal = Proposal::decode(reachable().as_bytes()).unwrap();
     let verdict = envelope().judge(&proposal, &resolver()).unwrap();
     let Verdict::Accepted { decision, routed } = verdict else {
@@ -159,7 +151,7 @@ fn a_point_inside_the_envelope_is_accepted_with_a_publishable_decision() {
 
 #[test]
 fn every_point_in_a_swept_grid_reaches_exactly_one_verdict() {
-    // AC-SAFETY-06. A verdict is one of two variants, so what this proves is
+    // A verdict is one of two variants, so what this proves is
     // that no input leaves the layer undecided or panicking.
     let envelope = envelope();
     let resolver = resolver();
@@ -186,7 +178,7 @@ fn every_point_in_a_swept_grid_reaches_exactly_one_verdict() {
 
 #[test]
 fn a_low_confidence_proposal_is_rejected_rather_than_overridden() {
-    // AC-SAFETY-07. The point is inside the envelope, so the safety layer has
+    // The point is inside the envelope, so the safety layer has
     // nothing to say; the routing policy sends it to the reject channel.
     let proposal = Proposal::decode(wire(0.0, 0.0, 0.95, 0.20).as_bytes()).unwrap();
     let verdict = envelope().judge(&proposal, &resolver()).unwrap();
@@ -199,7 +191,7 @@ fn a_low_confidence_proposal_is_rejected_rather_than_overridden() {
 
 #[test]
 fn the_envelope_names_a_missing_configuration_key() {
-    // AC-SAFETY-05. No geometric constant lives in this crate, so a key that
+    // No geometric constant lives in this crate, so a key that
     // is absent has to fail rather than fall back.
     let error = Envelope::from_json(br#"{"base_meters": [0.0, -0.70, 0.90]}"#).unwrap_err();
     assert!(
@@ -210,7 +202,6 @@ fn the_envelope_names_a_missing_configuration_key() {
 
 #[test]
 fn the_envelope_loads_from_a_file() {
-    // AC-SAFETY-05.
     let path = std::env::temp_dir().join("clave-safety-envelope-test.json");
     std::fs::write(&path, ENVELOPE_JSON).unwrap();
     let loaded = Envelope::load(&path).unwrap();
@@ -220,7 +211,7 @@ fn the_envelope_loads_from_a_file() {
 
 #[test]
 fn the_crate_links_no_machine_learning_framework() {
-    // AC-BRIDGE-02. The property that lets this crate override a model is that
+    // The property that lets this crate override a model is that
     // it shares no code with one, and a manifest is where that is checkable.
     let manifest = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml"))
         .unwrap()
@@ -235,7 +226,7 @@ fn the_crate_links_no_machine_learning_framework() {
 
 #[test]
 fn each_check_carries_a_stable_name_a_counter_can_use() {
-    // AC-SAFETY-04. An operator reading a rising override count needs to know
+    // An operator reading a rising override count needs to know
     // whether the model reaches too far, aims into the belt, or picks off it.
     assert_eq!(Check::Reach.name(), "reach");
     assert_eq!(Check::ToolHeight.name(), "tool_height");
@@ -245,7 +236,7 @@ fn each_check_carries_a_stable_name_a_counter_can_use() {
 
 #[test]
 fn an_overridden_proposal_carries_no_decision_to_publish() {
-    // AC-SAFETY-01. Nothing reaches the publisher when a check fails.
+    // Nothing reaches the publisher when a check fails.
     let envelope = envelope();
     let resolver = resolver();
     let refused = Proposal::decode(wire(0.9, 0.0, 0.36, 0.90).as_bytes()).unwrap();

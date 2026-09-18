@@ -1,7 +1,4 @@
 //! Resolving a material class and a confidence to a channel.
-//!
-//! Covers `AC-DECISION-05`, `AC-DECISION-06`, `AC-DECISION-07` and
-//! `AC-DECISION-08`.
 #![expect(clippy::unwrap_used, reason = "test assertions")]
 
 use clave_decision::{
@@ -29,7 +26,7 @@ fn operator_map() -> ChannelMap {
     .unwrap()
 }
 
-/// AC-DECISION-05: the channel comes from the operator-supplied mapping and
+/// The channel comes from the operator-supplied mapping and
 /// from nowhere else.
 #[test]
 fn a_mapped_class_above_the_threshold_resolves_to_its_operator_channel() {
@@ -42,7 +39,7 @@ fn a_mapped_class_above_the_threshold_resolves_to_its_operator_channel() {
     assert_eq!(routed.reject_reason(), None);
 }
 
-/// AC-DECISION-05: several classes may share one channel, which is how a
+/// Several classes may share one channel, which is how a
 /// deployment with fewer channels than classes is expressed.
 #[test]
 fn several_classes_may_share_one_channel() {
@@ -61,7 +58,7 @@ fn several_classes_may_share_one_channel() {
     }
 }
 
-/// AC-DECISION-06: an object the classifier was not sure enough about goes to
+/// An object the classifier was not sure enough about goes to
 /// the reject channel even though its class is mapped.
 #[test]
 fn a_confidence_below_the_threshold_sends_a_mapped_class_to_the_reject_channel() {
@@ -79,7 +76,7 @@ fn a_confidence_below_the_threshold_sends_a_mapped_class_to_the_reject_channel()
     assert_eq!(routed.channel(), REJECT);
 }
 
-/// AC-DECISION-06: the threshold is a floor rather than a strict bound, so a
+/// The threshold is a floor rather than a strict bound, so a
 /// confidence exactly at it is sorted.
 #[test]
 fn a_confidence_exactly_at_the_threshold_is_sorted() {
@@ -91,7 +88,7 @@ fn a_confidence_exactly_at_the_threshold_is_sorted() {
     );
 }
 
-/// AC-DECISION-06: a rejected object is published as an ordinary decision,
+/// A rejected object is published as an ordinary decision,
 /// carrying its predicted class rather than a placeholder.
 #[test]
 fn a_rejected_object_becomes_an_ordinary_decision_carrying_its_class() {
@@ -113,7 +110,7 @@ fn a_rejected_object_becomes_an_ordinary_decision_carrying_its_class() {
     assert_eq!(decision.class(), MaterialClass::Glass);
 }
 
-/// AC-DECISION-07: a class the operator mapped to nothing goes to the reject
+/// A class the operator mapped to nothing goes to the reject
 /// channel, and the reason separates it from the low-confidence route.
 #[test]
 fn an_unmapped_class_goes_to_the_reject_channel_with_its_own_reason() {
@@ -131,7 +128,7 @@ fn an_unmapped_class_goes_to_the_reject_channel_with_its_own_reason() {
     assert_eq!(routed.reject_reason(), Some(RejectReason::UnmappedClass));
 }
 
-/// AC-DECISION-07: confidence is tested before the class is looked up, so a
+/// Confidence is tested before the class is looked up, so a
 /// low-confidence unmapped object reports the confidence as the reason.
 #[test]
 fn confidence_is_tested_before_the_class_is_looked_up() {
@@ -142,7 +139,7 @@ fn confidence_is_tested_before_the_class_is_looked_up() {
     assert_eq!(routed.reject_reason(), Some(RejectReason::BelowThreshold));
 }
 
-/// AC-DECISION-08: resolution is total. Every class and every confidence
+/// Resolution is total. Every class and every confidence
 /// produces a channel, so no object is left without one and no decision is
 /// published before a channel exists.
 #[test]
@@ -161,7 +158,7 @@ fn every_class_and_every_confidence_resolves_to_a_channel() {
     }
 }
 
-/// AC-DECISION-07: a mapping that sends residue anywhere but the reject
+/// A mapping that sends residue anywhere but the reject
 /// channel is refused when it is loaded, not when the first object arrives.
 #[test]
 fn a_map_that_sends_residue_away_from_the_reject_channel_is_refused_at_load() {
@@ -175,7 +172,7 @@ fn a_map_that_sends_residue_away_from_the_reject_channel_is_refused_at_load() {
     assert!(matches!(error, RoutingError::ResidueNotRejected { .. }));
 }
 
-/// AC-DECISION-05: a mapping that names one class twice is ambiguous about
+/// A mapping that names one class twice is ambiguous about
 /// the operator's intent and is refused when it is loaded.
 #[test]
 fn a_map_that_names_one_class_twice_is_refused_at_load() {
@@ -192,7 +189,7 @@ fn a_map_that_names_one_class_twice_is_refused_at_load() {
     assert!(matches!(error, RoutingError::DuplicateClass { .. }));
 }
 
-/// AC-DECISION-05: an empty mapping is legal, and it sends everything to the
+/// An empty mapping is legal, and it sends everything to the
 /// reject channel rather than failing.
 #[test]
 fn an_empty_map_sends_everything_to_the_reject_channel() {
@@ -210,7 +207,7 @@ fn an_empty_map_sends_everything_to_the_reject_channel() {
     }
 }
 
-/// AC-DECISION-05: the map reports the channel it holds for a class and the
+/// The map reports the channel it holds for a class and the
 /// reject channel it was built with, so an operator can read back what was
 /// loaded.
 #[test]

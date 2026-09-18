@@ -1,6 +1,4 @@
 //! The loop over real sockets, end to end in one test process.
-//!
-//! Covers `AC-LOOP-01`, `AC-LOOP-03` and `AC-LOOP-04`.
 #![expect(clippy::unwrap_used, reason = "test assertions")]
 
 use std::os::unix::net::UnixDatagram;

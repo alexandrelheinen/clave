@@ -23,7 +23,8 @@ from clave.candidates.registry import sweep
 
 
 def test_resnet_baseline_loads_with_a_head_sized_to_the_taxonomy() -> None:
-    """AC-ADAPT-02 and AC-ADAPT-03."""
+    """Resnet baseline loads with a head sized to the taxonomy."""
+
     pytest.importorskip("torchvision")
     model = _build_resnet50()
     assert count_parameters(model) > 20_000_000
@@ -31,7 +32,7 @@ def test_resnet_baseline_loads_with_a_head_sized_to_the_taxonomy() -> None:
 
 
 def test_the_classifier_forward_pass_runs_and_is_measurable() -> None:
-    """AC-BENCH-01 and AC-BENCH-02 against a real model."""
+    """The classifier forward pass runs and is measurable on a real model."""
     pytest.importorskip("torchvision")
     model = _build_resnet50()
     result = benchmark(
@@ -58,7 +59,7 @@ def test_the_behavior_cloning_baseline_is_small_and_runs() -> None:
 
 
 def test_a_sweep_reports_every_candidate_one_way_or_the_other() -> None:
-    """AC-ADAPT-04 and AC-REPORT-05: nothing vanishes from the sweep."""
+    """Nothing vanishes from the sweep."""
     pytest.importorskip("torch")
     rows = sweep(warmup=0, repetitions=1)
     assert len(rows) == 7

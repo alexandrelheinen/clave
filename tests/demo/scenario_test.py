@@ -1,7 +1,4 @@
-"""Tests for the one-line demonstration.
-
-Covers `AC-DEMO-01`, `AC-DEMO-02`, `AC-DEMO-03`, `AC-DEMO-04` and `AC-DEMO-05`.
-"""
+"""Tests for the one-line demonstration."""
 
 import shutil
 import subprocess
@@ -19,7 +16,7 @@ DEMOS = ROOT / "configs" / "demos"
 
 
 def test_every_shipped_scenario_loads(tmp_path: Path) -> None:
-    """AC-DEMO-01: a scenario name is all a person should have to supply."""
+    """A scenario name is all a person should have to supply."""
     files = sorted(DEMOS.glob("*.yml"))
     assert files, "no scenario ships with the project"
     for path in files:
@@ -30,7 +27,7 @@ def test_every_shipped_scenario_loads(tmp_path: Path) -> None:
 
 
 def test_every_tunable_comes_from_the_file(tmp_path: Path) -> None:
-    """AC-DEMO-02: including the angle the video is filmed from."""
+    """Including the angle the video is filmed from."""
     scenario = Scenario.load(DEMOS / "sorting_line.yml", tmp_path)
     assert scenario.video is not None
     assert scenario.video.width > 0
@@ -77,7 +74,7 @@ def settings(path: Path) -> VideoSettings:
 
 @pytest.mark.skipif(not available(), reason="ffmpeg is not installed here")
 def test_the_recorder_writes_a_playable_file(tmp_path: Path) -> None:
-    """AC-DEMO-03: the demonstration ends in something a person can watch."""
+    """The demonstration ends in something a person can watch."""
     path = tmp_path / "demo.mp4"
     recorder = open_recorder(settings(path))
     assert recorder is not None
@@ -112,7 +109,7 @@ def test_the_recorder_writes_a_playable_file(tmp_path: Path) -> None:
 def test_the_recorder_writes_what_it_was_given_and_nothing_else(
     tmp_path: Path,
 ) -> None:
-    """AC-DEMO-04: nothing is drawn on a frame after the simulator made it.
+    """Nothing is drawn on a frame after the simulator made it.
 
     One flat gray frame in, one flat gray frame out. An overlay, a caption or a
     composited box would show up as a pixel that is not the value written.
@@ -152,7 +149,7 @@ def test_the_recorder_writes_what_it_was_given_and_nothing_else(
 def test_an_absent_encoder_is_reported_rather_than_fatal(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """AC-DEMO-05: no encoder means no video, not a failed demonstration."""
+    """No encoder means no video, not a failed demonstration."""
     monkeypatch.setattr(shutil, "which", lambda _: None)
     assert not available()
     assert open_recorder(settings(tmp_path / "nothing.mp4")) is None

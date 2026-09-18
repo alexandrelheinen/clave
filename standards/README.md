@@ -1,29 +1,27 @@
 # Standards and agent toolchain
 
-Four external pieces shape how work happens in this repository. Two are
-documents, pinned here as git submodules. Two are tools that install into
-the agent on your machine, so they are pinned by version in this file
-rather than vendored.
+Three external pieces shape how work happens in this repository. One is a
+document library, pinned here as a git submodule. Two are tools that
+install into the agent on your machine, so they are pinned by version in
+this file rather than vendored.
 
 | Piece | Role | Consumed as | Pinned at |
 | --- | --- | --- | --- |
 | [guidelines](https://github.com/alexandrelheinen/guidelines) | Personal standards: method, writing voice, naming, per-language style | Submodule at `standards/guidelines` | `v1.2.0` |
-| [cc-sdd](https://github.com/gotalab/cc-sdd) | Method: spec-driven development harness, 17 agent skills | Submodule at `standards/cc-sdd`, installed with `npx` | `v3.0.2` |
 | [caveman](https://github.com/JuliusBrussee/caveman) | Prompt compression, on demand | Claude Code plugin | commit `15581d14` |
 | [mattpocock-skills](https://github.com/mattpocock/skills) | Skillset: TDD, review, spec and ticket flows, domain modeling | Claude Code plugin | `v1.2.3` |
 
 The split is deliberate. A submodule is worth it when the checked-out
-files are the thing you read, which holds for the guidelines and for the
-cc-sdd method documents. A plugin installs into `~/.claude` on the machine
-and its repository is build tooling, so vendoring it would add megabytes
-of source nobody reads and a second version that can drift from the one
-actually running.
+files are the thing you read, which holds for the guidelines. A plugin
+installs into `~/.claude` on the machine and its repository is build
+tooling, so vendoring it would add megabytes of source nobody reads and a
+second version that can drift from the one actually running.
 
-## Submodules
+## The guidelines submodule
 
-Both submodules are pinned to a tag rather than tracking a moving branch,
-so a checkout of any commit in this repository reproduces the standards
-that applied when it was written.
+It is pinned to a tag rather than tracking a moving branch, so a checkout
+of any commit in this repository reproduces the standards that applied
+when it was written.
 
 ```bash
 # First clone
@@ -45,54 +43,6 @@ git commit -m "Move guidelines to v1.3.0"
 Read the guidelines before changing anything here. `CLAUDE.md` imports the
 files that apply to every task; the rest of the library is worth reading
 once.
-
-## Installing cc-sdd
-
-cc-sdd ships its method as agent skills that have to be installed into the
-project. The submodule holds the source and the reference documents; the
-skills themselves are written by the installer.
-
-Run it from the repository root, and preview first, because the installer
-writes `CLAUDE.md` and would otherwise overwrite the one this repository
-maintains:
-
-```bash
-npx cc-sdd@3.0.2 --claude-skills --lang en --dry-run --backup
-```
-
-Read what it plans to touch. If `CLAUDE.md` is on the list, keep the
-backup it offers, then restore this repository's version afterwards with
-`git checkout CLAUDE.md`. Then run it for real:
-
-```bash
-npx cc-sdd@3.0.2 --claude-skills --lang en --backup
-git checkout CLAUDE.md
-```
-
-It creates `.claude/skills/` with 17 skills and `.kiro/` with the
-templates, rules, steering documents, and specs. Both are committed: they
-are project state, not machine state, and a reviewer needs to see a spec
-change in the diff.
-
-Pin the installed version to the submodule. If you upgrade one, upgrade
-the other in the same commit, so `standards/cc-sdd` always documents the
-skills that are actually installed.
-
-Entry point once installed:
-
-```
-/kiro-discovery <idea>
-```
-
-Discovery routes the work and names the next command. The full phase chain
-is `kiro-discovery`, `kiro-spec-init`, `kiro-spec-requirements`,
-`kiro-spec-design`, `kiro-spec-tasks`, then `kiro-impl` for autonomous
-implementation. Reference documents live in the submodule:
-
-- [Skill reference](cc-sdd/docs/guides/skill-reference.md)
-- [Spec-driven guide](cc-sdd/docs/guides/spec-driven.md)
-- [Why cc-sdd](cc-sdd/docs/guides/why-cc-sdd.md)
-- [Customization guide](cc-sdd/docs/guides/customization-guide.md)
 
 ## Installing the Claude Code plugins
 

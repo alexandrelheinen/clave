@@ -24,10 +24,9 @@ from clave.world.objects import ObjectSpec, channels, parse
 
 ARM_MODEL = Path("third_party") / "mujoco_menagerie_ur10e" / "ur10e.xml"
 """A Universal Robots UR10e, adopted from MuJoCo Menagerie rather than authored
-here. D-13 in docs/decisions.md records why a validated model derived from
-manufacturer CAD outranked the SCARA this replaced, and D-14 records why the
-one model is copied into third_party/ instead of pinning a 2.3 GB collection to
-obtain 35 MB of it.
+here. A validated model derived from manufacturer CAD outranked the SCARA
+this replaced, and the one model is copied into third_party/ instead of
+pinning a 2.3 GB collection to obtain 35 MB of it.
 """
 
 PARKED_Z = 0.05
@@ -125,6 +124,7 @@ def _arm_spec(root: Path) -> Any:
         FileNotFoundError: If the model is absent, which means a broken
             checkout rather than a missing submodule: this file is committed.
     """
+
     import mujoco
 
     path = root / ARM_MODEL
@@ -311,7 +311,7 @@ def _annotate_for_presentation(
         rgba = [float(v) for v in require(ring, "rgba", "annotations.reach_ring")]
         thickness = float(require(ring, "thickness_meters", "annotations.reach_ring"))
         count = int(require(ring, "segment_count", "annotations.reach_ring"))
-        # AC-VIS-03: the radii are the layout's, so a ring cannot outlive the
+        # The radii are the layout's, so a ring cannot outlive the
         # workspace it describes.
         for label, radius in (("inner", plan.reach_min), ("outer", plan.reach_max)):
             for index in range(count):
@@ -337,7 +337,7 @@ def _annotate_for_presentation(
             require(edges, "thickness_meters", "annotations.window_edges")
         )
         height = float(require(edges, "height_meters", "annotations.window_edges"))
-        # AC-VIS-04: the sweep places these, so the figure and the safety layer
+        # The sweep places these, so the figure and the safety layer
         # cannot disagree about where an object enters and leaves reach.
         for label, position in zip(
             ("open", "close"), reach_report(plan).window_edges, strict=True
@@ -355,7 +355,7 @@ def _annotate_for_presentation(
     if tags:
         radius = float(require(tags, "radius_meters", "annotations.class_markers"))
         above = float(require(tags, "height_above_meters", "annotations.class_markers"))
-        # AC-VIS-05: the color is the object's own channel rather than a value
+        # The color is the object's own channel rather than a value
         # the scenario assigns per slot, so the legend cannot drift from the
         # object set.
         for body, channel in markers:
@@ -584,7 +584,7 @@ def _add_supports(
     # The pedestal the manipulator is bolted to. The arm stands beside the belt
     # rather than hanging over it: a six-axis arm inverted above a plane is
     # near-singular pointing straight down, and a sweep found 3 of 27 sample
-    # points reachable that way. D-13 records it.
+    # points reachable that way.
     #
     # A parallelepiped is the right amount of detail here. It is a machine frame
     # and nothing measures it, but an arm floating at working height describes no
@@ -593,7 +593,7 @@ def _add_supports(
     base_x, base_y, base_z = plan.arm_base
     # The arm sweeps an annulus from `reach_min` outward, so a pedestal whose
     # half-diagonal stays inside that radius cannot be struck by the arm it
-    # carries. AC-ARM-04.
+    # carries.
     world.add_geom(
         name="arm_pedestal",
         type=mujoco.mjtGeom.mjGEOM_BOX,
@@ -673,8 +673,8 @@ is loose beside the 0.05 mm a real UR10e repeats to and tight enough that a
 tracking error is not mistaken for a reach failure.
 
 This is applied to the compiled model rather than edited into
-`third_party/mujoco_menagerie_ur10e/`, because that directory is a verbatim copy
-and D-14 undertakes to keep it one.
+`third_party/mujoco_menagerie_ur10e/`, because that directory is a verbatim
+copy and stays one.
 """
 
 

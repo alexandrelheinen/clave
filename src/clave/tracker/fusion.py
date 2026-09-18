@@ -13,7 +13,7 @@ the others.
 **Elapsed time is clamped at zero.** A weight of the form `k ** elapsed`
 inverts when elapsed is negative, so a reading older than the belief it joins
 would outweigh a newer one. The contract anticipates two cameras firing 8 ms
-apart, which is exactly when that happens, so `AC-TRACK-53` makes it a rule.
+apart, which is exactly when that happens, so the clamp is a rule here.
 
 **Nothing ever reaches zero.** A class every reading so far dismissed would be
 dismissed forever, because zero is unrecoverable under multiplication. The floor
@@ -50,9 +50,8 @@ REJECT = "reject"
 """The twelfth outcome, beside the eleven taxonomy classes.
 
 Whether it is a predicted class or an absence of confidence is a question
-`docs/perception-contract.md` declines to settle. A slot is the reading
-`AC-TRACK-16` forces, and the contract is what should be amended if that turns
-out wrong.
+`docs/perception-contract.md` declines to settle. A slot is the reading taken
+here, and the contract is what should be amended if that turns out wrong.
 """
 
 OUTCOMES: tuple[str, ...] = tuple(entry.id for entry in MATERIAL_CLASSES) + (REJECT,)
@@ -255,9 +254,8 @@ def _densities_of(world: dict[str, object]) -> dict[str, Range]:
 def weight_of(confidence: float, elapsed_seconds: float, half_life: float) -> float:
     """Return how much one reading counts.
 
-    Two arguments and no third. There is no `source_id` here, which is how
-    `AC-TRACK-19` forbids source priority: a rule that cannot be expressed
-    cannot be forgotten.
+    Two arguments and no third. There is no `source_id` here, which forbids
+    source priority: a rule that cannot be expressed cannot be forgotten.
 
     Elapsed time is clamped at zero. A reading older than the belief it joins
     has aged no less than a fresh one, and without the clamp the exponent turns

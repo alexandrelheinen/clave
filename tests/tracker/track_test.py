@@ -1,7 +1,6 @@
 """The seam, the belief it fills, and the record a consumer reads.
 
-Covers `AC-TRACK-16`, `AC-TRACK-17`, `AC-TRACK-20`, `AC-TRACK-21`,
-`AC-TRACK-23`, `AC-TRACK-26`, `AC-TRACK-48` and `AC-TRACK-49`.
+
 
 The seam is the point of this file. `learned-tracker` replaces one
 implementation of `Associator` and nothing above it, so what an associator may
@@ -61,8 +60,8 @@ def a_footprint(x: float = -1.0, y: float = 0.0) -> Footprint:
 class StubAssociator:
     """Joins everything to one track, so a tracker test needs no real rule.
 
-    `AC-TRACK-26` says nothing above the protocol changes when the
-    implementation does. These tests construct the tracker with this rather than
+    Nothing above the protocol changes when the implementation does. These
+    tests construct the tracker with this rather than
     with `SimulatorIdentity`, which is what makes that checkable by reading one
     import.
     """
@@ -121,12 +120,12 @@ def label(at: int = SECOND, object_id: int = 3, class_id: str = "M-06") -> Evide
 
 
 def test_the_shipped_associator_satisfies_the_seam() -> None:
-    """AC-TRACK-20 and AC-TRACK-26."""
+    """The shipped associator satisfies the seam."""
     check_an_associator(SimulatorIdentity())
 
 
 def test_the_shipped_associator_says_it_reads_the_simulator() -> None:
-    """AC-TRACK-20.
+    """The shipped associator says it reads the simulator.
 
     Its name goes into a run report, so it has to leave no room for a reader to
     mistake it for perception.
@@ -135,7 +134,7 @@ def test_the_shipped_associator_says_it_reads_the_simulator() -> None:
 
 
 def test_a_cue_carries_only_what_an_associator_may_read() -> None:
-    """AC-TRACK-26.
+    """A cue carries only what an associator may read.
 
     The seam is a closed type rather than a discipline, so what a learned model
     is allowed to look at is checkable by reading one dataclass.
@@ -153,7 +152,7 @@ def test_a_cue_carries_only_what_an_associator_may_read() -> None:
 
 
 def test_the_simulator_associator_joins_by_the_label_it_was_given() -> None:
-    """AC-TRACK-20. This is the identity `learned-tracker` takes away."""
+    """This is the identity `learned-tracker` takes away."""
     associator = SimulatorIdentity()
     summary = TrackSummary(
         track_id=7,
@@ -175,10 +174,10 @@ def test_the_simulator_associator_joins_by_the_label_it_was_given() -> None:
 
 
 def test_the_simulator_associator_falls_back_to_geometry_for_pixels() -> None:
-    """AC-TRACK-20.
+    """The simulator associator falls back to geometry for pixels.
 
-    A detection carries no identity, because `AC-TRACK-45` requires the adapter
-    to discard the only one it has. So the shipped associator is asymmetric on
+    A detection carries no identity, because the adapter discards the only one
+    it has. So the shipped associator is asymmetric on
     purpose: ground truth for the label, geometry for the pixels, and it is the
     geometric branch that replaces `association_radius_meters`.
     """
@@ -203,7 +202,7 @@ def test_the_simulator_associator_falls_back_to_geometry_for_pixels() -> None:
 
 
 def test_a_tracker_holds_one_track_and_settles_it_into_a_record() -> None:
-    """AC-TRACK-16 and AC-TRACK-21."""
+    """A tracker holds one track and settles it into a record."""
     held = tracker()
     held.observe(detection(), at_nanos=SECOND)
     held.observe(label(), at_nanos=SECOND)
@@ -214,7 +213,7 @@ def test_a_tracker_holds_one_track_and_settles_it_into_a_record() -> None:
 
 
 def test_the_record_names_no_sensor() -> None:
-    """AC-TRACK-21.
+    """The record names no sensor.
 
     `evidence` names roles, so a consumer can report that a decision used a
     code without knowing which of three cameras read it.
@@ -233,7 +232,7 @@ def test_the_record_names_no_sensor() -> None:
 
 
 def test_the_record_carries_no_channel() -> None:
-    """AC-TRACK-23.
+    """The record carries no channel.
 
     The routing policy owns the channel, so perception could only ever write a
     null into that field. An always-absent field is worse than an absent one.
@@ -244,7 +243,7 @@ def test_the_record_carries_no_channel() -> None:
 
 
 def test_grasp_geometry_is_computed_from_the_footprint() -> None:
-    """AC-TRACK-21.
+    """Grasp geometry is computed from the footprint.
 
     A stored grasp axis can disagree with the footprint it came from and a
     computed one cannot.
@@ -258,7 +257,7 @@ def test_grasp_geometry_is_computed_from_the_footprint() -> None:
 
 
 def test_the_record_discloses_what_came_from_the_simulator() -> None:
-    """AC-TRACK-49.
+    """The record discloses what came from the simulator.
 
     No per-instance classifier exists, so a material that arrived through
     `GroundTruth` is the simulator's label rather than a perceived value. A
@@ -274,14 +273,14 @@ def test_the_record_discloses_what_came_from_the_simulator() -> None:
 
 
 def test_a_record_built_from_sensors_alone_discloses_nothing_simulated() -> None:
-    """AC-TRACK-49. The disclosure is earned rather than always present."""
+    """The disclosure is earned rather than always present."""
     held = tracker()
     held.observe(detection(), at_nanos=SECOND)
     assert held.settle(at_nanos=SECOND)[0].simulated == frozenset()
 
 
 def test_a_code_stays_attached_as_the_track_travels() -> None:
-    """AC-TRACK-17.
+    """A code stays attached as the track travels.
 
     A symbol read at the gate is still attached a metre downstream, which is
     the whole reason a track exists rather than a per-frame record.
@@ -305,7 +304,7 @@ def test_a_code_stays_attached_as_the_track_travels() -> None:
 
 
 def test_a_track_is_propagated_to_the_instant_it_is_settled_at() -> None:
-    """AC-TRACK-04 and AC-TRACK-16. Move the clock, never the object."""
+    """Move the clock, never the object."""
     held = tracker()
     held.observe(detection(at=SECOND, x=-1.0), at_nanos=SECOND)
     at_gate = held.settle(at_nanos=SECOND)[0].footprint.center[0]
@@ -315,7 +314,7 @@ def test_a_track_is_propagated_to_the_instant_it_is_settled_at() -> None:
 
 
 def test_valid_until_is_the_measured_window_exit() -> None:
-    """AC-TRACK-24. The pose expires where the arm can no longer reach it."""
+    """The pose expires where the arm can no longer reach it."""
     held = tracker()
     held.observe(detection(at=SECOND, x=0.0), at_nanos=SECOND)
     record = held.settle(at_nanos=SECOND)[0]
@@ -324,7 +323,7 @@ def test_valid_until_is_the_measured_window_exit() -> None:
 
 
 def test_the_height_in_the_record_comes_from_the_detection_that_estimated_it() -> None:
-    """AC-TRACK-16.
+    """The height in the record comes from the detection that estimated it.
 
     The line declares no depth sensor, so nothing measures a height and the
     estimate travels with the detection. The contract's change table says
@@ -337,7 +336,7 @@ def test_the_height_in_the_record_comes_from_the_detection_that_estimated_it() -
 
 
 def test_a_depth_reading_has_no_sensor_on_this_line_to_have_come_from() -> None:
-    """AC-TRACK-25b and AC-TRACK-48.
+    """A depth reading has no sensor on this line to have come from.
 
     No camera produces the depth role, so a `Height` claiming to come from the
     detection camera is refused at the boundary rather than folded. That is the
@@ -361,7 +360,7 @@ def test_a_depth_reading_has_no_sensor_on_this_line_to_have_come_from() -> None:
 
 
 def test_nothing_enters_a_track_without_crossing_the_intake() -> None:
-    """AC-TRACK-48.
+    """Nothing enters a track without crossing the intake.
 
     The property the boundary existed for since task 2, now that there is a
     track for it to be the only path to.
@@ -384,7 +383,7 @@ def test_nothing_enters_a_track_without_crossing_the_intake() -> None:
 
 
 def test_two_objects_produce_two_tracks_with_distinct_identities() -> None:
-    """AC-TRACK-16. A `track_id` is never reused."""
+    """A `track_id` is never reused."""
     held = tracker(associator=SimulatorIdentity())
     held.observe(label(object_id=3, class_id="M-06"), at_nanos=SECOND)
     held.observe(label(object_id=4, class_id="M-09"), at_nanos=SECOND)
@@ -393,7 +392,7 @@ def test_two_objects_produce_two_tracks_with_distinct_identities() -> None:
 
 
 def test_a_detection_joins_the_track_ground_truth_opened() -> None:
-    """AC-TRACK-16 and AC-TRACK-20.
+    """A detection joins the track ground truth opened.
 
     The integration defect the unit tests all missed. Ground truth carries a
     position but no extent, and the association gate scales with the track's own
@@ -431,7 +430,7 @@ def test_a_detection_joins_the_track_ground_truth_opened() -> None:
 
 
 def test_without_an_unmeasured_extent_the_two_would_not_have_met() -> None:
-    """AC-TRACK-16.
+    """Without an unmeasured extent the two would not have met.
 
     Guarding the fix rather than the symptom. At zero the gate is nothing, which
     is exactly the state the demo exposed, so this pins why the parameter

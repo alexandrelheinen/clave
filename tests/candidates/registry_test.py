@@ -5,7 +5,8 @@ from clave.candidates.registry import REGISTRY, by_stage, specs
 
 
 def test_registry_lists_every_shortlisted_architecture() -> None:
-    """AC-ADAPT-01: one entry per architecture v0.1.2 advanced."""
+    """One entry per architecture v0.1.2 advanced."""
+
     names = {spec.name for spec in specs()}
     assert names == {
         "faster-rcnn-mobilenetv3",
@@ -19,23 +20,23 @@ def test_registry_lists_every_shortlisted_architecture() -> None:
 
 
 def test_both_stages_meet_the_roadmap_floor_of_three() -> None:
-    """AC-ADAPT-01: three per stage is the target v0.1.2 set."""
+    """Three per stage is the target v0.1.2 set."""
     assert len(by_stage(Stage.PERCEPTION)) >= 3
     assert len(by_stage(Stage.POLICY)) >= 3
 
 
 def test_every_candidate_records_a_license() -> None:
-    """AC-IFACE-01: a candidate without a recorded license is the defect."""
+    """A candidate without a recorded license is the defect."""
     assert all(spec.license for spec in specs())
 
 
 def test_every_candidate_records_its_source() -> None:
-    """AC-ADAPT-02: loading from upstream is checkable from the spec."""
+    """Loading from upstream is checkable from the spec."""
     assert all(spec.source for spec in specs())
 
 
 def test_the_registry_is_readable_without_loading_anything() -> None:
-    """AC-IFACE-03: inspecting the registry imports no heavy library."""
+    """Inspecting the registry imports no heavy library."""
     assert len(REGISTRY) == 7
     for candidate, forward_for in REGISTRY:
         assert callable(candidate.build)

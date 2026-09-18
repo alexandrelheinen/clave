@@ -1,6 +1,6 @@
 """The boundary every reading crosses before it can reach a track.
 
-Covers `AC-TRACK-08` and `AC-TRACK-48`.
+
 
 `GroundTruth` is deliberately in the same union as real evidence, so simulation
 supplies labels through the path real sensors use. The price of that is a gate:
@@ -69,7 +69,7 @@ def a_label(source: str = "simulator") -> Evidence:
 
 
 def test_simulation_admits_the_simulator_label() -> None:
-    """AC-TRACK-08. This is the whole reason GroundTruth is in the union."""
+    """This is the whole reason GroundTruth is in the union."""
     intake = Intake(Deployment.SIMULATED, sensors())
     admitted = intake.accept(a_label()).payload
     assert isinstance(admitted, GroundTruth)
@@ -77,7 +77,7 @@ def test_simulation_admits_the_simulator_label() -> None:
 
 
 def test_hardware_refuses_the_simulator_label_naming_the_source() -> None:
-    """AC-TRACK-08.
+    """Hardware refuses the simulator label naming the source.
 
     Naming the source matters: on a real line the interesting question is which
     process is still offering simulated labels, not that one did.
@@ -88,13 +88,13 @@ def test_hardware_refuses_the_simulator_label_naming_the_source() -> None:
 
 
 def test_hardware_admits_everything_a_real_sensor_could_have_produced() -> None:
-    """AC-TRACK-08. The gate refuses one variant, not the deployment."""
+    """The gate refuses one variant, not the deployment."""
     intake = Intake(Deployment.HARDWARE, sensors())
     assert intake.accept(a_detection()).role is Role.DETECTION
 
 
 def test_a_reading_from_an_undeclared_sensor_is_refused() -> None:
-    """AC-TRACK-25.
+    """A reading from an undeclared sensor is refused.
 
     Provenance that names nothing the line declares is provenance nobody can
     audit, and it is usually a camera that was removed from configuration and
@@ -106,7 +106,7 @@ def test_a_reading_from_an_undeclared_sensor_is_refused() -> None:
 
 
 def test_a_reading_whose_role_its_sensor_does_not_produce_is_refused() -> None:
-    """AC-TRACK-25. A code read attributed to the detection camera is a fault.
+    """A code read attributed to the detection camera is a fault.
 
     The wide camera is nearly three times coarser than a barcode module needs,
     so evidence like this cannot have come from where it says it did.
@@ -124,7 +124,7 @@ def test_a_reading_whose_role_its_sensor_does_not_produce_is_refused() -> None:
 
 
 def test_the_simulator_is_not_required_to_be_a_declared_camera() -> None:
-    """AC-TRACK-08.
+    """The simulator is not required to be a declared camera.
 
     Ground truth comes from the world rather than from an installation, so it
     has no entry in `cameras` and could not have one. That exemption is exactly
@@ -135,7 +135,7 @@ def test_the_simulator_is_not_required_to_be_a_declared_camera() -> None:
 
 
 def test_a_deployment_is_stated_rather_than_inferred() -> None:
-    """AC-TRACK-08.
+    """A deployment is stated rather than inferred.
 
     There is no default. A runtime that guessed would guess SIMULATED, which is
     the permissive answer, and the one time it mattered it would be wrong.
@@ -145,7 +145,7 @@ def test_a_deployment_is_stated_rather_than_inferred() -> None:
 
 
 def test_nothing_reaches_a_track_without_crossing_the_gate() -> None:
-    """AC-TRACK-48.
+    """Nothing reaches a track without crossing the gate.
 
     The refusal is worth nothing if a caller can construct evidence and hand it
     straight to fusion. `Intake.accept` is the only function in the package

@@ -32,7 +32,7 @@ belt:
   # slower because a human reaches at roughly 1 pick per 2 s; published
   # robotic sorters sustain 60 to 140 picks per minute. At 0.31 m/s an object
   # stays inside the arm's annulus for 3.3 s crossing the centerline, which is
-  # ample against the 1.0 second cycle budget AC-CYCLE-01 sets.
+  # ample against the 1.0 second cycle budget.
   speed_meters_per_second: [0.25, 0.35]
   # Side guides keep tipped cylinders from rolling off. A real line has them.
   guide_height_meters: 0.04
@@ -64,9 +64,9 @@ spawn:
 
 arm:
   # A Universal Robots UR10e, adopted from MuJoCo Menagerie and vendored under
-  # third_party/mujoco_menagerie_ur10e/. D-13 records why a validated model
-  # derived from manufacturer CAD outranked the SCARA authored here, and what it
-  # costs: the arm is slower, and two of its six axes go unused.
+  # third_party/mujoco_menagerie_ur10e/. A validated model derived from
+  # manufacturer CAD outranked the SCARA authored here, and it costs something:
+  # the arm is slower, and two of its six axes go unused.
   #
   # Beside the belt, on a pedestal, not overhead. A six-axis arm inverted above
   # a plane is near-singular pointing straight down; a sweep with the tool held
@@ -265,8 +265,8 @@ objects:
   # Four of the eleven taxonomy classes have an object. PET, PP, aluminum,
   # glass, corrugated board and beverage carton have none, because nothing made
   # of them in either collection fits a 55.7 mm gripper: a soda can is 66 mm, a
-  # bleach bottle 68 mm, the narrowest cup 57 mm. `AC-ASSET-02` asks for six
-  # classes and this set has four, which `D-09` records rather than hides.
+  # bleach bottle 68 mm, the narrowest cup 57 mm. Six classes were asked for
+  # and this set has four, which is recorded here rather than hidden.
   #
   # The material class is inferred from what the package is, not measured. A
   # supplement tub is taken as HDPE, a candy carton as paperboard, a tuna can
@@ -330,7 +330,7 @@ objects:
     density_kg_per_m3: [180, 320]
 
   # Taken as HDPE. A squeeze bottle of this shape is usually HDPE or LDPE, and
-  # the label noise that inference carries is the trade D-09 already recorded.
+  # the label noise that inference carries is the accepted trade.
   - name: mustard_bottle
     material_class: M-02
     shape: mesh

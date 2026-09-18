@@ -19,7 +19,7 @@ report() {
 }
 
 echo "==> Submodules"
-if [[ -f standards/guidelines/README.md && -f standards/cc-sdd/README.md ]]; then
+if [[ -f standards/guidelines/README.md ]]; then
   echo "  ok      standards checked out"
 else
   echo "  fetching standards submodules"
@@ -28,7 +28,6 @@ fi
 
 echo "==> Toolchain"
 report git "install from your package manager"
-report node "install from https://nodejs.org or nvm, needed by the cc-sdd installer"
 report cargo "install a stable Rust toolchain from https://rustup.rs"
 
 echo "==> Cargo tools required by the quality gate"
@@ -59,7 +58,7 @@ else
 fi
 
 echo "==> Agent toolchain"
-echo "  See standards/README.md for cc-sdd and the Claude Code plugins."
+echo "  See standards/README.md for the Claude Code plugins."
 
 if [[ "${missing}" -ne 0 ]]; then
   echo

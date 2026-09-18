@@ -22,6 +22,7 @@ def built(
     seed: int,
 ) -> tuple[dict[str, Any], np.random.Generator, Any, Any, SceneLayout]:
     """Build the shipped world at one seed."""
+
     raw = config.load(CONFIG)
     rng = np.random.default_rng(seed)
     model, data, plan = scene.build(raw, rng, ROOT)
@@ -45,7 +46,7 @@ def conveyor_for(
 
 
 def test_the_scene_builds_with_one_bin_per_channel() -> None:
-    """AC-SCENE-01 and AC-SCENE-02."""
+    """The scene builds with one bin per channel."""
     pytest.importorskip("mujoco")
     import mujoco
 
@@ -58,7 +59,7 @@ def test_the_scene_builds_with_one_bin_per_channel() -> None:
 
 
 def test_the_scene_exposes_its_timestep() -> None:
-    """AC-SCENE-04."""
+    """The scene exposes its timestep."""
     pytest.importorskip("mujoco")
     _, _, model, _, plan = built(0)
     assert plan.timestep > 0
@@ -66,7 +67,7 @@ def test_the_scene_exposes_its_timestep() -> None:
 
 
 def test_the_scene_steps_without_instability() -> None:
-    """AC-SCENE-03: parked pool bodies used to fall forever into a NaN."""
+    """Parked pool bodies used to fall forever into a NaN."""
     pytest.importorskip("mujoco")
     import mujoco
 
@@ -80,7 +81,7 @@ def test_the_scene_steps_without_instability() -> None:
 
 
 def test_one_seed_twice_places_objects_identically() -> None:
-    """AC-CONFIG-04."""
+    """One seed twice places objects identically."""
     pytest.importorskip("mujoco")
     _, _, _, _, first = built(5)
     _, _, _, _, second = built(5)
@@ -88,7 +89,7 @@ def test_one_seed_twice_places_objects_identically() -> None:
 
 
 def test_two_seeds_place_objects_differently() -> None:
-    """AC-CONFIG-05: the guard above would pass for a constant."""
+    """The guard above would pass for a constant."""
     pytest.importorskip("mujoco")
     _, _, _, _, first = built(5)
     _, _, _, _, second = built(6)
@@ -133,7 +134,7 @@ def test_a_module_count_of_zero_is_refused() -> None:
 
 
 def test_the_arm_keeps_its_pedestal_whatever_draws_the_belt() -> None:
-    """AC-ARM-03: the arm stands on something, whatever draws the belt."""
+    """The arm stands on something, whatever draws the belt."""
     pytest.importorskip("mujoco")
     import mujoco
 
@@ -144,7 +145,7 @@ def test_the_arm_keeps_its_pedestal_whatever_draws_the_belt() -> None:
 
 
 def test_the_pedestal_reaches_the_floor() -> None:
-    """AC-ARM-03: an arm floating at working height describes no installation."""
+    """An arm floating at working height describes no installation."""
     pytest.importorskip("mujoco")
     import mujoco
 
@@ -162,7 +163,7 @@ def test_the_pedestal_reaches_the_floor() -> None:
 
 
 def test_the_pedestal_stands_clear_of_the_arm_sweep() -> None:
-    """AC-ARM-04: a support the arm drives into is worse than none.
+    """A support the arm drives into is worse than none.
 
     The gantry this replaced was first placed at the belt edge, inside the
     arm's own annulus, where it stalled short of every target beyond. Here the
@@ -250,7 +251,7 @@ def geom_named(model: Any, name: str) -> int:
 
 
 def test_annotations_add_geometry_and_no_freedom() -> None:
-    """AC-VIS-01 and AC-VIS-02.
+    """Annotations add geometry and no freedom.
 
     The figures are renders, so the explanation has to be geometry the renderer
     sees. What it must not be is a change to the world: a marker that added a
@@ -267,7 +268,7 @@ def test_annotations_add_geometry_and_no_freedom() -> None:
 
 
 def test_the_ring_stands_at_the_radii_the_layout_carries() -> None:
-    """AC-VIS-03: a ring cannot outlive the workspace it describes."""
+    """A ring cannot outlive the workspace it describes."""
     pytest.importorskip("mujoco")
     model, _, plan, _ = annotated()
     for label, radius in (("inner", plan.reach_min), ("outer", plan.reach_max)):
@@ -281,7 +282,7 @@ def test_the_ring_stands_at_the_radii_the_layout_carries() -> None:
 
 
 def test_the_window_edges_stand_where_the_sweep_puts_them() -> None:
-    """AC-VIS-04: the figure and the safety layer read one measurement."""
+    """The figure and the safety layer read one measurement."""
     pytest.importorskip("mujoco")
     model, _, plan, _ = annotated()
     opens, closes = belt.reach_report(plan).window_edges
@@ -294,7 +295,7 @@ def test_the_window_edges_stand_where_the_sweep_puts_them() -> None:
 
 
 def test_a_marker_carries_its_channel_color_and_no_mass() -> None:
-    """AC-VIS-05.
+    """A marker carries its channel color and no mass.
 
     The color is read from the object's own channel rather than assigned per
     pool slot, so the legend cannot drift from the object set. The mass is what

@@ -14,13 +14,14 @@ from clave.errors import ManifestError
 
 def write(tmp_path: Path, body: str) -> Path:
     """Write a manifest body to a temporary file and return its path."""
+
     path = tmp_path / "manifest.toml"
     path.write_text(body)
     return path
 
 
 def test_valid_manifest_round_trips_every_artifact(tmp_path: Path) -> None:
-    """AC-MANIFEST-01: name, source and digest are read back."""
+    """Name, source and digest are read back."""
     path = write(
         tmp_path,
         """
@@ -37,7 +38,7 @@ def test_valid_manifest_round_trips_every_artifact(tmp_path: Path) -> None:
 
 
 def test_entry_without_digest_reports_unverified(tmp_path: Path) -> None:
-    """AC-MANIFEST-02: an absent digest is a state, not a convention."""
+    """An absent digest is a state, not a convention."""
     path = write(
         tmp_path,
         """
@@ -50,7 +51,7 @@ def test_entry_without_digest_reports_unverified(tmp_path: Path) -> None:
 
 
 def test_duplicate_artifact_name_is_rejected_by_name(tmp_path: Path) -> None:
-    """AC-MANIFEST-03: the error names the offending entry."""
+    """The error names the offending entry."""
     path = write(
         tmp_path,
         """
@@ -68,7 +69,7 @@ def test_duplicate_artifact_name_is_rejected_by_name(tmp_path: Path) -> None:
 
 
 def test_entry_missing_a_required_field_is_rejected_by_name(tmp_path: Path) -> None:
-    """AC-MANIFEST-03: a malformed entry is named, not silently skipped."""
+    """A malformed entry is named, not silently skipped."""
     path = write(
         tmp_path,
         """
@@ -81,7 +82,7 @@ def test_entry_missing_a_required_field_is_rejected_by_name(tmp_path: Path) -> N
 
 
 def test_unknown_artifact_lookup_raises(tmp_path: Path) -> None:
-    """AC-RUN-05 relies on the manifest refusing an unknown name."""
+    """A run record relies on the manifest refusing an unknown name."""
     path = write(
         tmp_path,
         """

@@ -2,7 +2,7 @@
 
 These tests read the committed golden vectors rather than a payload built here,
 which is the same check a consumer in another language runs before it ever sees
-a live decision. Covers `AC-ROSMAP-01` and `AC-ROSPUB-04`.
+a live decision.
 """
 
 from pathlib import Path
@@ -53,7 +53,7 @@ def test_a_version_this_build_does_not_implement_is_refused_by_version() -> None
 def test_bytes_that_are_not_a_decision_are_reported_rather_than_raised_blindly() -> (
     None
 ):
-    """AC-ROSPUB-04: one bad datagram is not a reason to stop a conveyor."""
+    """One bad datagram is not a reason to stop a conveyor."""
     for payload in (b"", b"not cbor at all", b"\xa1\x64test\x01"):
         with pytest.raises(DecisionError):
             decode(payload)

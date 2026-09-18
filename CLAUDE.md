@@ -31,6 +31,8 @@ in context.
 | Project constitution, quality gates, merge policy | [CONTRIBUTING.md](CONTRIBUTING.md) |
 | What each block does, its inputs and outputs | [docs/architecture.md](docs/architecture.md) |
 | Every measured number a gate or a config value rests on | [docs/measurements.md](docs/measurements.md) |
+| The version ladder, release criteria, and the open defects each step closes | [docs/roadmap.md](docs/roadmap.md) |
+| What a feature has to do, and the ids its tests reference | [docs/requirements/](docs/requirements/) |
 | How a waste object is described, independently of which sensor saw it | [docs/perception-contract.md](docs/perception-contract.md) |
 | Coding notes specific to CLAVE | [docs/guidelines.md](docs/guidelines.md) |
 | Standards, toolchain, and how to install it | [standards/README.md](standards/README.md) |
@@ -42,22 +44,25 @@ in context.
 
 ## Method
 
-Specification-driven development runs through cc-sdd, installed as agent
-skills. Start with `/kiro-discovery <idea>`, which routes the work and
-names the next command; the phase chain and the reference documents are in
-[standards/README.md](standards/README.md#installing-cc-sdd). Specs live in
-`.kiro/specs/` and are committed.
+Specification-driven development runs on plain documents, with no toolkit
+driving it. A feature gets a document under `docs/requirements/<feature>.md`
+before it gets code, carrying the intent, the scope, the acceptance criteria
+and the traceability ids that
+[workflow/sdd.md](standards/guidelines/workflow/sdd.md) asks for. Structural
+choices go in [docs/architecture.md](docs/architecture.md), and a constraint
+that moves says why in the document that carries it.
 
-Do not start implementing a feature that has no approved spec. Discovery
-may offer to route a change straight to implementation; that is a
-suggestion, not permission, and the floor in
-[workflow/sdd.md](standards/guidelines/workflow/sdd.md#gating-rule) still
-applies.
+Do not start implementing a feature that has no written spec. The rigor
+scales with the change, and the floor in
+[workflow/sdd.md](standards/guidelines/workflow/sdd.md#gating-rule) is a few
+written bullet points before code. A maintainer may waive it for a given
+change; nobody may waive it on the maintainer's behalf.
 
-`.kiro/steering/` is cc-sdd's persistent project memory, holding
-`product.md`, `tech.md`, and `structure.md`. Run `/kiro-steering` to
-bootstrap it if it is empty, before the first discovery, so every later
-skill reads the same description of the project instead of re-deriving one.
+Acceptance criterion ids are append-only. Never renumber one and never reuse
+one, even after the requirement it named is gone, and reference the id from
+the test that guards it so the mapping is greppable in both directions.
+`docs/requirements/learned-tracker.md` records which numbers are already
+spent.
 
 ## Language
 
@@ -112,9 +117,8 @@ and never describe a gate as passing without having run it.
 
 ## Common tasks
 
-- **Specification**: Start a feature with `/kiro-discovery <idea>`, which routes
-  to spec creation via cc-sdd skills. Specs live in `.kiro/specs/` and must be
-  approved before implementation begins.
+- **Specification**: Write `docs/requirements/<feature>.md` before the code,
+  and reference its acceptance criterion ids from the tests that guard them.
 - **Run a single test**: `cargo nextest run -p <crate> <test_name>` (nextest is
   the runner, not cargo test directly).
 - **Run benchmarks**: `cargo bench -p <crate>` in a crate with a `benches/`
@@ -161,7 +165,6 @@ toward that budget rather than sitting outside it.
 
 The policy interface (input/output dimensions, quantization) is defined as a
 Rust type in this repo. Trained policies are versioned separately and fetched
-by deployment scripts, never committed. See [.kiro/steering/](.kiro/steering/)
-for patterns that outlive a single feature, and
-[roadmap.md](.kiro/steering/roadmap.md) for the ladder to v1.0.0 and what
-each step has to prove before it is tagged.
+by deployment scripts, never committed. See
+[docs/roadmap.md](docs/roadmap.md) for the ladder to v1.0.0 and what each
+step has to prove before it is tagged.

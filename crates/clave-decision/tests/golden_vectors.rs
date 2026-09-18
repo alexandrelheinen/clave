@@ -1,8 +1,4 @@
 //! The published schema and the golden vectors a consumer implements against.
-//!
-//! Covers `AC-SCHEMA-04` and `AC-SCHEMA-05`, and guards the encoder against
-//! drift: a vector that decodes but no longer re-encodes to the same bytes is
-//! an encoder that changed without the contract version moving.
 #![expect(clippy::unwrap_used, reason = "test assertions")]
 
 use clave_decision::{ChannelId, ContractError, MaterialClass, MonotonicNanos, ObjectId, codec};
@@ -30,7 +26,7 @@ fn bytes_of(vector: &str) -> Vec<u8> {
         .collect()
 }
 
-/// AC-SCHEMA-05: the published worked example decodes to the values the index
+/// The published worked example decodes to the values the index
 /// documents, and re-encodes to the same bytes.
 #[test]
 fn the_nominal_vector_decodes_to_its_documented_values() {
@@ -70,7 +66,7 @@ fn the_nominal_vector_decodes_to_its_documented_values() {
     assert_eq!(codec::encode(&decision).unwrap(), bytes);
 }
 
-/// AC-SCHEMA-05: the reject vector shows a consumer what an object sent to the
+/// The reject vector shows a consumer what an object sent to the
 /// reject channel looks like, which is an ordinary decision.
 #[test]
 fn the_reject_vector_is_an_ordinary_decision() {
@@ -82,7 +78,7 @@ fn the_reject_vector_is_an_ordinary_decision() {
     assert_eq!(codec::encode(&decision).unwrap(), bytes);
 }
 
-/// AC-SCHEMA-05 and AC-SCHEMA-06: the vector directory carries a message a
+/// The vector directory carries a message a
 /// consumer can point its own rejection path at.
 #[test]
 fn the_unknown_version_vector_is_rejected_whole() {
@@ -94,7 +90,7 @@ fn the_unknown_version_vector_is_rejected_whole() {
     ));
 }
 
-/// AC-SCHEMA-04: the schema states the unit, the coordinate frame, and the
+/// The schema states the unit, the coordinate frame, and the
 /// time reference of every field a consumer has to interpret.
 #[test]
 fn the_schema_states_the_unit_the_frame_and_the_time_reference() {
@@ -113,7 +109,7 @@ fn the_schema_states_the_unit_the_frame_and_the_time_reference() {
     }
 }
 
-/// AC-SCHEMA-04: the schema names every field of a decision and every class in
+/// The schema names every field of a decision and every class in
 /// the fixed set, so a consumer never has to read this crate's source.
 #[test]
 fn the_schema_names_every_field_and_every_class() {
@@ -144,7 +140,7 @@ fn the_schema_names_every_field_and_every_class() {
     }
 }
 
-/// AC-SCHEMA-06: the schema tells a consumer what to do with a version it does
+/// The schema tells a consumer what to do with a version it does
 /// not recognize, so nobody writes a tolerant reader out of habit.
 #[test]
 fn the_schema_states_what_an_unrecognized_version_means_for_a_consumer() {

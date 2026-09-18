@@ -1,7 +1,4 @@
-"""The emitted report.
-
-Covers `AC-VERDICT-01`, `AC-VERDICT-02`, and `AC-VERDICT-03`.
-"""
+"""The emitted report."""
 
 from __future__ import annotations
 
@@ -53,7 +50,7 @@ def _report(*records: ObjectOutcome) -> ValidationReport:
 
 
 def test_run_section_comes_before_the_verdict_section() -> None:
-    """AC-VERDICT-01: evidence first, conclusion second, never merged."""
+    """Evidence first, conclusion second, never merged."""
     rendered = _report(_record("a")).render()
     assert "## What was run" in rendered
     assert "## What was concluded" in rendered
@@ -61,14 +58,14 @@ def test_run_section_comes_before_the_verdict_section() -> None:
 
 
 def test_report_names_the_provenance_of_its_records() -> None:
-    """AC-VERDICT-02: a fixture is labeled as one wherever it is read."""
+    """A fixture is labeled as one wherever it is read."""
     report = _report(_record("a"))
     assert report.run.provenance == "synthetic fixture, not a measurement"
     assert "synthetic fixture, not a measurement" in report.render()
 
 
 def test_report_lists_every_gate_including_the_ones_that_passed() -> None:
-    """AC-VERDICT-03: a threshold stays visible after the run."""
+    """A threshold stays visible after the run."""
     report = _report(_record("a"))
     rendered = report.render()
     for gate in report.verdict.gates:
@@ -78,14 +75,14 @@ def test_report_lists_every_gate_including_the_ones_that_passed() -> None:
 
 
 def test_report_shows_the_threshold_beside_the_observation() -> None:
-    """AC-VERDICT-03: a verdict without its threshold is an opinion."""
+    """A verdict without its threshold is an opinion."""
     rendered = _report(_record("a")).render()
     assert "threshold" in rendered.lower()
     assert "observed" in rendered.lower()
 
 
 def test_report_fails_when_any_gate_fails() -> None:
-    """AC-VERDICT-01: the verdict is the conjunction, not a majority."""
+    """The verdict is the conjunction, not a majority."""
     report = _report(_record("a"))
     assert report.passed is False
     assert any(gate.passed for gate in report.verdict.gates)
@@ -93,7 +90,7 @@ def test_report_fails_when_any_gate_fails() -> None:
 
 
 def test_run_section_reports_the_counts_that_were_scored() -> None:
-    """AC-VERDICT-01: what was run is stated in numbers, not in adjectives."""
+    """What was run is stated in numbers, not in adjectives."""
     report = _report(_record("a"), _record("b", seen_instance=False))
     rendered = report.render()
     assert report.run.summary.seen_count == 1
@@ -104,7 +101,7 @@ def test_run_section_reports_the_counts_that_were_scored() -> None:
 
 
 def test_report_names_each_confusion_individually() -> None:
-    """AC-CONFUSION-01: the three are readable in the emitted text."""
+    """The three are readable in the emitted text."""
     rendered = _report(_record("a")).render()
     assert "CONF-01" in rendered
     assert "CONF-02" in rendered
@@ -112,7 +109,7 @@ def test_report_names_each_confusion_individually() -> None:
 
 
 def test_report_passes_when_every_gate_is_met() -> None:
-    """AC-VERDICT-03: a clean run says so instead of listing nothing."""
+    """A clean run says so instead of listing nothing."""
     from clave.taxonomy import MATERIAL_CLASSES
     from clave.validation.gates import GateThresholds
 

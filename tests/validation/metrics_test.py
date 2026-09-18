@@ -1,9 +1,4 @@
-"""Classification, routing, and timing metrics.
-
-Covers `AC-OUTCOME-02`, `AC-ACCURACY-01` through `AC-ACCURACY-05`, `AC-PICK-01`
-through `AC-PICK-06`, `AC-TIMING-01` through `AC-TIMING-05`, and
-`AC-CONFUSION-05`.
-"""
+"""Classification, routing, and timing metrics."""
 
 from __future__ import annotations
 
@@ -61,7 +56,7 @@ def _record(
 
 
 def test_matrix_spans_every_taxonomy_class() -> None:
-    """AC-ACCURACY-01: the matrix is sized by the taxonomy, not by the data."""
+    """The matrix is sized by the taxonomy, not by the data."""
     matrix = ConfusionMatrix.over([_record()])
     assert len(matrix.class_ids) == CLASS_COUNT
     assert len(matrix.counts) == CLASS_COUNT
@@ -69,14 +64,14 @@ def test_matrix_spans_every_taxonomy_class() -> None:
 
 
 def test_a_misclassification_lands_off_the_diagonal() -> None:
-    """AC-ACCURACY-01: a wrong prediction is placed where it can be read."""
+    """A wrong prediction is placed where it can be read."""
     matrix = ConfusionMatrix.over([_record(true_class="M-05", predicted_class="M-06")])
     assert matrix.count("M-05", "M-06") == 1
     assert matrix.count("M-05", "M-05") == 0
 
 
 def test_named_confusion_still_appears_in_the_general_matrix() -> None:
-    """AC-CONFUSION-05: naming a confusion removes nothing from the aggregate."""
+    """Naming a confusion removes nothing from the aggregate."""
     matrix = ConfusionMatrix.over(
         [
             _record(true_class="M-08", predicted_class="M-09"),
@@ -88,7 +83,7 @@ def test_named_confusion_still_appears_in_the_general_matrix() -> None:
 
 
 def test_absent_prediction_is_counted_apart_from_a_wrong_one() -> None:
-    """AC-ACCURACY-03: predicting nothing is not the same as predicting wrong."""
+    """Predicting nothing is not the same as predicting wrong."""
     matrix = ConfusionMatrix.over(
         [
             _record(true_class="M-03", predicted_class=None),
@@ -102,7 +97,7 @@ def test_absent_prediction_is_counted_apart_from_a_wrong_one() -> None:
 
 
 def test_a_class_with_no_records_is_unmeasured_rather_than_accurate() -> None:
-    """AC-ACCURACY-05: zero support yields no accuracy figure at all."""
+    """Zero support yields no accuracy figure at all."""
     matrix = ConfusionMatrix.over([_record(true_class="M-01")])
     accuracy = matrix.per_class_accuracy()
     assert accuracy["M-01"] == 1.0
@@ -111,12 +106,12 @@ def test_a_class_with_no_records_is_unmeasured_rather_than_accurate() -> None:
 
 
 def test_an_empty_matrix_reports_no_overall_accuracy() -> None:
-    """AC-ACCURACY-05: the rule holds for the aggregate too."""
+    """The rule holds for the aggregate too."""
     assert ConfusionMatrix.over([]).overall_accuracy is None
 
 
 def test_seen_and_unseen_instances_are_scored_separately() -> None:
-    """AC-ACCURACY-04: generalization is separable from memorization."""
+    """Generalization is separable from memorization."""
     records = [
         _record(true_class="M-01", predicted_class="M-01", seen_instance=True),
         _record(true_class="M-01", predicted_class="M-04", seen_instance=False),
@@ -127,7 +122,7 @@ def test_seen_and_unseen_instances_are_scored_separately() -> None:
 
 
 def test_missed_pick_is_not_a_routing_error() -> None:
-    """AC-PICK-02, AC-PICK-05: a throughput loss is not a contaminated bale."""
+    """A throughput loss is not a contaminated bale."""
     counts = RoutingCounts.over(
         [
             _record(object_id="a", picked=False, routed_channel=None),
@@ -148,7 +143,7 @@ def test_missed_pick_is_not_a_routing_error() -> None:
 
 
 def test_reject_is_counted_apart_from_a_misroute() -> None:
-    """AC-PICK-04: an abstention costs recovery; a misroute costs a bale."""
+    """An abstention costs recovery; a misroute costs a bale."""
     counts = RoutingCounts.over(
         [
             _record(object_id="a", true_class="M-01", routed_channel="CH-REJECT"),
@@ -161,7 +156,7 @@ def test_reject_is_counted_apart_from_a_misroute() -> None:
 
 
 def test_residue_routed_to_reject_is_a_correct_route() -> None:
-    """AC-PICK-04: the reject channel is where residue belongs."""
+    """The reject channel is where residue belongs."""
     counts = RoutingCounts.over(
         [_record(true_class="M-11", routed_channel="CH-REJECT")],
         default_channel_map(),
@@ -171,7 +166,7 @@ def test_residue_routed_to_reject_is_a_correct_route() -> None:
 
 
 def test_a_supplied_channel_map_changes_what_counts_as_a_misroute() -> None:
-    """AC-PICK-03: the mapping is configuration, not a constant in code."""
+    """The mapping is configuration, not a constant in code."""
     records = [_record(true_class="M-01", routed_channel="CH-PLASTIC")]
     strict = RoutingCounts.over(records, default_channel_map())
     merged = RoutingCounts.over(
@@ -183,7 +178,7 @@ def test_a_supplied_channel_map_changes_what_counts_as_a_misroute() -> None:
 
 
 def test_pick_success_and_sorting_rate_differ_when_a_pick_is_misrouted() -> None:
-    """AC-PICK-01, AC-PICK-06: grasping well is not the same as sorting well."""
+    """Grasping well is not the same as sorting well."""
     counts = RoutingCounts.over(
         [
             _record(object_id="a", true_class="M-01", routed_channel="CH-PET"),
@@ -198,7 +193,7 @@ def test_pick_success_and_sorting_rate_differ_when_a_pick_is_misrouted() -> None
 
 
 def test_counts_over_no_records_report_no_rates() -> None:
-    """AC-PICK-01: an empty run has no rate, rather than a rate of zero."""
+    """An empty run has no rate, rather than a rate of zero."""
     counts = RoutingCounts.over([], default_channel_map())
     assert counts.pick_success_rate is None
     assert counts.sorting_rate is None
@@ -208,13 +203,13 @@ def test_counts_over_no_records_report_no_rates() -> None:
 
 
 def test_routing_refuses_a_class_the_channel_map_does_not_cover() -> None:
-    """AC-PICK-03: a partial mapping is an error, not a silent reject."""
+    """A partial mapping is an error, not a silent reject."""
     with pytest.raises(MetricError, match="M-01"):
         RoutingCounts.over([_record(true_class="M-01")], {"M-02": "CH-HDPE"})
 
 
 def test_percentile_returns_an_observed_sample() -> None:
-    """AC-TIMING-03: nearest rank returns a value the system produced."""
+    """Nearest rank returns a value the system produced."""
     values = [0.1, 0.2, 0.3, 0.4, 0.5]
     assert percentile(values, 0.5) == 0.3
     assert percentile(values, 0.99) == 0.5
@@ -222,24 +217,24 @@ def test_percentile_returns_an_observed_sample() -> None:
 
 
 def test_percentile_is_order_independent() -> None:
-    """AC-TIMING-03: two runs over the same records agree exactly."""
+    """Two runs over the same records agree exactly."""
     assert percentile([0.5, 0.1, 0.3], 0.99) == percentile([0.3, 0.5, 0.1], 0.99)
 
 
 def test_percentile_refuses_an_empty_series() -> None:
-    """AC-TIMING-05: an empty series has no tail to report."""
+    """An empty series has no tail to report."""
     with pytest.raises(MetricError, match="empty"):
         percentile([], 0.99)
 
 
 def test_percentile_refuses_a_fraction_outside_its_range() -> None:
-    """AC-TIMING-03: the method is defined on (0, 1]."""
+    """The method is defined on (0, 1]."""
     with pytest.raises(MetricError, match="fraction"):
         percentile([0.1], 1.5)
 
 
 def test_timing_summary_carries_its_sample_count() -> None:
-    """AC-TIMING-01, AC-TIMING-04: a tail figure travels with its support."""
+    """A tail figure travels with its support."""
     summary = TimingSummary.over([0.1, 0.2, 0.3, 0.4])
     assert summary.count == 4
     assert summary.p99 == 0.4
@@ -249,7 +244,7 @@ def test_timing_summary_carries_its_sample_count() -> None:
 
 
 def test_empty_timing_summary_is_unmeasured_rather_than_zero() -> None:
-    """AC-TIMING-05: nothing measured reports nothing, not a passing zero."""
+    """Nothing measured reports nothing, not a passing zero."""
     summary = TimingSummary.over([])
     assert summary.count == 0
     assert summary.p99 is None
@@ -258,7 +253,7 @@ def test_empty_timing_summary_is_unmeasured_rather_than_zero() -> None:
 
 
 def test_summary_reads_latency_from_every_record_and_cycle_time_from_picks() -> None:
-    """AC-TIMING-01, AC-TIMING-02: the two series have different denominators."""
+    """The two series have different denominators."""
     outcomes = OutcomeSet(
         "fixture",
         [
@@ -283,7 +278,7 @@ def test_summary_reads_latency_from_every_record_and_cycle_time_from_picks() -> 
 
 
 def test_summary_is_a_pure_function_of_its_records() -> None:
-    """AC-OUTCOME-02: the same records produce the same summary, twice."""
+    """The same records produce the same summary, twice."""
     outcomes = OutcomeSet(
         "fixture",
         [
@@ -302,7 +297,7 @@ def test_summary_is_a_pure_function_of_its_records() -> None:
 
 
 def test_summary_reports_the_drop_from_seen_to_unseen() -> None:
-    """AC-ACCURACY-04: generalization is a number, not an impression."""
+    """Generalization is a number, not an impression."""
     outcomes = OutcomeSet(
         "fixture",
         [
@@ -322,7 +317,7 @@ def test_summary_reports_the_drop_from_seen_to_unseen() -> None:
 
 
 def test_generalization_drop_is_unmeasured_without_both_partitions() -> None:
-    """AC-ACCURACY-05: a drop needs two accuracies to be a drop."""
+    """A drop needs two accuracies to be a drop."""
     outcomes = OutcomeSet("fixture", [_record(seen_instance=True)])
     summary = ValidationSummary.over(outcomes, default_channel_map())
     assert summary.unseen_accuracy is None
@@ -330,7 +325,7 @@ def test_generalization_drop_is_unmeasured_without_both_partitions() -> None:
 
 
 def test_summary_carries_the_named_confusions() -> None:
-    """AC-CONFUSION-01: the three travel with every summary."""
+    """The three travel with every summary."""
     summary = ValidationSummary.over(
         OutcomeSet("fixture", [_record()]), default_channel_map()
     )
@@ -338,5 +333,5 @@ def test_summary_carries_the_named_confusions() -> None:
 
 
 def test_default_channel_map_covers_every_taxonomy_class() -> None:
-    """AC-PICK-03: the default mapping is complete before it is overridden."""
+    """The default mapping is complete before it is overridden."""
     assert len(default_channel_map()) == CLASS_COUNT

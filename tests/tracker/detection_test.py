@@ -1,10 +1,11 @@
 """Turning pixels into a footprint, and throwing away what the render leaks.
 
-Covers `AC-TRACK-02`, `AC-TRACK-10` and `AC-TRACK-45`.
 
-The trap this file guards is `AC-TRACK-45`. A MuJoCo segmentation render is
-keyed by geometry name, that name is `object_<slot>`, and `clave.world.belt`
-makes the slot the same integer the world hands out as `ObjectLabel.object_id`.
+
+The trap this file guards is the render leaking identity. A MuJoCo
+segmentation render is keyed by geometry name, that name is `object_<slot>`,
+and `clave.world.belt` makes the slot the same integer the world hands out as
+`ObjectLabel.object_id`.
 An adapter that passed the key through would hand the tracker the answer while
 appearing to perceive it.
 """
@@ -54,14 +55,14 @@ def square(row: int, column: int, side: int, size: int = 480) -> PixelMask:
 
 
 def test_a_pixel_at_the_image_centre_is_under_the_camera() -> None:
-    """AC-TRACK-02."""
+    """A pixel at the image centre is under the camera."""
     x, y = to_belt(320.0, 240.0, CAMERA, WIDE, SURFACE, (640, 480))
     assert x == pytest.approx(CAMERA[0], abs=1e-9)
     assert y == pytest.approx(CAMERA[1], abs=1e-9)
 
 
 def test_the_column_axis_runs_along_belt_travel() -> None:
-    """AC-TRACK-02.
+    """The column axis runs along belt travel.
 
     Measured rather than reasoned about: placing an object 0.20 m downstream
     moved its bounds 96 columns at a 640 by 480 render, and nothing the other
@@ -74,7 +75,7 @@ def test_the_column_axis_runs_along_belt_travel() -> None:
 
 
 def test_the_row_axis_runs_across_the_belt_and_is_inverted() -> None:
-    """AC-TRACK-02.
+    """The row axis runs across the belt and is inverted.
 
     Row zero is the top of the image, which is the far side of the belt, so a
     larger row is a smaller `y`. Getting this backwards would mirror every
@@ -89,7 +90,7 @@ def test_the_row_axis_runs_across_the_belt_and_is_inverted() -> None:
 
 
 def test_a_square_mask_has_no_orientation_to_state() -> None:
-    """AC-TRACK-10.
+    """A square mask has no orientation to state.
 
     A can is circular in plan under a nadir camera, and a confident random yaw
     on a circular footprint is worse than an absent one because the safety
@@ -102,7 +103,7 @@ def test_a_square_mask_has_no_orientation_to_state() -> None:
 
 
 def test_an_elongated_mask_states_its_major_axis() -> None:
-    """AC-TRACK-10."""
+    """An elongated mask states its major axis."""
     mask = PixelMask(
         width=480, height=480, runs=tuple((100 + row, 100, 80) for row in range(10))
     )
@@ -115,7 +116,7 @@ def test_an_elongated_mask_states_its_major_axis() -> None:
 
 
 def test_a_diagonal_mask_reports_a_yaw_between_the_axes() -> None:
-    """AC-TRACK-10."""
+    """A diagonal mask reports a yaw between the axes."""
     runs = tuple((100 + step, 100 + step, 6) for step in range(60))
     major, minor, yaw, oriented = oriented_extent(PixelMask(480, 480, runs))
     assert major > minor
@@ -124,7 +125,7 @@ def test_a_diagonal_mask_reports_a_yaw_between_the_axes() -> None:
 
 
 def test_the_adapter_produces_one_reading_per_mask() -> None:
-    """AC-TRACK-10."""
+    """The adapter produces one reading per mask."""
     masks = {"object_3": square(100, 100, 40), "object_7": square(300, 300, 30)}
     readings = detections_from_masks(
         masks,
@@ -141,7 +142,7 @@ def test_the_adapter_produces_one_reading_per_mask() -> None:
 
 
 def test_the_adapter_discards_the_key_the_render_was_indexed_by() -> None:
-    """AC-TRACK-45.
+    """The adapter discards the key the render was indexed by.
 
     The trap. `object_3` is the simulator's `object_id` for that object, so a
     reading carrying it anywhere would be a reading carrying the answer.
@@ -162,7 +163,7 @@ def test_the_adapter_discards_the_key_the_render_was_indexed_by() -> None:
 
 
 def test_no_field_of_a_reading_is_derivable_from_the_simulator_id() -> None:
-    """AC-TRACK-45.
+    """No field of a reading is derivable from the simulator id.
 
     Stronger than checking a string: two objects whose only difference is the
     key they were rendered under produce identical readings.
@@ -190,7 +191,7 @@ def test_no_field_of_a_reading_is_derivable_from_the_simulator_id() -> None:
 
 
 def test_the_belt_frame_centre_is_the_same_at_two_render_sizes() -> None:
-    """AC-TRACK-02.
+    """The belt frame centre is the same at two render sizes.
 
     The resolution-invariance proof. A leaked pixel coordinate, or a scale
     factor fitted to one render and applied to another, fails here. Both are
@@ -227,7 +228,7 @@ def test_the_belt_frame_centre_is_the_same_at_two_render_sizes() -> None:
 
 
 def test_a_taller_object_resolves_finer_and_the_adapter_says_so() -> None:
-    """AC-TRACK-46.
+    """A taller object resolves finer and the adapter says so.
 
     Scaling at the belt plane inflates a tall object's footprint. The same mask
     at a greater height covers less belt, so the footprint has to shrink.
@@ -258,7 +259,7 @@ def test_a_taller_object_resolves_finer_and_the_adapter_says_so() -> None:
 
 
 def test_a_camera_that_cannot_see_the_surface_is_refused() -> None:
-    """AC-TRACK-46. A negative standoff yields a negative footprint."""
+    """A negative standoff yields a negative footprint."""
     with pytest.raises(DetectionError, match="standoff|above"):
         detections_from_masks(
             {"object_0": square(100, 100, 40)},
@@ -272,7 +273,7 @@ def test_a_camera_that_cannot_see_the_surface_is_refused() -> None:
 
 
 def test_nothing_in_the_package_imports_mujoco_at_module_scope() -> None:
-    """AC-TRACK-10.
+    """Nothing in the package imports mujoco at module scope.
 
     The property worth guarding is that the package imports on a machine with
     no simulator, so the quality gate can read it without a render. Counting
@@ -310,7 +311,7 @@ def test_nothing_in_the_package_imports_mujoco_at_module_scope() -> None:
 
 
 def test_the_adapter_finds_a_real_object_where_the_world_actually_put_it() -> None:
-    """AC-TRACK-02, AC-TRACK-10 and AC-TRACK-46, end to end.
+    """The adapter finds a real object where the world actually put it.
 
     Every other test in this file works from literals, which proves the
     arithmetic and not the axis mapping. This one renders the real gate camera,

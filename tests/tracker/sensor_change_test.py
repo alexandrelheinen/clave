@@ -1,6 +1,6 @@
 """The test the perception contract has to pass, and what it deliberately is not.
 
-Covers `AC-TRACK-25` and `AC-TRACK-25b`.
+
 
 `docs/perception-contract.md` closes with a table of architecture changes and
 what each one is allowed to cost, and says that if a change in the left column
@@ -179,7 +179,7 @@ def test_a_second_arm_changes_nothing_in_perception() -> None:
 
 
 def test_removing_the_only_detection_camera_fails_at_load() -> None:
-    """AC-TRACK-25b.
+    """Removing the only detection camera fails at load.
 
     The contract's table does not have a row for removing the camera a role
     depends on, because the honest answer is that the line stops rather than
@@ -194,10 +194,10 @@ def test_removing_the_only_detection_camera_fails_at_load() -> None:
 
 
 def test_adding_a_role_costs_one_adapter_and_not_a_consumer() -> None:
-    """The contract's third and fourth rows, and the amendment to AC-TRACK-25.
+    """Adding a role costs one adapter and not a consumer.
 
-    A depth sensor or a near-infrared sensor is a new role, and the criterion's
-    first wording claimed that too was one file. It is not, and the contract's
+    A depth sensor or a near-infrared sensor is a new role, and the first
+    wording of this rule claimed that too was one file. It is not, and the contract's
     own table never said it was: a new role legitimately costs one adapter. What
     it may not cost is a consumer, which is what this asserts.
     """
@@ -218,7 +218,7 @@ def test_adding_a_role_costs_one_adapter_and_not_a_consumer() -> None:
 
 
 def test_the_record_shape_is_asserted_against_something_that_can_change() -> None:
-    """AC-TRACK-25.
+    """The record shape is asserted against something that can change.
 
     Guarding the guard. Every case above compares the record's fields to
     RECORD_FIELDS, which is derived from the record itself, so the comparison
@@ -248,7 +248,7 @@ def test_the_record_shape_is_asserted_against_something_that_can_change() -> Non
 
 
 def test_no_consumer_counts_cameras() -> None:
-    """AC-TRACK-25.
+    """No consumer counts cameras.
 
     The reason every case above is cheap: nothing in the package branches on
     how many sensors there are, so a line with one code camera and a line with

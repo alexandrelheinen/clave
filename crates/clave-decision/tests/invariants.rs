@@ -1,7 +1,4 @@
 //! Construction invariants of a pick decision.
-//!
-//! Covers `AC-DECISION-01`, `AC-DECISION-02`, `AC-DECISION-03`,
-//! `AC-DECISION-04` and `AC-DECISION-09`.
 #![expect(clippy::unwrap_used, reason = "test assertions")]
 #![expect(
     clippy::as_conversions,
@@ -25,7 +22,7 @@ fn pose(reference_time: i64) -> PickPose {
     )
 }
 
-/// AC-DECISION-01: a decision carries the class, the channel, the pose, the
+/// A decision carries the class, the channel, the pose, the
 /// window, the confidence, and the object identity.
 #[test]
 fn a_decision_carries_everything_a_consumer_needs_to_reach_for_one_object() {
@@ -48,7 +45,7 @@ fn a_decision_carries_everything_a_consumer_needs_to_reach_for_one_object() {
     assert_eq!(decision.version(), CONTRACT_VERSION);
 }
 
-/// AC-DECISION-02: the class of a decision comes from the fixed set named in
+/// The class of a decision comes from the fixed set named in
 /// the contract, which is the taxonomy in `docs/waste-taxonomy.md`.
 #[test]
 fn the_class_set_matches_the_taxonomy_identifier_for_identifier() {
@@ -75,7 +72,7 @@ fn the_class_set_matches_the_taxonomy_identifier_for_identifier() {
     }
 }
 
-/// AC-DECISION-03: the pose is the one the object is predicted to hold during
+/// The pose is the one the object is predicted to hold during
 /// the window, which the constructor checks by refusing a reference time
 /// outside it.
 #[test]
@@ -93,7 +90,7 @@ fn a_pose_timed_outside_the_window_is_refused() {
     assert!(matches!(error, ContractError::PoseOutsideWindow { .. }));
 }
 
-/// AC-DECISION-03: a pose timed inside the window is accepted at both edges.
+/// A pose timed inside the window is accepted at both edges.
 #[test]
 fn a_pose_timed_on_either_edge_of_the_window_is_accepted() {
     for reference_time in [1_000, 2_000] {
@@ -111,7 +108,7 @@ fn a_pose_timed_on_either_edge_of_the_window_is_accepted() {
     }
 }
 
-/// AC-DECISION-04: the window is an earliest and a latest time, and one that
+/// The window is an earliest and a latest time, and one that
 /// ends before it starts is not a window.
 #[test]
 fn a_window_that_ends_before_it_starts_is_refused() {
@@ -121,7 +118,7 @@ fn a_window_that_ends_before_it_starts_is_refused() {
     assert!(matches!(error, ContractError::WindowNotOrdered { .. }));
 }
 
-/// AC-DECISION-04: a window reports the two times it was built from.
+/// A window reports the two times it was built from.
 #[test]
 fn a_window_reports_its_earliest_and_its_latest_time() {
     let reachable = window(1_000, 2_000);
@@ -134,7 +131,7 @@ fn a_window_reports_its_earliest_and_its_latest_time() {
     assert!(!reachable.has_closed_by(MonotonicNanos::new(2_000)));
 }
 
-/// AC-DECISION-09: the decision carries the object identity it was given, so
+/// The decision carries the object identity it was given, so
 /// two decisions for one tracked object carry one identity.
 #[test]
 fn two_decisions_for_one_tracked_object_carry_the_same_identity() {
@@ -161,7 +158,7 @@ fn two_decisions_for_one_tracked_object_carry_the_same_identity() {
     assert_eq!(second.object(), ObjectId::new(42));
 }
 
-/// AC-DECISION-01: a confidence outside the inclusive unit range, or one that
+/// A confidence outside the inclusive unit range, or one that
 /// is not finite, is not a confidence.
 #[test]
 fn a_confidence_outside_the_unit_range_is_refused() {

@@ -14,36 +14,36 @@ CONFIG = ROOT / "configs" / "world" / "sorting_line.yml"
 
 def shipped() -> tuple[ObjectSpec, ...]:
     """Parse the object set the world actually ships with."""
+
     return parse(load(CONFIG)["objects"])
 
 
 def test_every_object_carries_a_taxonomy_material_class() -> None:
-    """AC-ASSET-01: a rollout is labeled by construction."""
+    """A rollout is labeled by construction."""
     assert all(spec.material_class in BY_ID for spec in shipped())
 
 
 def test_the_object_set_covers_the_classes_a_real_object_exists_for() -> None:
-    """AC-ASSET-02, scoped by D-09.
+    """The object set covers the classes a real object exists for.
 
     The criterion asks for six classes. The set covers four, because every
     object is now a scanned package and nothing made of the missing six fits a
     55.7 mm gripper: a soda can is 66 mm across and no glass container in
-    either pinned collection is under 52 mm. docs/decisions.md records the
-    trade and what would reverse it.
+    either pinned collection is under 52 mm.
 
     The assertion is exact rather than a floor, so growing the set past four
-    classes fails here and forces the decision entry to be revisited.
+    classes fails here and forces the trade to be revisited.
     """
     assert set(material_classes(shipped())) == {"M-02", "M-04", "M-06", "M-09"}
 
 
 def test_every_object_is_a_scanned_package_rather_than_a_primitive() -> None:
-    """D-09: a colored cylinder teaches shape, which is what this removed."""
+    """A colored cylinder teaches shape, which is what this removed."""
     assert all(spec.is_mesh for spec in shipped())
 
 
 def test_an_unknown_material_class_is_rejected_naming_the_object() -> None:
-    """AC-ASSET-04: a mislabeled object would corrupt every rollout."""
+    """A mislabeled object would corrupt every rollout."""
     entry = [
         {
             "name": "mystery",

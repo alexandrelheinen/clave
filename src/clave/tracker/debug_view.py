@@ -3,13 +3,13 @@
 This is the one place in CLAVE where something is drawn onto a rendered frame,
 and it is quarantined on purpose.
 
-`agents/claude.md` forbids post-processed overlays on captured output, and
-`D-15` records that a published figure may carry geometry and never an overlay.
-Both hold. A published figure argues something to a reader who cannot run the
-code, so anything drawn on it is a claim they cannot check. A debug view argues
+`agents/claude.md` forbids post-processed overlays on captured output, and a
+published figure may carry geometry and never an overlay. Both hold. A
+published figure argues something to a reader who cannot run the code, so
+anything drawn on it is a claim they cannot check. A debug view argues
 nothing: it is read by somebody with the records open beside it, and its whole
-job is to show which number belongs to which place. `D-17` records the
-distinction, and the separation is mechanical rather than a convention: nothing
+job is to show which number belongs to which place. The separation is
+mechanical rather than a convention: nothing
 here imports the published encoder, a test asserts that, and the flat-gray tests
 guarding `demo` and `still` are untouched.
 
@@ -34,8 +34,8 @@ from clave.tracker.track import WasteObject
 CAPTION = "DEBUG RENDER, tracker only, not the runtime loop and not a figure"
 """What every frame says about itself.
 
-`AC-DEBUG-07`. A frame that does not say what it is will eventually be pasted
-into something that does not either.
+A frame that does not say what it is will eventually be pasted into something
+that does not either.
 """
 
 

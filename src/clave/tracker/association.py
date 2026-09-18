@@ -20,8 +20,8 @@ The maintainer's framing, that the model sees the footprint, the pick point, an
 optional code and the previous track state, is satisfied by `tracks`.
 
 **`Cue.label` is the one field that makes this seam imperfect, and it is
-deliberate.** A detection carries no identity, because `AC-TRACK-45` requires
-the adapter to throw away the only one it has. Ground truth legitimately does
+deliberate.** A detection carries no identity, because the adapter throws away
+the only one it has. Ground truth legitimately does
 carry one, and the whole point of the shipped associator is that it uses it, so
 that `learned-tracker` has something to be measured against. The alternative,
 matching ground truth geometrically too, would mean this spec had already taken
@@ -42,8 +42,8 @@ GATE_MULTIPLE = 1.5
 
 A multiple of the track's own major extent rather than a fixed radius. That is
 what replaces `association_radius_meters`, which was sized for a belt six times
-narrower than the one the world now runs and which `D-12` records as part of why
-only 7 of 134 demonstrations produced a usable proposal. A gate that scales with
+narrower than the one the world now runs, and which is part of why only 7 of
+134 demonstrations produced a usable proposal. A gate that scales with
 the object cannot be wrong for the belt.
 """
 

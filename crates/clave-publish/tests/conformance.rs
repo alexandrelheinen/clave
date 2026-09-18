@@ -1,7 +1,4 @@
 //! One delivery contract, proved against every sink behind the seam.
-//!
-//! Covers `AC-PUBLISH-01`, `AC-PUBLISH-02`, `AC-PUBLISH-05` and
-//! `AC-PUBLISH-06`. The suite is generic over [`DecisionSink`], so ordering
 //! and the counter identity are proved per backend rather than assumed from
 //! the one the unit tests happened to use.
 #![expect(clippy::unwrap_used, reason = "test assertions")]
@@ -85,7 +82,7 @@ impl Backend for SocketBackend {
     }
 }
 
-/// AC-PUBLISH-01 and AC-PUBLISH-02: a consumer that keeps up receives every
+/// A consumer that keeps up receives every
 /// decision once, in the order it was published.
 fn each_decision_arrives_once_and_in_order<B: Backend>() {
     let (mut backend, sink) = B::create();
@@ -112,7 +109,7 @@ fn each_decision_arrives_once_and_in_order<B: Backend>() {
     assert_eq!(objects, (0_u64..64).collect::<Vec<_>>());
 }
 
-/// AC-PUBLISH-06: a decision whose window closed before the send is discarded
+/// A decision whose window closed before the send is discarded
 /// rather than delivered to a consumer that cannot act on it.
 fn an_expired_decision_is_discarded_rather_than_delivered<B: Backend>() {
     let (mut backend, sink) = B::create();
@@ -128,7 +125,7 @@ fn an_expired_decision_is_discarded_rather_than_delivered<B: Backend>() {
     assert!(backend.delivered(&publisher).is_empty());
 }
 
-/// AC-PUBLISH-05: the counter identity holds at every moment, whichever sink
+/// The counter identity holds at every moment, whichever sink
 /// is behind the seam.
 fn the_counter_identity_holds_for_this_backend<B: Backend>() {
     let (mut backend, sink) = B::create();
@@ -179,7 +176,7 @@ fn the_socket_sink_keeps_the_counter_identity() {
     the_counter_identity_holds_for_this_backend::<SocketBackend>();
 }
 
-/// AC-PUBLISH-02: a socket in seqpacket-like datagram mode takes record
+/// A socket in seqpacket-like datagram mode takes record
 /// boundaries from the kernel, so a consumer reads one decision per read and
 /// never has to reassemble a frame.
 #[test]
@@ -201,7 +198,7 @@ fn one_read_returns_exactly_one_decision() {
     );
 }
 
-/// AC-PUBLISH-05: a consumer that disconnects partway leaves the publisher
+/// A consumer that disconnects partway leaves the publisher
 /// running, and the pipeline keeps producing rather than stalling.
 #[test]
 fn a_consumer_that_disconnects_does_not_stall_the_publisher() {

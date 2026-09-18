@@ -30,9 +30,7 @@ for sim-to-real transfer. Trained policies are serialized and versioned.
 **Inference runtime**: Python, in its own process, with Rust on the other side
 of a versioned JSON proposal over a Unix datagram. Rust never loads a model,
 because the layer that can override inference earns its place by sharing no code
-with it. `D-05` in [decisions.md](decisions.md) records the choice and the three
-alternatives it beat, and `crates/clave-safety/contract/proposal.md` specifies
-the boundary. Through the v1.x line everything runs on the development machine.
+with it. `crates/clave-safety/contract/proposal.md` specifies the boundary. Through the v1.x line everything runs on the development machine.
 
 ## Hardened by default
 

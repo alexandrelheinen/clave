@@ -1,8 +1,7 @@
 """Tests for turning runs into scored records, and for the evidence pack.
 
 These use recorded reports rather than a live loop, which needs MuJoCo and a GL
-backend and is already covered at v0.9.0. Covers `AC-BENCH-02`, `AC-BENCH-03`,
-`AC-BENCH-04`, `AC-BENCH-07` and `AC-BENCH-08`.
+backend and is already covered at v0.9.0.
 """
 
 import json
@@ -77,7 +76,7 @@ def test_an_object_nobody_decided_about_carries_no_prediction() -> None:
 
 
 def test_every_record_says_nothing_was_picked() -> None:
-    """AC-BENCH-03: this is what makes pick success unmeasurable, not zero."""
+    """This is what makes pick success unmeasurable, not zero."""
     outcomes, _ = outcomes_for("row", [(0, report())])
     assert all(not record.picked for record in outcomes.outcomes)
     assert all(record.routed_channel is None for record in outcomes.outcomes)
@@ -130,7 +129,7 @@ def result(name: str, **overrides: object) -> ConfigurationResult:
 
 
 def test_an_unavailable_row_is_recorded_with_its_reason() -> None:
-    """AC-BENCH-08: one missing checkpoint does not cost the comparison."""
+    """One missing checkpoint does not cost the comparison."""
     scored = score(
         result(
             "missing",
@@ -147,14 +146,14 @@ def test_an_unavailable_row_is_recorded_with_its_reason() -> None:
 
 
 def test_the_table_reports_what_cannot_be_measured_rather_than_a_zero() -> None:
-    """AC-BENCH-03: a rate of zero would read as a result."""
+    """A rate of zero would read as a result."""
     rendered = table([score(result("row"), GATES)])
     assert rendered.count(UNMEASURED) >= 2
     assert "pick success rate" in UNMEASURABLE_METRICS
 
 
 def test_the_recommendation_names_a_row_that_actually_ran() -> None:
-    """AC-BENCH-04: a recommendation is a choice between measured rows."""
+    """A recommendation is a choice between measured rows."""
     rows = [score(result("first"), GATES), score(result("second"), GATES)]
     name, reason = recommend(rows)
     assert name in {"first", "second"}
@@ -170,7 +169,7 @@ def test_nothing_is_recommended_when_nothing_trained_ran() -> None:
 
 
 def test_the_evidence_pack_round_trips_through_json(tmp_path: Path) -> None:
-    """AC-BENCH-07: a later reader parses it without this package."""
+    """A later reader parses it without this package."""
     config = BenchmarkConfig.load(ROOT / "configs" / "benchmark" / "default.yml")
     pack = EvidencePack(
         config=config,
@@ -234,7 +233,7 @@ def test_an_empty_run_reports_no_rate_rather_than_dividing_by_zero() -> None:
 def test_a_row_whose_checkpoint_is_missing_is_recorded_and_skipped(
     tmp_path: Path,
 ) -> None:
-    """AC-BENCH-08: one absent dependency does not cost the comparison.
+    """One absent dependency does not cost the comparison.
 
     The row below names a checkpoint that does not exist. On a machine with no
     deep learning framework it fails on the import instead, which is the same

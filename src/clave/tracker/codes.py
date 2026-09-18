@@ -11,8 +11,8 @@ symbol, because a misread that survived would resolve to some other product's
 bill of materials. That arithmetic lives on the `Code` payload, so a `Code` that
 exists is one that checked out.
 
-`AC-TRACK-52` asks the gate to prove the decoder works, so a zero rendered yield
-reads as a property of the optics rather than as breakage. The fixture is a
+The gate proves the decoder works, so a zero rendered yield reads as a
+property of the optics rather than as breakage. The fixture is a
 symbol on a pinned submodule texture rather than a committed image, because
 `docs/guidelines.md` says no binary lands in git and a submodule pin is a
 reference rather than a binary.
@@ -159,9 +159,9 @@ def components_of(catalog: dict[str, Packaging], digits: str) -> tuple[str, ...]
 
     Returns:
         The components, or an empty tuple when the catalog does not carry the
-        code. An unknown GTIN resolves to nothing rather than to a guess, which
-        is what `AC-TRACK-14` asks for: a real line reads symbols off products
-        nobody catalogued every day.
+        code. An unknown GTIN resolves to nothing rather than to a guess,
+        because a real line reads symbols off products nobody catalogued every
+        day.
     """
     entry = catalog.get(digits)
     return entry.components if entry is not None else ()

@@ -49,6 +49,7 @@ class ReachReport:
     @property
     def reachable(self) -> bool:
         """Whether the belt passes within the manipulator's reach at all."""
+
         return self.window_length > 0.0
 
 
@@ -98,7 +99,7 @@ def reach_report(plan: SceneLayout) -> ReachReport:
     # this arm's annulus, and was wrong for the last one; measuring costs
     # milliseconds once and cannot drift.
     #
-    # AC-REACH-07: the sweep spans the belt's own extent. Objects ride from
+    # The sweep spans the belt's own extent. Objects ride from
     # -length/2 to +length/2, so a sweep starting at the origin measures the
     # downstream half and reports a window half the size of the one the arm
     # actually has.

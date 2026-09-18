@@ -16,6 +16,7 @@ CONFIG = ROOT / "configs" / "world" / "sorting_line.yml"
 
 def built() -> tuple[Any, Any, armmod.ArmIndices]:
     """Build the shipped world and locate the arm in it."""
+
     import mujoco
 
     raw = config.load(CONFIG)
@@ -26,7 +27,7 @@ def built() -> tuple[Any, Any, armmod.ArmIndices]:
 
 
 def test_the_arm_is_found_with_its_six_axes() -> None:
-    """AC-ARM-01: the controller drives the six axes a UR10e has."""
+    """The controller drives the six axes a UR10e has."""
     pytest.importorskip("mujoco")
     _, _, indices = built()
     assert len(indices.joint_ids) == 6
@@ -73,7 +74,7 @@ def _pick_target(indices: armmod.ArmIndices) -> NDArray[np.float64]:
 
 
 def test_the_solver_places_the_tool_on_the_target() -> None:
-    """AC-REACH-04: solved with the tool held vertical, not compared to a radius."""
+    """Solved with the tool held vertical, not compared to a radius."""
     pytest.importorskip("mujoco")
     import mujoco
 
@@ -119,7 +120,7 @@ def test_a_target_under_the_base_is_refused() -> None:
 
 
 def test_a_target_past_the_outer_radius_is_refused() -> None:
-    """AC-REACH-04: beyond the annulus the solver refuses rather than clips."""
+    """Beyond the annulus the solver refuses rather than clips."""
     pytest.importorskip("mujoco")
     model, data, indices = built()
     base = indices.base_position
@@ -130,7 +131,7 @@ def test_a_target_past_the_outer_radius_is_refused() -> None:
 
 
 def test_the_trusted_region_is_inside_what_the_arm_can_reach() -> None:
-    """AC-REACH-04 and AC-REACH-06: the region is proven, not asserted.
+    """The region is proven, not asserted.
 
     `reaches` applies a fixed annulus rather than solving, because a per-call
     iterative solve would be slow and seed-dependent. That is only honest while

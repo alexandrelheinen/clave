@@ -52,7 +52,7 @@ jobs:
           # The world extra brings MuJoCo and PyYAML so the sorting world is
           # genuinely exercised here rather than skipped. The candidate extra is
           # deliberately not installed: it is over a gigabyte and its adapters
-          # are covered by the benchmark sweep instead (see docs/decisions.md).
+          # are covered by the benchmark sweep instead.
           .venv/bin/pip install -e ".[dev,world]"
 
       - name: Validate
