@@ -720,3 +720,49 @@ retrains them.
 the building cannot give, needs a different focal length from the same series
 rather than a wider angle invented here. The catalog is the constraint, and a
 camera naming a part the catalog does not declare now fails at load.
+
+## D-17: one overlay is allowed, and it is quarantined from everything published
+
+**Date**: 2026-09-19 · **Step**: `tracker-debug-view`
+
+**The standard**: [agents/claude.md](../standards/guidelines/agents/claude.md),
+No fabricated evidence, forbids post-processed overlays on captured output.
+`D-15` records that a published figure may carry geometry standing in the scene
+and never an overlay, and a flat-gray test proves nothing is drawn on a frame
+after the renderer made it.
+
+**What was scoped**: `clave.tracker.debug_view` draws the tracker's records onto
+a rendered frame. Boxes, labels, and a full property listing, all of it painted
+on afterwards, which is exactly the shape the rule forbids.
+
+**Why this is not the thing the rule prohibits**: a published figure argues
+something to a reader who cannot run the code, so anything drawn on it is a
+claim they have no way to check, and the honest answer is to put the geometry in
+the scene where the renderer produces it with everything else. A debug view
+argues nothing. It is read by somebody with the records open beside it, and its
+entire purpose is to show which number belongs to which place. Applying the rule
+here would not protect a reader, it would remove the only way to see the
+algorithm work.
+
+**What the separation rests on**: not a convention. `debug_view` imports nothing
+from `clave.demo` and never touches `open_recorder`, and a test asserts both.
+Debug output goes to `runs/debug/` through OpenCV rather than through the
+encoder the figures use. The flat-gray tests guarding `demo` and `still` are
+untouched and still pass. Every frame carries a caption saying it is a debug
+render of the tracker alone.
+
+**What keeps it honest**: every value drawn is read from a `WasteObject` field
+and none is computed for display, proved by a test that compares each drawn
+string against the record it annotates. And every field is drawn rather than a
+chosen subset, because choosing what to show is choosing what to miss: the
+defect that motivated this view was one object running as two tracks, visible
+only in the `evidence` set, which a view showing footprint and material would
+have hidden behind two plausible boxes.
+
+**What is not scoped**: publication. No frame this produces may appear in
+`docs/images/`, in the README, or in any artifact presented as what CLAVE sees.
+A figure needs the `D-15` treatment, which is geometry in the scene.
+
+**Reversal condition**: if a debug frame is ever published, this entry is what
+was violated, and the fix is to build the figure the way `D-15` requires rather
+than to loosen this.
