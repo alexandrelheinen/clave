@@ -19,15 +19,10 @@ import numpy as np
 from clave.data.examples import Example, ObjectLabel, Origin, Rollout
 from clave.data.expert import decide
 from clave.errors import ClaveError
+from clave.tracker.evidence import Role
+from clave.tracker.sensors import load_sensors, require_role
 from clave.world import arm as armmod
 from clave.world import belt, config, scene
-
-DETECTION_CAMERA = "gate_wide"
-"""Which sensor the frame comes from.
-
-Named rather than indexed, because the line carries several cameras and the
-code camera next to it sees a strip a tenth as wide.
-"""
 
 ARM_GAIN = 1.0
 """How much of each solved step to command.
@@ -166,6 +161,8 @@ def record(
     # The swept downstream edge, not half the window's length. Those agree only
     # while the arm stands at the belt centre, and the expert replayed below
     # ranks objects by their distance to this coordinate.
+    # Resolved by role. The line carries four cameras and only one detects.
+    detection_camera = require_role(load_sensors(raw), Role.DETECTION).source_id
     exit_coordinate = belt.window_exit(conveyor.plan)
     if exit_coordinate is None:
         raise RecordingError(
@@ -195,8 +192,8 @@ def record(
 
         if data.time < next_capture:
             continue
-        renderer.update_scene(data, camera=DETECTION_CAMERA)
-        segmenter.update_scene(data, camera=DETECTION_CAMERA)
+        renderer.update_scene(data, camera=detection_camera)
+        segmenter.update_scene(data, camera=detection_camera)
         boxes = _boxes_from_segmentation(model, segmenter.render())
         examples.append(
             Example(

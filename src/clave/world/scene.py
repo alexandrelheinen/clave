@@ -975,8 +975,10 @@ def build(
                 rgba=[0.7, 0.5, 0.3, 1.0],
             )
 
-    # Every sensor in the configuration becomes a camera named by its id, so
-    # the tracker asks for `gate_wide` rather than for camera index 0. A MuJoCo
+    # Every sensor in the configuration becomes a camera named by its id, so a
+    # renderer can ask for one without knowing its index. Nothing asks for one
+    # by name: the tracker resolves a camera by its role, and a test refuses a
+    # camera id written as a literal anywhere under src/clave. A MuJoCo
     # camera already looks along its own negative z, so an identity orientation
     # points it straight down at the belt. Rotating it by 180 degrees about x,
     # which looks correct at a glance, aims it at the sky and renders black.

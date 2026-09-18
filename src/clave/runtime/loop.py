@@ -22,15 +22,10 @@ from clave.runtime.bridge import Bridge, BridgePaths, locate_binary
 from clave.runtime.inference import Predictor
 from clave.runtime.proposal import Proposal
 from clave.taxonomy import BY_ID
+from clave.tracker.evidence import Role
+from clave.tracker.sensors import load_sensors, require_role
 from clave.world import arm as armmod
 from clave.world import belt, config, scene
-
-DETECTION_CAMERA = "gate_wide"
-"""Which sensor the frame comes from.
-
-Named rather than indexed, because the line carries several cameras and the
-code camera next to it sees a strip a tenth as wide.
-"""
 
 NANOS_PER_SECOND = 1_000_000_000
 """Nanoseconds in a second, for the monotonic times the boundary carries."""
@@ -399,6 +394,8 @@ def run(
     # The swept downstream edge, not half the window's length. Those agree only
     # while the arm stands at the belt centre, so the second is a latent defect
     # that moving the arm would expose.
+    # Resolved by role. The line carries four cameras and only one detects.
+    detection_camera = require_role(load_sensors(raw), Role.DETECTION).source_id
     exit_coordinate = belt.window_exit(conveyor.plan)
     if exit_coordinate is None:
         raise RuntimeConfigError(
@@ -471,7 +468,7 @@ def run(
                 continue
             next_capture = data.time + settings.capture_interval_seconds
 
-            renderer.update_scene(data, camera=DETECTION_CAMERA)
+            renderer.update_scene(data, camera=detection_camera)
             frame = renderer.render().astype(np.uint8)
             # The clock starts once the frame exists. Rendering is what a
             # camera does on a real line, so charging it to the pipeline would
