@@ -20,6 +20,7 @@ def layout(speed: float, offset: float) -> SceneLayout:
     from the model rather than from a number a test picks, which is what keeps
     this arithmetic describing the manipulator the world actually has.
     """
+
     return SceneLayout(
         belt=BeltGeometry(length=3.0, width=1.0, surface_height=0.90, speed=speed),
         arm_base=(0.0, offset, 0.90),
@@ -35,7 +36,7 @@ def layout(speed: float, offset: float) -> SceneLayout:
 
 
 def test_the_report_states_the_annulus_window_and_budget() -> None:
-    """AC-REACH-01 and AC-REACH-03."""
+    """The report states the annulus window and budget."""
     report = belt.reach_report(layout(speed=0.2, offset=-0.34))
     assert report.reach_min == armmod.REACH_MIN_METERS
     assert report.reach_max == armmod.REACH_MAX_METERS
@@ -60,14 +61,14 @@ def test_a_belt_outside_reach_yields_no_window() -> None:
 
 
 def test_a_faster_belt_shortens_the_budget() -> None:
-    """AC-BELT-02: the budget is what every perception latency fits inside."""
+    """The budget is what every perception latency fits inside."""
     slow = belt.reach_report(layout(speed=0.1, offset=-0.34))
     fast = belt.reach_report(layout(speed=0.4, offset=-0.34))
     assert fast.time_budget < slow.time_budget
 
 
 def test_objects_reach_belt_speed_and_enter_the_window() -> None:
-    """AC-BELT-01 and AC-REACH-02."""
+    """Objects reach belt speed and enter the window."""
     pytest.importorskip("mujoco")
     import mujoco
 
@@ -94,7 +95,7 @@ def test_objects_reach_belt_speed_and_enter_the_window() -> None:
 
 
 def test_an_unpicked_object_is_not_removed() -> None:
-    """AC-BELT-03: a real line does not stop for a missed pick."""
+    """A real line does not stop for a missed pick."""
     pytest.importorskip("mujoco")
     import mujoco
 
@@ -121,7 +122,7 @@ def test_an_unpicked_object_is_not_removed() -> None:
 
 
 def test_the_window_covers_both_halves_of_the_belt() -> None:
-    """AC-REACH-07: the belt is centered on the origin, so the sweep must be.
+    """The belt is centered on the origin, so the sweep must be.
 
     A sweep that starts at the origin sees only the downstream half, which the
     expert then halves again to obtain the edge an object leaves reach at. The
@@ -141,6 +142,6 @@ def test_the_window_covers_both_halves_of_the_belt() -> None:
     span = max(reachable) - min(reachable)
     report = belt.reach_report(plan)
     assert report.window_length == pytest.approx(span, abs=2 * step)
-    # AC-VIS-04: the edges a figure draws are the ones the sweep found.
+    # The edges a figure draws are the ones the sweep found.
     assert report.window_edges[0] == pytest.approx(min(reachable), abs=2 * step)
     assert report.window_edges[1] == pytest.approx(max(reachable), abs=2 * step)

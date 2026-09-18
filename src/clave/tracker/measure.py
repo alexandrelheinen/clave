@@ -4,8 +4,8 @@ A decode yield is a fraction, and the interesting question is what is under the
 line. Of 45 objects crossing the gate on the shipped line, all 45 now fall
 inside a code camera's band, but that was 29 before the optics were grounded in
 real parts, and the two denominators gave 3.4 and 2.2 percent for the same two
-decodes. `AC-TRACK-47` requires both because a single figure misleads in one
-direction or the other.
+decodes. Both denominators are reported, because a single figure misleads in
+one direction or the other.
 
 An object no camera could see did not fail to decode; it was never presented.
 Counting it against the decoder blames optics on software, which is exactly the

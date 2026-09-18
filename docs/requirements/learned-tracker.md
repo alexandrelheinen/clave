@@ -27,10 +27,10 @@ objects cross or touch and segment as one. The runtime swap away from
 `associate()`. The comparison against the ground-truth associator.
 
 **Out.** The contract types, the adapters and the fusion rules, which are
-`perception-record`. Retraining perception or policy, which `D-12` records as a
-separate model change and which the maintainer has placed outside the current
-focus. Reinforcement learning, since every trained model in CLAVE is supervised.
-The end effector. The object set, settled by `D-11`.
+`perception-record`. Retraining perception or policy, which is a separate
+model change and which the maintainer has placed outside the current focus.
+Reinforcement learning, since every trained model in CLAVE is supervised. The
+end effector. The object set, which is settled.
 
 ## Constraints
 
@@ -54,8 +54,8 @@ The end effector. The object set, settled by `D-11`.
   the quality gate does not install PyTorch.
 - **Nothing is claimed on an agent's word.** A candidate is trained when
   `./scripts/validate.sh` exits 0 and the numbers are recorded.
-- **An unflattering result is published.** `D-12` is the precedent: a working
-  loop running a mostly wrong model was reported as exactly that.
+- **An unflattering result is published.** The precedent is already set: a
+  working loop running a mostly wrong model was reported as exactly that.
 
 ## Acceptance criteria
 
@@ -134,8 +134,9 @@ ground-truth associator silently.
 
 ## Traceability
 
-Ids are append-only and never reused. `AC-TRACK-01` through `AC-TRACK-26` belong
-to `perception-record`; this spec continues at `AC-TRACK-27`. Tests name the id
+Ids are append-only and never reused. `AC-TRACK-01` through `AC-TRACK-26` were
+spent by the perception record, whose document is in git history; this spec
+continues at `AC-TRACK-27`. Tests name the id
 they guard in a test name or a comment.
 
 ## Design notes
@@ -178,7 +179,7 @@ can tell that is what happened.
 accuracy figure on its own says nothing about whether the model beat the thing
 it replaced. `perception-record` ships the ground-truth associator precisely so
 this number has a denominator, and `AC-TRACK-43` requires the comparison to be
-published even when the learned model loses. `D-12` sets the precedent for
+published even when the learned model loses, which follows the precedent of
 reporting a model that does not work yet rather than withholding it.
 
 **What is deliberately not settled here.** How the material posterior is

@@ -2,9 +2,6 @@
 	path = standards/guidelines
 	url = https://github.com/alexandrelheinen/guidelines.git
 	branch = main
-[submodule "standards/cc-sdd"]
-	path = standards/cc-sdd
-	url = https://github.com/gotalab/cc-sdd.git
 [submodule "third_party/robotis_mujoco_menagerie"]
 	path = third_party/robotis_mujoco_menagerie
 	url = https://github.com/ROBOTIS-GIT/robotis_mujoco_menagerie.git

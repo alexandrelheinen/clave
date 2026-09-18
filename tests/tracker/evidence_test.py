@@ -1,6 +1,6 @@
 """The evidence envelope and its five payloads.
 
-Covers `AC-TRACK-06`, `AC-TRACK-07` and `AC-TRACK-09`.
+
 
 Two rules give the union its value, and both are tested here rather than
 described. A variant states what was measured and never what should be done, so
@@ -65,7 +65,7 @@ def wrap(payload: Payload, role: Role, **overrides: object) -> Evidence:
 
 
 def test_the_envelope_carries_provenance_a_clock_and_one_payload() -> None:
-    """AC-TRACK-06."""
+    """The envelope carries provenance a clock and one payload."""
     evidence = wrap(a_detection(), Role.DETECTION)
     assert evidence.source_id == "gate_wide"
     assert evidence.role is Role.DETECTION
@@ -75,12 +75,12 @@ def test_the_envelope_carries_provenance_a_clock_and_one_payload() -> None:
 
 
 def test_the_union_admits_exactly_the_five_specified_variants() -> None:
-    """AC-TRACK-07. A sixth variant is a contract change, not an import."""
+    """A sixth variant is a contract change, not an import."""
     assert set(Payload.__args__) == {Detection, Material, Code, Height, GroundTruth}
 
 
 def test_no_payload_states_what_should_be_done() -> None:
-    """AC-TRACK-07.
+    """No payload states what should be done.
 
     A variant states what was measured. The moment one carries a channel or a
     grasp, an adapter has started deciding, and the routing policy and the
@@ -105,7 +105,7 @@ def test_no_payload_states_what_should_be_done() -> None:
 
 
 def test_a_payload_arriving_under_the_wrong_role_is_refused() -> None:
-    """AC-TRACK-06.
+    """A payload arriving under the wrong role is refused.
 
     The role is what fusion dispatches on, so a code read filed as a detection
     would be folded by the wrong rule and nothing would say so.
@@ -117,7 +117,7 @@ def test_a_payload_arriving_under_the_wrong_role_is_refused() -> None:
 
 
 def test_every_variant_has_a_role_it_belongs_to() -> None:
-    """AC-TRACK-06 and AC-TRACK-07. No variant is orphaned from the enum."""
+    """No variant is orphaned from the enum."""
     pairs = [
         (a_detection(), Role.DETECTION),
         (Material(posterior=(1.0 / OUTCOME_COUNT,) * OUTCOME_COUNT), Role.SPECTRAL),
@@ -134,14 +134,14 @@ def test_every_variant_has_a_role_it_belongs_to() -> None:
 
 
 def test_a_confidence_outside_the_unit_interval_is_refused() -> None:
-    """AC-TRACK-06. The envelope states a certainty, so it has to be one."""
+    """The envelope states a certainty, so it has to be one."""
     for bad in (-0.01, 1.01, float("nan")):
         with pytest.raises(EvidenceError, match="confidence"):
             wrap(a_detection(), Role.DETECTION, confidence=bad)
 
 
 def test_a_material_posterior_spans_the_taxonomy_plus_reject() -> None:
-    """AC-TRACK-07. Eleven classes and reject, and it sums to one."""
+    """Eleven classes and reject, and it sums to one."""
     with pytest.raises(EvidenceError, match="outcomes"):
         Material(posterior=(0.5, 0.5))
     with pytest.raises(EvidenceError, match="sum"):
@@ -150,13 +150,13 @@ def test_a_material_posterior_spans_the_taxonomy_plus_reject() -> None:
 
 
 def test_a_ground_truth_label_names_a_class_the_taxonomy_defines() -> None:
-    """AC-TRACK-07. The simulator's label is still a taxonomy label."""
+    """The simulator's label is still a taxonomy label."""
     with pytest.raises(EvidenceError, match="taxonomy"):
         GroundTruth(object_id=1, material_class="M-99", position=(0.0, 0.0, 0.93))
 
 
 def test_a_code_whose_check_digit_fails_is_not_a_code() -> None:
-    """AC-TRACK-12.
+    """A code whose check digit fails is not a code.
 
     The decoder is task 6; the refusal belongs to the payload, so a Code that
     exists is a Code that checked out whatever produced it.
@@ -166,7 +166,7 @@ def test_a_code_whose_check_digit_fails_is_not_a_code() -> None:
 
 
 def test_a_mask_counts_its_own_pixels_and_states_its_bounds() -> None:
-    """AC-TRACK-10.
+    """A mask counts its own pixels and states its bounds.
 
     Run-length triples rather than an array, so an adapter's whole input
     surface is a literal a test can write.
@@ -177,7 +177,7 @@ def test_a_mask_counts_its_own_pixels_and_states_its_bounds() -> None:
 
 
 def test_a_mask_run_outside_its_own_frame_is_refused() -> None:
-    """AC-TRACK-10. A mask describes pixels of a frame that exists."""
+    """A mask describes pixels of a frame that exists."""
     with pytest.raises(EvidenceError, match="outside"):
         PixelMask(width=8, height=8, runs=((2, 6, 10),))
     with pytest.raises(EvidenceError, match="outside"):
@@ -185,6 +185,6 @@ def test_a_mask_run_outside_its_own_frame_is_refused() -> None:
 
 
 def test_an_empty_mask_is_refused_rather_than_reported_as_an_object() -> None:
-    """AC-TRACK-10. No pixels is not a detection."""
+    """No pixels is not a detection."""
     with pytest.raises(EvidenceError, match="no pixels"):
         PixelMask(width=8, height=8, runs=())

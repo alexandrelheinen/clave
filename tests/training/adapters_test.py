@@ -14,6 +14,7 @@ from clave.training.adapters import (
 
 def example(classes: tuple[str, ...], visible: bool) -> Example:
     """Build an example whose labels are visible or not."""
+
     labels = tuple(
         ObjectLabel(
             object_id=index,
@@ -50,13 +51,13 @@ def test_classification_targets_are_multi_label() -> None:
 
 
 def test_detection_drops_labels_whose_objects_are_not_in_frame() -> None:
-    """AC-TRAIN-05: an off-frame label has no pixels to regress toward."""
+    """An off-frame label has no pixels to regress toward."""
     pytest.importorskip("torch")
     assert not list(detection_batches((example(("M-01",), False),), 1))
 
 
 def test_detection_yields_boxes_for_visible_labels() -> None:
-    """AC-TRAIN-05: visible labels do train the detector."""
+    """Visible labels do train the detector."""
     pytest.importorskip("torch")
     batches = list(detection_batches((example(("M-01",), True),), 1))
     assert batches

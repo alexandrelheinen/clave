@@ -1,6 +1,6 @@
 """Where the reachable window ends, and why half its length is not that.
 
-Covers `AC-TRACK-24`.
+
 
 `clave.runtime.loop` and `clave.data.recorder` both computed the exit as
 `window_length / 2.0`. That is only the exit coordinate because the arm happens
@@ -38,7 +38,7 @@ def layout(arm_x: float) -> SceneLayout:
 
 
 def test_the_window_exit_is_the_measured_downstream_edge() -> None:
-    """AC-TRACK-24. The exit is swept, never derived from the length."""
+    """The exit is swept, never derived from the length."""
     plan = layout(arm_x=0.0)
     assert belt.window_exit(plan) == pytest.approx(
         belt.reach_report(plan).window_edges[1]
@@ -46,7 +46,7 @@ def test_the_window_exit_is_the_measured_downstream_edge() -> None:
 
 
 def test_the_shipped_line_puts_the_exit_at_the_swept_edge() -> None:
-    """AC-TRACK-24.
+    """The shipped line puts the exit at the swept edge.
 
     docs/measurements.md records the window as 2.071 m running -1.034 m to
     +1.034 m. Half the length is 1.035 m, which is the sweep step away from the
@@ -57,7 +57,7 @@ def test_the_shipped_line_puts_the_exit_at_the_swept_edge() -> None:
 
 
 def test_half_the_window_length_stops_being_the_exit_when_the_arm_moves() -> None:
-    """AC-TRACK-24.
+    """Half the window length stops being the exit when the arm moves.
 
     This is the latent defect the criterion exists to close. With the arm
     downstream of the belt centre the window shifts with it, so half the length
@@ -74,7 +74,7 @@ def test_half_the_window_length_stops_being_the_exit_when_the_arm_moves() -> Non
 
 
 def test_a_belt_that_never_enters_reach_reports_no_exit() -> None:
-    """AC-TRACK-24. A window of zero length has no edge to name."""
+    """A window of zero length has no edge to name."""
     plan = layout(arm_x=40.0)
     assert belt.reach_report(plan).window_length == 0.0
     assert belt.window_exit(plan) is None

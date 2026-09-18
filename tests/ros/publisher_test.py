@@ -1,8 +1,7 @@
 """Mapping a decision onto a ROS 2 message, and putting it on a topic.
 
 The mapping is computed before ROS is involved, so everything except the last
-test runs on a machine with no installation. Covers `AC-ROSPUB-01` through
-`AC-ROSPUB-04` and `AC-ROSMAP-01` through `AC-ROSMAP-04`.
+test runs on a machine with no installation.
 """
 
 import importlib.util
@@ -32,7 +31,7 @@ def nominal_fields(frame_id: str = "belt") -> DetectionFields:
 
 
 def test_every_field_of_a_decision_reaches_the_message() -> None:
-    """AC-ROSMAP-01: a subscriber needs all of it, in one message."""
+    """A subscriber needs all of it, in one message."""
     fields = nominal_fields()
     assert fields.object_id == "4815162342"
     assert fields.class_id == "M-01"
@@ -43,13 +42,13 @@ def test_every_field_of_a_decision_reaches_the_message() -> None:
 
 
 def test_the_frame_the_point_is_expressed_in_is_named() -> None:
-    """AC-ROSMAP-02: meters mean nothing without the frame they are in."""
+    """Meters mean nothing without the frame they are in."""
     assert nominal_fields("belt").frame_id == "belt"
     assert nominal_fields("world").frame_id == "world"
 
 
 def test_the_stamp_is_the_instant_the_object_becomes_reachable() -> None:
-    """AC-ROSMAP-03: the window travels, so a stale decision is detectable."""
+    """The window travels, so a stale decision is detectable."""
     fields = nominal_fields()
     assert fields.stamp_sec == 9
     assert fields.stamp_nanosec == 0
@@ -66,7 +65,7 @@ def test_the_yaw_becomes_a_rotation_about_the_belt_normal() -> None:
 
 
 def test_the_class_and_the_channel_are_separate_assertions() -> None:
-    """AC-ROSMAP-04: a rejected object is a real class and a reject channel."""
+    """A rejected object is a real class and a reject channel."""
     fields = fields_for(decode(read_vector(VECTORS / "rejected.hex")), "belt")
     assert fields.class_id == "M-11"
     assert fields.channel_id == f"{CHANNEL_PREFIX}0"
@@ -81,7 +80,7 @@ def test_the_runtime_hands_every_published_decision_to_its_sink(
     runtime_config: dict[str, object],
     make_proposal: object,
 ) -> None:
-    """AC-ROSPUB-01 and AC-ROSPUB-02: the sink sees the bytes that were published.
+    """The sink sees the bytes that were published.
 
     This drives the real runtime rather than reaching into the bridge, because
     what matters is that the bytes arriving at the sink are the ones the
@@ -109,7 +108,7 @@ def test_the_runtime_hands_every_published_decision_to_its_sink(
 
 @pytest.mark.skipif(not ros_available(), reason="no ROS 2 installation here")
 def test_a_subscriber_receives_the_documented_fields() -> None:
-    """AC-ROSPUB-01: what the document describes is what arrives."""
+    """What the document describes is what arrives."""
     import rclpy
     from vision_msgs.msg import Detection3DArray
 
@@ -143,7 +142,7 @@ def test_a_subscriber_receives_the_documented_fields() -> None:
 
 @pytest.mark.skipif(not ros_available(), reason="no ROS 2 installation here")
 def test_an_undecodable_payload_is_counted_and_does_not_stop_the_publisher() -> None:
-    """AC-ROSPUB-04: one bad datagram is not a reason to stop a conveyor."""
+    """One bad datagram is not a reason to stop a conveyor."""
     from clave.ros.publisher import DecisionPublisher
 
     publisher = DecisionPublisher(frame_id="belt")

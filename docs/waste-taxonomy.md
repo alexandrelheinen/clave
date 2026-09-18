@@ -1,7 +1,5 @@
 # Waste taxonomy
 
-> Roadmap step: v0.2.0 · Spec: [.kiro/specs/waste-taxonomy/](../.kiro/specs/waste-taxonomy/)
-
 This document fixes the vocabulary the rest of CLAVE is measured in. A material
 class appears in the pick decision CLAVE publishes, in the bins the simulated
 world lays out, in every training label, and in every accuracy number the
@@ -231,8 +229,8 @@ mapped above, out of 60 categories. The authoritative list is the COCO
 which was not read for this document. Neither the paper nor the project website
 publishes the full taxonomy as text, and the website did not respond on
 2026-09-14. Completing the mapping requires reading that file, and it is listed
-under [Open questions](#open-questions) rather than approximated. `AC-MAP-01`
-and `AC-MAP-02` are therefore partially unmet for TACO.
+under [Open questions](#open-questions) rather than approximated. The mapping
+is therefore partially unmet for TACO.
 
 **Classes it supplies no signal for, on the mapped subset.** None entirely.
 TACO touches every class at least once, which is what its category breadth buys.

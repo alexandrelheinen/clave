@@ -39,7 +39,7 @@ def segment_masks(model: Any, segmentation: Any) -> dict[str, PixelMask]:
     Returns:
         Masks by the geometry name the render was keyed under. The caller is
         expected to discard that key: it carries the simulator's identity, and
-        `AC-TRACK-45` requires nothing downstream to be able to recover it.
+        nothing downstream may be able to recover it.
     """
     import mujoco
     import numpy as np

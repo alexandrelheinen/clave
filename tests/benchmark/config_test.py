@@ -1,7 +1,4 @@
-"""Tests for what the benchmark compares.
-
-Covers `AC-BENCH-01` and `AC-BENCH-06`.
-"""
+"""Tests for what the benchmark compares."""
 
 from pathlib import Path
 

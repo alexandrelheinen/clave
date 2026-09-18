@@ -1,7 +1,6 @@
 """Folding evidence into a belief, and the two rules that make it trustworthy.
 
-Covers `AC-TRACK-09`, `AC-TRACK-18`, `AC-TRACK-19`, `AC-TRACK-22`,
-`AC-TRACK-51` and `AC-TRACK-53`.
+
 
 Two tests here are the reason the module is shaped the way it is. The
 source-swap test folds two disagreeing readings, then folds the same two with
@@ -86,14 +85,14 @@ def a_detection() -> Detection:
 
 
 def test_a_fresh_posterior_prefers_nothing() -> None:
-    """AC-TRACK-51. Before any evidence, every outcome is equally open."""
+    """Before any evidence, every outcome is equally open."""
     uniform = Posterior.uniform()
     assert len(uniform.weights) == OUTCOME_COUNT
     assert uniform.weights == pytest.approx((1.0 / OUTCOME_COUNT,) * OUTCOME_COUNT)
 
 
 def test_a_posterior_stays_a_distribution_however_it_is_folded() -> None:
-    """AC-TRACK-51. It sums to one and no class ever reaches zero."""
+    """It sums to one and no class ever reaches zero."""
     belief = Posterior.uniform()
     for _ in range(20):
         belief = belief.fold(
@@ -105,7 +104,7 @@ def test_a_posterior_stays_a_distribution_however_it_is_folded() -> None:
 
 
 def test_a_class_starved_of_evidence_can_still_be_argued_back() -> None:
-    """AC-TRACK-51.
+    """A class starved of evidence can still be argued back.
 
     A zero is unrecoverable under multiplication, so a class every reading so
     far has dismissed would be dismissed forever. The floor is what keeps the
@@ -122,7 +121,7 @@ def test_a_class_starved_of_evidence_can_still_be_argued_back() -> None:
 
 
 def test_weight_falls_with_age_and_rises_with_confidence() -> None:
-    """AC-TRACK-19. The two things a weight may depend on, and nothing else."""
+    """The two things a weight may depend on, and nothing else."""
     assert weight_of(0.9, 0.0, half_life=2.0) == pytest.approx(0.9)
     assert weight_of(0.9, 2.0, half_life=2.0) == pytest.approx(0.45)
     assert weight_of(0.45, 0.0, half_life=2.0) == pytest.approx(0.45)
@@ -130,7 +129,7 @@ def test_weight_falls_with_age_and_rises_with_confidence() -> None:
 
 
 def test_a_reading_older_than_the_belief_does_not_outweigh_a_newer_one() -> None:
-    """AC-TRACK-53.
+    """A reading older than the belief does not outweigh a newer one.
 
     This is the case `k ** elapsed` inverts: a negative exponent makes the
     weight exceed one, so the stale reading wins. Every test in the designs
@@ -143,7 +142,7 @@ def test_a_reading_older_than_the_belief_does_not_outweigh_a_newer_one() -> None
 
 
 def test_no_fusion_function_accepts_a_source() -> None:
-    """AC-TRACK-19.
+    """No fusion function accepts a source.
 
     Source priority is not forbidden by a rule, it is unrepresentable: no
     function here takes a `source_id`, so there is nothing to prioritize by.
@@ -161,7 +160,7 @@ def test_no_fusion_function_accepts_a_source() -> None:
 
 
 def test_exchanging_provenance_changes_no_belief() -> None:
-    """AC-TRACK-19.
+    """Exchanging provenance changes no belief.
 
     The source-swap proof. Two disagreeing readings are folded, then the same
     two are folded again with their `source_id` and `role` exchanged. A system
@@ -191,7 +190,7 @@ def test_exchanging_provenance_changes_no_belief() -> None:
 def test_a_payload_no_rule_knows_reports_the_miss_and_changes_nothing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """AC-TRACK-09.
+    """A payload no rule knows reports the miss and changes nothing.
 
     The realistic shape of this is a half-finished addition: a sixth variant
     reaches the union and the role table, and whoever added it forgets the
@@ -218,7 +217,7 @@ def test_a_payload_no_rule_knows_reports_the_miss_and_changes_nothing(
 
 
 def test_a_detection_is_recognized_and_argues_no_material() -> None:
-    """AC-TRACK-09. A rule exists; it has nothing to say about material."""
+    """A rule exists; it has nothing to say about material."""
     config = settings()
     before = Posterior.uniform()
     result = fold(
@@ -229,7 +228,7 @@ def test_a_detection_is_recognized_and_argues_no_material() -> None:
 
 
 def test_a_height_is_recognized_and_argues_no_material() -> None:
-    """AC-TRACK-09. Same for depth, which measures geometry rather than stuff."""
+    """Same for depth, which measures geometry rather than stuff."""
     config = settings()
     before = Posterior.uniform()
     result = fold(
@@ -243,7 +242,7 @@ def test_a_height_is_recognized_and_argues_no_material() -> None:
 
 
 def test_the_simulator_label_moves_the_belief_to_its_class() -> None:
-    """AC-TRACK-09. Ground truth travels the fusion path like anything else."""
+    """Ground truth travels the fusion path like anything else."""
     config = settings()
     label = GroundTruth(object_id=3, material_class="M-06", position=(-1.0, 0.0, 0.93))
     result = fold(
@@ -257,7 +256,7 @@ def test_the_simulator_label_moves_the_belief_to_its_class() -> None:
 
 
 def test_a_code_prior_spreads_over_the_components_it_named() -> None:
-    """AC-TRACK-13.
+    """A code prior spreads over the components it named.
 
     A GTIN resolves to a packaging bill of materials, so a jar returning glass,
     plastic and aluminum says one of them carries the label and not which.
@@ -271,7 +270,7 @@ def test_a_code_prior_spreads_over_the_components_it_named() -> None:
 
 @pytest.mark.parametrize("held", [0.80, 0.90, 0.95])
 def test_a_code_never_overrides_a_confident_visual_reading(held: float) -> None:
-    """AC-TRACK-18.
+    """A code never overrides a confident visual reading.
 
     The rule the contract states outright. A belief already sure of steel is
     not talked out of it by a label that could be on a glass jar.
@@ -294,7 +293,7 @@ def test_a_code_never_overrides_a_confident_visual_reading(held: float) -> None:
 
 
 def test_a_code_does_move_a_belief_that_is_not_yet_sure() -> None:
-    """AC-TRACK-18.
+    """A code does move a belief that is not yet sure.
 
     The other half. A code that could never move anything would be a code
     nobody needed to read.
@@ -310,7 +309,7 @@ def test_a_code_does_move_a_belief_that_is_not_yet_sure() -> None:
 
 
 def test_a_code_that_resolves_to_nothing_argues_nothing() -> None:
-    """AC-TRACK-14. An unknown GTIN yields no bill of materials, never a guess."""
+    """An unknown GTIN yields no bill of materials, never a guess."""
     config = settings()
     before = Posterior.uniform()
     code = reading(
@@ -322,7 +321,7 @@ def test_a_code_that_resolves_to_nothing_argues_nothing() -> None:
 
 
 def test_the_mass_band_comes_from_the_world_and_not_from_a_second_table() -> None:
-    """AC-TRACK-22.
+    """The mass band comes from the world and not from a second table.
 
     configs/world/sorting_line.yml already declares a bulk density per object,
     so the band for a class is the union of its objects' ranges. A second table
@@ -336,7 +335,7 @@ def test_the_mass_band_comes_from_the_world_and_not_from_a_second_table() -> Non
 
 
 def test_mass_is_a_band_rather_than_a_number() -> None:
-    """AC-TRACK-22.
+    """Mass is a band rather than a number.
 
     Density times footprint volume is weak: a bottle empty or half full differs
     tenfold, and a single number invites a consumer to trust it.
@@ -350,16 +349,16 @@ def test_mass_is_a_band_rather_than_a_number() -> None:
 
 
 def test_a_class_with_no_object_has_no_mass_rather_than_a_guess() -> None:
-    """AC-TRACK-22.
+    """A class with no object has no mass rather than a guess.
 
-    Seven of eleven classes have no object, per D-11. Reporting a band for one
-    of them would be reporting a number nothing measured.
+    Seven of eleven classes have no object. Reporting a band for one of them
+    would be reporting a number nothing measured.
     """
     assert mass_band("M-01", volume=0.001, settings=settings()) is None
 
 
 def test_a_resolved_packaging_mass_narrows_the_band_to_itself() -> None:
-    """AC-TRACK-22.
+    """A resolved packaging mass narrows the band to itself.
 
     Where a GTIN resolved, the packaging mass replaces the estimate. That is
     the one case the band is allowed to collapse.

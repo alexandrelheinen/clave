@@ -152,9 +152,7 @@ individual aluminum can, no glass container, no corrugated box, no beverage
 carton. Google Scanned Objects is a retail-shelf scan of toys, shoes,
 supplements and electronics, and the pinned YCB subset is ten manipulation
 benchmark items. Exactly one bottle exists among the 836 models that fit. Those
-classes need a new asset source rather than a wider effector, which `D-11` in
-[decisions.md](docs/decisions.md) records alongside the `D-09` trade it
-supersedes.
+classes need a new asset source rather than a wider effector.
 
 ### Submodule sizes
 
@@ -167,7 +165,7 @@ it the scanned objects.
 | `third_party/robotis_mujoco_menagerie` | 185 MB | Sibling ROBOTIS arms, kept for comparison |
 | `third_party/ycb_sim` | 24 MB | 10 YCB packages, 4 used |
 | `third_party/aws-robomaker-small-warehouse-world` | 17 MB | Warehouse props and textures |
-| `standards/guidelines`, `standards/cc-sdd` | Under 10 MB | The shared guidelines and the SDD toolkit |
+| `standards/guidelines` | Under 10 MB | The shared guidelines |
 
 ## What runs today
 
@@ -186,7 +184,7 @@ Everything through v1.0.0 runs in simulation and nothing has touched hardware.
 
 What is missing is as important: nothing tracks an object across frames, nothing
 executes a pick, and no model has been trained on real imagery. The
-[roadmap](.kiro/steering/roadmap.md) carries the ladder and each step's release
+[roadmap](docs/roadmap.md) carries the ladder and each step's release
 criteria.
 
 ## Versioning
@@ -225,7 +223,7 @@ than reaching CLAVE directly. FRET also supplies the MuJoCo world CLAVE
 trains against, including the sibling ROBOTIS arms and the pinned mesh
 submodules. BOSSA carries telemetry once a hardware era opens, which is
 outside the v1.x line. What CLAVE takes from each sibling is itemized in the
-[roadmap](.kiro/steering/roadmap.md#what-clave-reuses-from-the-family).
+[roadmap](docs/roadmap.md#what-clave-reuses-from-the-family).
 
 ## Repository layout
 
@@ -234,15 +232,14 @@ outside the v1.x line. What CLAVE takes from each sibling is itemized in the
 | [CONTRIBUTING.md](CONTRIBUTING.md) | The constitution: quality gates, merge policy, agent rules |
 | [docs/guidelines.md](docs/guidelines.md) | Coding notes specific to CLAVE, on top of the shared baseline |
 | [standards/](standards/README.md) | Shared guidelines, the SDD method, and the agent toolchain |
-| [.kiro/steering/roadmap.md](.kiro/steering/roadmap.md) | The ladder to v1.0.0, its release criteria, and the spec dependency order |
+| [docs/roadmap.md](docs/roadmap.md) | The ladder to v1.0.0, its release criteria, and the spec dependency order |
 | [docs/architecture.md](docs/architecture.md) | What each block does, its inputs and outputs, and what is deliberately absent |
 | [docs/measurements.md](docs/measurements.md) | Every measured number a gate or a configuration value rests on |
-| [docs/decisions.md](docs/decisions.md) | Why a gate or a constraint was scoped the way it is |
 | `crates/` | The decision contract, the routing policy, the publisher, the safety layer, the runtime |
 | `src/clave/` | The world, the data pipeline, training, validation, the runtime, the benchmark, the demos |
 | `configs/` | Every tunable. Nothing in Python or MJCF carries a numeric default |
 | `third_party/` | Pinned submodules: the ROBOTIS arm, the AWS warehouse props, the YCB objects |
-| `.kiro/` | Committed specifications and the steering documents agents read as project memory |
+| [docs/requirements/](docs/requirements/) | One document per feature: intent, scope, acceptance criteria, and the ids its tests reference |
 | `scripts/` | Toolchain setup and the local quality gate |
 
 ## Getting started

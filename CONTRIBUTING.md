@@ -52,8 +52,7 @@ than reaching CLAVE directly.
 
 ## Development setup
 
-Requirements: git, a stable Rust toolchain, and Node for the cc-sdd
-installer.
+Requirements: git and a stable Rust toolchain.
 
 ```bash
 git clone --recurse-submodules https://github.com/alexandrelheinen/clave.git
@@ -64,24 +63,28 @@ cd clave
 
 `scripts/setup.sh` reports what is missing and how to install it rather
 than installing toolchains behind your back. The agent toolchain, meaning
-cc-sdd and the Claude Code plugins, is documented in
+the Claude Code plugins, is documented in
 [standards/README.md](standards/README.md).
 
 ## Method
 
 Spec-driven development and TDD are defined in
 [workflow/sdd.md](standards/guidelines/workflow/sdd.md) and
-[workflow/tdd.md](standards/guidelines/workflow/tdd.md), and executed
-through the cc-sdd skills. Enter through `/kiro-discovery <idea>`.
+[workflow/tdd.md](standards/guidelines/workflow/tdd.md). No toolkit drives
+them here: a spec is a document you write.
 
-Specifications are committed under `.kiro/specs/`. A feature without an
-approved spec does not get implemented, and a spec is approved by the
-maintainer at its phase gate, not by the agent that wrote it.
+Specifications are committed under [docs/requirements/](docs/requirements/),
+one file per feature, carrying intent, scope, acceptance criteria in EARS
+form, traceability ids and constraints. A feature without a written spec
+does not get implemented, and a spec is approved by the maintainer rather
+than by the agent that wrote it. Acceptance criterion ids are append-only:
+the tests that guard a criterion name its id, so the mapping is greppable in
+both directions and renumbering silently breaks it.
 
-[.kiro/steering/roadmap.md](.kiro/steering/roadmap.md) holds the ladder to
-v1.0.0: one minor version per step, the release criteria each has to meet,
-and the dependency order the specs are written in. It also fixes what MAJOR,
-MINOR, and PATCH mean for this project.
+[docs/roadmap.md](docs/roadmap.md) holds the ladder to v1.0.0: one minor
+version per step, the release criteria each has to meet, and the dependency
+order the specs are written in. It also fixes what MAJOR, MINOR, and PATCH
+mean for this project.
 
 ## Quality gates
 
@@ -118,8 +121,8 @@ Two consequences follow, and both are accepted deliberately.
 
 The choice of manipulator is constrained by what upstream collections actually
 publish rather than by what suits the task best. Where the ideal machine has no
-validated model, CLAVE takes the best available one and records what that costs
-in [docs/decisions.md](docs/decisions.md).
+validated model, CLAVE takes the best available one and records what that
+costs beside the model it took.
 
 A geometric claim about the arm is checked against the compiled model rather
 than against a number in a configuration file or a datasheet. Reach, workspace

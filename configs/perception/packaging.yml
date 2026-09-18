@@ -14,8 +14,8 @@
 # configs/world/sorting_line.yml already carries for `material_class`, and its
 # comment says so in the same words.
 #
-# No entry carries a packaging mass. AC-TRACK-22 lets a resolved mass narrow the
-# band, and the code supports it, but nothing here measured one and a number
+# No entry carries a packaging mass. A resolved mass may narrow the band, and
+# the code supports it, but nothing here measured one and a number
 # invented to exercise a code path is worse than an unexercised code path.
 
 codes:

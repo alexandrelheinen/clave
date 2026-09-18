@@ -20,6 +20,7 @@ STILLS = ROOT / "configs" / "stills"
 
 def test_every_shipped_still_loads() -> None:
     """A still is named and nothing else has to be supplied."""
+
     files = sorted(STILLS.glob("*.yml"))
     assert files, "no still ships with the project"
     for path in files:
@@ -237,7 +238,7 @@ def test_a_camera_needs_three_numbers_to_look_at(tmp_path: Path) -> None:
 
 
 def test_the_published_figures_are_named_as_the_page_names_them() -> None:
-    """AC-VIS-06: one scenario, one command, the three files the page points at."""
+    """One scenario, one command, the three files the page points at."""
     scenario = StillScenario.load(STILLS / "clave.yml")
     written = [f"{scenario.name}-{camera.name}.png" for camera in scenario.cameras]
     assert written == ["clave-line.png", "clave-overhead.png", "clave-window.png"]
@@ -266,7 +267,7 @@ def test_no_annotation_reaches_the_shared_world() -> None:
 
 
 def test_the_figures_show_the_manipulator_the_repository_simulates() -> None:
-    """AC-VIS-07: established by the model the scene loads, not by inspection."""
+    """Established by the model the scene loads, not by inspection."""
     pytest.importorskip("mujoco")
     import mujoco
 

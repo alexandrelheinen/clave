@@ -1,6 +1,6 @@
 """Counting decodes, and naming every denominator they could be counted against.
 
-Covers `AC-TRACK-15` and `AC-TRACK-47`.
+
 
 The arithmetic is tested against a fake frame source, so the counting is
 provable without a render. What a render is needed for is the number itself,
@@ -37,7 +37,7 @@ def crossing(
 
 
 def test_a_report_names_both_denominators() -> None:
-    """AC-TRACK-47.
+    """A report names both denominators.
 
     The two differ by more than half depending on which is used, so a single
     figure misleads in one direction or the other.
@@ -59,7 +59,7 @@ def test_a_report_names_both_denominators() -> None:
 
 
 def test_an_object_outside_every_code_band_is_not_counted_as_a_failure() -> None:
-    """AC-TRACK-47.
+    """An object outside every code band is not counted as a failure.
 
     An object no camera could see did not fail to decode; it was never
     presented. Counting it against the decoder would blame optics on software.
@@ -73,7 +73,7 @@ def test_an_object_outside_every_code_band_is_not_counted_as_a_failure() -> None
 
 
 def test_the_report_breaks_the_yield_down_by_material_class() -> None:
-    """AC-TRACK-15.
+    """The report breaks the yield down by material class.
 
     The measured yield is carried entirely by steel cans, and a headline figure
     that hid that would suggest the line reads barcodes on everything.
@@ -91,7 +91,7 @@ def test_the_report_breaks_the_yield_down_by_material_class() -> None:
 
 
 def test_a_report_over_nothing_states_no_yield_rather_than_zero() -> None:
-    """AC-TRACK-47.
+    """A report over nothing states no yield rather than zero.
 
     Zero decodes out of zero crossings is not a zero percent yield, and
     reporting it as one would put a number where there is no measurement.
@@ -103,7 +103,7 @@ def test_a_report_over_nothing_states_no_yield_rather_than_zero() -> None:
 
 
 def test_a_symbol_that_fails_its_check_digit_never_reaches_the_count() -> None:
-    """AC-TRACK-12 and AC-TRACK-15.
+    """A symbol that fails its check digit never reaches the count.
 
     A misread counted as a decode would inflate the published yield with
     readings that resolve to the wrong product.
@@ -119,7 +119,7 @@ def test_a_symbol_that_fails_its_check_digit_never_reaches_the_count() -> None:
 
 
 def test_the_report_renders_as_plain_data() -> None:
-    """AC-TRACK-15. The figure lands in a document, so it has to serialize."""
+    """The figure lands in a document, so it has to serialize."""
     report = measure_decode_yield([crossing("037600138727")], FakeDecoder())
     rendered = report.as_dict()
     assert rendered["crossings"] == 1

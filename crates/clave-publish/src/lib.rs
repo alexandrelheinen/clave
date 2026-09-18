@@ -37,8 +37,7 @@
 //! standard library exposes no way to open one without foreign function calls,
 //! so this crate uses the datagram mode `std::os::unix::net` does expose. An
 //! `AF_UNIX` datagram socket is reliable, ordered, and record oriented on
-//! Linux, which is every property the choice rested on. The departure is
-//! recorded in `docs/decisions.md`.
+//! Linux, which is every property the choice rested on.
 //!
 //! # Hardened lint tier
 //!

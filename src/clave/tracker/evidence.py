@@ -44,8 +44,8 @@ OUTCOME_COUNT = CLASS_COUNT + 1
 """The eleven taxonomy classes plus reject, which is what a posterior spans.
 
 Whether reject is a predicted class or an absence of confidence is a question
-`docs/perception-contract.md` declines to settle. A twelfth slot is the reading
-`AC-TRACK-16` forces, and the contract is what should be amended if that is
+`docs/perception-contract.md` declines to settle. A twelfth slot is the
+reading taken here, and the contract is what should be amended if that is
 wrong, rather than this constant being read loosely.
 """
 
@@ -256,8 +256,8 @@ Payload = Detection | Material | Code | Height | GroundTruth
 """Everything a sensor can report.
 
 Adding a variant is additive for consumers, who read the fused record, and it
-is a change here plus one fusion rule. `AC-TRACK-07` fixes the current set, so
-widening it is a decision rather than an import.
+is a change here plus one fusion rule. The set is fixed here, so widening it
+is a decision rather than an import.
 """
 
 ROLE_OF: dict[type, Role] = {
@@ -303,8 +303,8 @@ class Evidence:
 
     Attributes:
         source_id: Which sensor reported it. Provenance and debugging only, and
-            no fusion rule accepts it, which is how `AC-TRACK-19` forbids
-            source priority by making it unrepresentable.
+            no fusion rule accepts it, which forbids source priority by
+            making it unrepresentable.
         role: What kind of thing was reported.
         observed_at_nanos: The monotonic instant it was taken. Belt speed is
             known, so this is what lets the reading be propagated to any later

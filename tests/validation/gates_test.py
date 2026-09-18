@@ -1,7 +1,4 @@
-"""Thresholds read from configuration, and the verdicts they produce.
-
-Covers `AC-GATE-01` through `AC-GATE-07`.
-"""
+"""Thresholds read from configuration, and the verdicts they produce."""
 
 from __future__ import annotations
 
@@ -99,20 +96,20 @@ def _summary(*outcomes: ObjectOutcome) -> ValidationSummary:
 
 
 def test_thresholds_carry_no_defaults() -> None:
-    """AC-GATE-01: no threshold has a value until configuration supplies one."""
+    """No threshold has a value until configuration supplies one."""
     with pytest.raises(TypeError):
         GateThresholds()  # type: ignore[call-arg]
 
 
 def test_committed_configuration_supplies_every_threshold() -> None:
-    """AC-GATE-01: the project's own gate file loads."""
+    """The project's own gate file loads."""
     config = GateConfig.load(COMMITTED_GATES)
     assert config.thresholds.max_cycle_time_p99_seconds > 0.0
     assert len(config.channel_map) == 11
 
 
 def test_missing_threshold_key_fails_naming_it(tmp_path: Path) -> None:
-    """AC-GATE-02: nothing is substituted for an absent key."""
+    """Nothing is substituted for an absent key."""
     path = tmp_path / "gates.yml"
     path.write_text("gates:\n  min_overall_accuracy: 0.8\nchannels:\n  M-01: CH-PET\n")
     with pytest.raises(GateConfigError, match="min_per_class_accuracy"):
@@ -120,7 +117,7 @@ def test_missing_threshold_key_fails_naming_it(tmp_path: Path) -> None:
 
 
 def test_missing_channel_entry_fails_naming_the_class(tmp_path: Path) -> None:
-    """AC-GATE-02: a partial channel mapping is refused, not completed."""
+    """A partial channel mapping is refused, not completed."""
     committed = COMMITTED_GATES.read_text()
     path = tmp_path / "gates.yml"
     path.write_text(committed.replace("M-07: CH-GLASS", "# removed"))
@@ -129,7 +126,7 @@ def test_missing_channel_entry_fails_naming_the_class(tmp_path: Path) -> None:
 
 
 def test_non_numeric_threshold_fails_naming_the_key(tmp_path: Path) -> None:
-    """AC-GATE-02: a threshold that is not a number is not a threshold."""
+    """A threshold that is not a number is not a threshold."""
     committed = COMMITTED_GATES.read_text()
     path = tmp_path / "gates.yml"
     path.write_text(
@@ -140,7 +137,7 @@ def test_non_numeric_threshold_fails_naming_the_key(tmp_path: Path) -> None:
 
 
 def test_configuration_without_a_gates_section_is_refused(tmp_path: Path) -> None:
-    """AC-GATE-02: the file has to declare what it configures."""
+    """The file has to declare what it configures."""
     path = tmp_path / "gates.yml"
     path.write_text("channels:\n  M-01: CH-PET\n")
     with pytest.raises(GateConfigError, match="gates"):
@@ -148,7 +145,7 @@ def test_configuration_without_a_gates_section_is_refused(tmp_path: Path) -> Non
 
 
 def test_an_unmet_gate_fails_rather_than_reporting_a_number() -> None:
-    """AC-GATE-03, AC-GATE-04: the verdict travels with the observation."""
+    """The verdict travels with the observation."""
     summary = _summary(_record("a", predicted_class="M-04"))
     outcomes = {
         gate.id: gate
@@ -162,7 +159,7 @@ def test_an_unmet_gate_fails_rather_than_reporting_a_number() -> None:
 
 
 def test_a_met_gate_passes() -> None:
-    """AC-GATE-04: a passing gate is reported, not omitted."""
+    """A passing gate is reported, not omitted."""
     summary = _summary(_record("a"))
     outcomes = {
         gate.id: gate
@@ -172,7 +169,7 @@ def test_a_met_gate_passes() -> None:
 
 
 def test_class_below_minimum_support_fails_as_unmeasured() -> None:
-    """AC-GATE-05: a class nobody tested does not pass by having no errors."""
+    """A class nobody tested does not pass by having no errors."""
     summary = _summary(_record("a", true_class="M-01"))
     outcomes = {
         gate.id: gate for gate in evaluate(summary, _thresholds(min_class_support=5))
@@ -184,14 +181,14 @@ def test_class_below_minimum_support_fails_as_unmeasured() -> None:
 
 
 def test_every_taxonomy_class_gets_its_own_gate() -> None:
-    """AC-GATE-05: no class escapes by being absent from the records."""
+    """No class escapes by being absent from the records."""
     summary = _summary(_record("a"))
     ids = {gate.id for gate in evaluate(summary, _thresholds())}
     assert sum(1 for gate_id in ids if gate_id.startswith("per-class-accuracy:")) == 11
 
 
 def test_latency_gate_reads_the_ninety_ninth_percentile() -> None:
-    """AC-GATE-06: a mean that hides a tail does not pass this gate."""
+    """A mean that hides a tail does not pass this gate."""
     records = [
         _record(f"obj-{index}", decision_latency_seconds=0.01) for index in range(98)
     ]
@@ -211,7 +208,7 @@ def test_latency_gate_reads_the_ninety_ninth_percentile() -> None:
 
 
 def test_cycle_time_gate_reads_the_ninety_ninth_percentile() -> None:
-    """AC-GATE-06: cycle time is gated at the tail for the same reason."""
+    """Cycle time is gated at the tail for the same reason."""
     summary = _summary(_record("a", cycle_time_seconds=3.0))
     outcomes = {
         gate.id: gate
@@ -221,7 +218,7 @@ def test_cycle_time_gate_reads_the_ninety_ninth_percentile() -> None:
 
 
 def test_unmeasured_timing_fails_rather_than_passing() -> None:
-    """AC-GATE-06: an absent tail is not a tail inside budget."""
+    """An absent tail is not a tail inside budget."""
     summary = _summary(
         _record("a", picked=False, routed_channel=None, cycle_time_seconds=None)
     )
@@ -232,7 +229,7 @@ def test_unmeasured_timing_fails_rather_than_passing() -> None:
 
 
 def test_generalization_drop_is_gated() -> None:
-    """AC-GATE-07: a candidate that only memorized fails."""
+    """A candidate that only memorized fails."""
     summary = _summary(
         _record("a", predicted_class="M-01", seen_instance=True),
         _record("b", predicted_class="M-04", seen_instance=False),
@@ -247,7 +244,7 @@ def test_generalization_drop_is_gated() -> None:
 
 
 def test_generalization_gate_fails_when_no_unseen_instance_was_scored() -> None:
-    """AC-GATE-07: a run with no held-out instance proves no generalization."""
+    """A run with no held-out instance proves no generalization."""
     summary = _summary(_record("a", seen_instance=True))
     outcomes = {gate.id: gate for gate in evaluate(summary, _thresholds())}
     gate = outcomes["generalization-drop"]
@@ -256,7 +253,7 @@ def test_generalization_gate_fails_when_no_unseen_instance_was_scored() -> None:
 
 
 def test_named_confusion_gates_are_reported_individually() -> None:
-    """AC-GATE-03: each named confusion carries its own verdict."""
+    """Each named confusion carries its own verdict."""
     records = [
         _record(
             f"metal-{index}",
@@ -277,7 +274,7 @@ def test_named_confusion_gates_are_reported_individually() -> None:
 
 
 def test_misroute_and_pick_gates_are_separate() -> None:
-    """AC-GATE-03: a grasping problem and a routing problem gate apart."""
+    """A grasping problem and a routing problem gate apart."""
     summary = _summary(
         _record("a", picked=False, routed_channel=None, cycle_time_seconds=None),
         _record("b", routed_channel="CH-HDPE"),
@@ -295,7 +292,7 @@ def test_misroute_and_pick_gates_are_separate() -> None:
 
 
 def test_gates_over_an_empty_run_all_fail() -> None:
-    """AC-GATE-03: a run that measured nothing does not pass."""
+    """A run that measured nothing does not pass."""
     summary = _summary()
     outcomes = evaluate(summary, _thresholds())
     assert outcomes
@@ -303,7 +300,7 @@ def test_gates_over_an_empty_run_all_fail() -> None:
 
 
 def test_configuration_that_is_not_a_mapping_is_refused(tmp_path: Path) -> None:
-    """AC-GATE-02: a file that is not a mapping configures nothing."""
+    """A file that is not a mapping configures nothing."""
     path = tmp_path / "gates.yml"
     path.write_text("- min_overall_accuracy\n")
     with pytest.raises(GateConfigError, match="does not contain a mapping"):
@@ -311,7 +308,7 @@ def test_configuration_that_is_not_a_mapping_is_refused(tmp_path: Path) -> None:
 
 
 def test_gates_section_that_is_not_a_mapping_is_refused(tmp_path: Path) -> None:
-    """AC-GATE-02: the sections have to be mappings to carry keys."""
+    """The sections have to be mappings to carry keys."""
     path = tmp_path / "gates.yml"
     path.write_text("gates: 0.8\nchannels:\n  M-01: CH-PET\n")
     with pytest.raises(GateConfigError, match="must be mappings"):
@@ -319,6 +316,6 @@ def test_gates_section_that_is_not_a_mapping_is_refused(tmp_path: Path) -> None:
 
 
 def test_class_support_threshold_loads_as_a_whole_number() -> None:
-    """AC-GATE-05: a record count is a count, not a fraction of one."""
+    """A record count is a count, not a fraction of one."""
     config = GateConfig.load(COMMITTED_GATES)
     assert isinstance(config.thresholds.min_class_support, int)

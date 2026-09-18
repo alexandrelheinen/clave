@@ -107,7 +107,7 @@ That is why this arm stands beside the line where the previous one hung over it.
 | Six-axis industrial | 0.4 to 0.8 s |
 | Collaborative, including the UR10e | behind all three, limited by the safety envelope |
 
-CLAVE's budget is **1.0 second**, set by `AC-CYCLE-01` and enforced by
+CLAVE's budget is **1.0 second**, enforced by
 `max_cycle_time_p99_seconds`. It is unmeasured rather than met: nothing grasps,
 so there is no placement to measure to.
 
@@ -246,7 +246,7 @@ The four YCB packages the jaw refused, measured from the compiled mesh:
 `003_cracker_box` is the one package still refused, at 214.5 mm against a
 210 mm ceiling.
 
-Class coverage did not move, and `D-11` records why: searching both collections
+Class coverage did not move, and the reason is that searching both collections
 for the missing types returns no PET bottle, no individual aluminum can, no
 glass container, no corrugated box and no beverage carton. One bottle exists
 among the 836 models that fit. The effector was never the binding constraint.
@@ -272,8 +272,8 @@ result describes that result instead of gating it.
 **Both timing gates are now more conservative than the physics requires.** They
 were derived when the budget was 1.13 s; the budget is 5.92 s at the fastest
 belt speed the configuration allows. They are left where they are, because a
-tighter gate than the physics demands costs nothing and moving one is a decision
-with an entry in [decisions.md](decisions.md) rather than an edit.
+tighter gate than the physics demands costs nothing and moving one is a
+deliberate decision rather than an edit.
 
 ## End to end benchmark
 

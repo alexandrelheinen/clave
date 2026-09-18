@@ -1,7 +1,7 @@
 """Tests for the process boundary.
 
 These start the real runtime, so they build it when it is not built and skip
-when cargo is absent. Covers `AC-BRIDGE-04`, `AC-SAFETY-01` and `AC-SAFETY-07`.
+when cargo is absent.
 """
 
 from pathlib import Path

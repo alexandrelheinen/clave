@@ -19,7 +19,7 @@ render is keyed by geometry name, that name is `object_<slot>`, and
 `clave.world.belt` makes the slot the same integer the world hands out as
 `ObjectLabel.object_id`. An adapter that passed it through would hand the
 tracker the answer while appearing to perceive it, which is exactly the trap
-`AC-TRACK-45` exists to close.
+this adapter exists to close.
 """
 
 from __future__ import annotations
@@ -133,8 +133,8 @@ def detections_from_masks(
     """Turn every instance mask in one frame into a reading.
 
     The mapping's keys are read to iterate and are never carried into a result.
-    That is `AC-TRACK-45`: the render's key is the simulator's object id, and a
-    reading carrying it would be a reading carrying the answer.
+    The render's key is the simulator's object id, and a reading carrying it
+    would be a reading carrying the answer.
 
     Args:
         masks: Instance masks by whatever the renderer keyed them under.
@@ -220,8 +220,8 @@ def _confidence_of(mask: PixelMask) -> float:
 
     A larger instance is a more certain one: a mask of a handful of pixels is as
     likely to be a speck of belt as a package. The curve saturates quickly, so
-    anything over a few hundred pixels is reported at full confidence, and
-    `AC-TRACK-50` asks that this reasoning be written down rather than a
-    constant returned.
+    anything over a few hundred pixels is reported at full confidence. The
+    reasoning is written down here rather than hidden behind a returned
+    constant.
     """
     return min(1.0, mask.pixel_count / 400.0)

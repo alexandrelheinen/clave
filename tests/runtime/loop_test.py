@@ -1,8 +1,7 @@
 """Tests for the loop that closes CLAVE.
 
 The end-to-end case needs MuJoCo, offscreen rendering and the built runtime,
-and skips when any is absent, as the world tests do. Covers `AC-LOOP-01`,
-`AC-LOOP-03`, `AC-LOOP-04`, `AC-RTBENCH-02` and `AC-RTBENCH-04`.
+and skips when any is absent, as the world tests do.
 """
 
 import subprocess
@@ -100,7 +99,7 @@ def test_the_envelope_is_derived_from_the_world_rather_than_restated() -> None:
     assert derived["tool_above_base_meters"] == [
         float(v) for v in config.require(arm, "tool_above_base_meters", "arm")
     ]
-    # AC-REACH-05: the envelope carries the region clave.world.arm applies, so
+    # The envelope carries the region clave.world.arm applies, so
     # the checker cannot admit a point the world calls unreachable.
     assert derived["reach_meters"] == [armmod.REACH_MIN_METERS, armmod.REACH_MAX_METERS]
     assert derived["tool_above_base_meters"] == list(armmod.TOOL_ABOVE_BASE_METERS)
@@ -153,8 +152,8 @@ def test_the_loop_runs_end_to_end_and_reports_what_it_did(
     assert report.frames > 0
     assert report.predictor == "scripted-expert"
     assert report.machine
-    # The scripted expert declines when nothing is reachable, which is what
-    # AC-LOOP-03 asks of the loop.
+    # The scripted expert declines when nothing is reachable, so every frame
+    # is either a proposal or a silence.
     assert report.proposals + report.silent_frames == report.frames
     assert report.counters["proposals"] == report.proposals
     assert report.decisions_received == report.counters["published"]

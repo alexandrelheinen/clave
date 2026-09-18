@@ -1,6 +1,4 @@
 //! The round trip through the codec reproduces every field.
-//!
-//! Covers `AC-SCHEMA-02`.
 #![expect(clippy::unwrap_used, reason = "test assertions")]
 
 use clave_decision::{
@@ -57,7 +55,7 @@ fn assert_round_trips(decision: &PickDecision) {
     assert_eq!(codec::encode(&decoded).unwrap(), encoded);
 }
 
-/// AC-SCHEMA-02: every class in the fixed set survives the round trip.
+/// Every class in the fixed set survives the round trip.
 #[test]
 fn every_material_class_survives_the_round_trip() {
     for class in MaterialClass::ALL {
@@ -65,7 +63,7 @@ fn every_material_class_survives_the_round_trip() {
     }
 }
 
-/// AC-SCHEMA-02: the edge floats a belt coordinate can hold survive the round
+/// The edge floats a belt coordinate can hold survive the round
 /// trip with their bits intact, which is the property JSON could not keep.
 #[test]
 fn edge_floats_survive_the_round_trip_bit_for_bit() {
@@ -91,7 +89,7 @@ fn edge_floats_survive_the_round_trip_bit_for_bit() {
     }
 }
 
-/// AC-SCHEMA-02: the precision of a confidence survives the round trip, which
+/// The precision of a confidence survives the round trip, which
 /// is where a text format loses a unit in the last place.
 #[test]
 fn confidence_precision_survives_the_round_trip() {
@@ -114,7 +112,7 @@ fn confidence_precision_survives_the_round_trip() {
 }
 
 proptest! {
-    /// AC-SCHEMA-02: the round trip holds over generated decisions, where the
+    /// The round trip holds over generated decisions, where the
     /// input space is larger than the examples anyone would think to write.
     #[test]
     fn an_arbitrary_decision_survives_the_round_trip(

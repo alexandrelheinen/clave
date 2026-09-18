@@ -14,7 +14,7 @@ model proposed.
 
 One proposal per `AF_UNIX` datagram, UTF-8 JSON, no framing and no length
 prefix. Record boundaries come from the kernel, which is the same reasoning
-`D-02` recorded for the published decision.
+the published decision follows.
 
 A zero-length datagram is the stop signal. It carries no version and no fields,
 so it cannot be mistaken for a proposal the runtime refuses to read.

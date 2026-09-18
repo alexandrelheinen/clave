@@ -1,7 +1,4 @@
-"""Tests for the Python half of the inference boundary.
-
-Covers `AC-BRIDGE-01`.
-"""
+"""Tests for the Python half of the inference boundary."""
 
 import json
 

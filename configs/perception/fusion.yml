@@ -8,9 +8,8 @@ posterior:
   # No class ever reaches exactly zero. A class some evidence gave no weight is
   # still a class the next reading could argue for, and a zero is unrecoverable
   # under multiplication. The floor is what keeps the posterior a distribution
-  # rather than a set of survivors.
-  #
-  # AC-TRACK-51 asks for a floor and refuses to let it be a constant in code.
+  # rather than a set of survivors. The floor is configuration rather than a
+  # constant in code, so it can be reviewed.
   floor: 0.0005
 
 recency:
@@ -32,7 +31,7 @@ mass:
   # objects declare. Inventing a second set of numbers here would give the
   # world and the tracker two answers for the same question.
   #
-  # Seven of the eleven classes have no object, per D-11, so they have no band
-  # and the mass of an object in one of them is unknown rather than estimated.
-  # That is the honest reading and it is what AC-TRACK-22 asks the band to say.
+  # Seven of the eleven classes have no object, so they have no band and the
+  # mass of an object in one of them is unknown rather than estimated. That is
+  # the honest reading and it is what the band says.
   densities_from_world: true

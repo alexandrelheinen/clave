@@ -17,6 +17,7 @@ EVEN = {"train": 0.6, "validation": 0.2, "test": 0.2}
 
 def rollout(rollout_id: str, classes: tuple[str, ...]) -> Rollout:
     """Build a rollout whose single example carries the given classes."""
+
     labels = tuple(
         ObjectLabel(index, material, "CH-PET", (0.0, 0.0, 0.4), True)
         for index, material in enumerate(classes)
@@ -32,7 +33,7 @@ def rollout(rollout_id: str, classes: tuple[str, ...]) -> Rollout:
 
 
 def test_a_split_is_deterministic_under_one_seed() -> None:
-    """AC-SPLIT-03."""
+    """A split is deterministic under one seed."""
     assert split(IDS, EVEN, 5).parts == split(IDS, EVEN, 5).parts
 
 
@@ -42,7 +43,7 @@ def test_two_seeds_partition_differently() -> None:
 
 
 def test_every_rollout_lands_in_exactly_one_part() -> None:
-    """AC-SPLIT-02 and AC-SPLIT-04."""
+    """Every rollout lands in exactly one part."""
     plan = split(IDS, EVEN, 0)
     placed = [rid for members in plan.parts.values() for rid in members]
     assert sorted(placed) == sorted(IDS)
@@ -50,7 +51,7 @@ def test_every_rollout_lands_in_exactly_one_part() -> None:
 
 
 def test_proportions_that_do_not_sum_to_one_fail_naming_them() -> None:
-    """AC-SPLIT-05."""
+    """Proportions that do not sum to one fail naming them."""
     with pytest.raises(SplitError, match="sum to 1"):
         split(IDS, {"train": 0.6, "test": 0.2}, 0)
 
@@ -62,27 +63,27 @@ def test_an_unknown_part_name_is_refused() -> None:
 
 
 def test_an_overlapping_partition_fails_rather_than_reports() -> None:
-    """AC-SPLIT-04: a leak is a failure, not a finding."""
+    """A leak is a failure, not a finding."""
     with pytest.raises(SplitError, match="leaks"):
         verify(SplitPlan({"train": ("a", "b"), "test": ("b",)}))
 
 
 def test_composition_counts_what_is_present_not_what_was_asked_for() -> None:
-    """AC-COMPOSE-01 and AC-COMPOSE-04."""
+    """Composition counts what is present not what was asked for."""
     result = compose((rollout("r0", ("M-01", "M-01", "M-07")),))
     assert result.example_count == 1
     assert result.class_counts == {"M-01": 2, "M-07": 1}
 
 
 def test_composition_names_the_absent_classes() -> None:
-    """AC-COMPOSE-02: a zero column must be distinguishable from a failure."""
+    """A zero column must be distinguishable from a failure."""
     result = compose((rollout("r0", ("M-01",)),))
     assert "M-07" in result.absent_classes
     assert "M-01" not in result.absent_classes
 
 
 def test_composition_is_reported_per_part() -> None:
-    """AC-COMPOSE-03: a class present overall can be absent from test."""
+    """A class present overall can be absent from test."""
     rollouts = (rollout("r0", ("M-01",)), rollout("r1", ("M-07",)))
     parts: dict[str, tuple[str, ...]] = {"train": ("r0",), "test": ("r1",)}
     result = compose_parts(rollouts, parts)
@@ -93,14 +94,14 @@ def test_composition_is_reported_per_part() -> None:
 
 
 def test_a_spanning_corpus_label_records_ambiguity() -> None:
-    """AC-INGEST-02: ZeroWaste's rigid_plastic covers four classes."""
+    """ZeroWaste's rigid_plastic covers four classes."""
     mapped = map_label("zerowaste", "rigid_plastic")
     assert mapped.ambiguous
     assert mapped.classes == ("M-01", "M-02", "M-03", "M-04")
 
 
 def test_an_unmapped_corpus_label_is_kept() -> None:
-    """AC-INGEST-03: a new category must not silently lose examples."""
+    """A new category must not silently lose examples."""
     mapped = map_label("zerowaste", "unicorn")
     assert not mapped.mapped
     assert mapped.source_label == "unicorn"
@@ -113,7 +114,7 @@ def test_an_unknown_corpus_reports_no_coverage() -> None:
 
 
 def test_a_dataset_writes_reads_and_verifies(tmp_path: Path) -> None:
-    """AC-VERSION-01, AC-VERSION-02 and AC-VERSION-03."""
+    """A dataset writes reads and verifies."""
     rollouts = (rollout("r0", ("M-01",)), rollout("r1", ("M-07",)))
     parts: dict[str, tuple[str, ...]] = {"train": ("r0",), "test": ("r1",)}
     written = write(tmp_path, rollouts, parts, seed=4, config_digest="cfg")
@@ -124,7 +125,7 @@ def test_a_dataset_writes_reads_and_verifies(tmp_path: Path) -> None:
 
 
 def test_a_tampered_dataset_is_refused(tmp_path: Path) -> None:
-    """AC-VERSION-03: a silently changed dataset is the failure this prevents."""
+    """A silently changed dataset is the failure this prevents."""
     write(tmp_path, (rollout("r0", ("M-01",)),), {"train": ("r0",)}, 1, "cfg")
     (tmp_path / "r0.npz").write_bytes(b"tampered")
     with pytest.raises(DatasetError, match="contents changed"):

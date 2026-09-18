@@ -1,6 +1,4 @@
 //! The contract version travels with every decision and gates every decode.
-//!
-//! Covers `AC-SCHEMA-01`, `AC-SCHEMA-03` and `AC-SCHEMA-06`.
 #![expect(clippy::unwrap_used, reason = "test assertions")]
 
 use clave_decision::{
@@ -20,7 +18,7 @@ fn sample() -> PickDecision {
     .unwrap()
 }
 
-/// AC-SCHEMA-01: the version is in the decision and it is the first field on
+/// The version is in the decision and it is the first field on
 /// the wire, so rejecting a message costs one field read.
 #[test]
 fn the_version_is_the_first_field_of_every_encoded_decision() {
@@ -34,7 +32,7 @@ fn the_version_is_the_first_field_of_every_encoded_decision() {
     );
 }
 
-/// AC-SCHEMA-06: a decision carrying a version this build does not know is
+/// A decision carrying a version this build does not know is
 /// rejected whole, and no field past the version is read.
 #[test]
 fn a_message_with_an_unknown_version_is_rejected_before_any_other_field() {
@@ -52,7 +50,7 @@ fn a_message_with_an_unknown_version_is_rejected_before_any_other_field() {
     ));
 }
 
-/// AC-SCHEMA-06: a version too large for the contract's own version type is
+/// A version too large for the contract's own version type is
 /// an unknown version rather than a malformed message.
 #[test]
 fn a_version_wider_than_the_contract_version_type_is_an_unknown_version() {
@@ -67,7 +65,7 @@ fn a_version_wider_than_the_contract_version_type_is_an_unknown_version() {
     assert!(matches!(error, ContractError::UnknownVersion { found, .. } if found == u64::MAX));
 }
 
-/// AC-SCHEMA-06: every width of CBOR unsigned integer is read as a version,
+/// Every width of CBOR unsigned integer is read as a version,
 /// so a producer that encodes the number differently is still understood.
 #[test]
 fn a_version_is_read_at_every_encoded_width() {
@@ -89,7 +87,7 @@ fn a_version_is_read_at_every_encoded_width() {
     }
 }
 
-/// AC-SCHEMA-06: bytes that are not a decision are refused rather than
+/// Bytes that are not a decision are refused rather than
 /// decoded into a default.
 #[test]
 fn bytes_that_are_not_a_decision_are_refused() {
@@ -109,7 +107,7 @@ fn bytes_that_are_not_a_decision_are_refused() {
     }
 }
 
-/// AC-SCHEMA-06: a version field that is not an unsigned integer is a
+/// A version field that is not an unsigned integer is a
 /// malformed message rather than an unknown version.
 #[test]
 fn a_version_field_that_is_not_an_unsigned_integer_is_malformed() {
@@ -124,7 +122,7 @@ fn a_version_field_that_is_not_an_unsigned_integer_is_malformed() {
     ));
 }
 
-/// AC-SCHEMA-03: a decoded message runs back through the validating
+/// A decoded message runs back through the validating
 /// constructor, so bytes carrying a known version but a broken invariant are
 /// refused rather than accepted as a decision.
 #[test]
@@ -156,7 +154,7 @@ fn a_well_versioned_message_carrying_a_broken_invariant_is_refused() {
     assert!(matches!(error, ContractError::WindowNotOrdered { .. }));
 }
 
-/// AC-SCHEMA-03: the contract version this build speaks is the one the crate
+/// The contract version this build speaks is the one the crate
 /// publishes, so raising it in one place raises it everywhere.
 #[test]
 fn the_build_speaks_exactly_one_contract_version() {

@@ -21,13 +21,14 @@ needs_dataset = pytest.mark.skipif(
 
 def config_for(tmp_path: Path, candidate: str, epochs: int = 1) -> TrainingConfig:
     """A one-epoch configuration writing into a temporary directory."""
+
     base = TrainingConfig.load(SHIPPED, candidate)
     return replace(base, dataset=DATASET, checkpoints=tmp_path, epochs=epochs)
 
 
 @needs_dataset
 def test_a_run_records_seed_digests_and_environment(tmp_path: Path) -> None:
-    """AC-RESUME-03 and AC-COST-02."""
+    """A run records seed digests and environment."""
     pytest.importorskip("torch")
     config = config_for(tmp_path, "behavior-cloning-baseline")
     run = train(config, config.window_exit_meters)
@@ -40,7 +41,7 @@ def test_a_run_records_seed_digests_and_environment(tmp_path: Path) -> None:
 
 @needs_dataset
 def test_epoch_records_carry_loss_and_wall_clock(tmp_path: Path) -> None:
-    """AC-COST-01."""
+    """Epoch records carry loss and wall clock."""
     pytest.importorskip("torch")
     config = config_for(tmp_path, "behavior-cloning-baseline")
     run = train(config, config.window_exit_meters)
@@ -51,7 +52,7 @@ def test_epoch_records_carry_loss_and_wall_clock(tmp_path: Path) -> None:
 
 @needs_dataset
 def test_a_run_record_reloads_without_importing_project_code(tmp_path: Path) -> None:
-    """AC-RESUME-04."""
+    """A run record reloads without importing project code."""
     pytest.importorskip("torch")
     config = config_for(tmp_path, "behavior-cloning-baseline")
     train(config, config.window_exit_meters)
@@ -62,7 +63,7 @@ def test_a_run_record_reloads_without_importing_project_code(tmp_path: Path) -> 
 
 @needs_dataset
 def test_a_checkpoint_is_written_and_a_restart_resumes(tmp_path: Path) -> None:
-    """AC-RESUME-01 and AC-RESUME-02."""
+    """A checkpoint is written and a restart resumes."""
     pytest.importorskip("torch")
     first = config_for(tmp_path, "behavior-cloning-baseline", epochs=1)
     train(first, first.window_exit_meters)
@@ -76,7 +77,7 @@ def test_a_checkpoint_is_written_and_a_restart_resumes(tmp_path: Path) -> None:
 
 @needs_dataset
 def test_one_seed_twice_gives_the_same_first_epoch_loss(tmp_path: Path) -> None:
-    """AC-RESUME-05: reproducibility across processes, not within one.
+    """Reproducibility across processes, not within one.
 
     Two runs in one interpreter share a global generator, so the second inherits
     whatever state the first left behind. That passes even when weight

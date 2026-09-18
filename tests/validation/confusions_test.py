@@ -1,8 +1,7 @@
 """The three confusions a color camera cannot resolve.
 
-Covers `AC-CONFUSION-01` through `AC-CONFUSION-04`. `AC-CONFUSION-05`, which
-says a named confusion stays inside the general matrix, is proved in
-`metrics_test.py` where the matrix lives.
+That a named confusion stays inside the general matrix is proved in
+`metrics_test.py`, where the matrix lives.
 """
 
 from __future__ import annotations
@@ -35,7 +34,7 @@ def _record(object_id: str, true_class: str, predicted: str | None) -> ObjectOut
 
 
 def test_three_confusions_are_declared() -> None:
-    """AC-CONFUSION-01: the taxonomy names three, and all three are here."""
+    """The taxonomy names three, and all three are here."""
     assert len(NAMED_CONFUSIONS) == 3
     assert [confusion.id for confusion in NAMED_CONFUSIONS] == [
         "CONF-01",
@@ -45,7 +44,7 @@ def test_three_confusions_are_declared() -> None:
 
 
 def test_each_confusion_names_its_classes_and_its_reason() -> None:
-    """AC-CONFUSION-02: a confusion carries what it spans and why."""
+    """A confusion carries what it spans and why."""
     by_id = {confusion.id: confusion for confusion in NAMED_CONFUSIONS}
     assert by_id["CONF-01"].class_ids == ("M-01", "M-03", "M-04")
     assert by_id["CONF-02"].class_ids == ("M-05", "M-06")
@@ -56,7 +55,7 @@ def test_each_confusion_names_its_classes_and_its_reason() -> None:
 
 
 def test_error_inside_a_group_is_counted_apart_from_one_outside() -> None:
-    """AC-CONFUSION-03, AC-CONFUSION-04: the two error kinds do not merge."""
+    """The two error kinds do not merge."""
     outcomes = [
         _record("a", "M-05", "M-06"),
         _record("b", "M-05", "M-05"),
@@ -72,14 +71,14 @@ def test_error_inside_a_group_is_counted_apart_from_one_outside() -> None:
 
 
 def test_a_group_with_no_records_reports_no_rate() -> None:
-    """AC-CONFUSION-03: an unmeasured group is unmeasured, not perfect."""
+    """An unmeasured group is unmeasured, not perfect."""
     results = {result.confusion.id: result for result in confusion_rates([])}
     assert results["CONF-01"].support == 0
     assert results["CONF-01"].rate is None
 
 
 def test_a_group_whose_every_record_is_correct_reports_a_zero_rate() -> None:
-    """AC-CONFUSION-03: zero confusion is distinguishable from no data."""
+    """Zero confusion is distinguishable from no data."""
     results = {
         result.confusion.id: result
         for result in confusion_rates([_record("a", "M-08", "M-08")])

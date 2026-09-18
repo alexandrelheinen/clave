@@ -31,6 +31,7 @@ def _rendering_available() -> bool:
     a try/except around an import: the probe runs in a subprocess where an abort
     kills the child rather than the test session.
     """
+
     import subprocess
     import sys
 
@@ -76,7 +77,7 @@ def record_short(seed: int, rollout_id: str = "r0") -> Rollout:
 
 @needs_rendering
 def test_a_rollout_captures_labeled_frames() -> None:
-    """AC-RECORD-01 and AC-RECORD-02."""
+    """A rollout captures labeled frames."""
     rollout = record_short(0)
     assert rollout.examples
     example = rollout.examples[-1]
@@ -89,7 +90,7 @@ def test_a_rollout_captures_labeled_frames() -> None:
 
 @needs_rendering
 def test_every_example_carries_seed_time_and_config_digest() -> None:
-    """AC-RECORD-03: a dataset must say what produced it."""
+    """A dataset must say what produced it."""
     rollout = record_short(2)
     for example in rollout.examples:
         assert example.seed == 2
@@ -99,7 +100,7 @@ def test_every_example_carries_seed_time_and_config_digest() -> None:
 
 @needs_rendering
 def test_one_seed_twice_records_identical_examples() -> None:
-    """AC-RECORD-04: two runs must be comparable."""
+    """Two runs must be comparable."""
     first, second = record_short(7), record_short(7)
     assert len(first.examples) == len(second.examples)
     assert np.array_equal(first.examples[-1].frame, second.examples[-1].frame)

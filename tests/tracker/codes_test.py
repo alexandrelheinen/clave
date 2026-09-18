@@ -1,10 +1,9 @@
 """Reading a symbol, and resolving it to what the package is made of.
 
-Covers `AC-TRACK-11`, `AC-TRACK-12`, `AC-TRACK-13`, `AC-TRACK-14` and
-`AC-TRACK-52`.
 
-`AC-TRACK-52` asks the decoder to run against a committed fixture so a zero
-rendered yield reads as a property of the optics rather than as breakage. The
+
+The decoder runs against a committed fixture, so a zero rendered yield reads
+as a property of the optics rather than as breakage. The
 fixture is a symbol on a pinned submodule texture: `docs/guidelines.md` says no
 binary lands in git, and a submodule pin is a reference rather than a binary.
 
@@ -69,7 +68,7 @@ def read_fixture(relative: str) -> object:
 def test_the_decoder_reads_a_symbol_this_project_actually_ships(
     relative: str, expected: str
 ) -> None:
-    """AC-TRACK-52.
+    """The decoder reads a symbol this project actually ships.
 
     The gate's proof that the decoder works. Without it, a measured rendered
     yield of a few percent could equally mean the optics are marginal or the
@@ -81,7 +80,7 @@ def test_the_decoder_reads_a_symbol_this_project_actually_ships(
 
 
 def test_a_symbol_too_coarse_to_resolve_decodes_to_nothing() -> None:
-    """AC-TRACK-11.
+    """A symbol too coarse to resolve decodes to nothing.
 
     An EAN-13 module wants roughly two pixels. Below that the symbol is present
     and unreadable, which is a decline rather than a guess.
@@ -93,7 +92,7 @@ def test_a_symbol_too_coarse_to_resolve_decodes_to_nothing() -> None:
 
 
 def test_a_frame_with_no_symbol_decodes_to_nothing() -> None:
-    """AC-TRACK-11. Most frames on a belt carry no readable symbol at all."""
+    """Most frames on a belt carry no readable symbol at all."""
     import numpy as np
 
     blank = np.full((120, 200, 3), 255, dtype=np.uint8)
@@ -101,7 +100,7 @@ def test_a_frame_with_no_symbol_decodes_to_nothing() -> None:
 
 
 def test_a_misread_symbol_is_refused_by_its_own_check_digit() -> None:
-    """AC-TRACK-12.
+    """A misread symbol is refused by its own check digit.
 
     The refusal lives on the payload, so a `Code` that exists is one that
     checked out and no consumer has to ask. A misread that survived would
@@ -112,7 +111,7 @@ def test_a_misread_symbol_is_refused_by_its_own_check_digit() -> None:
 
 
 def test_the_catalog_resolves_a_code_to_components_and_not_to_a_class() -> None:
-    """AC-TRACK-13.
+    """The catalog resolves a code to components and not to a class.
 
     A steel can with a paper label returns steel and paper. That says one of
     them carries the symbol, not which, which is the distinction the contract
@@ -124,13 +123,13 @@ def test_the_catalog_resolves_a_code_to_components_and_not_to_a_class() -> None:
 
 
 def test_an_unknown_code_resolves_to_nothing_rather_than_a_guess() -> None:
-    """AC-TRACK-14."""
+    """An unknown code resolves to nothing rather than a guess."""
     catalog = load_catalog(CATALOG)
     assert components_of(catalog, "012345678905") == ()
 
 
 def test_every_catalogued_component_is_a_class_the_taxonomy_defines() -> None:
-    """AC-TRACK-13. A component nothing can route to is not a component."""
+    """A component nothing can route to is not a component."""
     catalog = load_catalog(CATALOG)
     for entry in catalog.values():
         assert entry.components
@@ -139,7 +138,7 @@ def test_every_catalogued_component_is_a_class_the_taxonomy_defines() -> None:
 
 
 def test_every_catalogued_code_passes_its_own_check_digit() -> None:
-    """AC-TRACK-12.
+    """Every catalogued code passes its own check digit.
 
     A catalogued code that could not have been read is a catalogued typo, and
     it would resolve a real misread to a plausible bill of materials.
@@ -151,7 +150,7 @@ def test_every_catalogued_code_passes_its_own_check_digit() -> None:
 
 
 def test_every_catalogued_code_names_an_object_the_world_carries() -> None:
-    """AC-TRACK-13.
+    """Every catalogued code names an object the world carries.
 
     The catalog records which package each symbol was decoded off, so an entry
     nobody can trace back to this repository's own object set is an entry
@@ -163,7 +162,7 @@ def test_every_catalogued_code_names_an_object_the_world_carries() -> None:
 
 
 def test_a_catalogued_component_agrees_with_the_class_the_world_gives_it() -> None:
-    """AC-TRACK-13.
+    """A catalogued component agrees with the class the world gives it.
 
     The bill of materials is inferred from what the package is, the same way
     the world infers `material_class`. They are allowed to differ, because a
@@ -179,7 +178,7 @@ def test_a_catalogued_component_agrees_with_the_class_the_world_gives_it() -> No
 
 
 def test_a_catalog_naming_a_class_outside_the_taxonomy_is_refused() -> None:
-    """AC-TRACK-13."""
+    """A catalog naming a class outside the taxonomy is refused."""
     import textwrap
 
     bad = ROOT / "configs" / "perception" / "_probe.yml"
@@ -202,7 +201,7 @@ def test_a_catalog_naming_a_class_outside_the_taxonomy_is_refused() -> None:
 
 
 def test_the_adapter_turns_a_read_symbol_into_evidence() -> None:
-    """AC-TRACK-11."""
+    """The adapter turns a read symbol into evidence."""
     from clave.tracker.adapters.code import codes_from_frame
 
     readings = codes_from_frame(
@@ -220,7 +219,7 @@ def test_the_adapter_turns_a_read_symbol_into_evidence() -> None:
 
 
 def test_the_adapter_emits_nothing_when_nothing_decodes() -> None:
-    """AC-TRACK-11 and AC-TRACK-12.
+    """The adapter emits nothing when nothing decodes.
 
     A frame with no readable symbol produces no evidence, which is the ordinary
     case: the measured yield says most gate crossings decode nothing.
@@ -242,7 +241,7 @@ def test_the_adapter_emits_nothing_when_nothing_decodes() -> None:
 
 
 def test_a_code_reaching_a_track_moves_its_belief_toward_the_components() -> None:
-    """AC-TRACK-13 and AC-TRACK-18, end to end through the tracker."""
+    """A code reaching a track moves its belief toward the components."""
     from clave.tracker.codes import resolver_for
     from clave.tracker.fusion import FusionSettings, Posterior, fold
 

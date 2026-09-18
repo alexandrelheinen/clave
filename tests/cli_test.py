@@ -12,7 +12,8 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_verify_manifest_passes_on_the_real_repository(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """AC-TOOLCHAIN-03: the gate's command succeeds on a clean tree."""
+    """The gate's command succeeds on a clean tree."""
+
     assert main(["--root", str(ROOT), "verify-manifest"]) == 0
     assert "ok       smoke" in capsys.readouterr().out
 
@@ -20,7 +21,7 @@ def test_verify_manifest_passes_on_the_real_repository(
 def test_verify_manifest_fails_when_bytes_changed(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """AC-FETCH-02: a mutated artifact fails the gate, non-zero."""
+    """A mutated artifact fails the gate, non-zero."""
     (tmp_path / "corpora" / "fixtures").mkdir(parents=True)
     (tmp_path / "corpora" / "fixtures" / "smoke.csv").write_text("tampered\n")
     (tmp_path / "corpora" / "manifest.toml").write_text(
@@ -34,7 +35,7 @@ def test_verify_manifest_fails_when_bytes_changed(
 def test_record_digest_reports_a_digest(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """AC-FETCH-04: the command reports rather than writes."""
+    """The command reports rather than writes."""
     (tmp_path / "corpora").mkdir()
     manifest = tmp_path / "corpora" / "manifest.toml"
     manifest.write_text('[[artifact]]\nname = "x"\nsource = "x.csv"\n')
@@ -49,7 +50,7 @@ def test_record_digest_reports_a_digest(
 def test_malformed_manifest_exits_non_zero(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """AC-MANIFEST-03: the gate fails and names the entry."""
+    """The gate fails and names the entry."""
     (tmp_path / "corpora").mkdir()
     (tmp_path / "corpora" / "manifest.toml").write_text(
         '[[artifact]]\nname = "dup"\nsource = "a"\n\n'
@@ -100,7 +101,7 @@ def _write_outcomes(path: Path, correct: bool) -> None:
 def test_validate_run_prints_a_report(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """AC-VERDICT-05: the harness runs from one command."""
+    """The harness runs from one command."""
     outcomes = tmp_path / "outcomes.json"
     _write_outcomes(outcomes, correct=True)
     main(
@@ -121,7 +122,7 @@ def test_validate_run_prints_a_report(
 def test_validate_run_exits_non_zero_when_a_gate_fails(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """AC-VERDICT-04: an unmet gate is a failure, not a reported number."""
+    """An unmet gate is a failure, not a reported number."""
     outcomes = tmp_path / "outcomes.json"
     _write_outcomes(outcomes, correct=False)
     assert main(["--root", str(ROOT), "validate-run", "--outcomes", str(outcomes)]) == 1
@@ -131,7 +132,7 @@ def test_validate_run_exits_non_zero_when_a_gate_fails(
 def test_validate_run_reports_a_malformed_records_file(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """AC-OUTCOME-03: a bad record fails the command naming what was wrong."""
+    """A bad record fails the command naming what was wrong."""
     outcomes = tmp_path / "outcomes.json"
     outcomes.write_text('{"provenance": "fixture", "outcomes": [{"object_id": "a"}]}')
     assert main(["--root", str(ROOT), "validate-run", "--outcomes", str(outcomes)]) == 1

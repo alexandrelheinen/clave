@@ -1,6 +1,6 @@
 """Reading the line's sensors, and never reading one by name.
 
-Covers `AC-TRACK-02`, `AC-TRACK-25` and `AC-TRACK-25b`.
+
 
 The contract's claim is that adding, moving or removing a camera changes
 `configs/world/sorting_line.yml` and nothing else. That claim is only worth
@@ -35,13 +35,13 @@ def shipped() -> tuple[SensorSpec, ...]:
 
 
 def test_every_declared_camera_becomes_a_sensor() -> None:
-    """AC-TRACK-06. The list in configuration is the list in the tracker."""
+    """The list in configuration is the list in the tracker."""
     raw = load(CONFIG)
     assert len(shipped()) == len(require(raw, "cameras"))
 
 
 def test_a_sensor_carries_the_optics_its_parts_imply() -> None:
-    """AC-TRACK-02.
+    """A sensor carries the optics its parts imply.
 
     The adapter converts pixels to belt metres, so it needs the optics, and
     they are derived from the sensor and the lens rather than restated here.
@@ -53,7 +53,7 @@ def test_a_sensor_carries_the_optics_its_parts_imply() -> None:
 
 
 def test_sensors_are_found_by_role_and_the_lookup_takes_no_id() -> None:
-    """AC-TRACK-25. Role is the only key a consumer may use."""
+    """Role is the only key a consumer may use."""
     sensors = shipped()
     assert len(of_role(sensors, Role.CODE)) == 3
     assert len(of_role(sensors, Role.DETECTION)) == 1
@@ -61,7 +61,7 @@ def test_sensors_are_found_by_role_and_the_lookup_takes_no_id() -> None:
 
 
 def test_requiring_a_role_nothing_produces_names_it() -> None:
-    """AC-TRACK-25b.
+    """Requiring a role nothing produces names it.
 
     A tracker configured to fuse a role no camera produces would emit records
     silently missing that evidence, which is worse than refusing to start.
@@ -71,7 +71,7 @@ def test_requiring_a_role_nothing_produces_names_it() -> None:
 
 
 def test_a_camera_of_an_unknown_role_is_refused_naming_it() -> None:
-    """AC-TRACK-25. A role the union does not define cannot be fused."""
+    """A role the union does not define cannot be fused."""
     raw = load(CONFIG)
     raw["cameras"] = [dict(raw["cameras"][0], id="probe", role="thermal")]
     with pytest.raises(SensorError, match="thermal"):
@@ -79,7 +79,7 @@ def test_a_camera_of_an_unknown_role_is_refused_naming_it() -> None:
 
 
 def test_two_cameras_cannot_share_one_source_id() -> None:
-    """AC-TRACK-06. Provenance stops meaning anything if it is ambiguous."""
+    """Provenance stops meaning anything if it is ambiguous."""
     raw = load(CONFIG)
     raw["cameras"] = [raw["cameras"][0], dict(raw["cameras"][1], id="gate_wide")]
     with pytest.raises(SensorError, match="gate_wide"):
@@ -87,7 +87,7 @@ def test_two_cameras_cannot_share_one_source_id() -> None:
 
 
 def test_adding_a_camera_of_an_existing_role_changes_nothing_else() -> None:
-    """AC-TRACK-25.
+    """Adding a camera of an existing role changes nothing else.
 
     The non-vacuous half: asserting the shape is unchanged proves little on its
     own, so this also asserts the new sensor actually arrived under its role.
@@ -107,7 +107,7 @@ def test_adding_a_camera_of_an_existing_role_changes_nothing_else() -> None:
 
 
 def test_no_module_names_a_camera_the_configuration_declares() -> None:
-    """AC-TRACK-25.
+    """No module names a camera the configuration declares.
 
     This is the criterion's only formulation that cannot be satisfied by prose.
     It failed on the tree that introduced it, at `clave.data.recorder` and

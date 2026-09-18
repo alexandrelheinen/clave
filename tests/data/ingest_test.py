@@ -46,6 +46,7 @@ def trashnet_archive() -> Path | None:
     An operator fetches the corpus; the gate does not. Everything below that
     needs the real bytes asks here and skips when the answer is None.
     """
+
     override = os.environ.get("CLAVE_TRASHNET_ARCHIVE")
     path = Path(override) if override else DEFAULT_TRASHNET
     return path if path.is_file() else None
@@ -66,7 +67,7 @@ def fixture_archive(tmp_path: Path) -> Path:
 
 
 def test_a_fetched_archive_reads_into_labeled_examples(fixture_archive: Path) -> None:
-    """AC-INGEST-06: imagery is read from the archive without extracting it."""
+    """Imagery is read from the archive without extracting it."""
     with CorpusArchive(fixture_archive, "trashnet") as archive:
         members = [example.member for example in archive.examples]
     assert members == [
@@ -78,7 +79,7 @@ def test_a_fetched_archive_reads_into_labeled_examples(fixture_archive: Path) ->
 
 
 def test_every_fetched_example_carries_the_real_origin(fixture_archive: Path) -> None:
-    """AC-INGEST-07 and AC-INGEST-04: real examples stay separable."""
+    """Real examples stay separable."""
     with CorpusArchive(fixture_archive, "trashnet") as archive:
         origins = {example.origin for example in archive.examples}
     assert origins == {Origin.REAL}
@@ -87,7 +88,7 @@ def test_every_fetched_example_carries_the_real_origin(fixture_archive: Path) ->
 def test_a_label_spanning_several_classes_is_read_as_ambiguous(
     fixture_archive: Path,
 ) -> None:
-    """AC-INGEST-02: TrashNet's plastic covers four classes."""
+    """TrashNet's plastic covers four classes."""
     with CorpusArchive(fixture_archive, "trashnet") as archive:
         plastic = next(
             example for example in archive.examples if example.source_label == "plastic"
@@ -99,7 +100,7 @@ def test_a_label_spanning_several_classes_is_read_as_ambiguous(
 def test_a_label_outside_the_mapping_is_read_as_unmapped(
     fixture_archive: Path,
 ) -> None:
-    """AC-INGEST-03: an unrecognized directory does not lose its images."""
+    """An unrecognized directory does not lose its images."""
     with CorpusArchive(fixture_archive, "trashnet") as archive:
         unicorn = next(
             example for example in archive.examples if example.source_label == "unicorn"
@@ -109,7 +110,7 @@ def test_a_label_outside_the_mapping_is_read_as_unmapped(
 
 
 def test_editor_metadata_is_not_read_as_imagery(fixture_archive: Path) -> None:
-    """AC-INGEST-08: AppleDouble forks and .DS_Store files are not images.
+    """AppleDouble forks and .DS_Store files are not images.
 
     Three separate rules exclude them, so the fixture carries one member for
     each: outside the declared root, directly under the root, and hidden inside
@@ -138,13 +139,13 @@ def test_a_file_outside_a_label_directory_is_not_read(
 
 
 def test_a_corpus_with_no_declared_layout_is_refused(fixture_archive: Path) -> None:
-    """AC-INGEST-10: guessing a layout would invent a label vocabulary."""
+    """Guessing a layout would invent a label vocabulary."""
     with pytest.raises(CorpusError, match="taco"):
         CorpusArchive(fixture_archive, "taco")
 
 
 def test_an_archive_holding_no_imagery_is_refused(tmp_path: Path) -> None:
-    """AC-INGEST-10: an empty read is a failure, not an empty corpus."""
+    """An empty read is a failure, not an empty corpus."""
     empty = build_archive(tmp_path / "empty.zip", {"readme.txt": b"nothing here"})
     with pytest.raises(CorpusError, match="dataset-resized"):
         CorpusArchive(empty, "trashnet")
@@ -161,7 +162,7 @@ def test_a_file_that_is_not_an_archive_is_refused(tmp_path: Path) -> None:
 def test_a_frame_decodes_through_the_caller_supplied_decoder(
     fixture_archive: Path,
 ) -> None:
-    """AC-INGEST-11: ingestion needs no image library of its own."""
+    """Ingestion needs no image library of its own."""
     seen: list[bytes] = []
 
     def decode(payload: bytes) -> NDArray[np.uint8]:
@@ -179,7 +180,7 @@ def test_a_frame_decodes_through_the_caller_supplied_decoder(
 def test_composition_counts_every_class_a_label_may_be(
     fixture_archive: Path,
 ) -> None:
-    """AC-INGEST-09: an ambiguous label counts toward each class it spans."""
+    """An ambiguous label counts toward each class it spans."""
     with CorpusArchive(fixture_archive, "trashnet") as archive:
         measured = compose_corpus("trashnet", archive.examples)
     assert measured.example_count == 4
@@ -194,7 +195,7 @@ def test_composition_counts_every_class_a_label_may_be(
 def test_composition_separates_resolved_classes_from_ambiguous_ones(
     fixture_archive: Path,
 ) -> None:
-    """AC-INGEST-09: only a label pinning one class resolves that class."""
+    """Only a label pinning one class resolves that class."""
     with CorpusArchive(fixture_archive, "trashnet") as archive:
         measured = compose_corpus("trashnet", archive.examples)
     assert measured.resolved_class_counts == {"M-07": 2}
@@ -204,7 +205,7 @@ def test_composition_separates_resolved_classes_from_ambiguous_ones(
 def test_composition_names_the_classes_a_corpus_cannot_supply(
     fixture_archive: Path,
 ) -> None:
-    """AC-INGEST-09: an absent class is an absence in the data."""
+    """An absent class is an absence in the data."""
     with CorpusArchive(fixture_archive, "trashnet") as archive:
         measured = compose_corpus("trashnet", archive.examples)
     assert "M-10" in measured.absent_classes
@@ -351,7 +352,7 @@ def localized_fixture(path: Path, **overrides: bytes) -> Path:
 def test_a_localized_corpus_reads_regions_with_boxes_and_mapped_labels(
     tmp_path: Path,
 ) -> None:
-    """AC-INGEST-12. The localization is the reason this corpus outranks the rest."""
+    """The localization is the reason this corpus outranks the rest."""
     archive_path = localized_fixture(tmp_path / "zerowaste.zip")
     with LocalizedArchive(archive_path, "zerowaste") as archive:
         examples = archive.examples
@@ -376,7 +377,7 @@ def test_a_localized_corpus_reads_regions_with_boxes_and_mapped_labels(
 
 
 def test_an_image_with_no_annotation_is_kept_and_reported(tmp_path: Path) -> None:
-    """AC-INGEST-13. A frame with no foreground is a real frame, not a gap."""
+    """A frame with no foreground is a real frame, not a gap."""
     archive_path = localized_fixture(tmp_path / "zerowaste.zip")
     with LocalizedArchive(archive_path, "zerowaste") as archive:
         composition = compose_localized("zerowaste", archive.examples)
@@ -391,7 +392,7 @@ def test_an_image_with_no_annotation_is_kept_and_reported(tmp_path: Path) -> Non
 def test_an_annotation_naming_an_undeclared_category_is_refused(
     tmp_path: Path,
 ) -> None:
-    """AC-INGEST-14. A category the file never declares is corruption, not a label."""
+    """A category the file never declares is corruption, not a label."""
     archive_path = localized_fixture(
         tmp_path / "zerowaste.zip",
         **{
@@ -419,7 +420,7 @@ def test_an_annotation_naming_an_undeclared_category_is_refused(
 def test_an_annotated_image_missing_from_the_archive_is_refused(
     tmp_path: Path,
 ) -> None:
-    """AC-INGEST-15. Reading fewer images than the annotations describe is a fault."""
+    """Reading fewer images than the annotations describe is a fault."""
     archive_path = localized_fixture(
         tmp_path / "zerowaste.zip",
         **{
@@ -439,7 +440,7 @@ def test_an_annotated_image_missing_from_the_archive_is_refused(
 def test_a_localized_composition_counts_regions_rather_than_images(
     tmp_path: Path,
 ) -> None:
-    """AC-INGEST-16. One image holding six objects is six pieces of evidence."""
+    """One image holding six objects is six pieces of evidence."""
     archive_path = localized_fixture(tmp_path / "zerowaste.zip")
     with LocalizedArchive(archive_path, "zerowaste") as archive:
         composition = compose_localized("zerowaste", archive.examples)

@@ -24,19 +24,20 @@ SPEC = CandidateSpec(
 
 
 def test_a_spec_is_constructible_without_any_heavy_dependency() -> None:
-    """AC-IFACE-03 and AC-IFACE-04: describing does not import."""
+    """Describing does not import."""
+
     assert SPEC.name == "demo"
     assert SPEC.license == "MIT"
 
 
 def test_a_spec_reports_its_stage() -> None:
-    """AC-IFACE-02."""
+    """A spec reports its stage."""
     assert SPEC.stage is Stage.POLICY
     assert SPEC.stage.value == "policy"
 
 
 def test_a_missing_dependency_is_reported_not_raised() -> None:
-    """AC-IFACE-05: an absent library names itself and does not raise."""
+    """An absent library names itself and does not raise."""
 
     def build() -> object:
         # This module does not exist, which is the condition under test.
@@ -51,7 +52,7 @@ def test_a_missing_dependency_is_reported_not_raised() -> None:
 
 
 def test_any_other_failure_is_reported_without_substitution() -> None:
-    """AC-ADAPT-04: a broken build records its reason, not another candidate."""
+    """A broken build records its reason, not another candidate."""
 
     def build() -> object:
         raise ValueError("head size mismatch")
@@ -72,18 +73,18 @@ def test_a_successful_build_is_loaded() -> None:
 
 
 def test_class_count_matches_the_taxonomy() -> None:
-    """AC-ADAPT-03: the head is sized to M-01 through M-11."""
+    """The head is sized to M-01 through M-11."""
     assert MATERIAL_CLASS_COUNT == 11
 
 
 def test_the_fixture_is_identical_across_two_seeded_runs() -> None:
-    """AC-BENCH-05: two benchmark runs see the same input."""
+    """Two benchmark runs see the same input."""
     assert np.array_equal(frame(7), frame(7))
     assert np.array_equal(state(7), state(7))
 
 
 def test_the_fixture_differs_across_two_seeds() -> None:
-    """AC-BENCH-05: the guard above would pass for a constant without this."""
+    """The guard above would pass for a constant without this."""
     assert not np.array_equal(frame(1), frame(2))
 
 

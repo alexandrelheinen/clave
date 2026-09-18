@@ -1,8 +1,4 @@
 //! The publication budget and the measurement that holds it.
-//!
-//! Covers `AC-LATENCY-01`, `AC-LATENCY-02`, `AC-LATENCY-03` and
-//! `AC-LATENCY-04`.
-//!
 //! Every number this file produces is a development machine number. There is
 //! no camera, no belt, and no target board here, so a green run is evidence
 //! about this machine and about nothing else.
@@ -22,7 +18,7 @@ use crate::support::decision_for;
 
 const CRATE_DOCS: &str = include_str!("../src/lib.rs");
 
-/// AC-LATENCY-02: the publication budget is documented as a share of the
+/// The publication budget is documented as a share of the
 /// capture-to-delivery budget it belongs to, rather than as a number on its
 /// own.
 #[test]
@@ -34,7 +30,7 @@ fn the_publication_budget_is_a_share_of_the_capture_to_delivery_budget() {
     assert!(CRATE_DOCS.contains("100 millisecond"));
 }
 
-/// AC-LATENCY-03: the report names the 99th percentile by nearest rank, which
+/// The report names the 99th percentile by nearest rank, which
 /// is the number the budget is stated at.
 #[test]
 fn the_report_names_the_ninety_ninth_percentile_by_nearest_rank() {
@@ -48,7 +44,7 @@ fn the_report_names_the_ninety_ninth_percentile_by_nearest_rank() {
     assert_eq!(report.median(), Duration::from_micros(50));
 }
 
-/// AC-LATENCY-03: the report sorts what it is given, so a caller may hand it
+/// The report sorts what it is given, so a caller may hand it
 /// samples in the order they were measured.
 #[test]
 fn the_report_does_not_depend_on_the_order_samples_arrive_in() {
@@ -62,7 +58,7 @@ fn the_report_does_not_depend_on_the_order_samples_arrive_in() {
     assert_eq!(from_ascending.p99(), Duration::from_nanos(990));
 }
 
-/// AC-LATENCY-03: a single sample is still a distribution, and an empty run is
+/// A single sample is still a distribution, and an empty run is
 /// no measurement at all rather than a passing one.
 #[test]
 fn one_sample_reports_itself_and_no_sample_reports_nothing() {
@@ -74,7 +70,7 @@ fn one_sample_reports_itself_and_no_sample_reports_nothing() {
     assert!(LatencyReport::from_samples(&mut []).is_none());
 }
 
-/// AC-LATENCY-04: a measurement above the budget is over budget, so a
+/// A measurement above the budget is over budget, so a
 /// benchmark that reports it fails instead of printing a number and passing.
 #[test]
 fn a_measurement_above_the_budget_is_over_budget() {
@@ -97,7 +93,7 @@ fn a_measurement_above_the_budget_is_over_budget() {
     );
 }
 
-/// AC-LATENCY-04: a measurement exactly at the budget is inside it, so the
+/// A measurement exactly at the budget is inside it, so the
 /// budget is a ceiling rather than a strict bound.
 #[test]
 fn a_measurement_exactly_at_the_budget_is_inside_it() {
@@ -110,7 +106,7 @@ fn a_measurement_exactly_at_the_budget_is_inside_it() {
     );
 }
 
-/// AC-LATENCY-01: publication to a connected consumer stays inside the 5
+/// Publication to a connected consumer stays inside the 5
 /// millisecond budget at the 99th percentile on this machine.
 #[test]
 fn publication_to_a_connected_consumer_stays_inside_the_budget() {

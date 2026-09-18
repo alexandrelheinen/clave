@@ -1,11 +1,11 @@
 """Annotating a frame with everything the tracker believes.
 
-Covers `AC-DEBUG-01` through `AC-DEBUG-09`.
+
 
 The rule this file exists to keep honest is that nothing is drawn which the
 record does not carry. A view that invents a value is a view that argues for
-something the system does not know, which is the failure `D-15` and the
-no-fabricated-evidence rule guard against everywhere else in this repository.
+something the system does not know, which is the failure the
+no-fabricated-evidence rule guards against everywhere else in this repository.
 """
 
 from __future__ import annotations
@@ -65,7 +65,7 @@ def blank() -> Any:
 
 
 def test_a_belt_point_projects_back_to_the_pixel_it_came_from() -> None:
-    """AC-DEBUG-01.
+    """A belt point projects back to the pixel it came from.
 
     The inverse of the adapter's own conversion. Using a different scale factor
     would put every box slightly off its object, consistently, which is the
@@ -81,7 +81,7 @@ def test_a_belt_point_projects_back_to_the_pixel_it_came_from() -> None:
 
 
 def test_every_field_of_the_record_is_described() -> None:
-    """AC-DEBUG-02.
+    """Every field of the record is described.
 
     The contract is the record's own shape. Adding a field to `WasteObject` and
     not to the view fails here, which is what stops the view quietly showing
@@ -93,7 +93,7 @@ def test_every_field_of_the_record_is_described() -> None:
 
 
 def test_nothing_is_drawn_that_the_record_does_not_carry() -> None:
-    """AC-DEBUG-06.
+    """Nothing is drawn that the record does not carry.
 
     Every value in the listing has to be traceable to a field. A view that
     computes a number for display is drawing something the system does not
@@ -138,7 +138,7 @@ def _looks_like(held: object, shown: str) -> bool:
 
 
 def test_a_track_keeps_one_colour_and_two_tracks_differ() -> None:
-    """AC-DEBUG-03."""
+    """A track keeps one colour and two tracks differ."""
     assert colour_for(7) == colour_for(7)
     assert colour_for(7) != colour_for(8)
     for channel in colour_for(7):
@@ -146,7 +146,7 @@ def test_a_track_keeps_one_colour_and_two_tracks_differ() -> None:
 
 
 def test_a_simulated_field_is_marked_as_one() -> None:
-    """AC-DEBUG-04.
+    """A simulated field is marked as one.
 
     A reader auditing perception has to see which values the simulator supplied,
     because a material folded from `GroundTruth` is the simulator's label.
@@ -158,7 +158,7 @@ def test_a_simulated_field_is_marked_as_one() -> None:
 
 
 def test_an_unoriented_footprint_is_not_drawn_as_a_square_one() -> None:
-    """AC-DEBUG-05.
+    """An unoriented footprint is not drawn as a square one.
 
     A can is circular in plan. Drawing it with a confident yaw of zero is a
     claim the record declined to make.
@@ -175,7 +175,7 @@ def test_an_unoriented_footprint_is_not_drawn_as_a_square_one() -> None:
 
 
 def test_the_frame_says_it_is_a_debug_render_of_the_tracker() -> None:
-    """AC-DEBUG-07.
+    """The frame says it is a debug render of the tracker.
 
     Nothing produced here may be read as the loop's output or as a figure.
     """
@@ -189,7 +189,7 @@ def test_the_frame_says_it_is_a_debug_render_of_the_tracker() -> None:
 
 
 def test_annotating_changes_the_frame_it_was_given_only_by_copy() -> None:
-    """AC-DEBUG-08.
+    """Annotating changes the frame it was given only by copy.
 
     The source frame is what the simulator rendered. Drawing into it in place
     would mean the same array reaching a published encoder already marked.
@@ -206,7 +206,7 @@ def test_annotating_changes_the_frame_it_was_given_only_by_copy() -> None:
 
 
 def test_a_record_off_the_frame_is_reported_rather_than_drawn_at_an_edge() -> None:
-    """AC-DEBUG-01.
+    """A record off the frame is reported rather than drawn at an edge.
 
     A track propagated past the belt has no pixel, and clamping it to the border
     would put a box where no object is.
@@ -224,7 +224,7 @@ def test_a_record_off_the_frame_is_reported_rather_than_drawn_at_an_edge() -> No
 
 
 def test_a_frame_of_the_wrong_shape_is_refused() -> None:
-    """AC-DEBUG-01. The optics describe one render size."""
+    """The optics describe one render size."""
     pytest.importorskip("cv2")
     import numpy as np
 
@@ -241,7 +241,7 @@ def test_a_frame_of_the_wrong_shape_is_refused() -> None:
 
 
 def test_the_published_encoder_is_not_reachable_from_here() -> None:
-    """AC-DEBUG-08 and AC-DEBUG-09.
+    """The published encoder is not reachable from here.
 
     The demo and still paths keep their flat-gray guarantee because nothing
     here can write through them.
