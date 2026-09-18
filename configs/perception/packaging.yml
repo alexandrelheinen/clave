@@ -1,0 +1,45 @@
+# What a decoded symbol resolves to.
+#
+# A GTIN does not name a material. A product resolves to a packaging bill of
+# materials, and a steel can with a paper label returns steel and paper, which
+# tells a tracker that one of them carries the symbol rather than which. That is
+# the whole reason this file maps to components and never to a class.
+#
+# Every entry below was decoded from this repository's own object set rather
+# than looked up, and `decoded_from` says how. A GTIN nobody read off one of
+# these packages does not belong here.
+#
+# The components are inferred from what the package is, not measured. That is
+# the same convention, and the same label noise, that
+# configs/world/sorting_line.yml already carries for `material_class`, and its
+# comment says so in the same words.
+#
+# No entry carries a packaging mass. AC-TRACK-22 lets a resolved mass narrow the
+# band, and the code supports it, but nothing here measured one and a number
+# invented to exercise a code path is worse than an unexercised code path.
+
+codes:
+  "790011130178":
+    object: silicon_bottle
+    decoded_from: texture
+    components: [M-02, M-09]
+
+  "043000204719":
+    object: pudding_box
+    decoded_from: texture
+    components: [M-09]
+
+  "40144818":
+    object: sugar_box
+    decoded_from: texture
+    components: [M-09]
+
+  "077623000618":
+    object: master_chef_can
+    decoded_from: rendered gate frame
+    components: [M-06, M-09]
+
+  "037600138727":
+    object: potted_meat_can
+    decoded_from: rendered gate frame
+    components: [M-06, M-09]

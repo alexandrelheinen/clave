@@ -38,7 +38,20 @@ assets = ["trimesh>=4.0", "pycollada>=0.8"]
 # cbor2 belongs to the ros extra and is repeated here on purpose: the decoder
 # that reads the published contract is core enough to test on every run, and the
 # gate installs no ROS distribution, so this is the only way it gets exercised.
-dev = ["pytest>=8", "pytest-cov>=5", "mypy>=1.9", "ruff>=0.4", "cbor2>=5.6"]
+#
+# opencv-python-headless is here rather than in an optional extra for the same
+# reason. The barcode decoder is the one part of perception whose measured yield
+# is a published number, and a decoder the gate never runs is new code the
+# coverage floor absorbs untested. Headless because nothing here opens a window.
+dev = [
+    "pytest>=8",
+    "pytest-cov>=5",
+    "mypy>=1.9",
+    "ruff>=0.4",
+    "cbor2>=5.6",
+    "opencv-python-headless>=4.9",
+    "pillow>=10",
+]
 
 [project.scripts]
 clave = "clave.cli:main"
@@ -79,6 +92,8 @@ module = [
     "mujoco.*",
     "yaml",
     "cbor2",
+    "cv2",
+    "PIL.*",
     # ROS 2 ships rclpy and its message packages through a system installation
     # rather than a wheel, so they are absent from the gate's environment and
     # from any machine that has not sourced a distribution.
