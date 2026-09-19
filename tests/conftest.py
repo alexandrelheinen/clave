@@ -1,4 +1,5 @@
-"""Fixtures shared by the tests that start the real runtime.
+"""Fixtures shared by the tests that start the real runtime, and the one
+environment variable every rendering test depends on.
 
 The runtime is a built binary and a JSON configuration, and three test modules
 need both. A second copy of either would drift from the first.
@@ -6,6 +7,7 @@ need both. A second copy of either would drift from the first.
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from collections.abc import Callable
@@ -16,6 +18,22 @@ import pytest
 
 from clave.runtime.bridge import BridgeError, locate_binary
 from clave.runtime.proposal import Proposal
+
+# Pin the rendering backend before any test module is imported.
+#
+# MuJoCo picks a backend the first time a renderer is built, and on a machine
+# with no display the default aborts the interpreter rather than raising. Two
+# test modules used to pin it inside a test function, which worked only
+# because they happened to sort before every other module that renders:
+# `tests/data` runs ahead of `tests/demo` and `tests/tracker`, so those were
+# free-riding on a variable somebody else had set. Adding a rendering test
+# under `tests/control`, which sorts earlier still, moved the first render
+# ahead of the pin and the suite began aborting on CI while passing on a
+# developer machine that resolves a working backend on its own.
+#
+# conftest is imported before any test module, so pinning it here is the one
+# placement collection order cannot defeat.
+os.environ.setdefault("MUJOCO_GL", "osmesa")
 
 ROOT = Path(__file__).resolve().parents[1]
 
