@@ -1,0 +1,409 @@
+"""Trajectories with known duration, so an interception time can be solved for.
+
+Guidance until now stepped a reference toward a goal under a speed and an
+acceleration bound, which is enough to arrive somewhere and not enough to
+pick anything up. Arriving is not the problem: a jaw has to reach an object
+at a known instant, moving with it, having come straight down onto it. That
+needs a trajectory whose duration is a parameter rather than an outcome.
+
+**Quintic Hermite segments, one per axis.** A quintic has six coefficients
+and a segment has six boundary conditions per axis: position, velocity and
+acceleration at each end. So the polynomial is determined exactly by what
+the phase asks for, in closed form, with no fitting and no solver. That is
+also why a quintic and not a B-spline: the requirement is control of
+acceleration at the waypoints, and a Hermite form states the acceleration
+there as a coefficient rather than approaching it through control points.
+
+**The interception time is a fixed point.** Where the arm must be depends on
+how long it takes to get there, because the belt carries the object while
+the arm travels. Written out, the approach point is
+
+    p_approach(T) = p_object(t0) + v_object * (T + dt) + (0, 0, z_offset)
+
+and the segment reaching it has to respect the speed and acceleration
+ceilings over its whole length. Peak speed and peak acceleration both fall
+as `T` grows, so the smallest feasible `T` is found by bisection on a
+monotone predicate rather than by an optimiser. It is suboptimal and it is
+knowably suboptimal: what the pick needs is a duration it can count on, not
+the shortest one that exists.
+
+**The descent duration is not free.** Descending `z_offset` while slowing
+from `V_approach` to nothing takes
+
+    dt = 2 * z_offset / V_approach
+
+which is where a quintic stops dipping below the object it is descending
+onto. Longer overshoots, shorter costs acceleration. Swept on the shipped
+line, `dt` above that value put the flange 0.64 mm under the pick point.
+
+**Both ends move with the belt.** The terminal velocity at the pick is the
+object's own, not zero, and the approach velocity is the object's plus the
+descent. Two things follow and both are large. A jaw arriving at rest has
+the object sliding through it at belt speed, which is the one thing a grasp
+cannot tolerate. And the horizontal catch-up a stationary approach forces
+dominates the descent: matching the object instead dropped peak acceleration
+from 4.58 to 0.94 metres per second squared at the shipped clearance, a
+factor of about five, with the slip at the jaw going from 0.314 m/s to zero.
+"""
+
+from __future__ import annotations
+
+import math
+from dataclasses import dataclass
+
+from clave.control.settings import Point
+
+BISECTION_PASSES = 40
+"""How many halvings the interception search takes.
+
+Forty passes take any bracket to about a picosecond, which is far below the
+two millisecond tick and costs nothing: each pass is a handful of polynomial
+evaluations. A tolerance would be a number to defend; a fixed count that is
+obviously enough is not.
+"""
+
+SAMPLES = 64
+"""How many points a segment is sampled at to bound its speed and acceleration.
+
+The bound is on the Euclidean norm across three axes, and the norm of a
+vector of polynomials is not a polynomial, so its extremum has no closed
+form worth writing. Sampling a quintic at 64 points catches the peak to
+better than a percent, which is far inside the margin any of these bounds
+carry.
+"""
+
+
+@dataclass(frozen=True)
+class State:
+    """Where the flange is, how fast, and how hard it is changing.
+
+    Attributes:
+        position: In belt frame meters.
+        velocity: In meters per second.
+        acceleration: In meters per second squared.
+    """
+
+    position: Point
+    velocity: Point
+    acceleration: Point
+
+    @classmethod
+    def at_rest(cls, position: Point) -> State:
+        """Return a state standing still at a position.
+
+        Args:
+            position: Where it stands.
+
+        Returns:
+            The state, with no velocity and no acceleration.
+        """
+        return cls(
+            position=position, velocity=(0.0, 0.0, 0.0), acceleration=(0.0, 0.0, 0.0)
+        )
+
+
+@dataclass(frozen=True)
+class Segment:
+    """One quintic Hermite arc, with the duration it takes.
+
+    Attributes:
+        start: The boundary condition at the beginning.
+        end: The boundary condition at the end.
+        duration: How long it lasts, in seconds.
+    """
+
+    start: State
+    end: State
+    duration: float
+
+    def at(self, elapsed: float) -> State:
+        """Return the state this many seconds in.
+
+        Args:
+            elapsed: Seconds since the segment began. Clamped to the
+                segment, so asking past the end returns the end rather than
+                extrapolating a quintic, which diverges fast.
+
+        Returns:
+            The state.
+        """
+        span = max(self.duration, 1e-12)
+        s = min(max(elapsed / span, 0.0), 1.0)
+        position, velocity, acceleration = [], [], []
+        for axis in range(3):
+            terms = (
+                self.start.position[axis],
+                self.start.velocity[axis] * span,
+                self.start.acceleration[axis] * span * span,
+                self.end.acceleration[axis] * span * span,
+                self.end.velocity[axis] * span,
+                self.end.position[axis],
+            )
+            position.append(sum(w * h for w, h in zip(terms, _basis(s), strict=True)))
+            velocity.append(
+                sum(w * h for w, h in zip(terms, _first(s), strict=True)) / span
+            )
+            acceleration.append(
+                sum(w * h for w, h in zip(terms, _second(s), strict=True))
+                / (span * span)
+            )
+        return State(
+            position=(position[0], position[1], position[2]),
+            velocity=(velocity[0], velocity[1], velocity[2]),
+            acceleration=(acceleration[0], acceleration[1], acceleration[2]),
+        )
+
+    def peak_speed(self) -> float:
+        """Return the largest speed anywhere on the segment, in meters per second."""
+        return max(
+            _norm(self.at(self.duration * i / SAMPLES).velocity)
+            for i in range(SAMPLES + 1)
+        )
+
+    def peak_acceleration(self) -> float:
+        """Return the largest acceleration anywhere, in meters per second squared."""
+        return max(
+            _norm(self.at(self.duration * i / SAMPLES).acceleration)
+            for i in range(SAMPLES + 1)
+        )
+
+    def fits(self, max_speed: float, max_acceleration: float) -> bool:
+        """Report whether the segment stays inside both ceilings.
+
+        Args:
+            max_speed: Speed ceiling, in meters per second.
+            max_acceleration: Acceleration ceiling, in meters per second
+                squared.
+
+        Returns:
+            Whether both hold everywhere on the segment.
+        """
+        return (
+            self.peak_speed() <= max_speed
+            and self.peak_acceleration() <= max_acceleration
+        )
+
+
+def descent_seconds(z_offset: float, approach_speed: float) -> float:
+    """Return how long the descent onto an object takes.
+
+    Args:
+        z_offset: How far above the object the approach stands, in meters.
+        approach_speed: How fast the flange is coming down when it gets
+            there, in meters per second.
+
+    Returns:
+        The duration. This is `2 * z_offset / approach_speed`, which is where
+        a quintic stops dipping below the object it is descending onto:
+        longer overshoots and shorter costs acceleration.
+
+    Raises:
+        ValueError: If either argument is not positive, because neither a
+            descent of no height nor one at no speed has a duration.
+    """
+    if z_offset <= 0.0 or approach_speed <= 0.0:
+        raise ValueError(
+            f"a descent of {z_offset} m at {approach_speed} m/s has no duration"
+        )
+    return 2.0 * z_offset / approach_speed
+
+
+def approach(
+    flange: State,
+    object_position: Point,
+    object_velocity: Point,
+    z_offset: float,
+    approach_speed: float,
+    max_speed: float,
+    max_acceleration: float,
+    latest: float,
+) -> Segment | None:
+    """Return the soonest feasible arc onto the point above a moving object.
+
+    The arc ends above where the object will be when the descent that
+    follows finishes, moving with the object and already coming down at the
+    approach speed, so the two arcs chain without the flange stopping
+    between them.
+
+    Args:
+        flange: Where the flange is now and how it is moving.
+        object_position: Where the object is now, in belt frame meters.
+        object_velocity: How the belt is carrying it, in meters per second.
+        z_offset: Clearance above the object to approach at, in meters.
+        approach_speed: How fast to be descending on arrival, in meters per
+            second.
+        max_speed: Speed ceiling, in meters per second.
+        max_acceleration: Acceleration ceiling, in meters per second squared.
+        latest: The longest interception worth considering, in seconds,
+            which is normally what the object has left before it leaves the
+            window.
+
+    Returns:
+        The arc, or None when no interception inside `latest` respects both
+        ceilings. None is the honest answer for an object the arm cannot
+        reach in the belt it has left, and the caller drops it rather than
+        chasing it.
+    """
+    dt = descent_seconds(z_offset, approach_speed)
+
+    def arc(seconds: float) -> Segment:
+        return Segment(
+            start=flange,
+            end=State(
+                position=_where(
+                    object_position, object_velocity, seconds + dt, z_offset
+                ),
+                velocity=(
+                    object_velocity[0],
+                    object_velocity[1],
+                    object_velocity[2] - approach_speed,
+                ),
+                acceleration=(0.0, 0.0, 0.0),
+            ),
+            duration=seconds,
+        )
+
+    # Peak speed and peak acceleration both fall as the duration grows, so
+    # the predicate is monotone and the soonest feasible interception is a
+    # bisection rather than a search.
+    if not arc(latest).fits(max_speed, max_acceleration):
+        return None
+    low, high = 0.0, latest
+    for _ in range(BISECTION_PASSES):
+        middle = 0.5 * (low + high)
+        if middle <= 0.0:
+            break
+        if arc(middle).fits(max_speed, max_acceleration):
+            high = middle
+        else:
+            low = middle
+    return arc(high)
+
+
+def descend(
+    approach_arc: Segment,
+    object_position: Point,
+    object_velocity: Point,
+    z_offset: float,
+    approach_speed: float,
+) -> Segment:
+    """Return the arc from the approach point down onto the object.
+
+    Args:
+        approach_arc: The arc that ended above the object, whose end is this
+            one's start, so the flange never stops between them.
+        object_position: Where the object was when the approach was planned.
+        object_velocity: How the belt is carrying it.
+        z_offset: The clearance the approach stood at, in meters.
+        approach_speed: How fast the flange is coming down, in meters per
+            second.
+
+    Returns:
+        The arc. It ends moving with the object rather than at rest, because
+        a jaw arriving stopped has the object sliding through it at belt
+        speed.
+    """
+    dt = descent_seconds(z_offset, approach_speed)
+    arrival = approach_arc.duration + dt
+    return Segment(
+        start=approach_arc.end,
+        end=State(
+            position=_where(object_position, object_velocity, arrival, 0.0),
+            velocity=object_velocity,
+            acceleration=(0.0, 0.0, 0.0),
+        ),
+        duration=dt,
+    )
+
+
+def _where(position: Point, velocity: Point, seconds: float, lift: float) -> Point:
+    """Return where a point carried at a constant velocity will be.
+
+    Args:
+        position: Where it is now.
+        velocity: How it is moving.
+        seconds: How far ahead.
+        lift: How far above the result to sit, in meters.
+
+    Returns:
+        The predicted position.
+    """
+    return (
+        position[0] + velocity[0] * seconds,
+        position[1] + velocity[1] * seconds,
+        position[2] + velocity[2] * seconds + lift,
+    )
+
+
+def _norm(vector: Point) -> float:
+    """Return a vector's length.
+
+    Args:
+        vector: The vector.
+
+    Returns:
+        Its Euclidean norm.
+    """
+    return math.sqrt(vector[0] ** 2 + vector[1] ** 2 + vector[2] ** 2)
+
+
+def _basis(s: float) -> tuple[float, ...]:
+    """Return the quintic Hermite basis at a normalized time.
+
+    Args:
+        s: Normalized time, from zero to one.
+
+    Returns:
+        The six weights, ordered to match the coefficient vector: start
+        position, start velocity, start acceleration, end acceleration, end
+        velocity, end position.
+    """
+    s2, s3, s4, s5 = s * s, s**3, s**4, s**5
+    return (
+        1 - 10 * s3 + 15 * s4 - 6 * s5,
+        s - 6 * s3 + 8 * s4 - 3 * s5,
+        0.5 * s2 - 1.5 * s3 + 1.5 * s4 - 0.5 * s5,
+        0.5 * s3 - s4 + 0.5 * s5,
+        -4 * s3 + 7 * s4 - 3 * s5,
+        10 * s3 - 15 * s4 + 6 * s5,
+    )
+
+
+def _first(s: float) -> tuple[float, ...]:
+    """Return the basis differentiated once with respect to normalized time.
+
+    Args:
+        s: Normalized time.
+
+    Returns:
+        The six weights.
+    """
+    s2, s3, s4 = s * s, s**3, s**4
+    return (
+        -30 * s2 + 60 * s3 - 30 * s4,
+        1 - 18 * s2 + 32 * s3 - 15 * s4,
+        s - 4.5 * s2 + 6 * s3 - 2.5 * s4,
+        1.5 * s2 - 4 * s3 + 2.5 * s4,
+        -12 * s2 + 28 * s3 - 15 * s4,
+        30 * s2 - 60 * s3 + 30 * s4,
+    )
+
+
+def _second(s: float) -> tuple[float, ...]:
+    """Return the basis differentiated twice with respect to normalized time.
+
+    Args:
+        s: Normalized time.
+
+    Returns:
+        The six weights.
+    """
+    s2, s3 = s * s, s**3
+    return (
+        -60 * s + 180 * s2 - 120 * s3,
+        -36 * s + 96 * s2 - 60 * s3,
+        1 - 9 * s + 18 * s2 - 10 * s3,
+        3 * s - 12 * s2 + 10 * s3,
+        -24 * s + 84 * s2 - 60 * s3,
+        60 * s - 180 * s2 + 120 * s3,
+    )
