@@ -64,6 +64,15 @@ band is wrong by that offset.
 TOOL_SITE = "arm_attachment_site"
 """The flange an end effector bolts to, which every target is expressed for."""
 
+REACH_MARGIN_METERS = 0.001
+"""How far past the inner radius a projected point is placed, in meters.
+
+Projecting exactly onto the boundary produces a point `reaches` then rejects,
+because `math.hypot` of the result lands a few parts in a quadrillion under
+the radius it was built from. A millimetre is far below anything the arm
+resolves and far above that error.
+"""
+
 REACH_MIN_METERS = 0.25
 """Inner radius of the usable annulus, measured about the base column.
 
@@ -478,6 +487,64 @@ def _descend(
             scratch.qpos[model.jnt_qposadr[joint]] = stepped[slot]
 
     return np.array([float(scratch.qpos[model.jnt_qposadr[j]]) for j in arm.joint_ids])
+
+
+def project_into_reach(
+    base_xy: tuple[float, float], x: float, y: float
+) -> tuple[float, float]:
+    """Push a point out of the hole at the centre of the annulus.
+
+    The region the arm is trusted over is an annulus, so it is not convex: a
+    straight line between two points inside it can pass through the hole
+    around the base. Measured on the shipped line, a traverse from the park
+    pose to the far side of the belt passes within 0.10 m of the base, where
+    the arm is not trusted and the pose is refused. Neither endpoint is at
+    fault and no choice of park pose removes the case, because the base sits
+    between the arm's resting place and part of the belt.
+
+    So a point inside the hole is pushed radially out to the inner radius.
+    The path that results runs straight until it meets the hole, slides
+    around it, and runs straight again, which is what a linear move under a
+    workspace constraint does. This is a constraint projection and not
+    obstacle avoidance: nothing here knows about anything in the scene.
+
+    Args:
+        base_xy: Where the arm stands, in the horizontal plane.
+        x: The point's first coordinate.
+        y: The point's second coordinate.
+
+    Returns:
+        The point, unchanged when it was already outside the hole.
+    """
+    offset_x, offset_y = x - base_xy[0], y - base_xy[1]
+    radius = math.hypot(offset_x, offset_y)
+    wanted = REACH_MIN_METERS + REACH_MARGIN_METERS
+    if radius >= wanted:
+        return x, y
+    if radius == 0.0:
+        # Dead centre has no direction to leave by, so any one will do and
+        # the choice is recorded rather than left to floating-point noise.
+        return base_xy[0] + wanted, base_xy[1]
+    scale = wanted / radius
+    return base_xy[0] + offset_x * scale, base_xy[1] + offset_y * scale
+
+
+def tool_yaw(data: Any, arm: ArmIndices) -> float:
+    """Return the tool's current rotation about the belt normal, in radians.
+
+    Read from the tool frame rather than from the joints, because the frame is
+    what a commanded yaw is compared against and the two agree only while the
+    tool is vertical.
+
+    Args:
+        data: Its state, with forward kinematics already current.
+        arm: The arm indices.
+
+    Returns:
+        The rotation, in radians.
+    """
+    frame = data.site_xmat[arm.tool_site].reshape(3, 3)
+    return float(math.atan2(frame[1, 0], frame[0, 0]))
 
 
 def reachable(arm: ArmIndices, target: NDArray[np.float64]) -> bool:

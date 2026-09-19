@@ -23,6 +23,36 @@ Point = tuple[float, float, float]
 """A position in belt frame meters, which is MuJoCo world."""
 
 
+class Phase(enum.Enum):
+    """Where the arm is in one visit.
+
+    The names and the shape of the transition are FRET's `PickPlaceState`
+    with the grasp, placement and release states removed, so adding them
+    later is filling in gaps rather than rewriting.
+    """
+
+    STANDBY = "standby"
+    """Nothing to serve, and the arm is already at park."""
+
+    TRACK = "track"
+    """Following a marker at approach height."""
+
+    DESCEND = "descend"
+    """Dropping to the grasp plane. Full visit only."""
+
+    HOLD = "hold"
+    """Holding station at the grasp plane. Full visit only."""
+
+    RETREAT = "retreat"
+    """Lifting clear of the object. Full visit only."""
+
+    PARK = "park"
+    """On the way back to rest."""
+
+    FAULT = "fault"
+    """The solver or the envelope refused the pose a phase asked for."""
+
+
 class Profile(enum.Enum):
     """Which phases of a visit a run puts the arm through.
 
@@ -64,6 +94,8 @@ class TaskSettings:
         profile: Which phases run.
         approach_height: Where the flange rides while following an object,
             above the belt surface, in meters.
+        arrival_tolerance: How close the flange has to be to a pose before it
+            counts as arrived, in meters.
         dwell_seconds: How long the flange holds station before a visit counts
             as served.
         park_position: Where the arm rests with nothing to serve.
@@ -73,6 +105,7 @@ class TaskSettings:
 
     profile: Profile
     approach_height: float
+    arrival_tolerance: float
     dwell_seconds: float
     park_position: Point
     park_marker_color: Point
@@ -164,6 +197,7 @@ class ControlSettings:
             task=TaskSettings(
                 profile=_profile(task),
                 approach_height=_positive(task, "approach_height_meters", "task"),
+                arrival_tolerance=_positive(task, "arrival_tolerance_meters", "task"),
                 dwell_seconds=float(require(task, "dwell_seconds", "task")),
                 park_position=_point(task, "park_position_meters", "task"),
                 park_marker_color=_point(task, "park_marker_color", "task"),
