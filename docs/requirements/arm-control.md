@@ -326,6 +326,127 @@ candidate, and shall command the arm to the live one, because an arm sent to
 a quantised pose jumps by the anchor radius every time the anchor catches
 up.
 
+`AC-MOVE-29`: The system shall plan a pick as trajectory segments whose
+duration is known before the motion starts, so the instant the flange meets
+an object can be computed rather than observed.
+
+`AC-MOVE-30`: The system shall meet position, velocity and acceleration
+exactly at both ends of every segment, so two segments chain without a step
+in acceleration.
+
+`AC-MOVE-31`: The system shall solve the interception time as the soonest
+duration whose segment respects the speed and acceleration ceilings over its
+whole length, and shall refuse an object for which no such duration exists
+before the object leaves the window.
+
+`AC-MOVE-32`: The system shall approach an object from directly above it, at
+a configured clearance, and shall descend vertically onto it.
+
+`AC-MOVE-33`: The system shall arrive at the clearance already descending
+and already moving with the belt, so the approach and the descent chain
+without the flange stopping between them.
+
+`AC-MOVE-34`: The system shall reach the object moving at the object's own
+velocity, so the jaw closes with no relative slip.
+
+`AC-MOVE-35`: The system shall derive the descent duration from the
+clearance and the approach speed rather than configuring it separately,
+because the three are one relation and a configured third would contradict
+the other two.
+
+## The guidance formulation
+
+Stage F found that driving the arm at a grasp pose sweeps the object off the
+belt. The repair is not a tweak to the limiter: it is that a pick needs a
+trajectory whose **duration is a parameter rather than an outcome**, because
+where the arm must go depends on how long it takes to get there.
+
+### The curve
+
+**Quintic Hermite segments, one per axis.** A segment carries six boundary
+conditions per axis, position, velocity and acceleration at each end, and a
+quintic has six coefficients, so the polynomial is determined exactly rather
+than fitted. Closed form, no solver, and the acceleration at a waypoint is a
+coefficient rather than something approached.
+
+That is why a quintic and not a B-spline. The requirement is control of
+acceleration at the waypoints so two arcs can be chained without a jerk, and
+a Hermite form states it where a B-spline approaches it through control
+points.
+
+### The sequence
+
+| Segment | From | To | Duration |
+| --- | --- | --- | --- |
+| Approach | last drop point, at rest | above the object, descending and moving with the belt | `T`, solved |
+| Descent | where the approach ended | on the object, moving with it | `dt`, derived |
+| Grasp | held | held | the dwell |
+| Retreat | on the object | back at clearance, rising | `dt` |
+| Deliver | at clearance | the chute for the object's class | unconstrained |
+
+### The interception time
+
+The approach point depends on the duration of the approach:
+
+```
+p_approach(T) = p_object(t0) + v_object * (T + dt) + (0, 0, z_offset)
+```
+
+so `T` is a fixed point rather than a quantity to compute forward. Peak
+speed and peak acceleration both fall as `T` grows, so the soonest feasible
+`T` is a bisection on a monotone predicate and not an optimisation. It is
+suboptimal, knowably: a pick needs a duration it can count on, not the
+shortest one that exists.
+
+### The descent duration
+
+Not free. Descending `z_offset` while slowing from `V_approach` to the
+object's own speed takes
+
+```
+dt = 2 * z_offset / V_approach
+```
+
+which is exactly where the quintic stops dipping below the object. Swept on
+the shipped line, a longer descent put the flange 0.64 mm under the pick
+point, and a shorter one costs acceleration. Small clearance gives small
+`dt`, which is what keeps the prediction short enough to trust.
+
+### Two corrections to the obvious formulation
+
+**The pick does not end at rest.** A jaw arriving stopped has the object
+sliding through it at belt speed, which is the one thing a grasp cannot
+tolerate. The terminal velocity is the object's own.
+
+**Nor does the approach.** Arriving with no horizontal velocity forces the
+descent to cover the belt travel horizontally, and that catch-up, not the
+vertical braking, dominates the acceleration. Matching the object dropped
+peak acceleration from 4.58 to 0.94 metres per second squared at the
+shipped clearance, a factor of about five, and took the slip at the jaw from
+0.314 m/s to zero.
+
+### What the shipped line produces
+
+Measured from the park pose, over objects across the reachable window:
+
+| Object at x | `T` | `T + dt` | peak speed | peak acceleration |
+| --- | --- | --- | --- | --- |
+| -1.00 m | 2.479 s | 2.879 s | 1.000 m/s | 1.457 m/s2 |
+| -0.20 m | 2.068 s | 2.468 s | 1.000 m/s | 1.556 m/s2 |
+| +0.60 m | 2.708 s | 3.108 s | 1.000 m/s | 1.095 m/s2 |
+
+**Speed is the binding constraint and acceleration is not**, at every point
+tried. Raising the acceleration ceiling would buy nothing; only a faster
+flange or a closer start would.
+
+### A feasibility condition worth stating
+
+A quintic from rest peaks at about 1.875 times its average speed, so an
+interception exists only where the speed ceiling clears that multiple of the
+belt speed rather than merely the belt speed itself. Here that is 0.589 m/s
+against a ceiling of 1.00. A line run faster, or an arm specified slower,
+crosses it long before the two speeds meet.
+
 ## Design notes
 
 **Why the queue is damped at its inputs rather than frozen at its output.**
