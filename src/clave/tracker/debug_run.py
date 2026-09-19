@@ -12,8 +12,10 @@ after the renderer is finished with it.
 
 Two cameras run and they never mix. The tracker segments the nadir gate,
 because that is the sensor the line actually carries. The human watches an
-oblique view configured in `configs/debug/tracker.yml`, because a grasp
-pose seen from straight above has no approach to read.
+view named in `configs/debug/tracker.yml`, because a grasp pose seen from
+straight above has no approach to read. That file carries two views and the
+run takes one by name: one camera cannot both read a 60 mm jaw and hold the
+park pose in frame.
 
 A window opens when a display is available and the run writes its artifacts
 either way, because a machine with no display is the ordinary case for this
@@ -28,6 +30,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from clave.control.settings import ControlSettings
 from clave.errors import ClaveError
 from clave.tracker.adapters.detection import detections_from_masks
 from clave.tracker.adapters.render import segment_masks
@@ -37,7 +40,7 @@ from clave.tracker.evidence import Evidence, GroundTruth, Role
 from clave.tracker.fusion import FusionSettings
 from clave.tracker.intake import Deployment, Intake
 from clave.tracker.listing import described_fields
-from clave.tracker.markers import draw, markers_for
+from clave.tracker.markers import draw, draw_park, markers_for
 from clave.tracker.sensors import load_sensors, require_role
 from clave.tracker.track import Tracker
 from clave.world import belt, config, scene
@@ -60,7 +63,8 @@ class DebugRunReport:
         tracks: Tracks open when it finished.
         drawn: Markers standing in the world on the final frame.
         geoms: Marker geoms the final frame carried, which is more than
-            `drawn` because a jaw is a shaft and two pads.
+            `drawn` because a jaw is a shaft and two pads, and the park pose
+            adds two of its own.
         frames_written: Frames written.
         output: Where they went.
         video_path: The playable file, or None when none was asked for or no
@@ -90,6 +94,7 @@ def run(
     window: bool = True,
     video: bool = False,
     fps: int = 4,
+    view_name: str | None = None,
 ) -> DebugRunReport:
     """Drive the tracker over one rollout, annotating every capture.
 
@@ -105,6 +110,8 @@ def run(
         video: Encode the rendered frames into a playable file beside them.
             A machine with no `ffmpeg` runs anyway and says none was written.
         fps: Playback rate of that file.
+        view_name: Which view in the debug configuration to film from, or
+            None for the one that file names as its default.
 
     Returns:
         The report.
@@ -133,9 +140,10 @@ def run(
         config.require(config.require(raw, "arm"), "max_grasp_width_meters", "arm")
     )
     effector = Effector.load(raw)
-    view = config.require(
-        config.load(root / "configs" / "debug" / "tracker.yml"), "view"
+    control = ControlSettings.load(
+        config.load(root / "configs" / "runtime" / "control.yml")
     )
+    view = _view(config.load(root / "configs" / "debug" / "tracker.yml"), view_name)
 
     model, data, plan = scene.build(raw, np.random.default_rng(seed), root)
     spawn = config.require(raw, "spawn")
@@ -237,6 +245,12 @@ def run(
             # tracker reads was rendered above and carries none of them.
             watching.update_scene(data, camera=eye)
             geoms = draw(watching.scene, standing)
+            geoms += draw_park(
+                watching.scene,
+                control.task.park_position,
+                control.task.park_marker_color,
+                belt_surface=surface,
+            )
             drawn = len(standing)
             canvas = watching.render()
 
@@ -322,6 +336,29 @@ def _recorder(view: dict[str, Any], out: Path, fps: int, interval: float) -> Any
             lookat=_lookat(view),
         )
     )
+
+
+def _view(raw: dict[str, Any], wanted: str | None) -> dict[str, Any]:
+    """Return the view to film from, naming the alternatives when it is wrong.
+
+    Args:
+        raw: The parsed debug configuration.
+        wanted: The view asked for, or None for the configured default.
+
+    Returns:
+        The view block.
+
+    Raises:
+        DebugRunError: If the view does not exist. A typo here is a run filmed
+            from somewhere nobody chose, so the message lists what it could
+            have been.
+    """
+    views = config.require(raw, "views")
+    name = wanted if wanted is not None else str(config.require(raw, "default_view"))
+    if name not in views:
+        known = ", ".join(sorted(views))
+        raise DebugRunError(f"no view named {name!r}. Known: {known}")
+    return dict(views[name])
 
 
 def _lookat(view: dict[str, Any]) -> tuple[float, float, float]:

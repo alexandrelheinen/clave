@@ -1,0 +1,92 @@
+# Arm control: which object, which phase, how fast, and where it rests.
+#
+# The workspace the arm is trusted over is not here. It comes from
+# configs/world/sorting_line.yml, so the region the controller aims inside
+# cannot drift from the region the safety layer enforces.
+#
+# READ THE PROVENANCE BESIDE EACH NUMBER. Some are measured, some are taken
+# from what an arm of this class is built to do, and some are assumptions
+# chosen so the loop can run at all. They are not interchangeable and the
+# comments say which is which.
+
+selection:
+  # Weights urgency against travel in
+  #   cost = distance_to_flange + exit_weight * distance_before_leaving
+  # Both terms are meters, so this is dimensionless. At 1.0 an object half a
+  # metre from leaving ranks with one half a metre further away, which is a
+  # starting point and not a tuned value.
+  exit_weight: 1.0
+
+  # How far the tracker's estimate has to move before the anchor the ordering
+  # scores follows it.
+  #
+  # An assumption, bounded from both sides rather than measured. The detection
+  # camera resolves 0.449 mm per pixel, so a few pixels of segmentation jitter
+  # is single-digit millimetres, and the smallest object in the set is about
+  # 60 mm across. Twenty millimetres sits clear above the noise and well below
+  # the point where a displacement should reorder anything.
+  anchor_radius_meters: 0.020
+
+task:
+  # motion_only runs standby, tracking, parking and fault, which is what
+  # tuning arm speed against belt speed needs. full_visit adds descent, dwell
+  # and retreat. Neither grasps, because no gripper exists.
+  profile: motion_only
+
+  # Where the flange rides while following an object, above the belt surface.
+  # Clear of the tallest package in the set, which stands 140.8 mm.
+  approach_height_meters: 0.220
+
+  # How long the flange holds station before the visit counts as served.
+  dwell_seconds: 0.30
+
+  # Where the arm rests when it has nothing to serve.
+  #
+  # Chosen against three constraints and then checked by solving for it. It
+  # sits 0.541 m from the arm base, inside the 0.25 m to 1.25 m trusted
+  # annulus. At z = 1.20 m it is inside the trusted vertical band, which runs
+  # 0.85 m to 1.35 m. And it is clear of the sensing gate: the cameras stand
+  # at x = -1.00 m and image about 0.92 m along travel, so an arm parked at
+  # x = +0.45 m and y = -1.00 m is downstream of the gate and off the belt,
+  # which spans y = -0.50 m to +0.50 m.
+  park_position_meters: [0.45, -1.00, 1.20]
+
+  # The park pose is drawn in the debug view so it can be seen rather than
+  # trusted. Red, because nothing else in the scene is.
+  park_marker_color: [0.85, 0.10, 0.10]
+
+guidance:
+  # Flange speed and acceleration bounds in task space.
+  #
+  # One metre per second is what a collaborative arm of this class sustains at
+  # the tool, and it is a ceiling the controller respects rather than a figure
+  # measured here. If the arm cannot keep up with the line, the belt slows
+  # down: belt.speed_meters_per_second in configs/world/sorting_line.yml is
+  # the knob for that, and slowing the line is honest where raising this
+  # ceiling past what the machine does would not be.
+  max_speed_meters_per_second: 1.00
+  max_acceleration_meters_per_second_squared: 2.50
+
+servo:
+  # Fraction of each solved step commanded. One, meaning the solved angles go
+  # out as they are: the arm's position actuators already run a
+  # proportional-derivative loop, so interpolating ahead of them fights it.
+  gain: 1.00
+
+  # The bound a wrist singularity is judged against. Near a rank-deficient
+  # Jacobian an undamped solver asks for enormous joint velocity for a small
+  # Cartesian motion, and the requirement is that the command stays under this
+  # rather than that the pose is met.
+  #
+  # An assumption at the conservative end of what an arm of this class turns
+  # its major axes at. No datasheet was read for it.
+  max_joint_speed_radians_per_second: 2.09
+
+calibration:
+  # Where the flange has to sit relative to the pose the marker stands at, to
+  # account for how the effector is mounted.
+  #
+  # Zero, and it stays zero until something measures it. There is no effector
+  # on this arm, in the model or on a bench, so any non-zero value here would
+  # be a correction for a mounting that does not exist.
+  flange_offset_meters: [0.0, 0.0, 0.0]

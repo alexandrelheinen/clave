@@ -286,6 +286,19 @@ belt speed without a descent in the way.
 figure that run produced, because a distance to a tracked pose and a distance
 to a descended pose are not the same measurement.
 
+`AC-MOVE-20`: The system shall place the park pose inside the region the arm
+is trusted over, off the belt, and outside the span the detection camera
+images, so the arm at rest is neither unreachable nor in the frames the
+tracker reads.
+
+`AC-MOVE-21`: The system shall draw the park pose in the debug view, in a
+colour no track is ever given, so the configured pose can be checked by
+looking rather than by reading the file.
+
+`AC-MOVE-22`: The system shall film the debug view from a named viewpoint in
+configuration, and shall name the viewpoints that exist when asked for one
+that does not.
+
 ## Design notes
 
 **Why the queue is damped at its inputs rather than frozen at its output.**
@@ -320,6 +333,22 @@ footprint whose vertical placement is a configured standoff rather than a
 measurement, so judging the arm against the object would measure the tracker
 and the effector assumption together with the controller. Separating them is
 what lets one of the three be wrong without hiding the other two.
+
+**Why red is reserved rather than merely chosen.** The park pose is the one
+marker in the scene that is not a track, so a reader has to tell it apart at a
+glance. Picking red for it was not enough: the track palette walks the hue
+circle by the golden ratio and track 0 landed on pure red, and because the
+sequence is dense, some identity eventually lands arbitrarily close to any
+hue. `clave.tracker.markers` therefore squeezes the track hues off both ends
+of the circle and leaves the wedge around red to the park pose, which makes
+the guarantee hold for every identity rather than for the first few.
+
+**Why the debug view carries two viewpoints.** One camera cannot do both
+jobs. Framing tight enough to read a 60 mm jaw puts the park pose outside the
+frame, because the park pose is off the belt and downstream, which is where
+that framing is not looking. Framing wide enough to hold the park pose renders
+a jaw a few pixels across. Splitting the difference does neither well, so the
+views are named and the run takes one.
 
 **What stays unmeasurable.** Pick success rate and cycle time to placement,
 because nothing grasps and there is nowhere to place. Both are reported as
@@ -437,6 +466,7 @@ task:
   approach_height_meters: ...
   dwell_seconds: ...
   park_position_meters: [...]
+  park_marker_color: [...]     # AC-MOVE-21
 guidance:
   max_speed_meters_per_second: ...
   max_acceleration_meters_per_second_squared: ...
