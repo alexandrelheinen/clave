@@ -103,6 +103,23 @@ servo:
   # its major axes at. No datasheet was read for it.
   max_joint_speed_radians_per_second: 2.09
 
+  # How far ahead of the commanded pose the servo aims, to cancel the lag a
+  # position loop has against a moving command.
+  #
+  # MEASURED. Sweeping a target across the workspace from 0.15 to 1.00 m/s,
+  # the steady-state lag divided by the speed is 38.6, 34.6, 34.0, 33.2,
+  # 32.8 and 32.8 milliseconds. Flat, which is what makes it a time constant
+  # rather than a distance, and 33 ms is where it settles at the speeds a
+  # pick actually runs at.
+  #
+  # This is not cosmetic. The jaw's clear opening is 85.2 mm and the widest
+  # object left in the set leaves 8.7 mm of side clearance, so a flange
+  # trailing by more than that closes the jaw onto the object rather than
+  # around it. At the belt speed the uncorrected lag is 10.7 mm and twelve
+  # of seventeen objects have less clearance than the arrival error it
+  # contributes to.
+  lead_seconds: 0.033
+
 calibration:
   # Where the flange has to sit relative to the pose the marker stands at, to
   # account for how the effector is mounted.

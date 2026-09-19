@@ -377,7 +377,7 @@ def solve(
     )
 
 
-_TRACKING: dict[int, NDArray[np.float64]] = {}
+_TRACKING: dict[tuple[int, int], NDArray[np.float64]] = {}
 """The joint angles each model's arm was last commanded toward.
 
 A controller follows a target that moves with the belt, roughly 0.6 mm per
@@ -387,9 +387,25 @@ target is different every step. What does help is that the previous answer is
 almost the next one, so the descent warm starts from it and converges in a few
 iterations.
 
-Keyed on the model's id, so two worlds in one process do not share a warm start.
-A wrong entry costs iterations and not correctness: the descent still runs
-against the target it was given.
+Keyed on the model **and the data**, because those together are one
+simulation. The model alone is not enough: two `MjData` over one compiled
+model are two simulations, which is the ordinary case in a test file, a
+batch of rollouts or a benchmark sweep, and a seed from somebody else's
+simulation is not a warm start. Measured when it happened, eight descent
+iterations from another run's seed never caught up and the flange trailed a
+moving command by 584 mm where it should have trailed 10.7 mm.
+
+Validating the seed against the measured joints was tried instead and is
+wrong: during a large move the command legitimately leads the joints by
+more than any sane tolerance, so the seed is thrown away every tick, every
+step solves afresh, and the restarts land on different inverse-kinematics
+branches. The arm then chatters between them.
+
+What remains is that an id can be reused once an `MjData` is collected, so
+a new simulation could inherit a dead one's seed. That is the same fault,
+much rarer, and it is recorded rather than solved: solving it properly
+means the warm start stops being a module global and becomes something the
+caller threads through, which is a wider change than this.
 """
 
 _TRACKING_ITERATIONS = 8
@@ -457,7 +473,7 @@ def step_toward(
     if not reachable(arm, target):
         return current
 
-    warm = _TRACKING.get(id(model))
+    warm = _TRACKING.get((id(model), id(data)))
     if warm is None:
         try:
             wanted = solve(model, data, arm, target, yaw=yaw)
@@ -465,7 +481,7 @@ def step_toward(
             return current
     else:
         wanted = _descend(model, arm, warm, target, yaw, _TRACKING_ITERATIONS)
-    _TRACKING[id(model)] = wanted
+    _TRACKING[(id(model), id(data))] = wanted
 
     commanded = current + gain * (wanted - current)
     if max_joint_step is not None:

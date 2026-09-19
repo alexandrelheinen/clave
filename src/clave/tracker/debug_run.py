@@ -322,6 +322,8 @@ def run(
                     command,
                     control.servo.gain,
                     max_joint_step=joint_step,
+                    lead_seconds=control.servo.lead_seconds,
+                    keep_inside=keep_inside,
                 )
                 if stepped.refusal is not None:
                     refusal = stepped.refusal

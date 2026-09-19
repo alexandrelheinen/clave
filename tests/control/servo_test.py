@@ -371,3 +371,127 @@ def test_the_cap_is_measured_against_the_previous_command(world: Any) -> None:
     moved = [float(data.ctrl[actuator]) for actuator in arm.actuator_ids]
     del armmod
     assert max(abs(a - b) for a, b in zip(walked, moved, strict=True)) > cap
+
+
+def track(world: Any, speed: float, lead: float) -> float:
+    """Follow a target crossing the workspace and return the settled lag.
+
+    On its own state rather than the module's. These runs care about the
+    arm starting from rest at a known pose, and every test before them
+    leaves it somewhere else, so sharing the fixture's `MjData` makes the
+    result depend on collection order.
+    """
+    import statistics
+
+    mujoco = pytest.importorskip("mujoco")
+    numpy = pytest.importorskip("numpy")
+    from clave.world import arm as armmod
+
+    model, _, arm = world
+    data = mujoco.MjData(model)
+    start = numpy.array([-0.90, -0.20, 1.12])
+    angles = armmod.solve(model, data, arm, start)
+    for slot, joint in enumerate(arm.joint_ids):
+        data.qpos[model.jnt_qposadr[joint]] = angles[slot]
+    for slot, actuator in enumerate(arm.actuator_ids):
+        data.ctrl[actuator] = angles[slot]
+    data.qvel[:] = 0.0
+    mujoco.mj_forward(model, data)
+
+    span, errors = 1.50 / speed, []
+    for tick in range(int(span / 0.002)):
+        at_seconds = tick * 0.002
+        target = start + numpy.array([speed * at_seconds, 0.0, 0.0])
+        if not armmod.reachable(arm, target):
+            break
+        follow(
+            model,
+            data,
+            arm,
+            Command(
+                position=(target[0], target[1], target[2]),
+                yaw=0.0,
+                velocity=(speed, 0.0, 0.0),
+            ),
+            1.0,
+            lead_seconds=lead,
+        )
+        mujoco.mj_step(model, data)
+        if at_seconds > 0.6 * span:
+            here = armmod.end_effector_position(data, arm)
+            errors.append(math.dist(here, target))
+    return statistics.median(errors)
+
+
+def test_the_lag_against_a_moving_command_is_proportional_to_its_speed(
+    world: Any,
+) -> None:
+    """The lag against a moving command is proportional to its speed.
+
+    Which is what makes it a time constant rather than a distance, and
+    therefore what makes a single lead cancel it at every speed. If this
+    ever stops holding, one configured lead is the wrong shape of fix.
+    """
+    constants = [track(world, speed, 0.0) / speed for speed in (0.31, 0.50, 1.00)]
+    assert max(constants) / min(constants) < 1.3, constants
+    for constant in constants:
+        assert 0.025 < constant < 0.045
+
+
+def test_leading_the_plant_cancels_most_of_that_lag(world: Any) -> None:
+    """AC-MOVE-36: leading the plant cancels most of that lag."""
+    from clave.control.settings import ControlSettings
+
+    settings = ControlSettings.load(load(ROOT / "configs" / "runtime" / "control.yml"))
+    for speed in (0.31, 1.00):
+        plain = track(world, speed, 0.0)
+        led = track(world, speed, settings.servo.lead_seconds)
+        assert led < 0.2 * plain, f"{speed} m/s: {plain * 1000:.1f} -> {led * 1000:.1f}"
+
+
+def test_what_is_left_fits_inside_the_jaw_clearance(world: Any) -> None:
+    """AC-MOVE-36: what is left fits inside the jaw clearance.
+
+    The number the lead exists for. The jaw's clear opening is 85.2 mm and
+    the widest object left in the set is 67.8 mm, so the tightest side
+    clearance is 8.7 mm. A flange trailing by more than that closes the jaw
+    onto an object rather than around it.
+    """
+    from clave.control.settings import ControlSettings
+
+    settings = ControlSettings.load(load(ROOT / "configs" / "runtime" / "control.yml"))
+    tightest = (0.0852 - 0.0678) / 2.0
+    for speed in (0.31, 0.50, 1.00):
+        assert track(world, speed, settings.servo.lead_seconds) < tightest
+
+
+def test_a_lead_at_the_edge_of_reach_is_projected_rather_than_refused(
+    world: Any,
+) -> None:
+    """AC-MOVE-36: a lead at the edge of reach is projected, not refused.
+
+    Leading a pose that sits just inside the annulus can push it just
+    outside. Faulting the track for that would blame the object for the
+    correction, so the led pose is projected back and the pose the phase
+    asked for still decides whether it is reachable.
+    """
+    from clave.world import arm as armmod
+
+    model, data, arm = world
+    base = (float(arm.base_position[0]), float(arm.base_position[1]))
+
+    def keep_inside(pose: tuple[float, float, float]) -> tuple[float, float, float]:
+        x, y = armmod.project_into_reach(base, pose[0], pose[1])
+        return x, y, pose[2]
+
+    edge = (base[0] + armmod.REACH_MAX_METERS - 0.005, base[1], 1.15)
+    step = follow(
+        model,
+        data,
+        arm,
+        Command(position=edge, yaw=0.0, velocity=(2.0, 0.0, 0.0)),
+        1.0,
+        lead_seconds=0.033,
+        keep_inside=keep_inside,
+    )
+    assert step.refusal is None

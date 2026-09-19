@@ -86,6 +86,9 @@ class Command:
         position: Where the flange should be by the end of the tick.
         speed: How fast the reference is now moving, to be fed back next
             tick.
+        velocity: Which way it is moving and how fast, as a vector. The
+            servo needs the direction as well as the magnitude, because it
+            leads the plant by a time rather than by a distance.
         yaw: What the tool should be turned to about the belt normal, or None
             to hold the rotation the arm already has.
         aim: The pose the step was aimed at, which is the goal itself unless
@@ -98,6 +101,7 @@ class Command:
     position: Point
     yaw: float | None
     speed: float = 0.0
+    velocity: Point = (0.0, 0.0, 0.0)
     aim: Point | None = None
 
 
@@ -153,9 +157,14 @@ def toward(
         place + (wanted - place) * fraction
         for place, wanted in zip(motion.position, aim, strict=True)
     )
+    heading = tuple(
+        (wanted - place) / remaining
+        for place, wanted in zip(motion.position, aim, strict=True)
+    )
     return Command(
         position=inside((stepped[0], stepped[1], stepped[2])),
         speed=speed,
+        velocity=(heading[0] * speed, heading[1] * speed, heading[2] * speed),
         yaw=goal.yaw,
         aim=aim,
     )

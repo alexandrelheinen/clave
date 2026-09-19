@@ -5,6 +5,20 @@ with no decisions in it. It takes the pose guidance produced, asks
 `clave.world.arm` for joint angles that put the flange there with the tool
 vertical, and writes them.
 
+**It leads the plant rather than following it.** These are position
+actuators running a proportional-derivative loop, so the measured flange
+trails a moving command by a lag proportional to the commanded speed.
+Measured on the shipped arm by sweeping a target from 0.15 to 1.00 metres
+per second, that lag divided by the speed is 32.8 to 38.6 milliseconds and
+is otherwise flat, which is what makes it a time constant rather than a
+distance. Commanding the pose the reference will hold one such constant
+from now cancels most of it.
+
+That is not cosmetic. With the jaw's clear opening at 85.2 mm, the widest
+object left in the set leaves 8.7 mm of side clearance, and a flange
+trailing by more than that closes the jaw onto the object rather than
+around it.
+
 It reports a refusal rather than swallowing one. `arm.step_toward` leaves the
 command untouched for a target outside the trusted region, which is correct
 for a controller and useless for a report: an arm that quietly stops moving
@@ -15,6 +29,7 @@ the run count it.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -22,6 +37,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from clave.control.guidance import Command
+from clave.control.settings import Point
 from clave.world import arm as armmod
 
 
@@ -45,6 +61,8 @@ def follow(
     command: Command,
     gain: float,
     max_joint_step: float | None = None,
+    lead_seconds: float = 0.0,
+    keep_inside: Callable[[Point], Point] | None = None,
 ) -> Step:
     """Command one pose and report whether the arm could take it.
 
@@ -58,12 +76,26 @@ def follow(
             in radians, or None for no cap. This is what holds near a wrist
             singularity, where the damped solve still asks for a large joint
             motion to buy a small Cartesian one.
+        lead_seconds: How far ahead of the commanded pose to aim, in
+            seconds, to cancel the lag a position loop has against a moving
+            command. Zero commands the pose as given.
+        keep_inside: Pushes the led pose back into the region the arm is
+            trusted over. Without it a lead near the edge of the annulus
+            would be refused for the lead rather than for the pose, which
+            would fault a target the arm can perfectly well serve.
 
     Returns:
         The step. A refused pose writes no actuator command, so the arm holds
         whatever it was last told.
     """
-    target = np.array(command.position, dtype=np.float64)
+    led: Point = (
+        command.position[0] + command.velocity[0] * lead_seconds,
+        command.position[1] + command.velocity[1] * lead_seconds,
+        command.position[2] + command.velocity[2] * lead_seconds,
+    )
+    if keep_inside is not None:
+        led = keep_inside(led)
+    target = np.array(led, dtype=np.float64)
     if not armmod.reachable(arm, target):
         # Hold, rather than write nothing. An uncommanded arm sags under
         # gravity, the sag puts the flange outside the trusted band, and from
