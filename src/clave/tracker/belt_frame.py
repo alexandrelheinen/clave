@@ -95,6 +95,41 @@ def elapsed_seconds(earlier_nanos: int, later_nanos: int) -> float:
     return (later_nanos - earlier_nanos) / NANOS_PER_SECOND
 
 
+def carry(
+    point: tuple[float, float, float],
+    belt_speed: float,
+    observed_at_nanos: int,
+    to_nanos: int,
+) -> tuple[float, float, float]:
+    """Carry one point along the belt to a later instant.
+
+    The belt drives `x` and leaves everything else to physics, and this is
+    the one place that says so. [propagate] carries a whole footprint and
+    reads its travel from here, so a consumer that only has a position does
+    not grow a second definition of which way the belt runs.
+
+    Args:
+        point: Where it was, in belt frame meters.
+        belt_speed: Belt speed in meters per second.
+        observed_at_nanos: When it was there.
+        to_nanos: The instant to carry it to. May precede the observation, in
+            which case the point is carried upstream.
+
+    Returns:
+        Where it is at `to_nanos`.
+
+    Raises:
+        FrameError: If the belt speed is negative or not finite.
+    """
+    if not math.isfinite(belt_speed) or belt_speed < 0.0:
+        raise FrameError(
+            f"belt speed is {belt_speed!r}; a belt that runs backwards or "
+            f"nowhere describes no line this can propagate along"
+        )
+    travel = belt_speed * elapsed_seconds(observed_at_nanos, to_nanos)
+    return point[0] + travel, point[1], point[2]
+
+
 def propagate(
     footprint: Footprint,
     belt_speed: float,
@@ -121,15 +156,8 @@ def propagate(
     Raises:
         FrameError: If the belt speed is negative or not finite.
     """
-    if not math.isfinite(belt_speed) or belt_speed < 0.0:
-        raise FrameError(
-            f"belt speed is {belt_speed!r}; a belt that runs backwards or "
-            f"nowhere describes no line this can propagate along"
-        )
-    travel = belt_speed * elapsed_seconds(observed_at_nanos, to_nanos)
-    x, y, z = footprint.center
     return Footprint(
-        center=(x + travel, y, z),
+        center=carry(footprint.center, belt_speed, observed_at_nanos, to_nanos),
         major_extent=footprint.major_extent,
         minor_extent=footprint.minor_extent,
         yaw=footprint.yaw,

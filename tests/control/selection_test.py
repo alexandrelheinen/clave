@@ -216,3 +216,201 @@ def test_a_pose_the_arm_is_not_trusted_over_is_left_out() -> None:
         (upstream, near), (0.0, 0.0, 1.035), BELT_SPEED, 0
     )
     assert tuple(item.track_id for item in queue.order) == (2,)
+
+
+def travelled(base: GraspMarker, seconds: float, speed: float) -> GraspMarker:
+    """The same marker, carried along the belt by the time given.
+
+    Only `x` moves, which is what `clave.tracker.belt_frame` says the belt
+    does, and the window closes by the same amount.
+    """
+    import dataclasses
+
+    shift = speed * seconds
+    return dataclasses.replace(
+        base,
+        grasp=(base.grasp[0] + shift, base.grasp[1], base.grasp[2]),
+        flange=(base.flange[0] + shift, base.flange[1], base.flange[2]),
+    )
+
+
+def nudged(base: GraspMarker, by: float) -> GraspMarker:
+    """The same marker, displaced across the belt by an estimation error."""
+    import dataclasses
+
+    return dataclasses.replace(
+        base,
+        grasp=(base.grasp[0], base.grasp[1] + by, base.grasp[2]),
+        flange=(base.flange[0], base.flange[1] + by, base.flange[2]),
+    )
+
+
+def test_the_first_call_builds_an_order() -> None:
+    """AC-MOVE-17: the first call builds an order."""
+    queue = selector().update(
+        (marker(1, x=0.20), marker(2, x=0.60)), (0.0, 0.0, 1.035), BELT_SPEED, 0
+    )
+    assert queue.recomputed is True
+    assert len(queue.order) == 2
+
+
+def test_belt_travel_alone_does_not_reorder_the_queue() -> None:
+    """AC-MOVE-17: belt travel alone does not reorder the queue.
+
+    Every candidate loses belt at the same rate, so travel subtracts a common
+    term from every deadline and changes no ordering. Anchors are compared
+    after being carried along the belt for exactly this reason: an object
+    doing what the belt makes it do has not moved in the frame that matters.
+    """
+    pair = (
+        marker(1, x=0.20, leaves_in_seconds=9.0),
+        marker(2, x=0.60, leaves_in_seconds=9.0),
+    )
+    one = selector()
+    first = one.update(pair, (0.0, 0.0, 1.035), BELT_SPEED, 0)
+    assert first.recomputed is True
+
+    for tick in range(1, 12):
+        seconds = tick * 0.5
+        carried = tuple(travelled(item, seconds, BELT_SPEED) for item in pair)
+        later = one.update(
+            carried,
+            (0.0, 0.0, 1.035),
+            BELT_SPEED,
+            at_nanos=int(seconds * NANOS_PER_SECOND),
+        )
+        assert later.recomputed is False, f"reordered on travel alone at {seconds} s"
+        assert tuple(item.track_id for item in later.order) == (1, 2)
+
+
+def test_an_estimate_jittering_under_the_radius_does_not_reorder() -> None:
+    """AC-MOVE-16: an estimate jittering under the radius does not reorder."""
+    pair = (marker(1, x=0.20), marker(2, x=0.60))
+    one = selector()
+    one.update(pair, (0.0, 0.0, 1.035), BELT_SPEED, 0)
+
+    radius = settings().anchor_radius
+    for tick, sign in enumerate((1, -1, 1, -1), start=1):
+        jittered = (nudged(pair[0], sign * radius * 0.4), pair[1])
+        carried = tuple(travelled(item, tick * 0.1, BELT_SPEED) for item in jittered)
+        later = one.update(
+            carried,
+            (0.0, 0.0, 1.035),
+            BELT_SPEED,
+            at_nanos=int(tick * 0.1 * NANOS_PER_SECOND),
+        )
+        assert later.recomputed is False
+
+
+def test_an_estimate_moving_past_the_radius_reorders() -> None:
+    """AC-MOVE-16: an estimate moving past the radius reorders."""
+    pair = (marker(1, x=0.20), marker(2, x=0.60))
+    one = selector()
+    one.update(pair, (0.0, 0.0, 1.035), BELT_SPEED, 0)
+
+    moved = (nudged(pair[0], settings().anchor_radius * 3.0), pair[1])
+    later = one.update(moved, (0.0, 0.0, 1.035), BELT_SPEED, 0)
+    assert later.recomputed is True
+
+
+def test_a_track_appearing_reorders() -> None:
+    """AC-MOVE-17: a track appearing reorders."""
+    one = selector()
+    one.update((marker(1, x=0.20),), (0.0, 0.0, 1.035), BELT_SPEED, 0)
+    later = one.update(
+        (marker(1, x=0.20), marker(2, x=0.10)), (0.0, 0.0, 1.035), BELT_SPEED, 0
+    )
+    assert later.recomputed is True
+    assert tuple(item.track_id for item in later.order) == (2, 1)
+
+
+def test_a_track_retiring_reorders() -> None:
+    """AC-MOVE-17: a track retiring reorders."""
+    one = selector()
+    pair = (marker(1, x=0.20), marker(2, x=0.60))
+    one.update(pair, (0.0, 0.0, 1.035), BELT_SPEED, 0)
+    later = one.update((pair[1],), (0.0, 0.0, 1.035), BELT_SPEED, 0)
+    assert later.recomputed is True
+    assert tuple(item.track_id for item in later.order) == (2,)
+
+
+def test_the_arm_moving_does_not_reorder_the_queue() -> None:
+    """AC-MOVE-17: the arm moving does not reorder the queue.
+
+    The flange is an input to the cost, so re-sorting every tick would let
+    the arm's own travel swap its target underneath it. Recomputing on change
+    means the flange is read once, when something actually happened.
+    """
+    one = selector()
+    pair = (marker(1, x=0.20), marker(2, x=0.60))
+    one.update(pair, (0.0, 0.0, 1.035), BELT_SPEED, 0)
+    later = one.update(pair, (0.55, 0.0, 1.035), BELT_SPEED, 0)
+    assert later.recomputed is False
+    assert tuple(item.track_id for item in later.order) == (1, 2)
+
+
+def test_a_candidate_carries_the_live_pose_and_the_anchor_apart() -> None:
+    """AC-MOVE-16: a candidate carries the live pose and the anchor apart.
+
+    The anchor is quantised so the ordering holds still. The pose handed to
+    the task layer is not, because an arm commanded to a quantised pose jumps
+    by the radius every time the anchor catches up.
+    """
+    one = selector()
+    base = marker(1, x=0.20)
+    one.update((base,), (0.0, 0.0, 1.035), BELT_SPEED, 0)
+
+    radius = settings().anchor_radius
+    later = one.update((nudged(base, radius * 0.4),), (0.0, 0.0, 1.035), BELT_SPEED, 0)
+    head = later.order[0]
+    assert head.flange[1] == pytest.approx(radius * 0.4)
+    assert head.anchor[1] == pytest.approx(0.0)
+
+
+def test_an_anchor_is_forgotten_when_its_track_goes() -> None:
+    """An anchor is forgotten when its track goes.
+
+    A track id the world reuses would otherwise be scored where a different
+    object stood, and the selector would grow for the length of a run.
+    """
+    one = selector()
+    one.update((marker(1, x=0.20),), (0.0, 0.0, 1.035), BELT_SPEED, 0)
+    one.update((), (0.0, 0.0, 1.035), BELT_SPEED, 0)
+    assert one.anchor_count == 0
+
+
+def test_a_rebuild_behind_the_head_leaves_the_head_alone() -> None:
+    """AC-MOVE-17: a rebuild behind the head leaves the head alone.
+
+    Rebuilding is cheap; swapping the head mid-traverse is not. A track at
+    the back of the queue moving past its radius has to rebuild the order,
+    and it must not take the arm off a nearer, more urgent target that has
+    not moved.
+    """
+    one = selector()
+    head = marker(1, x=0.10, leaves_in_seconds=1.0)
+    tail = marker(2, x=0.90, leaves_in_seconds=9.0)
+    first = one.update((head, tail), (0.0, 0.0, 1.035), BELT_SPEED, 0)
+    assert first.head is not None
+    assert first.head.track_id == 1
+
+    shifted = nudged(tail, settings().anchor_radius * 4.0)
+    later = one.update((head, shifted), (0.0, 0.0, 1.035), BELT_SPEED, 0)
+    assert later.reasons == frozenset({"anchor"})
+    assert later.head is not None
+    assert later.head.track_id == 1
+
+
+def test_the_reasons_say_which_trigger_fired() -> None:
+    """AC-MOVE-17: the reasons say which trigger fired.
+
+    Counting rebuilds together hides whether the anchors damp anything: a
+    rebuild because a track appeared is the design working, and one because
+    an anchor moved is the estimate having genuinely shifted.
+    """
+    one = selector()
+    first = one.update((marker(1, x=0.20),), (0.0, 0.0, 1.035), BELT_SPEED, 0)
+    assert first.reasons == frozenset({"appeared"})
+
+    gone = one.update((), (0.0, 0.0, 1.035), BELT_SPEED, 0)
+    assert gone.reasons == frozenset({"retired"})
