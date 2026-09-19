@@ -312,6 +312,20 @@ configuration the controller did not choose.
 hold where it is rather than command nothing, because an uncommanded arm
 sags out of the region it is trusted over and refuses everything after.
 
+`AC-MOVE-26`: The system shall compare an anchor against the estimate only
+after carrying the anchor along the belt, so an object doing what the belt
+makes it do does not count as having moved.
+
+`AC-MOVE-27`: The system shall report which trigger rebuilt the order,
+because a rebuild on a track appearing is the mechanism working and a
+rebuild on an anchor is the estimate having shifted, and counting them
+together hides whether the anchors damp anything.
+
+`AC-MOVE-28`: The system shall carry both the anchor and the live pose on a
+candidate, and shall command the arm to the live one, because an arm sent to
+a quantised pose jumps by the anchor radius every time the anchor catches
+up.
+
 ## Design notes
 
 **Why the queue is damped at its inputs rather than frozen at its output.**
@@ -362,6 +376,19 @@ frame, because the park pose is off the belt and downstream, which is where
 that framing is not looking. Framing wide enough to hold the park pose renders
 a jaw a few pixels across. Splitting the difference does neither well, so the
 views are named and the run takes one.
+
+**What the anchors measured.** Over fourteen simulated seconds and 231
+observations, the residual between a live grasp point and its anchor carried
+along the belt has a median of 0.0 mm, which says the belt compensation
+carries no bias, and exceeds the 20 mm radius on 39 of them. So an anchor
+holds still for about five observations in six.
+
+The queue still rebuilds on 26 of 32 captures, and that is aggregation
+rather than failure: about seven tracks are live at once, so one of them
+leaving its radius is enough. What matters is whether a rebuild moves the
+head, and over the same run the head was swapped zero times while the track
+it replaced was still there to be served. A rebuild that keeps its head
+costs nothing.
 
 **What the walking skeleton found.** Four defects, all of them in the
 integration rather than in any one module, and none of them visible from the

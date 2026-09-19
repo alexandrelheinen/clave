@@ -59,6 +59,7 @@ def candidate(track_id: int = 1, x: float = 0.30, y: float = 0.0) -> Candidate:
     """One candidate the arm could serve."""
     return Candidate(
         track_id=track_id,
+        anchor=(x, y, 0.945),
         flange=(x, y, 1.035),
         closing_axis=math.pi / 2.0,
         distance_before_leaving=1.5,
@@ -122,6 +123,7 @@ def test_an_unoriented_candidate_asks_for_no_rotation() -> None:
     """AC-MOVE-08: an unoriented candidate asks for no rotation."""
     round_one = Candidate(
         track_id=1,
+        anchor=(0.3, 0.0, 0.945),
         flange=(0.3, 0.0, 1.035),
         closing_axis=None,
         distance_before_leaving=1.0,

@@ -67,6 +67,16 @@ class DebugRunReport:
     Attributes:
         captures: Frames the tracker was shown.
         tracks: Tracks open when it finished.
+        reorders: How many captures rebuilt the queue, by the trigger that
+            did it. A rebuild because a track appeared is the design
+            working; a rebuild because an anchor moved is the estimate having
+            genuinely shifted. Counting them together hides whether the
+            anchors damp anything.
+        head_churn: How many captures swapped the head of the queue while the
+            previous head was still there to be served. This is the figure
+            that decides whether the arm can work through the queue: a
+            rebuild that keeps its head costs nothing, and one that does not
+            sends the arm somewhere else mid-traverse.
         served: Tracks the arm finished a visit to.
         closest_approach: The nearest the flange ever came to a pose the
             tracking phase asked for, in meters, or None when it never
@@ -92,6 +102,8 @@ class DebugRunReport:
 
     captures: int
     tracks: int
+    reorders: dict[str, int]
+    head_churn: int
     served: tuple[int, ...]
     closest_approach: float | None
     closest_live: float | None
@@ -235,6 +247,9 @@ def run(
     # How near the flange ever got to what a phase asked for. Without
     # interception the arm trails a marker the belt is carrying, and this is
     # the figure that sizes the interception rather than a guess at it.
+    reorders: dict[str, int] = {"appeared": 0, "retired": 0, "anchor": 0}
+    head_churn = 0
+    previous_head: int | None = None
     closest = float("inf")
     # And how near it got to where the head actually was at that instant.
     # Without interception the commanded pose is as old as the decision
@@ -315,12 +330,18 @@ def run(
             standing = markers_for(records, effector, surface)
 
             flange = _flange(indices, data)
-            goal = task.step(
-                selector.update(standing, flange, plan.belt.speed, now),
-                flange,
-                data.time,
-                refusal,
-            )
+            queue = selector.update(standing, flange, plan.belt.speed, now)
+            for reason in queue.reasons:
+                reorders[reason] += 1
+            head_id = None if queue.head is None else queue.head.track_id
+            if (
+                previous_head is not None
+                and head_id != previous_head
+                and any(item.track_id == previous_head for item in queue.order)
+            ):
+                head_churn += 1
+            previous_head = head_id
+            goal = task.step(queue, flange, data.time, refusal)
             refusal = None
             if goal.phase is Phase.TRACK:
                 head = next(
@@ -377,6 +398,8 @@ def run(
     return DebugRunReport(
         captures=captures,
         tracks=len(tracker.settle(at_nanos=int(data.time * NANOS_PER_SECOND))),
+        reorders=reorders,
+        head_churn=head_churn,
         served=task.served,
         closest_approach=None if closest == float("inf") else closest,
         closest_live=None if closest_live == float("inf") else closest_live,
