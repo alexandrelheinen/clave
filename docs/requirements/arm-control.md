@@ -18,8 +18,9 @@ rendering answers.
 
 ## Scope
 
-**In.** Choosing which marker to serve and committing to it. A task state
-machine over the phases of one visit. Guidance that turns a pair of poses into
+**In.** Ordering the markers into a queue and holding that order steady. A
+task state machine over the phases of one visit, with a profile that runs the
+motion alone. Guidance that turns a pair of poses into
 a timed task-space path. A servo step that solves inverse kinematics and writes
 the actuators. Interception, because the target moves with the belt. The
 measurement of how close the flange got to the pose it was given.
@@ -98,9 +99,9 @@ WasteObject (tracker)
      ├── markers.marker_for ──► GraspMarker: flange pose, closing axis, reachable
      │
      ▼
-selection ──► the track this arm has committed to, or none
-     │            (least time remaining among reachable, and it does not
-     │             switch once committed)
+selection ──► the queue, head first, or empty
+     │            (ordered by distance + exit_weight * distance before
+     │             leaving, scored at anchors, recomputed on change)
      ▼
 task ──────► Phase, and the pose that phase wants
      │            (STANDBY, TRACK, DESCEND, HOLD, RETREAT, PARK, FAULT)
@@ -123,27 +124,60 @@ Four, split where the decisions differ rather than where the code is long.
 
 | Module | Decides | Does not decide |
 | --- | --- | --- |
-| `clave.control.selection` | Which track the arm serves, and when it lets go | Where the flange goes, or how it gets there |
+| `clave.control.selection` | The order the tracks are served in, and when that order is recomputed | Where the flange goes, or how it gets there |
 | `clave.control.task` | Which phase of a visit the arm is in, and the pose that phase wants | The path to that pose, or the joint angles |
 | `clave.control.guidance` | The pose to command this tick, bounded in speed and acceleration, with interception applied | Which object, which phase, or how joints realise a pose |
 | `clave.control.servo` | Joint angles for one commanded pose, and the actuator write | Anything about time, phase or target |
 
-**`selection`.** Reads the markers and returns the one the arm is serving. The
-rule is least time remaining among reachable markers, which is the scripted
-expert's rule and is already known to work. What it adds is commitment: once a
-track is chosen it stays chosen until it is served, leaves reach, or its track
-retires. A controller that re-reads the best target every tick chases the
-population and arrives at nothing, which is what the current one-line
-controller does.
+**`selection`.** Orders the reachable markers into a queue and hands the arm
+its head. This is a travelling-salesman problem with a deadline, and the
+deadline is what makes the ordinary metric wrong: an object about to leave the
+window is worth more than a nearer one that will still be there. So each
+candidate is scored
+
+```
+cost = distance_to_flange + exit_weight * distance_before_leaving
+```
+
+both terms in meters, `exit_weight` dimensionless and configured. Minimising
+it puts the objects running out of belt first and breaks ties by travel. The
+queue is built greedily, scoring each next candidate from where the flange
+will stand after the previous one, which is nearest-neighbour tour
+construction rather than an optimal tour. Naming that is the point: the
+ordering is a starting algorithm chosen to be replaced, and calling it
+optimal would hide that it is not.
+
+**What keeps the queue still.** A queue recomputed every tick reorders faster
+than the arm can traverse, and the symptom is an arm oscillating near the
+centroid of the population. Two things damp it, and neither of them freezes
+the decision.
+
+Each track carries an **anchor**: the position selection scores it at. The
+anchor follows the tracker's estimate only when that estimate moves more than
+a configured radius, so the millimetre-scale jitter of a segmentation
+footprint never reaches the ordering while a real displacement does.
+
+The queue is then recomputed **on change rather than on a clock**: when a
+track opens, when a track retires, and when an anchor moves. Between those
+events the order is the order. Belt travel alone does not reorder anything,
+because every candidate loses belt at the same rate and the ordering is
+unchanged by a common term.
 
 **`task`.** A state machine over one visit. Without a gripper the phases are
-STANDBY when nothing is committed, TRACK while the flange follows the marker at
+STANDBY when the queue is empty, TRACK while the flange follows the marker at
 approach height, DESCEND while it drops to the grasp plane, HOLD for a dwell
 proving it arrived and stayed, RETREAT while it lifts clear, PARK on the way
 home, and FAULT when the solver or the envelope refused. The phase names and
 the shape of the transition are FRET's `PickPlaceState` with the grasp,
 placement and release states removed, so adding them later is filling in gaps
 rather than rewriting.
+
+The profile is configuration. `motion_only` runs STANDBY, TRACK, PARK and
+FAULT and nothing else, so the arm goes to each marker in turn and moves on,
+which is what tuning arm speed against belt speed needs. `full_visit` adds
+DESCEND, HOLD and RETREAT. Neither profile grasps, because no gripper exists;
+the phases a gripper would need are absent from both rather than present and
+skipped.
 
 **`guidance`.** Turns where the flange is and where the phase wants it into
 the single pose to command this tick. A straight line in task space, which is
@@ -178,13 +212,14 @@ Python is a gain nobody reviews.
 
 Ids begin at `AC-MOVE-01`. They are append-only and never reused.
 
-`AC-MOVE-01`: The system shall select the reachable marker with the least time
-remaining before it leaves the reachable window, and shall report which track
-it selected.
+`AC-MOVE-01`: The system shall order the reachable markers by the distance
+from the flange to the marker plus the configured exit weight times the
+distance the marker has left before leaving the reachable window, and shall
+report the order and the head.
 
-`AC-MOVE-02`: When a track is selected, the system shall keep serving it until
-it is released, it leaves the reachable window, or its track retires, rather
-than reselecting while a visit is in progress.
+`AC-MOVE-02`: The system shall build that order greedily, scoring each next
+candidate from the position the flange is predicted to hold after the previous
+one, rather than scoring every candidate from where the flange stands now.
 
 `AC-MOVE-03`: When no marker is reachable, the system shall hold the arm at its
 park pose rather than tracking a pose no object occupies.
@@ -233,13 +268,46 @@ from configuration, and shall fail at load naming any that is absent.
 the arm renders the same scene as one that does not, apart from the arm's own
 pose.
 
+`AC-MOVE-16`: The system shall score a track at an anchor that follows the
+tracker's estimate only when that estimate has moved more than the configured
+anchor radius, so a footprint jittering below that radius never reorders the
+queue.
+
+`AC-MOVE-17`: The system shall recompute the order when a track opens, when a
+track retires, and when an anchor moves, and at no other time, so belt travel
+alone leaves the order untouched.
+
+`AC-MOVE-18`: When the configured task profile is the motion-only one, the
+system shall run the standby, tracking, parking and fault phases and shall
+enter no descent, dwell or retreat phase, so arm speed can be tuned against
+belt speed without a descent in the way.
+
+`AC-MOVE-19`: The system shall report which profile a run used alongside every
+figure that run produced, because a distance to a tracked pose and a distance
+to a descended pose are not the same measurement.
+
 ## Design notes
 
-**Why commitment is a requirement and not a detail.** A mean of 2.67 objects
-sit inside the workspace at once, peaking at six. A controller that picks the
-best target every tick will swap targets faster than it can traverse between
-them, and the recorded symptom is an arm that oscillates near the centroid of
-the population. Commitment is what turns a population into a queue.
+**Why the queue is damped at its inputs rather than frozen at its output.**
+A mean of 2.67 objects sit inside the workspace at once, peaking at six, so a
+controller that reorders every tick swaps targets faster than it can traverse
+between them and oscillates near the centroid of the population. The obvious
+fix is to freeze the choice until it is served, and it is the wrong one: a
+frozen choice cannot react to the object that appears between it and the
+flange, or to the one about to fall off the end.
+
+Anchoring fixes the cause instead. The ordering is unstable because its input
+is, so the input is quantised: an anchor moves only when the estimate moves
+more than a radius, and the order is recomputed only when the set of anchors
+changes. The arm still reacts to everything that actually happened, and to
+nothing that did not.
+
+**Why belt travel does not reorder the queue.** Every candidate loses belt at
+the same rate, so belt travel subtracts a common term from every
+`distance_before_leaving` and leaves the ordering unchanged. That is what
+makes recomputing on change rather than on a clock correct rather than merely
+cheap, and `AC-MOVE-17` is what will catch it if a future metric breaks the
+property.
 
 **Why interception is in guidance and not in selection.** Whether an object is
 worth serving depends on where it is now; where to point the flange depends on
@@ -256,3 +324,139 @@ what lets one of the three be wrong without hiding the other two.
 **What stays unmeasurable.** Pick success rate and cycle time to placement,
 because nothing grasps and there is nowhere to place. Both are reported as
 unmeasured for the same reason the benchmark already reports them so.
+
+## Design
+
+The shapes below are the contract between the four modules. Three of them are
+pure functions over values; only the selector holds state, and it holds one
+thing, which is the anchors.
+
+### What flows
+
+```python
+# clave.control.selection
+
+@dataclass(frozen=True)
+class Candidate:
+    """One marker, scored where its anchor stands."""
+    track_id: int
+    anchor: Point                  # where selection scores it
+    flange: Point                  # where the marker wants the flange
+    closing_axis: float | None     # None when the footprint has no axis
+    distance_before_leaving: float # belt speed times the time left
+
+@dataclass(frozen=True)
+class Queue:
+    """The order, and whether this tick rebuilt it."""
+    order: tuple[Candidate, ...]
+    recomputed: bool
+
+    @property
+    def head(self) -> Candidate | None: ...
+
+class Selector:
+    """Holds the anchors. The one mutable object in the control path."""
+    def update(
+        self, markers: tuple[GraspMarker, ...], flange: Point, belt_speed: float
+    ) -> Queue: ...
+```
+
+```python
+# clave.control.task
+
+class Phase(enum.Enum):
+    STANDBY = "standby"
+    TRACK = "track"
+    DESCEND = "descend"
+    HOLD = "hold"
+    RETREAT = "retreat"
+    PARK = "park"
+    FAULT = "fault"
+
+class Profile(enum.Enum):
+    MOTION_ONLY = "motion_only"   # standby, track, park, fault
+    FULL_VISIT = "full_visit"     # adds descend, hold, retreat
+
+@dataclass(frozen=True)
+class Goal:
+    """Where the phase wants the flange, and which phase asked."""
+    phase: Phase
+    position: Point
+    yaw: float | None             # None holds the rotation the arm has
+    track_id: int | None
+
+class TaskMachine:
+    def step(
+        self, queue: Queue, flange: Point, at_seconds: float,
+        refusal: str | None = None,
+    ) -> Goal: ...
+```
+
+```python
+# clave.control.guidance
+
+@dataclass(frozen=True)
+class Command:
+    """The pose to command this tick."""
+    position: Point
+    yaw: float | None
+
+def toward(
+    flange: Point, goal: Goal, belt_speed: float,
+    timestep: float, limits: MotionLimits,
+) -> Command: ...
+```
+
+```python
+# clave.control.servo
+
+def follow(model, data, arm, command: Command, gain: float) -> NDArray: ...
+```
+
+### Where the numbers come from
+
+`distance_before_leaving` is not a field of `GraspMarker` and is not added to
+one. A `WasteObject` already carries `valid_until_nanos`, the instant it
+reaches the measured window exit, so the distance is the belt speed times the
+time remaining. Deriving it here keeps the marker a description of a pose and
+nothing else.
+
+`Goal.yaw` of None is how an unoriented footprint reaches the servo without
+anybody inventing an angle for it, which is `AC-MOVE-08`.
+
+### Configuration
+
+One new file, `configs/runtime/control.yml`, every key required:
+
+```yaml
+selection:
+  exit_weight: ...            # dimensionless, weights urgency against travel
+  anchor_radius_meters: ...   # how far an estimate moves before the anchor does
+task:
+  profile: motion_only        # or full_visit
+  approach_height_meters: ...
+  dwell_seconds: ...
+  park_position_meters: [...]
+guidance:
+  max_speed_meters_per_second: ...
+  max_acceleration_meters_per_second_squared: ...
+servo:
+  gain: ...
+  max_joint_speed_radians_per_second: ...
+calibration:
+  flange_offset_meters: [...]  # AC-MOVE-06
+```
+
+### The seams under test
+
+| Seam | Tested with |
+|---|---|
+| `Selector.update` | Values. No model, no renderer: markers in, a queue out |
+| `TaskMachine.step` | Values, driving the clock rather than the world |
+| `guidance.toward` | Values, with the bounds checked over a swept path |
+| `servo.follow` | The compiled model, which is the only place joint angles mean anything |
+| The four together | One rollout, reporting per-visit distance to the commanded pose |
+
+The first three need no simulator, which is what keeps the loop's decisions
+testable without a render. Only `servo` compiles a model, and it is the one
+module with no decisions in it.
