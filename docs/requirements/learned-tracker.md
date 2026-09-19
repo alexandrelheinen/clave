@@ -182,6 +182,45 @@ this number has a denominator, and `AC-TRACK-43` requires the comparison to be
 published even when the learned model loses, which follows the precedent of
 reporting a model that does not work yet rather than withholding it.
 
+**Where a state estimator would and would not pay.** Nothing in CLAVE
+estimates a velocity or a covariance today. Propagation is dead reckoning
+with the belt speed taken as known, which it is: it comes from configuration
+here and would come from an encoder on a line. `clave-decision` publishes a
+zero pose covariance and says in its contract that a zero is more honest than
+a fabricated number.
+
+Two questions get confused when a filter is proposed, and the measurements
+separate them. Over 231 observations of the shipped world, the residual
+between a live grasp point and its anchor carried along the belt has a median
+of 0.0 mm, so the estimate carries no bias. Along travel it reaches 72.2 mm
+and across the belt 22.3 mm, the second being an order smaller because an
+object rides the belt rather than crossing it: its velocity is parallel to
+belt travel, and what little lateral motion exists comes from the drop and
+from the side guides.
+
+So the 102 mm by which the arm trails an object it is tracking is not
+estimation error. It is latency: a pose is decided once per 0.5 s capture and
+the belt carries the object 157 mm in that time. Filtering does not fix
+latency and prediction does, and prediction here needs a velocity that is
+already known. That is why interception is arithmetic over the belt speed and
+introduces no estimator.
+
+Where an estimator does pay is association, which is this spec. A covariance
+is a principled association gate, and the roadmap already records the defect
+it would close: `association_radius_meters` is a global constant sized for a
+belt six times narrower than the one the world runs, and the repair recorded
+there is that the radius becomes the track's own propagated footprint plus a
+gate. A Mahalanobis distance is that gate. It also buys outlier rejection,
+which matters more than it sounds: one residual in the same measurement run
+reached 229 mm, which is too large to be sensor noise and is most likely one
+object carried as two tracks. A filter without a gate would absorb that jump
+and degrade the estimate; with a gate it is refused and reported.
+
+The condition that would change this: if belt speed stops being known, or if
+objects slip on the belt rather than riding it, then velocity has to be
+estimated and a filter earns its place in propagation too. Neither is true of
+the world as it stands.
+
 **What is deliberately not settled here.** How the material posterior is
 parameterized, and whether `reject` is a predicted class or an absence of
 confidence, both of which `docs/perception-contract.md` leaves open and both of
