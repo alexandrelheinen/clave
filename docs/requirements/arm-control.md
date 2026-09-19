@@ -354,6 +354,15 @@ clearance and the approach speed rather than configuring it separately,
 because the three are one relation and a configured third would contradict
 the other two.
 
+`AC-MOVE-36`: The system shall command the pose the reference will hold one
+configured lead from now, rather than the pose it holds, so the flange does
+not trail a moving command by more than the jaw's side clearance.
+
+`AC-MOVE-37`: When leading a pose pushes it outside the region the arm is
+trusted over, the system shall project it back rather than refuse, because
+the pose the phase asked for and not the correction decides whether a
+target is reachable.
+
 ## The guidance formulation
 
 The mathematics has its own document,

@@ -133,10 +133,13 @@ class ServoSettings:
         gain: Fraction of each solved step commanded.
         max_joint_speed: The bound a wrist singularity is judged against, in
             radians per second.
+        lead_seconds: How far ahead of the commanded pose to aim, cancelling
+            the lag a position loop has against a moving command.
     """
 
     gain: float
     max_joint_speed: float
+    lead_seconds: float
 
 
 @dataclass(frozen=True)
@@ -217,6 +220,7 @@ class ControlSettings:
                 max_joint_speed=_positive(
                     servo, "max_joint_speed_radians_per_second", "servo"
                 ),
+                lead_seconds=float(require(servo, "lead_seconds", "servo")),
             ),
             calibration=CalibrationSettings(
                 flange_offset=_point(

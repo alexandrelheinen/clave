@@ -249,13 +249,46 @@ Lowering that bound from 180 mm refuses `master_chef_can`, a cylinder
 set. The set is 17 objects and the class coverage did not move: `M-02`,
 `M-04`, `M-06` and `M-09`.
 
-**The jaw does not hold anything yet, and the reason is the approach rather
-than the jaw.** Driving the arm straight at a grasp pose sweeps the object
-off the belt before the fingers arrive: measured on a settled object, the
-approach displaced it by 5 mm to 356 mm depending on where the arm started,
-and after a descent from directly above the pinch point stood 182.6 mm from
-the object with zero pad-to-object contacts. Nothing about grip force or
-closing has been exercised, because nothing has yet been closed on.
+### How near the flange gets to an object
+
+The jaw's clear opening, measured between the pad faces with the gripper
+open, is **85.2 mm**, which agrees with the catalogue stroke to 0.2 mm. An
+object of width `w` therefore leaves `(85.2 - w) / 2` of side clearance, and
+a flange that misses by more than that closes the jaw onto the object rather
+than around it.
+
+Three corrections have moved that miss:
+
+| | Gap to the object | Objects that straddle |
+| --- | --- | --- |
+| Commanding the observed pose | 102 mm | 0 of 17 |
+| With interception | 86 mm | 0 of 17 |
+| With interception and the servo lead | **19 mm** | **14 of 17** |
+
+The three that still do not are `mustard_bottle` and `potted_meat_can` at
+57.7 mm, and `tomato_soup_can` at 67.8 mm, whose clearances are 13.7, 13.7
+and 8.7 mm.
+
+The servo lead is what did most of it. Sweeping a target across the
+workspace, the steady-state lag divided by the commanded speed is 38.6,
+34.6, 34.0, 33.2, 32.8 and 32.8 milliseconds at 0.15 through 1.00 metres
+per second: flat, which makes it a time constant rather than a distance.
+Commanding the pose the reference will hold 33 ms from now cancels 92 to 97
+percent of it, leaving 0.8 to 0.9 mm at every speed, and the loop now
+reports the flange holding its commanded pose to under a millimetre.
+
+**What is left is perception rather than control.** The flange tracks what
+it is told to within a millimetre, so most of the remaining 19 mm is the
+tracker's own estimate, whose residual against a belt-carried anchor was
+measured at a mean of 13.4 mm over 231 observations.
+
+**The jaw still holds nothing.** Driving the arm straight at a grasp pose
+sweeps the object off the belt before the fingers arrive: measured on a
+settled object, the approach displaced it by 5 mm to 356 mm depending on
+where the arm started, and after a descent from directly above the pinch
+point stood 182.6 mm from the object with zero pad-to-object contacts.
+Nothing about grip force or closing has been exercised, because nothing has
+yet been closed on.
 
 ## The object set
 
