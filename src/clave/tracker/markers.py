@@ -77,6 +77,10 @@ class GraspMarker:
 
     Attributes:
         track_id: The identity this marker belongs to.
+        valid_until_nanos: When belt travel invalidates this pose, copied from
+            the record. A pose and the window it holds for travel together
+            here for the same reason they travel together in the published
+            decision: a pose with no expiry is a pose somebody will use late.
         grasp: Where the pads would close, in belt frame meters.
         flange: Where the face the tool bolts to would sit.
         pads: The two pad centers, or an empty tuple when the footprint has no
@@ -94,6 +98,7 @@ class GraspMarker:
     """
 
     track_id: int
+    valid_until_nanos: int
     grasp: Point
     flange: Point
     pads: tuple[Point, ...]
@@ -174,6 +179,7 @@ def marker_for(
 
     return GraspMarker(
         track_id=record.track_id,
+        valid_until_nanos=record.valid_until_nanos,
         grasp=(x, y, pad_z),
         flange=(x, y, pad_z + effector.finger_length),
         pads=pads,

@@ -25,12 +25,17 @@ it is needed most.
 
 from __future__ import annotations
 
+import math
 import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from clave.control.settings import ControlSettings
+from clave.control.guidance import toward
+from clave.control.selection import Selector
+from clave.control.servo import follow
+from clave.control.settings import ControlSettings, Phase
+from clave.control.task import TaskMachine
 from clave.errors import ClaveError
 from clave.tracker.adapters.detection import detections_from_masks
 from clave.tracker.adapters.render import segment_masks
@@ -43,6 +48,7 @@ from clave.tracker.listing import described_fields
 from clave.tracker.markers import draw, draw_park, markers_for
 from clave.tracker.sensors import load_sensors, require_role
 from clave.tracker.track import Tracker
+from clave.world import arm as armmod
 from clave.world import belt, config, scene
 from clave.world.effector import Effector
 
@@ -61,6 +67,17 @@ class DebugRunReport:
     Attributes:
         captures: Frames the tracker was shown.
         tracks: Tracks open when it finished.
+        served: Tracks the arm finished a visit to.
+        closest_approach: The nearest the flange ever came to a pose the
+            tracking phase asked for, in meters, or None when it never
+            tracked.
+        closest_live: The nearest it came to where that object actually was
+            at the same instant, in meters, or None. The gap between the two
+            is the staleness of a pose decided once per capture while the
+            belt keeps moving, and is what an interception has to close.
+        faults: Refusals the controller recorded, with the track each was
+            about.
+        phase: The phase the arm ended in.
         drawn: Markers standing in the world on the final frame.
         geoms: Marker geoms the final frame carried, which is more than
             `drawn` because a jaw is a shaft and two pads, and the park pose
@@ -75,6 +92,11 @@ class DebugRunReport:
 
     captures: int
     tracks: int
+    served: tuple[int, ...]
+    closest_approach: float | None
+    closest_live: float | None
+    faults: tuple[tuple[int | None, str], ...]
+    phase: str
     drawn: int
     geoms: int
     frames_written: int
@@ -189,6 +211,41 @@ def run(
     out.mkdir(parents=True, exist_ok=True)
     opened, reason = _open_window(cv2, window)
 
+    indices = armmod.locate(model)
+    # Start the arm parked. The model's own initial configuration leaves the
+    # flange below the trusted vertical band, so the first pose the controller
+    # commands is refused for a reason that has nothing to do with the pose: a
+    # line starts with its arm at rest, and so does this.
+    _park_the_arm(mujoco, model, data, indices, control.task.park_position)
+
+    base_xy = (float(indices.base_position[0]), float(indices.base_position[1]))
+
+    def keep_inside(pose: tuple[float, float, float]) -> tuple[float, float, float]:
+        """Push a stepped pose back out of the hole at the centre of the annulus."""
+        x, y = armmod.project_into_reach(base_xy, pose[0], pose[1])
+        return x, y, pose[2]
+
+    selector = Selector(
+        control.selection,
+        lambda pose: bool(armmod.reachable(indices, np.array(pose, dtype=float))),
+    )
+    task = TaskMachine(control.task, control.calibration, belt_surface=surface)
+    goal = None
+    refusal: str | None = None
+    # How near the flange ever got to what a phase asked for. Without
+    # interception the arm trails a marker the belt is carrying, and this is
+    # the figure that sizes the interception rather than a guess at it.
+    closest = float("inf")
+    # And how near it got to where the head actually was at that instant.
+    # Without interception the commanded pose is as old as the decision
+    # interval, so the gap between these two figures is the staleness the
+    # belt imposes and is what an interception has to close.
+    closest_live = float("inf")
+    # Guidance integrates its own output, so the reference is seeded once and
+    # fed back afterwards. Seeding it from the flange every tick would make it
+    # chase the arm instead of leading it.
+    reference = _flange(indices, data)
+
     captures = written = drawn = geoms = 0
     believed = out / "records.txt"
     believed.write_text("")
@@ -198,6 +255,23 @@ def run(
         for _ in range(int(seconds / plan.timestep)):
             mujoco.mj_step(model, data)
             conveyor.step(model, data)
+
+            # The deciders run at the capture cadence and the servo runs at
+            # the physics rate, because a goal half a second old is still the
+            # right goal while a joint command half a second old is a lurch.
+            if goal is not None:
+                command = toward(
+                    reference, goal, plan.timestep, control.guidance, keep_inside
+                )
+                reference = command.position
+                stepped = follow(model, data, indices, command, control.servo.gain)
+                if stepped.refusal is not None:
+                    refusal = stepped.refusal
+                elif goal.phase is Phase.TRACK:
+                    closest = min(
+                        closest, math.dist(_flange(indices, data), goal.position)
+                    )
+
             if data.time < next_capture:
                 continue
             next_capture = data.time + capture_interval
@@ -240,6 +314,30 @@ def run(
             records = tracker.settle(at_nanos=now)
             standing = markers_for(records, effector, surface)
 
+            flange = _flange(indices, data)
+            goal = task.step(
+                selector.update(standing, flange, plan.belt.speed, now),
+                flange,
+                data.time,
+                refusal,
+            )
+            refusal = None
+            if goal.phase is Phase.TRACK:
+                head = next(
+                    (item for item in standing if item.track_id == goal.track_id),
+                    None,
+                )
+                if head is not None:
+                    closest_live = min(closest_live, math.dist(flange, head.flange))
+            if goal.phase is Phase.FAULT:
+                # The arm was told to hold, so the reference comes back to the
+                # pose it is holding rather than resuming from wherever it had
+                # run ahead to. It is projected on the way: the flange itself
+                # can cut the corner of the hole while tracking, and reseeding
+                # the reference inside it is what turned one refusal into
+                # every refusal after it.
+                reference = keep_inside(flange)
+
             # The markers go in before the render and live only until the next
             # update_scene, so they reach this view and no other. The gate the
             # tracker reads was rendered above and carries none of them.
@@ -279,6 +377,11 @@ def run(
     return DebugRunReport(
         captures=captures,
         tracks=len(tracker.settle(at_nanos=int(data.time * NANOS_PER_SECOND))),
+        served=task.served,
+        closest_approach=None if closest == float("inf") else closest,
+        closest_live=None if closest_live == float("inf") else closest_live,
+        faults=task.faults,
+        phase="none" if goal is None else goal.phase.value,
         drawn=drawn,
         geoms=geoms,
         frames_written=written,
@@ -304,6 +407,50 @@ def _open_window(cv2: Any, wanted: bool) -> tuple[bool, str | None]:
     except Exception as error:  # noqa: BLE001 - any GUI failure is the same answer
         return False, f"this OpenCV build cannot open a window ({error})"
     return True, None
+
+
+def _park_the_arm(
+    mujoco: Any, model: Any, data: Any, indices: Any, park: tuple[float, ...]
+) -> None:
+    """Put the arm at its park pose before the run starts.
+
+    Args:
+        mujoco: The imported module.
+        model: The compiled model.
+        data: Its state, modified in place.
+        indices: The arm indices.
+        park: Where the arm rests.
+
+    Raises:
+        DebugRunError: If the park pose does not solve. That is a
+            configuration error rather than a run-time one, and finding it
+            here beats a run that faults on every tick.
+    """
+    import numpy as np
+
+    try:
+        angles = armmod.solve(model, data, indices, np.array(park, dtype=float))
+    except armmod.ReachError as error:
+        raise DebugRunError(f"the park pose does not solve: {error}") from error
+    for slot, joint in enumerate(indices.joint_ids):
+        data.qpos[model.jnt_qposadr[joint]] = angles[slot]
+    for slot, actuator in enumerate(indices.actuator_ids):
+        data.ctrl[actuator] = angles[slot]
+    mujoco.mj_forward(model, data)
+
+
+def _flange(indices: Any, data: Any) -> tuple[float, float, float]:
+    """Return where the flange stands, as three meters.
+
+    Args:
+        indices: The arm indices.
+        data: Its state, with forward kinematics already current.
+
+    Returns:
+        The position.
+    """
+    place = armmod.end_effector_position(data, indices)
+    return float(place[0]), float(place[1]), float(place[2])
 
 
 def _recorder(view: dict[str, Any], out: Path, fps: int, interval: float) -> Any:

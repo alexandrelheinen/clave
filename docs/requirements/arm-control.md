@@ -299,6 +299,19 @@ looking rather than by reading the file.
 configuration, and shall name the viewpoints that exist when asked for one
 that does not.
 
+`AC-MOVE-23`: The system shall keep every commanded pose inside the region
+the arm is trusted over, including the poses between two admitted ones,
+because that region is an annulus and a straight line across it can pass
+through the hole around the base.
+
+`AC-MOVE-24`: When the arm starts, the system shall place it at its park
+pose, so the first pose the controller commands is not refused for a
+configuration the controller did not choose.
+
+`AC-MOVE-25`: When a pose is refused, the system shall command the arm to
+hold where it is rather than command nothing, because an uncommanded arm
+sags out of the region it is trusted over and refuses everything after.
+
 ## Design notes
 
 **Why the queue is damped at its inputs rather than frozen at its output.**
@@ -349,6 +362,28 @@ frame, because the park pose is off the belt and downstream, which is where
 that framing is not looking. Framing wide enough to hold the park pose renders
 a jaw a few pixels across. Splitting the difference does neither well, so the
 views are named and the run takes one.
+
+**What the walking skeleton found.** Four defects, all of them in the
+integration rather than in any one module, and none of them visible from the
+unit tests that pass on either side of them.
+
+Guidance integrating from the measured flange rather than from its own
+previous output. The reference then never leads the plant, so the effective
+speed becomes the tracking error divided by the tick. Measured: 0.11 m of
+travel in three seconds where the ceiling allows 0.71 m in less than one.
+
+A marker the jaw can open to is not the same as a pose the arm can reach,
+and selection checked only the first. It offered the controller poses a
+metre outside the annulus, which faulted every visit.
+
+The workspace is an annulus and therefore not convex, so a straight line
+between two poses the arm is trusted over can pass through the hole around
+the base. No choice of park pose removes this, because the base sits between
+the arm's resting place and part of the belt.
+
+A refused pose that wrote no actuator command left the arm to sag under
+gravity, out of its own trusted vertical band, after which every pose was
+refused for a reason the controller had caused.
 
 **What stays unmeasurable.** Pick success rate and cycle time to placement,
 because nothing grasps and there is nowhere to place. Both are reported as

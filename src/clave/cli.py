@@ -603,6 +603,15 @@ def _debug_tracker(root: Path, args: Any) -> int:
     print(f"  captures        {report.captures}")
     print(f"  tracks open     {report.tracks}")
     print(f"  markers on last {report.drawn}, as {report.geoms} geoms")
+    print(f"  visits served   {len(report.served)} {list(report.served)}")
+    print(f"  faults          {len(report.faults)}")
+    for track_id, why in report.faults:
+        print(f"    track {track_id}: {why}")
+    print(f"  ended in        {report.phase}")
+    if report.closest_approach is not None:
+        print(f"  to commanded    {report.closest_approach * 1000:.0f} mm")
+    if report.closest_live is not None:
+        print(f"  to the object   {report.closest_live * 1000:.0f} mm")
     print(f"  frames written  {report.frames_written} to {report.output}")
     if report.video_path is not None:
         print(f"  video           {report.video_path}")
