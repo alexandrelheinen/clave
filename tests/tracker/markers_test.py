@@ -378,3 +378,19 @@ def test_update_scene_clears_the_markers_of_the_frame_before() -> None:
         assert renderer.scene.ngeom == plain
     finally:
         renderer.close()
+
+
+def test_no_track_is_ever_given_red() -> None:
+    """No track is ever given red.
+
+    Red belongs to the park pose, which is the one marker in the scene that is
+    not a track. The palette is dense, so this holds because a wedge of the
+    hue circle is reserved rather than because the first few identities happen
+    to miss it.
+    """
+    from clave.tracker.markers import RESERVED_HUE
+
+    red = (1.0, 0.0, 0.0)
+    assert RESERVED_HUE > 0.0
+    for track_id in range(512):
+        assert math.dist(color_for(track_id), red) > 0.25, track_id

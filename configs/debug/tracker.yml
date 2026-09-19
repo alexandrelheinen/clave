@@ -7,19 +7,36 @@
 # The tracker reads the nadir gate camera, and that view is the wrong one to
 # watch: a grasp marker seen from straight above is a flat outline with no
 # approach to read. So the run segments from the gate and renders for a human
-# from the viewpoint below, and the two never share a camera.
+# from one of the views below, and the two never share a camera.
 #
-# Every tunable is here, including the angle, because a viewing angle buried
-# in Python is one nobody can vary without editing code.
+# There are two views because one camera cannot do both jobs. Framing tight
+# enough to read a 60 mm jaw puts the park pose outside the frame, and framing
+# wide enough to hold the park pose renders a jaw a few pixels across. Rather
+# than split the difference and do neither well, the run takes the view by
+# name.
 
-view:
-  width: 960
-  height: 540
-  # An oblique view along the belt, close enough to read a marker. The
-  # demonstration video films the same line from 4.40 m, which frames the
-  # whole machine and renders a 60 mm jaw about four pixels wide. This is a
-  # diagnostic, so it gives up the wide shot for a pose a reader can check.
-  azimuth_degrees: 135.0
-  elevation_degrees: -32.0
-  distance_meters: 2.10
-  lookat_meters: [-0.15, 0.00, 1.02]
+default_view: line
+
+views:
+  # Close on the belt, where the grasp markers are readable. The park pose is
+  # outside this frame by construction: it stands off the belt and downstream,
+  # which is exactly where this view is not looking.
+  belt:
+    width: 960
+    height: 540
+    azimuth_degrees: 135.0
+    elevation_degrees: -32.0
+    distance_meters: 2.10
+    lookat_meters: [-0.15, 0.00, 1.02]
+
+  # The whole machine, including the park pose. Wide enough that a jaw is
+  # small, which is the price of holding the arm, the belt and the place the
+  # arm rests in one frame. This is the view for checking that the park pose
+  # is where the configuration says and clear of everything it has to clear.
+  line:
+    width: 960
+    height: 540
+    azimuth_degrees: 180.0
+    elevation_degrees: -26.0
+    distance_meters: 2.60
+    lookat_meters: [0.00, -0.45, 1.05]

@@ -64,6 +64,12 @@ that lost the object.
 OPAQUE = 1.0
 """Alpha for a pose the effector could take."""
 
+PARK_POST_RADIUS = 0.010
+"""How thick the post under the park pose is drawn, in meters."""
+
+PARK_BALL_RADIUS = 0.030
+"""How large the ball at the park pose is drawn, in meters."""
+
 
 @dataclass(frozen=True)
 class GraspMarker:
@@ -100,6 +106,18 @@ class GraspMarker:
     color: tuple[float, float, float]
 
 
+RESERVED_HUE = 0.05
+"""The wedge at each end of the hue circle no track is given.
+
+Red belongs to the park pose, which is the one marker in the scene that is not
+a track, and a reader has to be able to tell it apart at a glance. The golden
+ratio sequence is dense, so no amount of spreading keeps a track away from red
+on its own: track 0 landed on pure red, and with enough tracks something lands
+arbitrarily close to any hue. Reserving the wedge is what makes the guarantee
+hold for every identity rather than for the first few.
+"""
+
+
 def color_for(track_id: int) -> tuple[float, float, float]:
     """Return a stable color for one track, as red, green and blue.
 
@@ -111,11 +129,13 @@ def color_for(track_id: int) -> tuple[float, float, float]:
         track_id: The track's identity.
 
     Returns:
-        The color, each channel in the unit range.
+        The color, each channel in the unit range, and never red.
     """
     # The golden ratio spreads successive integers around the hue circle, so
-    # neighbouring track ids never come out as neighbouring colors.
-    hue = (track_id * 0.618033988749895) % 1.0
+    # neighbouring track ids never come out as neighbouring colors. The span
+    # is then squeezed off both ends, leaving red to the park pose.
+    spread = (track_id * 0.618033988749895) % 1.0
+    hue = RESERVED_HUE + spread * (1.0 - 2.0 * RESERVED_HUE)
     return colorsys.hsv_to_rgb(hue, 0.85, 1.0)
 
 
@@ -224,6 +244,61 @@ def draw(scene: Any, markers: tuple[GraspMarker, ...]) -> int:
             )
             scene.ngeom += 1
             added += 1
+    return added
+
+
+def draw_park(
+    scene: Any,
+    position: Point,
+    color: tuple[float, float, float],
+    belt_surface: float,
+) -> int:
+    """Add the park pose to a scene, and report how many geoms that took.
+
+    A ball where the flange rests and a post down to belt height, so the pose
+    reads as a place in the world rather than as a dot floating in it. Neither
+    shape is a jaw: the arm grasps nothing at park, and drawing pads there
+    would say it was about to.
+
+    Args:
+        scene: The `mjvScene` to add to.
+        position: Where the flange rests.
+        color: What to draw it in, as red, green and blue in the unit range.
+        belt_surface: Height of the belt surface, in meters, which is where
+            the post stops.
+
+    Returns:
+        How many geoms were added, which is fewer than asked for when the
+        scene runs out of room.
+    """
+    import mujoco
+    import numpy as np
+
+    rgba = np.array([*color, OPAQUE], dtype=np.float32)
+    x, y, z = position
+    half_post = max((z - belt_surface) / 2.0, PARK_BALL_RADIUS)
+    solids: tuple[tuple[int, Point, Point], ...] = (
+        (int(mujoco.mjtGeom.mjGEOM_SPHERE), (PARK_BALL_RADIUS, 0.0, 0.0), position),
+        (
+            int(mujoco.mjtGeom.mjGEOM_CYLINDER),
+            (PARK_POST_RADIUS, half_post, 0.0),
+            (x, y, z - half_post),
+        ),
+    )
+    added = 0
+    for geom_type, size, place in solids:
+        if scene.ngeom >= scene.maxgeom:
+            return added
+        mujoco.mjv_initGeom(
+            scene.geoms[scene.ngeom],
+            geom_type,
+            np.asarray(size, dtype=np.float64),
+            np.asarray(place, dtype=np.float64),
+            _spin(0.0),
+            rgba,
+        )
+        scene.ngeom += 1
+        added += 1
     return added
 
 
