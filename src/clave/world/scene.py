@@ -22,6 +22,26 @@ from clave.world import arm
 from clave.world.config import WorldConfigError, require, require_range
 from clave.world.objects import ObjectSpec, channels, parse
 
+FLANGE_SITE = "attachment_site"
+"""The face the gripper bolts to, as the arm model names it before prefixing.
+
+`clave.world.arm` knows it as `arm_attachment_site`, which is the same site
+after the scene's own prefix. Every trusted reach bound was swept against it
+and the gripper hangs off it rather than displacing it, so adopting an
+effector does not move the workspace.
+"""
+
+GRIPPER_MODEL = Path("third_party") / "mujoco_menagerie_robotiq_2f85" / "2f85.xml"
+"""A Robotiq 2F-85 parallel jaw, from the same Menagerie commit as the arm.
+
+Adopted against what a municipal packaging line would install, which is
+suction, and the reason is the simulator rather than the process:
+`docs/research/sorting-outputs-and-effectors.md` records that Menagerie
+carries no suction model and MuJoCo no vacuum primitive, so a suction pick
+would be a weld appearing when the tool is near enough. A jaw closing is
+contact physics the solver works out.
+"""
+
 ARM_MODEL = Path("third_party") / "mujoco_menagerie_ur10e" / "ur10e.xml"
 """A Universal Robots UR10e, adopted from MuJoCo Menagerie rather than authored
 here. A validated model derived from manufacturer CAD outranked the SCARA
@@ -134,6 +154,54 @@ def _arm_spec(root: Path) -> Any:
             f"rather than generated, so a checkout that lacks it is broken."
         )
     return mujoco.MjSpec.from_file(str(path))
+
+
+def _gripper_spec(root: Path) -> Any:
+    """Load the gripper model.
+
+    Args:
+        root: Repository root.
+
+    Returns:
+        The parsed spec.
+
+    Raises:
+        FileNotFoundError: If the vendored copy is absent.
+    """
+    import mujoco
+
+    path = root / GRIPPER_MODEL
+    if not path.is_file():
+        raise FileNotFoundError(
+            f"{GRIPPER_MODEL} is missing. It is committed to this repository "
+            f"rather than generated, so a checkout that lacks it is broken."
+        )
+    return mujoco.MjSpec.from_file(str(path))
+
+
+def _armed(root: Path) -> Any:
+    """Return the arm with the gripper bolted to its flange.
+
+    The gripper goes onto the arm before the arm goes into the world, so the
+    attachment point is the flange the arm itself declares rather than a
+    frame this scene computes. That is also why the reach bounds do not
+    move: they were swept against `attachment_site`, and the gripper hangs
+    off it rather than displacing it.
+
+    Args:
+        root: Repository root.
+
+    Returns:
+        The combined spec.
+    """
+    arm = _arm_spec(root)
+    with warnings.catch_warnings():
+        # The gripper declares its own impratio and cone; the scene has
+        # already settled both, so the conflict notice carries no
+        # information.
+        warnings.simplefilter("ignore")
+        arm.attach(_gripper_spec(root), prefix="grip_", site=arm.site(FLANGE_SITE))
+    return arm
 
 
 def layout(raw: dict[str, Any], rng: np.random.Generator) -> SceneLayout:
@@ -1002,7 +1070,7 @@ def build(
         # scene adopted all three above, so the conflict notice carries no
         # information.
         warnings.simplefilter("ignore")
-        mujoco_spec.attach(_arm_spec(root), prefix="arm_", frame=frame)
+        mujoco_spec.attach(_armed(root), prefix="arm_", frame=frame)
 
     model = mujoco_spec.compile()
     _stiffen_arm_actuators(mujoco, model)

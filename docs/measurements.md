@@ -176,6 +176,12 @@ to 640 by 480 and this project raised it to 1920 by 1080, which silently capped
 a 2448 pixel sensor. A camera that cannot be rendered at its own resolution has
 a resolution that means nothing.
 
+**These figures predate the object set losing `master_chef_can` and are
+stale.** It was one of the only two objects that ever decoded, so the yield
+below is now an overstatement by roughly half and has to be re-measured. The
+numbers are left visible rather than deleted, because a reader comparing an
+old report needs to see what they were.
+
 Measured decode yield, over five seeds at the sensor's native resolution:
 
 | Denominator | Decodes | Yield |
@@ -219,6 +225,37 @@ foreshortens non-linearly under a nadir view, and most packages present no
 readable symbol from directly above at all, which is why a real line uses
 omnidirectional readers. Cropping to the object's segmentation bounds before
 decoding returns zero, because the crop clips the barcode's quiet zone.
+
+## The end effector
+
+A Robotiq 2F-85 from MuJoCo Menagerie, at the same commit the arm came from,
+bolted to `attachment_site`. Everything below is read off the compiled model
+rather than off a datasheet.
+
+| Quantity | Measured |
+| --- | --- |
+| Flange to pinch point | 155.8 mm |
+| Pad separation, fully open | 98.4 mm between pad body origins |
+| Pad separation, fully closed | 14.9 mm between pad body origins |
+| Command range | 0 to 255, which is the scale a real 2F-85 takes |
+| Force range | plus or minus 5 N at the tendon |
+
+`arm.max_grasp_width_meters` is the catalogue stroke of 85 mm rather than the
+98.4 mm measured between body origins, because the clear opening between pad
+faces is the smaller figure and the catalogue states it.
+
+Lowering that bound from 180 mm refuses `master_chef_can`, a cylinder
+102.5 by 103.2 mm that does not fit in any orientation, so it left the object
+set. The set is 17 objects and the class coverage did not move: `M-02`,
+`M-04`, `M-06` and `M-09`.
+
+**The jaw does not hold anything yet, and the reason is the approach rather
+than the jaw.** Driving the arm straight at a grasp pose sweeps the object
+off the belt before the fingers arrive: measured on a settled object, the
+approach displaced it by 5 mm to 356 mm depending on where the arm started,
+and after a descent from directly above the pinch point stood 182.6 mm from
+the object with zero pad-to-object contacts. Nothing about grip force or
+closing has been exercised, because nothing has yet been closed on.
 
 ## The object set
 
