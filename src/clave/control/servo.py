@@ -39,7 +39,12 @@ class Step:
 
 
 def follow(
-    model: Any, data: Any, arm: armmod.ArmIndices, command: Command, gain: float
+    model: Any,
+    data: Any,
+    arm: armmod.ArmIndices,
+    command: Command,
+    gain: float,
+    max_joint_step: float | None = None,
 ) -> Step:
     """Command one pose and report whether the arm could take it.
 
@@ -49,6 +54,10 @@ def follow(
         arm: The arm indices.
         command: The pose to command.
         gain: Fraction of the solved step to command.
+        max_joint_step: The furthest any one joint may be commanded to move,
+            in radians, or None for no cap. This is what holds near a wrist
+            singularity, where the damped solve still asks for a large joint
+            motion to buy a small Cartesian one.
 
     Returns:
         The step. A refused pose writes no actuator command, so the arm holds
@@ -71,7 +80,15 @@ def follow(
     # anybody inventing an angle for it.
     yaw = command.yaw if command.yaw is not None else armmod.tool_yaw(data, arm)
     return Step(
-        joints=armmod.step_toward(model, data, arm, target, gain=gain, yaw=yaw),
+        joints=armmod.step_toward(
+            model,
+            data,
+            arm,
+            target,
+            gain=gain,
+            yaw=yaw,
+            max_joint_step=max_joint_step,
+        ),
         refusal=None,
     )
 

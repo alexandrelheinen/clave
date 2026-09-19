@@ -15,6 +15,17 @@
 # than split the difference and do neither well, the run takes the view by
 # name.
 
+# The video renders on its own cadence, not on the capture cadence. The
+# tracker settles twice a second, which is a fine rate to decide at and a
+# terrible one to watch: at four frames a second the arm teleports between
+# poses and none of the motion this is meant to show is visible.
+video:
+  frames_per_second: 30
+  # Simulated seconds between rendered frames. At 0.01 with 30 frames a
+  # second the recording plays at one third of simulated time, which is slow
+  # enough to follow a traverse and fast enough not to bore.
+  interval_seconds: 0.01
+
 default_view: line
 
 views:

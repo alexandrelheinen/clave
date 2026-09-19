@@ -515,7 +515,12 @@ def main(argv: list[str] | None = None) -> int:
     dbg.add_argument("--seed", type=int, default=0)
     dbg.add_argument("--no-window", action="store_true")
     dbg.add_argument("--video", action="store_true")
-    dbg.add_argument("--fps", type=int, default=4)
+    dbg.add_argument(
+        "--fps",
+        type=int,
+        default=None,
+        help="playback rate, or the rate configs/debug/tracker.yml names",
+    )
     dbg.add_argument(
         "--view",
         default=None,
@@ -606,7 +611,12 @@ def _debug_tracker(root: Path, args: Any) -> int:
     rebuilt = ", ".join(f"{why} {count}" for why, count in report.reorders.items())
     print(f"  queue rebuilt   {rebuilt}, of {report.captures} captures")
     print(f"  head swapped    {report.head_churn} times with the old head still there")
+    print(f"  profile         {report.profile}")
     print(f"  visits served   {len(report.served)} {list(report.served)}")
+    if report.arrivals:
+        worst = max(report.arrivals) * 1000
+        mean = sum(report.arrivals) / len(report.arrivals) * 1000
+        print(f"  arrival error   mean {mean:.1f} mm, worst {worst:.1f} mm")
     print(f"  faults          {len(report.faults)}")
     for track_id, why in report.faults:
         print(f"    track {track_id}: {why}")

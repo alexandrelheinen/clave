@@ -390,6 +390,47 @@ head, and over the same run the head was swapped zero times while the track
 it replaced was still there to be served. A rebuild that keeps its head
 costs nothing.
 
+**What interception and the bounds found.** Four more defects, and two of
+them are the same mistake at different layers, which is the part worth
+remembering.
+
+Bounding a command against a *measurement* rather than against the previous
+command. Guidance did it with the reference and the traverse ran at the
+tracking error; the joint rate limiter then did it again one layer down.
+These are position actuators running a proportional-derivative loop, so the
+command has to lead the position to produce force, and capping that lead
+left almost no driving error. A flange asked to follow the belt at 0.31 m/s
+fell a metre behind inside two seconds. Measured against the previous
+command instead, the same cap costs a slower transient and nothing else.
+
+Compensating the traverse and not the staleness. An intercept that only
+accounts for how long the arm takes to arrive fixes nothing once the arm has
+caught up, because the traverse is then zero and the aim collapses onto a
+pose that is still half a second old. The goal carries the instant it was
+seen, and the intercept is carried from there.
+
+The outer radius needs the same projection the inner hole does. A chord
+between two points inside a disc stays inside it, so a path never leaves
+that way; an interception does, because aiming ahead puts the aim downstream
+of a pose that was reachable. Four visits in a sixteen second run were
+refused at 1.266 m to 1.287 m against a 1.25 m limit.
+
+The arrival tolerance was set from the wrong quantity. Ten millimetres came
+from how precisely the solver converges, which is about a millimetre. What
+decides how close the flange gets to a pose the belt is moving is the
+actuators running one time constant behind a moving command: swept across
+the belt, that settles at 24.3 mm over most of the width and 60.9 mm at the
+far edge. At 10 mm no visit could ever complete, and the symptom was a run
+that faulted nothing and served nothing.
+
+**What the arm does now.** Over twenty-two simulated seconds under the
+motion-only profile: 8 visits served, zero refusals, the flange holding the
+commanded pose to 1 mm and each completed visit arriving 24.9 mm from the
+pose it was asked for. That last figure is the actuator lag rather than an
+error anybody chose, and a controller given belt velocity as a feedforward
+term would cancel most of it. The full-visit profile completes one visit in
+the same time, because each one now tracks, descends, dwells and retreats.
+
 **What the walking skeleton found.** Four defects, all of them in the
 integration rather than in any one module, and none of them visible from the
 unit tests that pass on either side of them.

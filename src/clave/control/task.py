@@ -8,13 +8,17 @@ which is guidance, and nothing about joint angles, which is the servo.
 Under the motion-only profile the phases are standby, tracking, parking and
 fault. That is what tuning arm speed against belt speed needs: the flange
 rides at approach height the whole time, so nothing about a descent muddies
-what a distance figure means. The full-visit profile adds descent, dwell at
-the grasp plane and retreat, and it is not implemented yet: a machine that
-quietly ran the motion-only phases under a full-visit configuration would
-report figures for a visit that never descended, so it refuses instead.
+what a distance figure means. The full-visit profile adds descent to the
+grasp plane, a dwell there, and a retreat back to approach height.
 
 Neither profile grasps. No gripper exists in the model, so the phases one
-would need are absent from both rather than present and skipped.
+would need are absent from both rather than present and skipped, and a
+full visit therefore descends onto an object, waits over it, and leaves.
+
+**A descent follows the object it descends onto.** The belt does not stop
+while the flange comes down, so the descent goal keeps riding the belt and
+only its height changes. A descent to a fixed point would put the flange
+where the object was when the descent started.
 """
 
 from __future__ import annotations
@@ -32,6 +36,9 @@ from clave.control.settings import (
 )
 from clave.errors import ClaveError
 
+NANOS_PER_SECOND = 1_000_000_000
+"""Nanoseconds in a second, for the instant a goal records."""
+
 
 class TaskError(ClaveError):
     """The task machine cannot run this configuration."""
@@ -47,12 +54,20 @@ class Goal:
         yaw: What the tool should be turned to about the belt normal, or None
             to hold the rotation the arm already has.
         track_id: Which track this is about, or None when no track is.
+        observed_at_nanos: When this pose was seen. A goal is decided once
+            per capture and held for half a second while the belt keeps
+            moving, so a consumer aiming at it has to know how old it is.
+        rides_belt: Whether the belt is carrying this pose while the arm
+            travels to it. True for an object and false for the park pose,
+            which is what tells guidance whether to aim ahead of it.
     """
 
     phase: Phase
     position: Point
     yaw: float | None
     track_id: int | None
+    observed_at_nanos: int
+    rides_belt: bool = False
 
 
 class TaskMachine:
@@ -79,26 +94,31 @@ class TaskMachine:
         Raises:
             TaskError: If the profile is one this machine does not run.
         """
-        if settings.profile is not Profile.MOTION_ONLY:
-            raise TaskError(
-                f"task.profile is {settings.profile.value!r}, and only "
-                f"{Profile.MOTION_ONLY.value!r} is implemented. Descent, dwell "
-                f"and retreat have not been written, and running the "
-                f"motion-only phases under a full_visit configuration would "
-                f"report figures for a visit that never descended"
-            )
         self._settings = settings
         self._calibration = calibration
         self._belt_surface = belt_surface
         self._serving: int | None = None
         self._arrived_at: float | None = None
+        self._phase = Phase.STANDBY
         self._served: list[int] = []
         self._faults: list[tuple[int | None, str]] = []
+        self._arrivals: list[float] = []
 
     @property
     def served(self) -> tuple[int, ...]:
         """Every track this machine finished a visit to, in order."""
         return tuple(self._served)
+
+    @property
+    def arrivals(self) -> tuple[float, ...]:
+        """How far the flange was from its goal at the end of each dwell.
+
+        One figure per completed visit, in meters. This is what the run
+        reports: the arm is judged against the pose it was asked for, not
+        against the object, because whether that pose was the right pose is
+        the tracker's question and is measured separately.
+        """
+        return tuple(self._arrivals)
 
     @property
     def faults(self) -> tuple[tuple[int | None, str], ...]:
@@ -129,19 +149,22 @@ class TaskMachine:
         Returns:
             The goal for this tick.
         """
+        at_nanos = int(at_seconds * NANOS_PER_SECOND)
         if refusal is not None:
-            return self._fault(queue, flange, refusal)
+            return self._fault(queue, flange, refusal, at_nanos)
 
         head = self._next(queue)
         if head is None:
             self._serving, self._arrived_at = None, None
-            return self._rest(flange)
+            return self._rest(flange, at_nanos)
 
         if head.track_id != self._serving:
             self._serving, self._arrived_at = head.track_id, None
+            self._phase = Phase.TRACK
 
-        goal = self._track(head)
-        if math.dist(flange, goal.position) > self._settings.arrival_tolerance:
+        goal = self._track(head, at_nanos, self._phase)
+        gap = math.dist(flange, goal.position)
+        if gap > self._settings.arrival_tolerance:
             # Not there yet, so the dwell has not started. A visit that
             # completes because time passed rather than because the arm
             # arrived makes every distance figure meaningless.
@@ -150,11 +173,34 @@ class TaskMachine:
 
         if self._arrived_at is None:
             self._arrived_at = at_seconds
-        elif at_seconds - self._arrived_at >= self._settings.dwell_seconds:
+            return goal
+        if at_seconds - self._arrived_at < self._settings.dwell_seconds:
+            return goal
+
+        following = self._after(self._phase)
+        if following is None:
+            self._arrivals.append(gap)
             self._served.append(head.track_id)
             self._serving, self._arrived_at = None, None
+            self._phase = Phase.STANDBY
             return self.step(queue, flange, at_seconds)
-        return goal
+        self._phase, self._arrived_at = following, None
+        return self._track(head, at_nanos, self._phase)
+
+    def _after(self, phase: Phase) -> Phase | None:
+        """Return the phase that follows this one, or None to end the visit.
+
+        Args:
+            phase: The phase just completed.
+
+        Returns:
+            The next phase. Under the motion-only profile a visit is one
+            phase long, so tracking ends it. A full visit descends onto the
+            object, dwells there, and retreats before the visit closes.
+        """
+        if self._settings.profile is Profile.MOTION_ONLY:
+            return None
+        return {Phase.TRACK: Phase.DESCEND, Phase.DESCEND: Phase.RETREAT}.get(phase)
 
     def _next(self, queue: Queue) -> Candidate | None:
         """Return the first candidate worth serving, or None.
@@ -171,32 +217,45 @@ class TaskMachine:
         done = set(self._served) | refused
         return next((item for item in queue.order if item.track_id not in done), None)
 
-    def _track(self, head: Candidate) -> Goal:
-        """Return the goal for following one candidate.
+    def _track(self, head: Candidate, at_nanos: int, phase: Phase) -> Goal:
+        """Return the goal one phase of a visit asks for.
 
         Args:
             head: The candidate being served.
+            at_nanos: When the candidate's pose was seen.
+            phase: Which phase of the visit this is.
 
         Returns:
-            The goal, at approach height and carrying the calibration offset.
+            The goal, carrying the calibration offset. Only the height
+            changes between phases: the descent follows the object along the
+            belt exactly as the approach did, because the belt does not stop
+            while the flange comes down.
         """
         offset = self._calibration.flange_offset
+        above = (
+            head.flange[2] - self._belt_surface
+            if phase is Phase.DESCEND
+            else self._settings.approach_height
+        )
         return Goal(
-            phase=Phase.TRACK,
+            phase=phase,
+            rides_belt=True,
             position=(
                 head.flange[0] + offset[0],
                 head.flange[1] + offset[1],
-                self._belt_surface + self._settings.approach_height + offset[2],
+                self._belt_surface + above + offset[2],
             ),
             yaw=head.closing_axis,
             track_id=head.track_id,
+            observed_at_nanos=at_nanos,
         )
 
-    def _rest(self, flange: Point) -> Goal:
+    def _rest(self, flange: Point, at_nanos: int) -> Goal:
         """Return the goal for an arm with nothing to serve.
 
         Args:
             flange: Where the flange stands.
+            at_nanos: Now.
 
         Returns:
             The park pose, under the phase that says whether the arm is still
@@ -209,9 +268,10 @@ class TaskMachine:
             position=park,
             yaw=None,
             track_id=None,
+            observed_at_nanos=at_nanos,
         )
 
-    def _fault(self, queue: Queue, flange: Point, refusal: str) -> Goal:
+    def _fault(self, queue: Queue, flange: Point, refusal: str, at_nanos: int) -> Goal:
         """Record a refusal and hold the arm where it is.
 
         A refusal is about the pose commanded on the previous tick, so the
@@ -226,6 +286,7 @@ class TaskMachine:
             queue: The order selection produced, read only for its head.
             flange: Where the flange stands.
             refusal: Why the pose was refused.
+            at_nanos: Now.
 
         Returns:
             A goal asking for no motion, so a refused pose moves nothing.
@@ -238,4 +299,11 @@ class TaskMachine:
         if faulted is None or faulted not in already:
             self._faults.append((faulted, refusal))
         self._serving, self._arrived_at = None, None
-        return Goal(phase=Phase.FAULT, position=flange, yaw=None, track_id=faulted)
+        self._phase = Phase.STANDBY
+        return Goal(
+            phase=Phase.FAULT,
+            position=flange,
+            yaw=None,
+            track_id=faulted,
+            observed_at_nanos=at_nanos,
+        )

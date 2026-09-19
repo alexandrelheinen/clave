@@ -1,9 +1,4 @@
-"""The pose to command this tick, on a bounded path.
-
-Etapa A bounds speed and nothing else. The acceleration bound and the
-interception offset for belt travel arrive with etapa C, so nothing here
-asserts either.
-"""
+"""The pose to command this tick, on a bounded path."""
 
 from __future__ import annotations
 
@@ -11,7 +6,7 @@ import math
 
 import pytest
 
-from clave.control.guidance import toward
+from clave.control.guidance import Motion, toward
 from clave.control.settings import GuidanceSettings, Phase
 from clave.control.task import Goal
 
@@ -19,18 +14,51 @@ TIMESTEP = 0.002
 LIMITS = GuidanceSettings(max_speed=1.00, max_acceleration=2.50)
 
 
-def goal_at(x: float, y: float = 0.0, z: float = 1.12, yaw: float | None = 0.5) -> Goal:
+def goal_at(
+    x: float,
+    y: float = 0.0,
+    z: float = 1.12,
+    yaw: float | None = 0.5,
+    rides_belt: bool = False,
+    observed_at_nanos: int = 0,
+) -> Goal:
     """A tracking goal at one place."""
-    return Goal(phase=Phase.TRACK, position=(x, y, z), yaw=yaw, track_id=1)
+    return Goal(
+        phase=Phase.TRACK,
+        position=(x, y, z),
+        yaw=yaw,
+        track_id=1,
+        observed_at_nanos=observed_at_nanos,
+        rides_belt=rides_belt,
+    )
+
+
+def at(position: tuple[float, float, float], speed: float = 0.0) -> Motion:
+    """The reference, standing somewhere at some speed."""
+    return Motion(position=position, speed=speed)
+
+
+def run(
+    start: tuple[float, float, float],
+    goal: Goal,
+    ticks: int,
+    belt_speed: float = 0.0,
+    limits: GuidanceSettings = LIMITS,
+) -> list[Motion]:
+    """Step the reference toward a goal and keep every state it passed."""
+    motion = at(start)
+    history = [motion]
+    for _ in range(ticks):
+        command = toward(motion, goal, TIMESTEP, limits, belt_speed, 0)
+        motion = Motion(position=command.position, speed=command.speed)
+        history.append(motion)
+    return history
 
 
 def test_a_step_never_exceeds_the_speed_ceiling() -> None:
     """AC-MOVE-09: a step never exceeds the speed ceiling."""
-    flange = (0.0, 0.0, 1.12)
-    command = toward(flange, goal_at(2.0), TIMESTEP, LIMITS)
-    assert math.dist(flange, command.position) == pytest.approx(
-        LIMITS.max_speed * TIMESTEP
-    )
+    for motion in run((0.0, 0.0, 1.12), goal_at(2.0), ticks=3000):
+        assert motion.speed <= LIMITS.max_speed + 1e-9
 
 
 def test_the_ceiling_is_respected_over_a_whole_traverse() -> None:
@@ -39,25 +67,80 @@ def test_the_ceiling_is_respected_over_a_whole_traverse() -> None:
     Swept rather than checked once, because a limiter that holds for the
     first step and not the last is a limiter that does not hold.
     """
-    flange = (0.0, 0.0, 1.12)
-    goal = goal_at(1.30, y=0.40)
-    for _ in range(2000):
-        command = toward(flange, goal, TIMESTEP, LIMITS)
-        assert math.dist(flange, command.position) <= LIMITS.max_speed * TIMESTEP + 1e-9
-        flange = command.position
-    assert math.dist(flange, goal.position) < 1e-6
+    history = run((0.0, 0.0, 1.12), goal_at(1.30, y=0.40), ticks=4000)
+    for before, after in zip(history[:-1], history[1:], strict=True):
+        assert math.dist(before.position, after.position) <= (
+            LIMITS.max_speed * TIMESTEP + 1e-9
+        )
+    assert math.dist(history[-1].position, (1.30, 0.40, 1.12)) < 1e-6
 
 
-def test_a_goal_within_one_step_is_reached_rather_than_overshot() -> None:
-    """A goal within one step is reached rather than overshot.
+def test_the_acceleration_ceiling_holds_over_a_whole_traverse() -> None:
+    """AC-MOVE-09: the acceleration ceiling holds over a whole traverse.
 
-    Stepping a fixed distance past a near goal is what makes a flange buzz
-    around a target it has already met.
+    Etapa A asked for full speed on the first tick from a standstill, which
+    is a step in velocity the actuators answer with a lunge. Every change of
+    speed now fits inside the configured acceleration.
     """
-    flange = (0.0, 0.0, 1.12)
+    history = run((0.0, 0.0, 1.12), goal_at(1.30, y=0.40), ticks=4000)
+    for before, after in zip(history[:-1], history[1:], strict=True):
+        assert abs(after.speed - before.speed) <= (
+            LIMITS.max_acceleration * TIMESTEP + 1e-9
+        )
+
+
+def test_the_reference_starts_from_rest_and_ends_at_rest() -> None:
+    """AC-MOVE-09: the reference starts from rest and ends at rest.
+
+    A profile that arrives at speed has not arrived: it overshoots and comes
+    back, which reads on a plot as an arm that cannot settle.
+    """
+    history = run((0.0, 0.0, 1.12), goal_at(0.80), ticks=4000)
+    assert history[0].speed == pytest.approx(0.0)
+    assert history[-1].speed == pytest.approx(0.0, abs=1e-6)
+    assert max(state.speed for state in history) > 0.5 * LIMITS.max_speed
+
+
+def test_a_tighter_acceleration_takes_longer_to_arrive() -> None:
+    """A tighter acceleration takes longer to arrive.
+
+    The bound is a physical limit rather than a decoration, so halving it has
+    to cost time.
+    """
+    goal = goal_at(1.00)
+    brisk = run((0.0, 0.0, 1.12), goal, ticks=4000, limits=LIMITS)
+    gentle = run(
+        (0.0, 0.0, 1.12),
+        goal,
+        ticks=4000,
+        limits=GuidanceSettings(max_speed=LIMITS.max_speed, max_acceleration=0.5),
+    )
+
+    def ticks_to_arrive(history: list[Motion]) -> int:
+        for index, state in enumerate(history):
+            if math.dist(state.position, goal.position) < 1e-6:
+                return index
+        return len(history)
+
+    assert ticks_to_arrive(gentle) > ticks_to_arrive(brisk)
+
+
+def test_a_near_goal_is_approached_and_never_overshot() -> None:
+    """A near goal is approached and never overshot.
+
+    Under an acceleration bound a reference at rest cannot arrive in one
+    tick, so the property is not that it jumps there. It is that it closes
+    the gap monotonically and never passes the goal, because stepping a fixed
+    distance past a near target is what makes a flange buzz around something
+    it has already met.
+    """
     near = goal_at(0.0005)
-    command = toward(flange, near, TIMESTEP, LIMITS)
-    assert command.position == pytest.approx(near.position)
+    history = run((0.0, 0.0, 1.12), near, ticks=400)
+    gaps = [math.dist(state.position, near.position) for state in history]
+    for before, after in zip(gaps[:-1], gaps[1:], strict=True):
+        assert after <= before + 1e-12
+    assert gaps[-1] < 1e-9
+    assert max(state.position[0] for state in history) <= near.position[0] + 1e-12
 
 
 def test_the_step_runs_straight_at_the_goal() -> None:
@@ -68,7 +151,7 @@ def test_the_step_runs_straight_at_the_goal() -> None:
     """
     flange = (0.0, 0.0, 1.12)
     goal = goal_at(0.60, y=0.80, z=1.12)
-    command = toward(flange, goal, TIMESTEP, LIMITS)
+    command = toward(at(flange, speed=LIMITS.max_speed), goal, TIMESTEP, LIMITS, 0.0, 0)
     travelled = [command.position[axis] - flange[axis] for axis in range(3)]
     remaining = [goal.position[axis] - flange[axis] for axis in range(3)]
     scale = math.dist((0, 0, 0), travelled) / math.dist((0, 0, 0), remaining)
@@ -78,13 +161,17 @@ def test_the_step_runs_straight_at_the_goal() -> None:
 
 def test_the_yaw_the_goal_asked_for_is_carried_through() -> None:
     """AC-MOVE-07: the yaw the goal asked for is carried through."""
-    command = toward((0.0, 0.0, 1.12), goal_at(0.3, yaw=1.25), TIMESTEP, LIMITS)
+    command = toward(
+        at((0.0, 0.0, 1.12)), goal_at(0.3, yaw=1.25), TIMESTEP, LIMITS, 0.0, 0
+    )
     assert command.yaw == pytest.approx(1.25)
 
 
 def test_a_goal_asking_for_no_rotation_commands_none() -> None:
     """AC-MOVE-08: a goal asking for no rotation commands none."""
-    command = toward((0.0, 0.0, 1.12), goal_at(0.3, yaw=None), TIMESTEP, LIMITS)
+    command = toward(
+        at((0.0, 0.0, 1.12)), goal_at(0.3, yaw=None), TIMESTEP, LIMITS, 0.0, 0
+    )
     assert command.yaw is None
 
 
@@ -95,8 +182,16 @@ def test_a_fault_goal_commands_no_motion() -> None:
     already has, and guidance has to honour that rather than step toward it.
     """
     flange = (0.11, -0.22, 1.09)
-    held = Goal(phase=Phase.FAULT, position=flange, yaw=None, track_id=3)
-    assert toward(flange, held, TIMESTEP, LIMITS).position == pytest.approx(flange)
+    held = Goal(
+        phase=Phase.FAULT, position=flange, yaw=None, track_id=3, observed_at_nanos=0
+    )
+    motion = at(flange, speed=0.4)
+    for _ in range(400):
+        command = toward(motion, held, TIMESTEP, LIMITS, 0.0, 0)
+        assert command.position == pytest.approx(flange)
+        assert command.speed <= motion.speed
+        motion = Motion(position=command.position, speed=command.speed)
+    assert motion.speed == pytest.approx(0.0)
 
 
 def test_a_longer_tick_travels_further() -> None:
@@ -107,8 +202,9 @@ def test_a_longer_tick_travels_further() -> None:
     """
     flange = (0.0, 0.0, 1.12)
     goal = goal_at(2.0)
-    short = toward(flange, goal, 0.002, LIMITS)
-    long = toward(flange, goal, 0.010, LIMITS)
+    moving = at(flange, speed=LIMITS.max_speed)
+    short = toward(moving, goal, 0.002, LIMITS, 0.0, 0)
+    long = toward(moving, goal, 0.010, LIMITS, 0.0, 0)
     assert math.dist(flange, long.position) == pytest.approx(
         5.0 * math.dist(flange, short.position)
     )
@@ -137,19 +233,27 @@ def test_a_path_between_two_admitted_poses_stays_out_of_the_hole() -> None:
     """
     park = (0.45, -1.00, 1.20)
     across = (-0.50, 0.42, 1.12)
-    goal = Goal(phase=Phase.TRACK, position=across, yaw=0.0, track_id=1)
+    goal = Goal(
+        phase=Phase.TRACK,
+        position=across,
+        yaw=0.0,
+        track_id=1,
+        observed_at_nanos=0,
+    )
 
-    naive, guarded = park, park
+    naive, guarded = at(park), at(park)
     breached = False
-    for _ in range(3000):
-        naive = toward(naive, goal, TIMESTEP, LIMITS).position
-        guarded = toward(guarded, goal, TIMESTEP, LIMITS, keep_inside).position
-        if math.dist(naive[:2], BASE_XY) < INNER:
+    for _ in range(4000):
+        loose = toward(naive, goal, TIMESTEP, LIMITS, 0.0, 0)
+        tight = toward(guarded, goal, TIMESTEP, LIMITS, 0.0, 0, keep_inside)
+        naive = Motion(position=loose.position, speed=loose.speed)
+        guarded = Motion(position=tight.position, speed=tight.speed)
+        if math.dist(naive.position[:2], BASE_XY) < INNER:
             breached = True
-        assert math.dist(guarded[:2], BASE_XY) >= INNER - 1e-9
+        assert math.dist(guarded.position[:2], BASE_XY) >= INNER - 1e-9
 
     assert breached, "the straight line no longer crosses the hole to begin with"
-    assert math.dist(guarded, across) < 1e-6, "the guarded path still arrives"
+    assert math.dist(guarded.position, across) < 1e-6, "the guarded path arrives"
 
 
 def test_the_projection_leaves_a_pose_outside_the_hole_alone() -> None:
@@ -169,3 +273,143 @@ def test_the_projection_keeps_the_height_it_was_given() -> None:
     move. Changing the height here would quietly undo a descent.
     """
     assert keep_inside((0.0, -0.68, 1.07))[2] == pytest.approx(1.07)
+
+
+BELT = 0.31
+
+
+def test_a_goal_that_rides_the_belt_is_aimed_ahead_of_itself() -> None:
+    """AC-MOVE-10: a goal that rides the belt is aimed ahead of itself.
+
+    Commanding where the object is aims at where it was by the time the arm
+    arrives. Etapa A measured that lag at 102 mm against a 10 mm arrival
+    tolerance, which is why this exists.
+    """
+    standing = goal_at(0.60, rides_belt=False)
+    riding = goal_at(0.60, rides_belt=True)
+    start = at((-0.40, 0.0, 1.12))
+
+    still = toward(start, standing, TIMESTEP, LIMITS, BELT, 0)
+    ahead = toward(start, riding, TIMESTEP, LIMITS, BELT, 0)
+    assert ahead.aim is not None and still.aim is not None
+    # Both take the same first step; what differs is the direction, because
+    # the intercept sits downstream of the pose the goal reports.
+    assert ahead.aim[0] > riding.position[0]
+    assert ahead.aim[0] > still.aim[0]
+
+
+def test_the_intercept_is_where_the_object_will_be_when_the_arm_gets_there() -> None:
+    """AC-MOVE-10: the intercept is where the object will be on arrival.
+
+    Checked against the definition rather than against a constant: the time
+    the arm needs to reach the intercept is the same time the belt needs to
+    carry the object there.
+    """
+    goal = goal_at(0.60, rides_belt=True)
+    start = at((-0.40, 0.0, 1.12))
+    aim = toward(start, goal, TIMESTEP, LIMITS, BELT, 0).aim
+    assert aim is not None
+
+    carried = (aim[0] - goal.position[0]) / BELT
+    travel = math.dist(start.position, aim) / LIMITS.max_speed
+    assert carried == pytest.approx(travel, rel=0.05)
+
+
+def test_a_standing_goal_is_aimed_at_itself() -> None:
+    """AC-MOVE-10: a standing goal is aimed at itself.
+
+    The park pose does not ride the belt, and predicting it downstream would
+    send the arm past the place it was told to rest.
+    """
+    park = Goal(
+        phase=Phase.PARK,
+        position=(0.45, -1.00, 1.20),
+        yaw=None,
+        track_id=None,
+        observed_at_nanos=0,
+        rides_belt=False,
+    )
+    aim = toward(at((0.0, 0.0, 1.12)), park, TIMESTEP, LIMITS, BELT, 0).aim
+    assert aim is not None
+    assert aim == pytest.approx(park.position)
+
+
+def test_a_stopped_belt_intercepts_where_the_object_stands() -> None:
+    """A stopped belt intercepts where the object stands.
+
+    The degenerate case the prediction has to survive rather than divide by.
+    """
+    goal = goal_at(0.60, rides_belt=True)
+    aim = toward(at((-0.40, 0.0, 1.12)), goal, TIMESTEP, LIMITS, 0.0, 0).aim
+    assert aim is not None
+    assert aim == pytest.approx(goal.position)
+
+
+CAPTURE_TICKS = 250
+"""Ticks between decisions, matching the run's 0.5 s capture cadence."""
+
+
+def test_interception_closes_the_lag_a_chasing_command_leaves() -> None:
+    """AC-MOVE-10: interception closes the lag a chasing command leaves.
+
+    Modelled the way the loop actually runs, because that is where the lag
+    comes from: a goal is decided once per capture and held for 0.5 s while
+    the belt carries the object 157 mm. Refreshing the goal every tick would
+    hide the effect this exists to fix.
+    """
+    start = (-0.40, 0.0, 1.12)
+    origin = (0.60, 0.0, 1.12)
+
+    def lag(rides_belt: bool) -> float:
+        motion = at(start)
+        goal = None
+        for tick in range(3000):
+            now = int(tick * TIMESTEP * 1_000_000_000)
+            if tick % CAPTURE_TICKS == 0:
+                seen = (origin[0] + BELT * tick * TIMESTEP, origin[1], origin[2])
+                goal = Goal(
+                    phase=Phase.TRACK,
+                    position=seen,
+                    yaw=0.0,
+                    track_id=1,
+                    observed_at_nanos=now,
+                    rides_belt=rides_belt,
+                )
+            assert goal is not None
+            command = toward(motion, goal, TIMESTEP, LIMITS, BELT, now)
+            motion = Motion(position=command.position, speed=command.speed)
+            live = (origin[0] + BELT * tick * TIMESTEP, origin[1], origin[2])
+            if tick > CAPTURE_TICKS * 4:
+                return math.dist(motion.position, live)
+        raise AssertionError("the run never settled")
+
+    chasing, intercepting = lag(False), lag(True)
+    assert intercepting < 0.5 * chasing, f"{intercepting=} {chasing=}"
+
+
+def test_an_intercept_beyond_reach_is_pulled_back_to_the_edge() -> None:
+    """AC-MOVE-23: an intercept beyond reach is pulled back to the edge.
+
+    A chord between two points inside a disc stays inside it, so a path
+    never leaves by the outer radius. An interception does: aiming ahead of
+    an object the belt is carrying puts the aim downstream of a pose that
+    was reachable. Four visits in a sixteen second run were refused that way
+    at 1.266 m to 1.287 m against a 1.25 m limit.
+    """
+    from clave.world.arm import REACH_MAX_METERS
+
+    far = (BASE_XY[0] + 1.40, BASE_XY[1], 1.12)
+    pulled = keep_inside(far)
+    assert math.dist(pulled[:2], BASE_XY) <= REACH_MAX_METERS
+    assert pulled[2] == pytest.approx(1.12)
+
+
+def test_a_pose_inside_the_annulus_is_left_alone() -> None:
+    """A pose inside the annulus is left alone.
+
+    The projection is a constraint and not a filter: everywhere the arm is
+    trusted, the path is the straight line and nothing rounds it off.
+    """
+    for radius in (0.30, 0.70, 1.20):
+        pose = (BASE_XY[0] + radius, BASE_XY[1], 1.12)
+        assert keep_inside(pose) == pytest.approx(pose)

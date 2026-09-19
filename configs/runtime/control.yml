@@ -38,10 +38,25 @@ task:
   approach_height_meters: 0.220
 
   # How close the flange has to be to the pose a phase asked for before it
-  # counts as arrived. An assumption: the solver converges to about a
-  # millimetre, and 10 mm leaves room for the actuators to settle without
-  # calling an arrival that has not happened.
-  arrival_tolerance_meters: 0.010
+  # counts as arrived.
+  #
+  # MEASURED, and the first value here was wrong for an instructive reason.
+  # It was set at 10 mm from how precisely the solver converges, which is
+  # about a millimetre. That is the wrong quantity: the flange is following a
+  # pose the belt is moving, and what decides how close it gets is the
+  # position actuators running one time constant behind a moving command,
+  # not the solver. Sweeping the belt at the shipped speed puts the settled
+  # error at 24.3 mm over most of the width and 60.9 mm at the far edge,
+  # where the arm is most extended. At 10 mm no visit could ever complete.
+  #
+  # Seventy millimetres clears the worst of that with margin. It is the state
+  # machine's definition of having arrived and not a quality gate: what a run
+  # reports is the error each visit actually achieved.
+  #
+  # The lag is a lag and not a limit. A controller given the belt velocity as
+  # a feedforward term would cancel most of it, which is a change to the
+  # servo rather than to this number.
+  arrival_tolerance_meters: 0.070
 
   # How long the flange holds station before the visit counts as served.
   dwell_seconds: 0.30
