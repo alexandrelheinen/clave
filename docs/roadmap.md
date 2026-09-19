@@ -83,6 +83,8 @@ and when.
 | v1.1.0 | `perception-record` | The perception contract as code: the belt frame, the clock, evidence and its payloads, the sensor adapters, the barcode decoder, the fusion rules, and `WasteObject` | In the tree, awaiting its tag |
 | v1.2.0 | [learned-tracker](requirements/learned-tracker.md) | The association rule as a trained model, the tracking stage the platform lacks, and the runtime swap away from `associate()` | Requirements written, design open |
 | v1.3.0 | [arm-control](requirements/arm-control.md) | The arm moving to the pose a grasp marker stands at: target selection, the task state machine, guidance between waypoints, and the servo step | Requirements written, design open |
+| v1.4.0 | [end-effector](requirements/end-effector.md) | A parallel jaw on the flange, closing on an object and holding it, and pick success rate as a measured figure | Requirements written, design open |
+| v1.5.0 | [sorting-outputs](requirements/sorting-outputs.md) | A chute opening per channel, a place recorded when an object crosses one, and misroutes counted | Requirements written, design open |
 
 **v1.1.0 release criteria.** `clave.tracker` produces a `WasteObject` from
 evidence. An observation taken at one instant propagates to a later one by belt
@@ -114,6 +116,31 @@ stay inside their configured bounds, proved by a test rather than asserted, and
 a wrist configuration where the Jacobian loses rank bounds the commanded joint
 velocity rather than meeting the pose. Nothing grasps, so pick success rate and
 cycle time to placement stay unmeasured and the report says why.
+
+**v1.4.0 release criteria.** A Robotiq 2F-85 from MuJoCo Menagerie is
+vendored with its provenance and licence, mounted on the flange, and the tool
+site every commanded pose is expressed against moves with it. The object set
+is re-swept against the 85 mm jaw rather than carried forward from a
+different effector. The jaw closes on an object and holds it against belt
+motion and gravity, proved by the object moving with the flange and not by
+the jaw being commanded shut. A failed grasp is counted and named. Pick
+success rate is reported as a measured figure, beside the effector it was
+measured with and beside the statement that the suction systems this stream
+normally runs are faster.
+[requirements/end-effector.md](requirements/end-effector.md) records why a
+jaw is adopted against what a municipal packaging line would install, and it
+is a simulator argument rather than a process one.
+
+**v1.5.0 release criteria.** One chute opening per resolved channel is built
+into the conveyor structure at belt height, every one inside the region the
+arm is trusted over, with a load-time refusal for any that is not. An object
+crossing an opening records a place naming the object, the channel and the
+instant. A place into the wrong channel counts as a misroute, which is the
+figure `max_misroute_rate` has gated with no way to produce. Objects that
+reach the end of the belt unplaced are reported apart from both, because a
+throughput loss is not a contaminated bale. Cycle time from a published
+decision to an object crossing an opening is measured, which closes the last
+figure the benchmark reports as unmeasurable.
 
 ## Seams to watch
 
