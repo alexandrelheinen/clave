@@ -27,14 +27,20 @@ monotone predicate rather than by an optimiser. It is suboptimal and it is
 knowably suboptimal: what the pick needs is a duration it can count on, not
 the shortest one that exists.
 
-**The descent duration is not free.** Descending `z_offset` while slowing
-from `V_approach` to nothing takes
+**The descent duration is not free.** In the frame moving with the belt the
+descent is purely vertical, from height `z_offset` at speed `V_approach` to
+rest on the object. Writing the quintic in `u = 1 - s` and reading the
+leading term, which is cubic because position, velocity and acceleration
+all vanish at the end, gives the exact condition for never passing below
+the object:
 
-    dt = 2 * z_offset / V_approach
+    dt <= 5 * z_offset / (2 * V_approach)
 
-which is where a quintic stops dipping below the object it is descending
-onto. Longer overshoots, shorter costs acceleration. Swept on the shipped
-line, `dt` above that value put the flange 0.64 mm under the pick point.
+This uses `2 * z_offset / V_approach`, four fifths of that limit, which
+leaves margin rather than sitting on a boundary. Acceleration is not the
+binding constraint here, so there is nothing to buy by stretching toward it,
+and a shorter descent keeps the prediction horizon short, which is the
+reason the clearance is small in the first place.
 
 **Both ends move with the belt.** The terminal velocity at the pick is the
 object's own, not zero, and the approach velocity is the object's plus the
@@ -193,9 +199,11 @@ def descent_seconds(z_offset: float, approach_speed: float) -> float:
             there, in meters per second.
 
     Returns:
-        The duration. This is `2 * z_offset / approach_speed`, which is where
-        a quintic stops dipping below the object it is descending onto:
-        longer overshoots and shorter costs acceleration.
+        The duration, `2 * z_offset / approach_speed`. The exact condition
+        for never passing below the object is
+        `dt <= 5 * z_offset / (2 * approach_speed)`, read off the leading
+        cubic term of the quintic written about its end, and this sits at
+        four fifths of it rather than on it.
 
     Raises:
         ValueError: If either argument is not positive, because neither a
@@ -206,6 +214,21 @@ def descent_seconds(z_offset: float, approach_speed: float) -> float:
             f"a descent of {z_offset} m at {approach_speed} m/s has no duration"
         )
     return 2.0 * z_offset / approach_speed
+
+
+def descent_limit_seconds(z_offset: float, approach_speed: float) -> float:
+    """Return the longest descent that never passes below the object.
+
+    Args:
+        z_offset: How far above the object the approach stands, in meters.
+        approach_speed: How fast the flange is coming down, in meters per
+            second.
+
+    Returns:
+        `5 * z_offset / (2 * approach_speed)`, which is where the leading
+        cubic term of the quintic written about its end changes sign.
+    """
+    return 2.5 * z_offset / approach_speed
 
 
 def approach(

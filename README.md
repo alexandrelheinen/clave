@@ -235,6 +235,7 @@ outside the v1.x line. What CLAVE takes from each sibling is itemized in the
 | [docs/roadmap.md](docs/roadmap.md) | The ladder to v1.0.0, its release criteria, and the spec dependency order |
 | [docs/architecture.md](docs/architecture.md) | What each block does, its inputs and outputs, and what is deliberately absent |
 | [docs/measurements.md](docs/measurements.md) | Every measured number a gate or a configuration value rests on |
+| [docs/guidance-formulation.md](docs/guidance-formulation.md) | The mathematics the arm's motion is planned with, and the one place it was wrong |
 | `crates/` | The decision contract, the routing policy, the publisher, the safety layer, the runtime |
 | `src/clave/` | The world, the data pipeline, training, validation, the runtime, the benchmark, the demos |
 | `configs/` | Every tunable. Nothing in Python or MJCF carries a numeric default |
