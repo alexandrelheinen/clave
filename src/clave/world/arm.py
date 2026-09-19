@@ -61,6 +61,22 @@ those bounds measured from the mounting face, so this must too or the vertical
 band is wrong by that offset.
 """
 
+GRIPPER_ACTUATOR = "arm_grip_fingers_actuator"
+"""The one actuator the jaw has, driving both fingers through a tendon.
+
+Its command range is 0 to 255, which is the scale a real 2F-85 takes over
+its own bus rather than a number this project chose. Zero is open.
+"""
+
+PINCH_SITE = "arm_grip_pinch"
+"""Where the jaw closes, which is 155.8 mm beyond the flange.
+
+Every commanded pose is still expressed against the flange, because that is
+what the trusted reach bounds were swept against. This is where the object
+ends up, and the offset between the two is what
+`configs/runtime/control.yml` carries as the finger length.
+"""
+
 TOOL_SITE = "arm_attachment_site"
 """The flange an end effector bolts to, which every target is expressed for."""
 
@@ -106,6 +122,9 @@ closed-form chord. Nothing of that kind applies here, and the constant exists so
 a reader does not go looking for it.
 """
 
+GRIPPER_FULLY_CLOSED = 255.0
+"""The command that shuts the jaw, on the scale the model declares."""
+
 _DOWN = np.array([0.0, 0.0, -1.0])
 """The tool axis is held along this, which is what makes the task four-axis."""
 
@@ -125,6 +144,8 @@ class ArmIndices:
         joint_ids: Model joint ids of the six axes, base outward.
         dof_indices: Velocity-space indices of those joints.
         actuator_ids: Position actuators driving them, in joint order.
+        gripper_actuator: The jaw's single actuator.
+        pinch_site: Where the jaw closes.
         tool_site: Site id of the flange.
         tool_body: Body id the flange belongs to, which the Jacobian needs.
         base_position: World position of the arm's mounting face, which is the
@@ -136,6 +157,8 @@ class ArmIndices:
     joint_ids: tuple[int, ...]
     dof_indices: tuple[int, ...]
     actuator_ids: tuple[int, ...]
+    gripper_actuator: int
+    pinch_site: int
     tool_site: int
     tool_body: int
     base_position: NDArray[np.float64]
@@ -194,6 +217,10 @@ def locate(model: Any) -> ArmIndices:
     actuator_ids = tuple(
         lookup(mujoco.mjtObj.mjOBJ_ACTUATOR, name, "actuator") for name in ARM_ACTUATORS
     )
+    gripper_actuator = lookup(
+        mujoco.mjtObj.mjOBJ_ACTUATOR, GRIPPER_ACTUATOR, "actuator"
+    )
+    pinch_site = lookup(mujoco.mjtObj.mjOBJ_SITE, PINCH_SITE, "site")
     site = lookup(mujoco.mjtObj.mjOBJ_SITE, TOOL_SITE, "site")
 
     data = mujoco.MjData(model)
@@ -203,6 +230,8 @@ def locate(model: Any) -> ArmIndices:
         joint_ids=joint_ids,
         dof_indices=tuple(int(model.jnt_dofadr[j]) for j in joint_ids),
         actuator_ids=actuator_ids,
+        gripper_actuator=gripper_actuator,
+        pinch_site=pinch_site,
         tool_site=site,
         tool_body=int(model.site_bodyid[site]),
         base_position=np.array(data.xpos[base_body], dtype=np.float64),
@@ -559,6 +588,33 @@ def project_into_reach(
         return base_xy[0] + inner, base_xy[1]
     scale = (inner if radius < inner else outer) / radius
     return base_xy[0] + offset_x * scale, base_xy[1] + offset_y * scale
+
+
+def pinch_position(data: Any, arm: ArmIndices) -> NDArray[np.float64]:
+    """Return where the jaw closes, in world coordinates.
+
+    Args:
+        data: Its state, with forward kinematics already current.
+        arm: The arm indices.
+
+    Returns:
+        The position.
+    """
+    return np.array(data.site_xpos[arm.pinch_site], dtype=np.float64)
+
+
+def hold(data: Any, arm: ArmIndices, closed: float) -> None:
+    """Command the jaw.
+
+    Args:
+        data: Its state, modified in place.
+        arm: The arm indices.
+        closed: How far to close, from 0 for fully open to 1 for fully shut.
+            Scaled here onto the 0 to 255 the model takes, which is the scale
+            a real 2F-85 accepts over its own bus.
+    """
+    span = float(np.clip(closed, 0.0, 1.0))
+    data.ctrl[arm.gripper_actuator] = span * GRIPPER_FULLY_CLOSED
 
 
 def tool_yaw(data: Any, arm: ArmIndices) -> float:

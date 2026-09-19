@@ -14,6 +14,13 @@
 # configs/world/sorting_line.yml already carries for `material_class`, and its
 # comment says so in the same words.
 #
+# One entry left this catalogue rather than being added to it. `077623000618`
+# was the master chef can, which the 85 mm jaw cannot close on and which
+# therefore left the object set. A catalogue naming an object the world does
+# not carry is refused by a test, and it was also one of the only two codes
+# that ever decoded on a rendered frame, so the decode yield in
+# docs/measurements.md is stale until it is re-measured.
+#
 # No entry carries a packaging mass. A resolved mass may narrow the band, and
 # the code supports it, but nothing here measured one and a number
 # invented to exercise a code path is worse than an unexercised code path.
@@ -33,11 +40,6 @@ codes:
     object: sugar_box
     decoded_from: texture
     components: [M-09]
-
-  "077623000618":
-    object: master_chef_can
-    decoded_from: rendered gate frame
-    components: [M-06, M-09]
 
   "037600138727":
     object: potted_meat_can

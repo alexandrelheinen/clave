@@ -92,25 +92,42 @@ arm:
   # the belt, because that is the frame the sweep measured in. Solutions exist
   # well past both ends; these stop short on purpose.
   tool_above_base_meters: [-0.05, 0.45]
-  # The widest object the end effector handles. The effector is specified
-  # separately, so this bounds what the pick geometry assumes rather than what
-  # any particular jaw can close on.
-  max_grasp_width_meters: 0.180
+  # The widest object the end effector handles.
+  #
+  # MEASURED FROM THE EFFECTOR THAT IS NOW ON THE ARM. The Robotiq 2F-85's
+  # catalogue stroke is 85 mm, and the compiled model separates its pads by
+  # 98.4 mm fully open and 14.9 mm fully closed. The catalogue figure is the
+  # one used, because it is the clear opening between pad faces rather than
+  # between body origins.
+  #
+  # This was 180 mm while the effector was hypothetical, and lowering it is
+  # what refuses `master_chef_can`: a cylinder 102.5 by 103.2 mm, so it does
+  # not fit in any orientation. It was removed from the object set below,
+  # which costs one object in eighteen and no class, and which halves the
+  # barcode decode yield because it was one of only two objects that ever
+  # decoded. docs/measurements.md carries the re-measured figure.
+  max_grasp_width_meters: 0.085
 
-# The end effector the pick geometry assumes.
+# The end effector on the arm.
 #
-# NOTHING HERE WAS MEASURED. CLAVE has no gripper, in the model or on a bench,
-# and nothing in the repository closes a jaw. These dimensions exist so a grasp
-# pose can be drawn and reasoned about, and every one of them is a stated
-# assumption that a real effector would replace.
+# A Robotiq 2F-85, vendored under third_party/mujoco_menagerie_robotiq_2f85/
+# from the same Menagerie commit the UR10e came from. It replaced a set of
+# stated assumptions, and the numbers below are now read off the compiled
+# model rather than chosen.
 #
 # The jaw opening is not repeated here. It is `arm.max_grasp_width_meters`,
 # which already bounds the object set, and a second copy would let the two
-# drift until the world spawned objects its own marker called unreachable.
+# drift until the world spawned objects its own gripper could not close on.
 effector:
   # How far the pads sit below the face the tool bolts to. This is the whole
   # shift between where an object is and where the arm has to put its flange.
-  finger_length_meters: 0.090
+  #
+  # MEASURED from the compiled model, as the distance from the arm's
+  # `attachment_site` to the gripper's own `pinch` site. It was 90 mm while
+  # the effector was an assumption and the real one is 155.8 mm. A test reads
+  # both sites out of the compiled model and fails if this drifts from them,
+  # so re-copying the vendored gripper cannot move it silently.
+  finger_length_meters: 0.1558
   # One pad, in its own three directions: thickness along the way it travels
   # to close, depth across that horizontally, and height vertically. A pad is
   # drawn to scale, so a marker that looks like it would collide probably
@@ -339,13 +356,6 @@ objects:
   # chef can is 102.5 mm across and was the largest thing the old gripper
   # refused outright. The end effector is specified separately and is what will
   # set the next bound.
-  - name: master_chef_can
-    material_class: M-06
-    shape: mesh
-    mesh: third_party/ycb_sim/meshes/002_master_chef_can.msh
-    texture: third_party/ycb_sim/textures/002_master_chef_can.png
-    density_kg_per_m3: [180, 320]
-
   - name: tomato_soup_can
     material_class: M-06
     shape: mesh
