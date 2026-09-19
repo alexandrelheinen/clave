@@ -11,6 +11,7 @@ from clave.control.trajectory import (
     State,
     approach,
     descend,
+    descent_limit_seconds,
     descent_seconds,
 )
 
@@ -71,19 +72,59 @@ def test_asking_past_the_end_returns_the_end() -> None:
     assert arc.at(9.0).position == pytest.approx(arc.at(0.5).position)
 
 
-def test_the_descent_duration_is_where_the_dip_stops() -> None:
-    """The descent duration is where the dip stops.
+def test_the_dip_starts_exactly_where_the_algebra_says() -> None:
+    """The dip starts exactly where the algebra says.
 
-    Twice the clearance over the approach speed. Longer and the quintic
-    passes below the object it is descending onto, which for a jaw closing
-    around something is the difference between a grasp and a collision.
+    Writing the quintic about its end in `u = 1 - s`, the leading term is
+    cubic because position, velocity and acceleration all vanish there, and
+    its coefficient is `-2 * (2 * V * dt - 5 * Z)`. So the descent passes
+    below the object exactly when `dt > 5 * Z / (2 * V)`. This brackets that
+    boundary from both sides rather than checking one safe value, which is
+    what tells the two apart.
+    """
+    clearance, speed = 0.05, 0.25
+    boundary = descent_limit_seconds(clearance, speed)
+    assert boundary == pytest.approx(0.50)
+
+    top = (0.0, 0.0, 1.00)
+    for span, dips in ((boundary * 0.98, False), (boundary * 1.10, True)):
+        arc = Segment(
+            start=State(
+                position=top,
+                velocity=(BELT[0], 0.0, -speed),
+                acceleration=(0.0, 0.0, 0.0),
+            ),
+            end=State(
+                position=(BELT[0] * span, 0.0, top[2] - clearance),
+                velocity=BELT,
+                acceleration=(0.0, 0.0, 0.0),
+            ),
+            duration=span,
+        )
+        lowest = min(arc.at(span * i / 400).position[2] for i in range(401))
+        under = (top[2] - clearance) - lowest
+        assert (under > 1e-6) is dips, f"{span:.3f} s dipped {under * 1000:.3f} mm"
+
+
+def test_the_descent_used_sits_inside_that_boundary_with_margin() -> None:
+    """The descent used sits inside that boundary with margin.
+
+    Four fifths of the limit rather than on it. Acceleration is not the
+    binding constraint, so stretching toward the boundary buys nothing, and
+    a shorter descent keeps the prediction horizon short.
     """
     assert descent_seconds(0.05, 0.25) == pytest.approx(0.40)
+    assert descent_seconds(0.05, 0.25) == pytest.approx(
+        0.8 * descent_limit_seconds(0.05, 0.25)
+    )
 
+
+def test_the_chosen_descent_never_dips() -> None:
+    """The chosen descent never dips."""
     clearance, speed = 0.05, 0.25
     exact = descent_seconds(clearance, speed)
     top = (0.0, 0.0, 1.00)
-    for stretch, dips in ((1.0, False), (1.5, True)):
+    for stretch, dips in ((1.0, False),):
         span = exact * stretch
         arc = Segment(
             start=State(
