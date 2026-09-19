@@ -591,12 +591,15 @@ def _debug_tracker(root: Path, args: Any) -> int:
         seed=args.seed,
         window=not args.no_window,
         video=args.video,
+        fps=args.fps,
     )
     print()
     print(f"  captures        {report.captures}")
     print(f"  tracks open     {report.tracks}")
-    print(f"  drawn on last   {report.drawn}")
+    print(f"  markers on last {report.drawn}, as {report.geoms} geoms")
     print(f"  frames written  {report.frames_written} to {report.output}")
+    if report.video_path is not None:
+        print(f"  video           {report.video_path}")
     if report.windowed:
         print("  window          shown live")
     else:
@@ -604,6 +607,8 @@ def _debug_tracker(root: Path, args: Any) -> int:
     print()
     print("  These frames are a debug render of the tracker alone. They are not")
     print("  the runtime loop's output and must not be published as a figure.")
+    print("  The markers are scene geometry. Their height is a configured")
+    print("  standoff, because no sensor on this line estimates one.")
     return 0
 
 
