@@ -119,14 +119,18 @@ against the suction systems the survey describes. A suction effector remains
 the honest thing to add later *if* a vacuum model arrives that is more than a
 conditional weld.
 
-**What adopting it costs.** The jaw opens 85 mm and the world currently
-admits objects up to `arm.max_grasp_width_meters` of 180 mm.
-`docs/measurements.md` records the object set at two earlier bounds: at a
-55.7 mm jaw, 14 objects and 4 of 11 classes; at a 180 mm stroke, 18 objects
-and the same 4 classes. Eighty-five millimetres lands between them, so the
-set shrinks and the class coverage probably does not move, since it did not
-move across that whole range. The number has to be re-swept rather than
-interpolated.
+**What adopting it costs, swept rather than estimated.** The jaw opens
+85 mm and the world admits objects up to `arm.max_grasp_width_meters` of
+180 mm. Measured against the compiled meshes, the 85 mm jaw takes the set
+from 18 objects to 17 and leaves the class coverage where it was, at `M-02`,
+`M-04`, `M-06` and `M-09`. The one object it loses is `master_chef_can` at
+102.5 mm across its narrowest horizontal axis, and `M-06` keeps three others.
+One object in eighteen, and no class.
+
+Until that is settled the shipped world refuses to build at an 85 mm limit,
+naming that can, which is the graspability check behaving correctly.
+
+A Robotiq 2F-140 would keep all eighteen and Menagerie does not carry one.
 
 ## What this does not settle
 

@@ -65,12 +65,18 @@ if a vacuum model arrives that is more than a conditional weld.
 
 - **The model is adopted, not authored**, and vendored the way the UR10e
   was, with its provenance and licence recorded beside it.
-- **The jaw opens 85 mm and the world admits 180 mm.** The object set has to
-  be re-swept against the jaw that lands rather than interpolated.
-  `docs/measurements.md` records 14 objects and 4 of 11 classes at a 55.7 mm
-  jaw and 18 objects and the same 4 classes at 180 mm, so the set shrinks
-  and the class coverage probably does not move. Probably is not a
-  measurement.
+- **The jaw opens 85 mm and the world admits 180 mm, and the world will
+  refuse to load until that is settled.** Swept against the compiled meshes
+  rather than interpolated: at 85 mm the set goes from 18 objects to 17 and
+  the class coverage does not move, staying at `M-02`, `M-04`, `M-06` and
+  `M-09`. The single casualty is `master_chef_can`, 102.5 mm across its
+  narrowest horizontal axis, and its class keeps three other objects. So the
+  cost is one object in eighteen and no class.
+
+  Until the object set or `arm.max_grasp_width_meters` changes, building the
+  shipped world with an 85 mm limit raises, naming that can. That is the
+  existing graspability check doing its job, and it is the first thing this
+  step has to resolve rather than a surprise to meet later.
 - **Grip force is configuration.** The gripper's own range is 20 to 235 N
   and what this line uses inside it is a YAML key.
 - **The safety layer does not learn about the gripper.** It checks a pose
@@ -96,9 +102,9 @@ naming any that is absent.
 exceeds the jaw's stroke, so a world cannot spawn what its own effector
 cannot close on.
 
-`AC-GRIP-04`: The system shall re-sweep the object set against the adopted
-jaw and record the objects and the classes it admits, rather than carrying
-forward a count measured against a different effector.
+`AC-GRIP-04`: The system shall admit the object set against the adopted jaw
+and record the objects and classes it admits, and shall refuse at load any
+object the jaw cannot close on.
 
 `AC-GRIP-05`: When the task machine reaches its grasp phase, the system
 shall close the jaw, and when it reaches its release phase, shall open it.
@@ -137,6 +143,12 @@ envelope is refused by arithmetic; a jaw that closes on a tumbling package
 and comes away empty is the simulator disagreeing with the plan, and that
 disagreement is the whole value of having contact physics under the
 controller.
+
+**Why not the wider jaw.** A Robotiq 2F-140 would keep all eighteen objects,
+and Menagerie does not carry one: it has the 2F-85 and no other Robotiq
+model. Authoring a 140 mm variant would put an unvalidated model beside a
+validated one to save a single tuna-can-sized object, which is the trade
+`D-13` already declined in the other direction.
 
 **What the effector does not fix.** The 24.9 mm the flange currently trails
 a moving pose by is actuator lag, not grasp error, and a jaw does not change
