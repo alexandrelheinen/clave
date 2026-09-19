@@ -33,6 +33,7 @@ in context.
 | Every measured number a gate or a config value rests on | [docs/measurements.md](docs/measurements.md) |
 | The version ladder, release criteria, and the open defects each step closes | [docs/roadmap.md](docs/roadmap.md) |
 | What a feature has to do, and the ids its tests reference | [docs/requirements/](docs/requirements/) |
+| Why an option was chosen over the ones the field actually uses | [docs/research/](docs/research/) |
 | How a waste object is described, independently of which sensor saw it | [docs/perception-contract.md](docs/perception-contract.md) |
 | Coding notes specific to CLAVE | [docs/guidelines.md](docs/guidelines.md) |
 | Standards, toolchain, and how to install it | [standards/README.md](standards/README.md) |
