@@ -20,12 +20,21 @@ demonstrations from, so imitation learning starts with a teacher that works.
 ## Scope
 
 - **In**: the perception record, the learned association rule, the tracking
-  stage the platform lacks, and the runtime swap that takes identity away from
-  the simulator.
+  stage the platform lacks, the runtime swap that takes identity away from the
+  simulator, and the arm control that moves to a pose the tracker produced.
 - **Out**: physical hardware of any kind, real cameras, real belts, real arms,
-  and the BOSSA edge deployment that goes with them. Motion planning and
-  effector execution, which stay in ARCO and FRET. Any claim about real-world
-  accuracy, because nothing in the v1.x line measures it.
+  and the BOSSA edge deployment that goes with them. Grasping, placement and
+  anything that closes an effector. Any claim about real-world accuracy,
+  because nothing in the v1.x line measures it.
+
+Arm control was out of scope until the tracker produced poses worth reaching
+for. It moved in because the alternative blocks on a sibling roadmap: FRET
+carries the state machine and the joint-space controller, but its kinematics
+backends are written per robot and it has none for the UR10e, its scenes are
+tabletop, and its belt is a version that has not shipped.
+[requirements/arm-control.md](requirements/arm-control.md) records the
+reasoning and shapes the modules to FRET's own interfaces, so consolidating
+later is a port. Grasping and placement stay out.
 
 ## Constraints
 
@@ -73,6 +82,7 @@ and when.
 | --- | --- | --- | --- |
 | v1.1.0 | `perception-record` | The perception contract as code: the belt frame, the clock, evidence and its payloads, the sensor adapters, the barcode decoder, the fusion rules, and `WasteObject` | In the tree, awaiting its tag |
 | v1.2.0 | [learned-tracker](requirements/learned-tracker.md) | The association rule as a trained model, the tracking stage the platform lacks, and the runtime swap away from `associate()` | Requirements written, design open |
+| v1.3.0 | [arm-control](requirements/arm-control.md) | The arm moving to the pose a grasp marker stands at: target selection, the task state machine, guidance between waypoints, and the servo step | Requirements written, design open |
 
 **v1.1.0 release criteria.** `clave.tracker` produces a `WasteObject` from
 evidence. An observation taken at one instant propagates to a later one by belt
@@ -94,6 +104,16 @@ behavior when two objects cross, or touch and segment as one, is stated and
 tested rather than left undefined. The runtime consumes `WasteObject` and no
 longer calls `associate()`. The model's identity recovery is reported against
 the ground-truth associator, including when the comparison is unflattering.
+
+**v1.3.0 release criteria.** The arm reaches the pose a marker stands at and
+holds it while the belt carries the object under the flange, from one command,
+with the distance between the flange and the commanded pose reported for every
+visit. A visit that the solver or the safety envelope refused is counted and
+named rather than dropped. The commanded task-space speed and acceleration
+stay inside their configured bounds, proved by a test rather than asserted, and
+a wrist configuration where the Jacobian loses rank bounds the commanded joint
+velocity rather than meeting the pose. Nothing grasps, so pick success rate and
+cycle time to placement stay unmeasured and the report says why.
 
 ## Seams to watch
 
