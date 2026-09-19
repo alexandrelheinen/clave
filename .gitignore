@@ -1,6 +1,8 @@
 # --- Rust ---
 target/
-debug/
+# Cargo's build profile directory, anchored. Unanchored it also swallowed
+# configs/debug/, which is committed configuration rather than build output.
+/debug/
 **/*.rs.bk
 *.pdb
 **/mutants.out*/

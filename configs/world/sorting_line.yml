@@ -97,6 +97,37 @@ arm:
   # any particular jaw can close on.
   max_grasp_width_meters: 0.180
 
+# The end effector the pick geometry assumes.
+#
+# NOTHING HERE WAS MEASURED. CLAVE has no gripper, in the model or on a bench,
+# and nothing in the repository closes a jaw. These dimensions exist so a grasp
+# pose can be drawn and reasoned about, and every one of them is a stated
+# assumption that a real effector would replace.
+#
+# The jaw opening is not repeated here. It is `arm.max_grasp_width_meters`,
+# which already bounds the object set, and a second copy would let the two
+# drift until the world spawned objects its own marker called unreachable.
+effector:
+  # How far the pads sit below the face the tool bolts to. This is the whole
+  # shift between where an object is and where the arm has to put its flange.
+  finger_length_meters: 0.090
+  # One pad, in its own three directions: thickness along the way it travels
+  # to close, depth across that horizontally, and height vertically. A pad is
+  # drawn to scale, so a marker that looks like it would collide probably
+  # would.
+  pad_thickness_meters: 0.012
+  pad_depth_meters: 0.040
+  pad_height_meters: 0.050
+  # Where the pads close, measured up from the belt surface.
+  #
+  # This stands in for a height nobody measures. The gate looks straight down
+  # and estimates no depth, the `Height` role is refused at intake, and a
+  # `WasteObject` on this line therefore carries no height at all. A depth
+  # sensor would replace this constant with a reading and change nothing else.
+  # Until then, 45 mm is roughly half the height of the taller packages in the
+  # object set, which is where a jaw would close on them.
+  grasp_height_meters: 0.045
+
 bins:
   # One bin per distinct channel across the object set below.
   #

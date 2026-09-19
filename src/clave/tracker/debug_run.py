@@ -2,12 +2,23 @@
 
 This is a diagnostic, not a demonstration. It drives `clave.tracker` directly
 rather than through `clave.runtime.loop`, because the tracker is deliberately
-not wired into the loop yet, and every frame it writes says so.
+not wired into the loop yet.
 
-A window opens when a display is available and the run writes its artifact
+What a reader sees is the world, with a grasp marker standing where the
+tracker believes each object is and turned the way a jaw would have to close
+on it. The markers are scene geometry rather than paint on a frame, so MuJoCo
+shades and occludes them like any other solid, and nothing touches the image
+after the renderer is finished with it.
+
+Two cameras run and they never mix. The tracker segments the nadir gate,
+because that is the sensor the line actually carries. The human watches an
+oblique view configured in `configs/debug/tracker.yml`, because a grasp
+pose seen from straight above has no approach to read.
+
+A window opens when a display is available and the run writes its artifacts
 either way, because a machine with no display is the ordinary case for this
-project and refusing to run on one would make the view useless exactly where it
-is needed most.
+project and refusing to run on one would make the view useless exactly where
+it is needed most.
 """
 
 from __future__ import annotations
@@ -22,13 +33,15 @@ from clave.tracker.adapters.detection import detections_from_masks
 from clave.tracker.adapters.render import segment_masks
 from clave.tracker.association import SimulatorIdentity
 from clave.tracker.codes import load_catalog, resolver_for
-from clave.tracker.debug_view import annotate
 from clave.tracker.evidence import Evidence, GroundTruth, Role
 from clave.tracker.fusion import FusionSettings
 from clave.tracker.intake import Deployment, Intake
+from clave.tracker.listing import described_fields
+from clave.tracker.markers import draw, markers_for
 from clave.tracker.sensors import load_sensors, require_role
 from clave.tracker.track import Tracker
 from clave.world import belt, config, scene
+from clave.world.effector import Effector
 
 NANOS_PER_SECOND = 1_000_000_000
 """Nanoseconds in a second, for the instants an observation carries."""
@@ -45,9 +58,13 @@ class DebugRunReport:
     Attributes:
         captures: Frames the tracker was shown.
         tracks: Tracks open when it finished.
-        drawn: Records drawn on the final frame.
-        frames_written: Annotated frames written.
+        drawn: Markers standing in the world on the final frame.
+        geoms: Marker geoms the final frame carried, which is more than
+            `drawn` because a jaw is a shaft and two pads.
+        frames_written: Frames written.
         output: Where they went.
+        video_path: The playable file, or None when none was asked for or no
+            encoder was found.
         windowed: Whether a live window was opened.
         reason: Why no window was opened, when none was.
     """
@@ -55,8 +72,10 @@ class DebugRunReport:
     captures: int
     tracks: int
     drawn: int
+    geoms: int
     frames_written: int
     output: Path
+    video_path: Path | None
     windowed: bool
     reason: str | None = None
 
@@ -70,6 +89,7 @@ def run(
     render: tuple[int, int] = (640, 480),
     window: bool = True,
     video: bool = False,
+    fps: int = 4,
 ) -> DebugRunReport:
     """Drive the tracker over one rollout, annotating every capture.
 
@@ -82,9 +102,9 @@ def run(
         capture_interval: Simulated seconds between captures.
         render: Frame size as `(width, height)` in pixels.
         window: Open a live window when a display is available.
-        video: Lay the listing beside the image and show only the records that
-            landed on the frame, which is what fits a video. A listing taller
-            than the screen is no listing at all.
+        video: Encode the rendered frames into a playable file beside them.
+            A machine with no `ffmpeg` runs anyway and says none was written.
+        fps: Playback rate of that file.
 
     Returns:
         The report.
@@ -111,6 +131,10 @@ def run(
     )
     grasp = float(
         config.require(config.require(raw, "arm"), "max_grasp_width_meters", "arm")
+    )
+    effector = Effector.load(raw)
+    view = config.require(
+        config.load(root / "configs" / "debug" / "tracker.yml"), "view"
     )
 
     model, data, plan = scene.build(raw, np.random.default_rng(seed), root)
@@ -140,14 +164,27 @@ def run(
     )
 
     width, height = render
-    colour = mujoco.Renderer(model, height=height, width=width)
     masks = mujoco.Renderer(model, height=height, width=width)
     masks.enable_segmentation_rendering()
+
+    watching = mujoco.Renderer(
+        model,
+        height=int(config.require(view, "height", "view")),
+        width=int(config.require(view, "width", "view")),
+    )
+    eye = mujoco.MjvCamera()
+    eye.azimuth = float(config.require(view, "azimuth_degrees", "view"))
+    eye.elevation = float(config.require(view, "elevation_degrees", "view"))
+    eye.distance = float(config.require(view, "distance_meters", "view"))
+    eye.lookat[:] = _lookat(view)
 
     out.mkdir(parents=True, exist_ok=True)
     opened, reason = _open_window(cv2, window)
 
-    captures = written = drawn = 0
+    captures = written = drawn = geoms = 0
+    believed = out / "records.txt"
+    believed.write_text("")
+    recorder = _recorder(view, out, fps, capture_interval) if video else None
     next_capture = 0.0
     try:
         for _ in range(int(seconds / plan.timestep)):
@@ -192,27 +229,25 @@ def run(
                     at_nanos=now,
                 )
 
-            colour.update_scene(data, camera=wide.source_id)
             records = tracker.settle(at_nanos=now)
-            canvas, summary = annotate(
-                colour.render(),
-                records,
-                wide.position,
-                wide.optics,
-                surface + 0.05,
-                render,
-                at_nanos=now,
-                beside=video,
-                only_drawn=video,
-            )
-            drawn = summary.count("drawn") and int(
-                summary.split(" tracks open, ")[1].split(" ")[0]
-            )
+            standing = markers_for(records, effector, surface)
+
+            # The markers go in before the render and live only until the next
+            # update_scene, so they reach this view and no other. The gate the
+            # tracker reads was rendered above and carries none of them.
+            watching.update_scene(data, camera=eye)
+            geoms = draw(watching.scene, standing)
+            drawn = len(standing)
+            canvas = watching.render()
+
             cv2.imwrite(
                 str(out / f"frame_{captures:04d}.png"),
                 cv2.cvtColor(canvas, cv2.COLOR_RGB2BGR),
             )
             written += 1
+            if recorder is not None:
+                recorder.write(canvas)
+            _write_beliefs(believed, captures, now, records)
             if opened:
                 cv2.imshow(
                     "clave tracker debug", cv2.cvtColor(canvas, cv2.COLOR_RGB2BGR)
@@ -220,8 +255,10 @@ def run(
                 if cv2.waitKey(1) & 0xFF == 27:
                     break
     finally:
-        colour.close()
+        watching.close()
         masks.close()
+        if recorder is not None:
+            recorder.close()
         if opened:
             cv2.destroyAllWindows()
 
@@ -229,8 +266,10 @@ def run(
         captures=captures,
         tracks=len(tracker.settle(at_nanos=int(data.time * NANOS_PER_SECOND))),
         drawn=drawn,
+        geoms=geoms,
         frames_written=written,
         output=out,
+        video_path=None if recorder is None else recorder.settings.path,
         windowed=opened,
         reason=reason,
     )
@@ -251,3 +290,78 @@ def _open_window(cv2: Any, wanted: bool) -> tuple[bool, str | None]:
     except Exception as error:  # noqa: BLE001 - any GUI failure is the same answer
         return False, f"this OpenCV build cannot open a window ({error})"
     return True, None
+
+
+def _recorder(view: dict[str, Any], out: Path, fps: int, interval: float) -> Any:
+    """Start recording the view, or report that no encoder is installed.
+
+    The recorder reads the same camera block the still frames render from, so
+    the two cannot show the world from two different angles.
+
+    Args:
+        view: The `view` block of the debug configuration.
+        out: Where the run writes.
+        fps: Playback rate.
+        interval: Simulated seconds between captures.
+
+    Returns:
+        The recorder, or None when `ffmpeg` is absent.
+    """
+    from clave.demo.video import VideoSettings, open_recorder
+
+    return open_recorder(
+        VideoSettings(
+            path=out / "tracker-debug.mp4",
+            width=int(config.require(view, "width", "view")),
+            height=int(config.require(view, "height", "view")),
+            frames_per_second=fps,
+            interval_seconds=interval,
+            azimuth=float(config.require(view, "azimuth_degrees", "view")),
+            elevation=float(config.require(view, "elevation_degrees", "view")),
+            distance=float(config.require(view, "distance_meters", "view")),
+            lookat=_lookat(view),
+        )
+    )
+
+
+def _lookat(view: dict[str, Any]) -> tuple[float, float, float]:
+    """Return what the camera points at, as three meters.
+
+    Args:
+        view: The `view` block of the debug configuration.
+
+    Returns:
+        The target.
+
+    Raises:
+        DebugRunError: If the key does not hold three numbers.
+    """
+    values = [float(value) for value in config.require(view, "lookat_meters", "view")]
+    if len(values) != 3:
+        raise DebugRunError(
+            f"view.lookat_meters holds {len(values)} numbers, and a camera "
+            f"target is three"
+        )
+    return values[0], values[1], values[2]
+
+
+def _write_beliefs(path: Path, capture: int, at_nanos: int, records: Any) -> None:
+    """Append what the tracker believed at one instant.
+
+    The markers show where; this says what. Keeping the two apart is what lets
+    the frame stay a render of the world with nothing written on it.
+
+    Args:
+        path: The listing file.
+        capture: Which capture this is.
+        at_nanos: The instant the records were settled at.
+        records: The settled records.
+    """
+    lines = [f"# capture {capture:04d} at {at_nanos} ns, {len(records)} open"]
+    for record in records:
+        lines.append(f"track {record.track_id}")
+        lines.extend(
+            f"    {name}: {value}" for name, value in described_fields(record).items()
+        )
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write("\n".join(lines) + "\n\n")

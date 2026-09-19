@@ -1,0 +1,25 @@
+# Where the tracker debug run films the world from.
+#
+# Not a demonstration scenario, which is why this sits in its own directory:
+# `configs/demos/` holds scenarios the demo runner loads, and a file there
+# without a `scenario` block fails that runner's own test.
+#
+# The tracker reads the nadir gate camera, and that view is the wrong one to
+# watch: a grasp marker seen from straight above is a flat outline with no
+# approach to read. So the run segments from the gate and renders for a human
+# from the viewpoint below, and the two never share a camera.
+#
+# Every tunable is here, including the angle, because a viewing angle buried
+# in Python is one nobody can vary without editing code.
+
+view:
+  width: 960
+  height: 540
+  # An oblique view along the belt, close enough to read a marker. The
+  # demonstration video films the same line from 4.40 m, which frames the
+  # whole machine and renders a 60 mm jaw about four pixels wide. This is a
+  # diagnostic, so it gives up the wide shot for a pose a reader can check.
+  azimuth_degrees: 135.0
+  elevation_degrees: -32.0
+  distance_meters: 2.10
+  lookat_meters: [-0.15, 0.00, 1.02]
