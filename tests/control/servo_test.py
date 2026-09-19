@@ -174,7 +174,7 @@ def test_the_arm_keeps_up_with_a_pose_moving_at_the_speed_ceiling(
     say so.
     """
     mujoco = pytest.importorskip("mujoco")
-    from clave.control.guidance import toward
+    from clave.control.guidance import Motion, toward
     from clave.control.settings import ControlSettings, Phase
     from clave.control.task import Goal
 
@@ -182,12 +182,18 @@ def test_the_arm_keeps_up_with_a_pose_moving_at_the_speed_ceiling(
     model, data, arm = world
     settle(world, Command(position=(0.30, -0.30, 1.15), yaw=0.0), steps=900)
 
-    goal = Goal(phase=Phase.TRACK, position=(-0.40, -0.20, 1.15), yaw=0.0, track_id=1)
-    reference = flange_of(world)
+    goal = Goal(
+        phase=Phase.TRACK,
+        position=(-0.40, -0.20, 1.15),
+        yaw=0.0,
+        track_id=1,
+        observed_at_nanos=0,
+    )
+    motion = Motion(position=flange_of(world), speed=0.0)
     lag = 0.0
     for _ in range(1500):
-        command = toward(reference, goal, 0.002, settings.guidance)
-        reference = command.position
+        command = toward(motion, goal, 0.002, settings.guidance, 0.0, 0)
+        motion = Motion(position=command.position, speed=command.speed)
         step = follow(model, data, arm, command, settings.servo.gain)
         assert step.refusal is None
         mujoco.mj_step(model, data)
@@ -209,7 +215,7 @@ def test_stepping_guidance_from_the_measurement_crawls(world: Any) -> None:
     keeps somebody from simplifying the reference away again.
     """
     mujoco = pytest.importorskip("mujoco")
-    from clave.control.guidance import toward
+    from clave.control.guidance import Motion, toward
     from clave.control.settings import ControlSettings, Phase
     from clave.control.task import Goal
 
@@ -217,10 +223,17 @@ def test_stepping_guidance_from_the_measurement_crawls(world: Any) -> None:
     model, data, arm = world
     settle(world, Command(position=(0.30, -0.30, 1.15), yaw=0.0), steps=900)
 
-    goal = Goal(phase=Phase.TRACK, position=(-0.40, -0.20, 1.15), yaw=0.0, track_id=1)
+    goal = Goal(
+        phase=Phase.TRACK,
+        position=(-0.40, -0.20, 1.15),
+        yaw=0.0,
+        track_id=1,
+        observed_at_nanos=0,
+    )
     start = flange_of(world)
     for _ in range(500):
-        command = toward(flange_of(world), goal, 0.002, settings.guidance)
+        chasing_motion = Motion(position=flange_of(world), speed=0.0)
+        command = toward(chasing_motion, goal, 0.002, settings.guidance, 0.0, 0)
         follow(model, data, arm, command, settings.servo.gain)
         mujoco.mj_step(model, data)
     chasing = math.dist(start, flange_of(world))
@@ -228,3 +241,133 @@ def test_stepping_guidance_from_the_measurement_crawls(world: Any) -> None:
     # One second of ticks at the ceiling covers a metre. Chasing the plant
     # covers a fraction of that, and this is the fraction that matters.
     assert chasing < 0.5 * settings.guidance.max_speed * 500 * 0.002
+
+
+def place(world: Any, angles: list[float]) -> None:
+    """Put the arm at one joint configuration and command it to stay."""
+    mujoco = pytest.importorskip("mujoco")
+    model, data, arm = world
+    for slot, joint in enumerate(arm.joint_ids):
+        data.qpos[model.jnt_qposadr[joint]] = angles[slot]
+    for slot, actuator in enumerate(arm.actuator_ids):
+        data.ctrl[actuator] = angles[slot]
+    data.qvel[:] = 0.0
+    mujoco.mj_forward(model, data)
+
+
+def near_singular(world: Any) -> list[float]:
+    """Joint angles with the fifth axis at zero, where the wrist degenerates.
+
+    A six-revolute arm loses a degree of freedom when the fourth and sixth
+    axes become collinear, which is what the fifth going to zero does. These
+    angles were found by sweeping the compiled model for a degenerate wrist
+    whose flange still lands inside the trusted annulus, because a singular
+    configuration the arm refuses on reach proves nothing about the cap.
+    """
+    model, data, arm = world
+    del model, data, arm
+    return [-0.6, -0.8, 1.2, -1.4, 0.0, 0.0]
+
+
+def test_a_wrist_singularity_bounds_the_joint_command_rather_than_the_pose(
+    world: Any,
+) -> None:
+    """AC-MOVE-11: a wrist singularity bounds the joint command, not the pose.
+
+    Where the Jacobian loses rank the damped solve still asks for a large
+    joint motion to buy a small Cartesian one. The requirement is that the
+    command stays inside what the actuators turn at, and explicitly not that
+    the pose is met.
+    """
+    from clave.control.settings import ControlSettings
+
+    settings = ControlSettings.load(load(ROOT / "configs" / "runtime" / "control.yml"))
+    timestep = 0.002
+    cap = settings.servo.max_joint_speed * timestep
+
+    model, data, arm = world
+    place(world, near_singular(world))
+    before = [float(data.ctrl[actuator]) for actuator in arm.actuator_ids]
+
+    # A small move across the degenerate direction, which is what asks the
+    # wrist for a large turn.
+    here = flange_of(world)
+    nudged = (here[0] + 0.004, here[1] + 0.004, here[2])
+    step = follow(
+        model, data, arm, Command(position=nudged, yaw=0.0), 1.0, max_joint_step=cap
+    )
+    if step.refusal is not None:
+        pytest.skip(
+            f"the singular configuration is outside the workspace: {step.refusal}"
+        )
+
+    after = [float(data.ctrl[actuator]) for actuator in arm.actuator_ids]
+    for was, now in zip(before, after, strict=True):
+        assert abs(now - was) <= cap + 1e-12
+
+
+def test_without_the_cap_that_command_can_run_away(world: Any) -> None:
+    """Without the cap that command can run away.
+
+    The companion to the bound above. A test that passes whether or not the
+    cap is applied proves nothing about the cap, so this shows the same
+    configuration asking for more than the bound when nothing holds it.
+    """
+    from clave.control.settings import ControlSettings
+
+    settings = ControlSettings.load(load(ROOT / "configs" / "runtime" / "control.yml"))
+    cap = settings.servo.max_joint_speed * 0.002
+
+    model, data, arm = world
+    place(world, near_singular(world))
+    before = [float(data.ctrl[actuator]) for actuator in arm.actuator_ids]
+    here = flange_of(world)
+    step = follow(
+        model,
+        data,
+        arm,
+        Command(position=(here[0] + 0.004, here[1] + 0.004, here[2]), yaw=0.0),
+        1.0,
+    )
+    assert step.refusal is None, step.refusal
+    after = [float(data.ctrl[actuator]) for actuator in arm.actuator_ids]
+    assert max(abs(now - was) for was, now in zip(before, after, strict=True)) > cap
+
+
+def test_the_cap_is_measured_against_the_previous_command(world: Any) -> None:
+    """AC-MOVE-11: the cap is measured against the previous command.
+
+    Not against the measured position, which is the same distinction
+    guidance makes one layer up and matters for the same reason. These are
+    position actuators running a proportional-derivative loop, so the
+    command has to lead the position to produce force. Capping that lead
+    instead of the command rate left almost no driving error: a flange asked
+    to follow the belt at 0.31 m/s fell a metre behind inside two seconds.
+    """
+    mujoco = pytest.importorskip("mujoco")
+    from clave.world import arm as armmod
+
+    model, data, arm = world
+    settle(world, Command(position=(0.30, -0.30, 1.15), yaw=0.0), steps=900)
+    cap = 2.09 * 0.002
+
+    # Hold the arm still while the command walks away from it, then confirm
+    # the command kept moving at the cap rather than stalling against the
+    # frozen measurement.
+    target = (0.30, -0.30, 1.15)
+    for _ in range(50):
+        follow(model, data, arm, Command(position=target, yaw=0.0), 1.0, cap)
+    walked = [float(data.ctrl[actuator]) for actuator in arm.actuator_ids]
+    for _ in range(50):
+        follow(
+            model,
+            data,
+            arm,
+            Command(position=(0.10, -0.40, 1.20), yaw=0.0),
+            1.0,
+            cap,
+        )
+        mujoco.mj_step(model, data)
+    moved = [float(data.ctrl[actuator]) for actuator in arm.actuator_ids]
+    del armmod
+    assert max(abs(a - b) for a, b in zip(walked, moved, strict=True)) > cap

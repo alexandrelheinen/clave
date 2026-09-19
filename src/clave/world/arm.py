@@ -379,6 +379,7 @@ def step_toward(
     target: NDArray[np.float64],
     gain: float,
     yaw: float = 0.0,
+    max_joint_step: float | None = None,
 ) -> NDArray[np.float64]:
     """Move the commanded joint angles one step toward a Cartesian target.
 
@@ -404,6 +405,21 @@ def step_toward(
         target: Desired flange position in world coordinates.
         gain: Fraction of the remaining joint error to command per step.
         yaw: Desired tool rotation about the vertical, in radians.
+        max_joint_step: How far any one joint's command may move from the
+            command before it, in radians, or None to command whatever the
+            solve asked for. Near a wrist singularity the Jacobian loses rank
+            and the damped solve still asks for a large joint motion to buy a
+            small Cartesian one; capping it there trades the pose for a
+            command the actuators can follow.
+
+            Measured against the previous command and not against the
+            measured position, which is the same distinction guidance makes
+            one layer up and matters for the same reason. These are position
+            actuators running a proportional-derivative loop, so the command
+            has to lead the position to produce any force at all. Capping
+            that lead instead of the command rate leaves almost no driving
+            error: the arm then crawls, and a flange asked to follow a belt
+            at 0.31 m/s falls a metre behind inside two seconds.
 
     Returns:
         The commanded joint angles after the step.
@@ -423,6 +439,13 @@ def step_toward(
     _TRACKING[id(model)] = wanted
 
     commanded = current + gain * (wanted - current)
+    if max_joint_step is not None:
+        previous = np.array(
+            [float(data.ctrl[actuator]) for actuator in arm.actuator_ids]
+        )
+        commanded = np.clip(
+            commanded, previous - max_joint_step, previous + max_joint_step
+        )
     clipped: NDArray[np.float64] = np.clip(commanded, arm.lower, arm.upper)
     for slot, actuator_id in enumerate(arm.actuator_ids):
         data.ctrl[actuator_id] = clipped[slot]
@@ -492,7 +515,7 @@ def _descend(
 def project_into_reach(
     base_xy: tuple[float, float], x: float, y: float
 ) -> tuple[float, float]:
-    """Push a point out of the hole at the centre of the annulus.
+    """Pull a point back into the annulus the arm is trusted over.
 
     The region the arm is trusted over is an annulus, so it is not convex: a
     straight line between two points inside it can pass through the hole
@@ -508,6 +531,14 @@ def project_into_reach(
     workspace constraint does. This is a constraint projection and not
     obstacle avoidance: nothing here knows about anything in the scene.
 
+    The outer radius needs the same treatment for a different reason. A
+    chord between two points inside a disc stays inside it, so a path never
+    leaves that way, but an interception does: aiming ahead of an object the
+    belt is carrying puts the aim downstream of a pose that was reachable,
+    and four visits in a sixteen second run were refused at 1.266 m to
+    1.287 m against a 1.25 m limit. Pulling the aim back to the edge sends
+    the arm to the boundary to wait, which is what it can actually do.
+
     Args:
         base_xy: Where the arm stands, in the horizontal plane.
         x: The point's first coordinate.
@@ -518,14 +549,15 @@ def project_into_reach(
     """
     offset_x, offset_y = x - base_xy[0], y - base_xy[1]
     radius = math.hypot(offset_x, offset_y)
-    wanted = REACH_MIN_METERS + REACH_MARGIN_METERS
-    if radius >= wanted:
+    inner = REACH_MIN_METERS + REACH_MARGIN_METERS
+    outer = REACH_MAX_METERS - REACH_MARGIN_METERS
+    if inner <= radius <= outer:
         return x, y
     if radius == 0.0:
         # Dead centre has no direction to leave by, so any one will do and
         # the choice is recorded rather than left to floating-point noise.
-        return base_xy[0] + wanted, base_xy[1]
-    scale = wanted / radius
+        return base_xy[0] + inner, base_xy[1]
+    scale = (inner if radius < inner else outer) / radius
     return base_xy[0] + offset_x * scale, base_xy[1] + offset_y * scale
 
 

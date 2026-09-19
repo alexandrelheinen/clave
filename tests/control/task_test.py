@@ -198,17 +198,80 @@ def test_a_track_that_leaves_the_queue_is_abandoned() -> None:
     assert arm.served == ()
 
 
-def test_the_full_visit_profile_is_refused_for_now() -> None:
-    """The full visit profile is refused for now.
+def test_a_full_visit_descends_dwells_and_retreats() -> None:
+    """AC-MOVE-18: a full visit descends, dwells and retreats."""
+    arm = machine(profile=Profile.FULL_VISIT)
+    only = candidate(1, x=0.30)
+    seen: list[Phase] = []
+    at_seconds = 0.0
+    # Hold the flange on whatever the phase asks for, so the visit advances
+    # on arrival rather than on the arm happening to be somewhere.
+    goal = arm.step(queue_of(only), PARK, at_seconds)
+    for _ in range(40):
+        at_seconds += 0.2
+        seen.append(goal.phase)
+        goal = arm.step(queue_of(only), goal.position, at_seconds)
+        if goal.phase is Phase.STANDBY:
+            break
+    ordered = list(dict.fromkeys(seen))
+    assert ordered[:3] == [Phase.TRACK, Phase.DESCEND, Phase.RETREAT]
+    # What follows is the arm going home, which is not part of the visit.
+    assert set(ordered[3:]) <= {Phase.PARK, Phase.STANDBY}
+    assert arm.served == (1,)
 
-    Descent, dwell at the grasp plane and retreat are not implemented. A
-    machine that silently ran the motion-only phases under a full-visit
-    configuration would report figures for a visit that never descended.
+
+def test_a_full_visit_descends_to_the_pose_the_marker_stands_at() -> None:
+    """AC-MOVE-18: a full visit descends to the pose the marker stands at.
+
+    The descent height comes from the candidate rather than from the
+    approach height, which is the whole difference between the two profiles.
     """
-    from clave.errors import ClaveError
+    arm = machine(profile=Profile.FULL_VISIT)
+    only = candidate(1, x=0.30)
+    goal = arm.step(queue_of(only), PARK, 0.0)
+    assert goal.position[2] == pytest.approx(BELT_SURFACE + 0.220)
+    goal = arm.step(queue_of(only), goal.position, 0.1)
+    goal = arm.step(queue_of(only), goal.position, 0.5)
+    assert goal.phase is Phase.DESCEND
+    assert goal.position[2] == pytest.approx(only.flange[2])
 
-    with pytest.raises(ClaveError, match="full_visit"):
-        machine(profile=Profile.FULL_VISIT)
+
+def test_a_descent_keeps_riding_the_belt() -> None:
+    """AC-MOVE-10: a descent keeps riding the belt.
+
+    The belt does not stop while the flange comes down, so a descent to a
+    fixed point would put the flange where the object was when it started.
+    """
+    arm = machine(profile=Profile.FULL_VISIT)
+    only = candidate(1, x=0.30)
+    goal = arm.step(queue_of(only), PARK, 0.0)
+    goal = arm.step(queue_of(only), goal.position, 0.1)
+    goal = arm.step(queue_of(only), goal.position, 0.5)
+    assert goal.phase is Phase.DESCEND
+    assert goal.rides_belt is True
+
+
+def test_the_motion_only_profile_never_descends() -> None:
+    """AC-MOVE-18: the motion-only profile never descends."""
+    arm = machine()
+    only = candidate(1, x=0.30)
+    goal = arm.step(queue_of(only), PARK, 0.0)
+    for tick in range(20):
+        goal = arm.step(queue_of(only), goal.position, 0.2 * (tick + 1))
+        assert goal.phase in {Phase.TRACK, Phase.PARK, Phase.STANDBY}
+
+
+def test_a_completed_visit_records_how_near_the_arm_got() -> None:
+    """AC-MOVE-12: a completed visit records how near the arm got."""
+    arm = machine()
+    only = candidate(1, x=0.30)
+    here = (0.30, 0.0, BELT_SURFACE + 0.220)
+    arm.step(queue_of(only), PARK, 0.0)
+    arm.step(queue_of(only), here, 0.1)
+    arm.step(queue_of(only), here, 0.5)
+    assert arm.served == (1,)
+    assert len(arm.arrivals) == 1
+    assert arm.arrivals[0] == pytest.approx(0.0, abs=1e-9)
 
 
 def test_the_shipped_configuration_builds_a_machine() -> None:

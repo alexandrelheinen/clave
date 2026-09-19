@@ -31,7 +31,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from clave.control.guidance import toward
+from clave.control.guidance import Motion, toward
 from clave.control.selection import Selector
 from clave.control.servo import follow
 from clave.control.settings import ControlSettings, Phase
@@ -54,6 +54,9 @@ from clave.world.effector import Effector
 
 NANOS_PER_SECOND = 1_000_000_000
 """Nanoseconds in a second, for the instants an observation carries."""
+
+_VISITING = frozenset({Phase.TRACK, Phase.DESCEND, Phase.RETREAT})
+"""The phases that are about an object rather than about going home."""
 
 
 class DebugRunError(ClaveError):
@@ -78,6 +81,11 @@ class DebugRunReport:
             rebuild that keeps its head costs nothing, and one that does not
             sends the arm somewhere else mid-traverse.
         served: Tracks the arm finished a visit to.
+        arrivals: How far the flange was from the pose each completed visit
+            asked for, at the end of its dwell, in meters.
+        profile: Which task profile the run used, because a distance to a
+            tracked pose and a distance to a descended pose are not the same
+            measurement.
         closest_approach: The nearest the flange ever came to a pose the
             tracking phase asked for, in meters, or None when it never
             tracked.
@@ -105,6 +113,8 @@ class DebugRunReport:
     reorders: dict[str, int]
     head_churn: int
     served: tuple[int, ...]
+    arrivals: tuple[float, ...]
+    profile: str
     closest_approach: float | None
     closest_live: float | None
     faults: tuple[tuple[int | None, str], ...]
@@ -127,7 +137,7 @@ def run(
     render: tuple[int, int] = (640, 480),
     window: bool = True,
     video: bool = False,
-    fps: int = 4,
+    fps: int | None = None,
     view_name: str | None = None,
 ) -> DebugRunReport:
     """Drive the tracker over one rollout, annotating every capture.
@@ -143,7 +153,8 @@ def run(
         window: Open a live window when a display is available.
         video: Encode the rendered frames into a playable file beside them.
             A machine with no `ffmpeg` runs anyway and says none was written.
-        fps: Playback rate of that file.
+        fps: Playback rate of that file, or None for the rate the debug
+            configuration names.
         view_name: Which view in the debug configuration to film from, or
             None for the one that file names as its default.
 
@@ -177,7 +188,8 @@ def run(
     control = ControlSettings.load(
         config.load(root / "configs" / "runtime" / "control.yml")
     )
-    view = _view(config.load(root / "configs" / "debug" / "tracker.yml"), view_name)
+    debug = config.load(root / "configs" / "debug" / "tracker.yml")
+    view = _view(debug, view_name)
 
     model, data, plan = scene.build(raw, np.random.default_rng(seed), root)
     spawn = config.require(raw, "spawn")
@@ -259,13 +271,31 @@ def run(
     # Guidance integrates its own output, so the reference is seeded once and
     # fed back afterwards. Seeding it from the flange every tick would make it
     # chase the arm instead of leading it.
-    reference = _flange(indices, data)
+    motion = Motion(position=_flange(indices, data), speed=0.0)
+    # The furthest any joint may be commanded to move in one tick. Near a
+    # wrist singularity the damped solve still asks for a large joint motion
+    # to buy a small Cartesian one, and this is what keeps the command
+    # inside what the actuators turn at.
+    joint_step = control.servo.max_joint_speed * plan.timestep
 
+    standing: tuple[Any, ...] = ()
     captures = written = drawn = geoms = 0
     believed = out / "records.txt"
     believed.write_text("")
-    recorder = _recorder(view, out, fps, capture_interval) if video else None
+    movie = config.require(debug, "video")
+    movie_interval = float(config.require(movie, "interval_seconds", "video"))
+    recorder = (
+        _recorder(
+            view,
+            out,
+            fps or int(config.require(movie, "frames_per_second")),
+            movie_interval,
+        )
+        if video
+        else None
+    )
     next_capture = 0.0
+    next_frame = 0.0
     try:
         for _ in range(int(seconds / plan.timestep)):
             mujoco.mj_step(model, data)
@@ -276,16 +306,38 @@ def run(
             # right goal while a joint command half a second old is a lurch.
             if goal is not None:
                 command = toward(
-                    reference, goal, plan.timestep, control.guidance, keep_inside
+                    motion,
+                    goal,
+                    plan.timestep,
+                    control.guidance,
+                    plan.belt.speed,
+                    int(data.time * NANOS_PER_SECOND),
+                    keep_inside,
                 )
-                reference = command.position
-                stepped = follow(model, data, indices, command, control.servo.gain)
+                motion = Motion(position=command.position, speed=command.speed)
+                stepped = follow(
+                    model,
+                    data,
+                    indices,
+                    command,
+                    control.servo.gain,
+                    max_joint_step=joint_step,
+                )
                 if stepped.refusal is not None:
                     refusal = stepped.refusal
-                elif goal.phase is Phase.TRACK:
+                elif goal.phase in _VISITING:
                     closest = min(
-                        closest, math.dist(_flange(indices, data), goal.position)
+                        closest, math.dist(_flange(indices, data), command.position)
                     )
+
+            # The video renders on its own cadence. The capture cadence is
+            # what the tracker decides at, and watching a decision rate is
+            # watching an arm teleport.
+            if recorder is not None and data.time >= next_frame:
+                next_frame = data.time + movie_interval
+                recorder.write(
+                    _painted(watching, data, eye, standing, control, surface)
+                )
 
             if data.time < next_capture:
                 continue
@@ -331,8 +383,8 @@ def run(
 
             flange = _flange(indices, data)
             queue = selector.update(standing, flange, plan.belt.speed, now)
-            for reason in queue.reasons:
-                reorders[reason] += 1
+            for trigger in queue.reasons:
+                reorders[trigger] += 1
             head_id = None if queue.head is None else queue.head.track_id
             if (
                 previous_head is not None
@@ -343,7 +395,7 @@ def run(
             previous_head = head_id
             goal = task.step(queue, flange, data.time, refusal)
             refusal = None
-            if goal.phase is Phase.TRACK:
+            if goal.phase in _VISITING:
                 head = next(
                     (item for item in standing if item.track_id == goal.track_id),
                     None,
@@ -357,19 +409,12 @@ def run(
                 # can cut the corner of the hole while tracking, and reseeding
                 # the reference inside it is what turned one refusal into
                 # every refusal after it.
-                reference = keep_inside(flange)
+                motion = Motion(position=keep_inside(flange), speed=0.0)
 
             # The markers go in before the render and live only until the next
             # update_scene, so they reach this view and no other. The gate the
             # tracker reads was rendered above and carries none of them.
-            watching.update_scene(data, camera=eye)
-            geoms = draw(watching.scene, standing)
-            geoms += draw_park(
-                watching.scene,
-                control.task.park_position,
-                control.task.park_marker_color,
-                belt_surface=surface,
-            )
+            geoms = _markers_on(watching, data, eye, standing, control, surface)
             drawn = len(standing)
             canvas = watching.render()
 
@@ -378,8 +423,6 @@ def run(
                 cv2.cvtColor(canvas, cv2.COLOR_RGB2BGR),
             )
             written += 1
-            if recorder is not None:
-                recorder.write(canvas)
             _write_beliefs(believed, captures, now, records)
             if opened:
                 cv2.imshow(
@@ -401,6 +444,8 @@ def run(
         reorders=reorders,
         head_churn=head_churn,
         served=task.served,
+        arrivals=task.arrivals,
+        profile=control.task.profile.value,
         closest_approach=None if closest == float("inf") else closest,
         closest_live=None if closest_live == float("inf") else closest_live,
         faults=task.faults,
@@ -572,3 +617,63 @@ def _write_beliefs(path: Path, capture: int, at_nanos: int, records: Any) -> Non
         )
     with path.open("a", encoding="utf-8") as handle:
         handle.write("\n".join(lines) + "\n\n")
+
+
+def _markers_on(
+    renderer: Any,
+    data: Any,
+    camera: Any,
+    standing: tuple[Any, ...],
+    control: Any,
+    surface: float,
+) -> int:
+    """Rebuild the scene from this camera and stand the markers in it.
+
+    The markers go in after `update_scene` and live only until the next one,
+    so they reach whoever renders next and nobody else: not physics, not the
+    gate the tracker reads, and not a run that never calls this.
+
+    Args:
+        renderer: The renderer to build into.
+        data: The simulation state.
+        camera: The camera to build from.
+        standing: The grasp markers to draw.
+        control: The control settings, for the park pose and its colour.
+        surface: Height of the belt surface, in meters.
+
+    Returns:
+        How many geoms were added.
+    """
+    renderer.update_scene(data, camera=camera)
+    added = draw(renderer.scene, standing)
+    return added + draw_park(
+        renderer.scene,
+        control.task.park_position,
+        control.task.park_marker_color,
+        belt_surface=surface,
+    )
+
+
+def _painted(
+    renderer: Any,
+    data: Any,
+    camera: Any,
+    standing: tuple[Any, ...],
+    control: Any,
+    surface: float,
+) -> Any:
+    """Render one video frame with the markers standing in it.
+
+    Args:
+        renderer: The renderer to use.
+        data: The simulation state.
+        camera: The camera to film from.
+        standing: The grasp markers settled at the last capture.
+        control: The control settings, for the park pose and its colour.
+        surface: Height of the belt surface, in meters.
+
+    Returns:
+        The rendered frame.
+    """
+    _markers_on(renderer, data, camera, standing, control, surface)
+    return renderer.render()
