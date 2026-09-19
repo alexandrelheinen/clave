@@ -603,6 +603,9 @@ def _debug_tracker(root: Path, args: Any) -> int:
     print(f"  captures        {report.captures}")
     print(f"  tracks open     {report.tracks}")
     print(f"  markers on last {report.drawn}, as {report.geoms} geoms")
+    rebuilt = ", ".join(f"{why} {count}" for why, count in report.reorders.items())
+    print(f"  queue rebuilt   {rebuilt}, of {report.captures} captures")
+    print(f"  head swapped    {report.head_churn} times with the old head still there")
     print(f"  visits served   {len(report.served)} {list(report.served)}")
     print(f"  faults          {len(report.faults)}")
     for track_id, why in report.faults:
