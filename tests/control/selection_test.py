@@ -282,8 +282,16 @@ def travelled(base: GraspMarker, seconds: float, speed: float) -> GraspMarker:
     shift = speed * seconds
     return dataclasses.replace(
         base,
-        grasp=(base.grasp[0] + shift, base.grasp[1], base.grasp[2]),
-        flange=(base.flange[0] + shift, base.flange[1], base.flange[2]),
+        pinch_position_belt=(
+            base.pinch_position_belt[0] + shift,
+            base.pinch_position_belt[1],
+            base.pinch_position_belt[2],
+        ),
+        flange_position_world=(
+            base.flange_position_world[0] + shift,
+            base.flange_position_world[1],
+            base.flange_position_world[2],
+        ),
     )
 
 
@@ -293,8 +301,16 @@ def nudged(base: GraspMarker, by: float) -> GraspMarker:
 
     return dataclasses.replace(
         base,
-        grasp=(base.grasp[0], base.grasp[1] + by, base.grasp[2]),
-        flange=(base.flange[0], base.flange[1] + by, base.flange[2]),
+        pinch_position_belt=(
+            base.pinch_position_belt[0],
+            base.pinch_position_belt[1] + by,
+            base.pinch_position_belt[2],
+        ),
+        flange_position_world=(
+            base.flange_position_world[0],
+            base.flange_position_world[1] + by,
+            base.flange_position_world[2],
+        ),
     )
 
 

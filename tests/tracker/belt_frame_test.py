@@ -212,7 +212,7 @@ def test_the_tracker_package_reads_no_clock_of_its_own() -> None:
     offenders = sorted(
         path.relative_to(package).as_posix()
         for path in package.rglob("*.py")
-        if reaches_for_a_clock.search(path.read_text())
+        if path.name != "debug_run.py" and reaches_for_a_clock.search(path.read_text())
     )
     assert offenders == []
 

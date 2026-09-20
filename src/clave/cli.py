@@ -23,6 +23,8 @@ LOGGER = logging.getLogger(__name__)
 
 def _log_output(*values: object, file: Any = None) -> None:
     """Write command output through logging at its appropriate severity."""
+    # print() is strictly forbidden here: all CLI output must route through
+    # structured logging (LOGGER.log) rather than direct stream writes.
     level = logging.WARNING if file is sys.stderr else logging.INFO
     LOGGER.log(level, " ".join(str(value) for value in values))
 

@@ -115,9 +115,11 @@ def test_a_checkpoint_from_another_candidate_is_refused(tmp_path: Path) -> None:
     pytest.importorskip("torch")
     config = config_for(tmp_path, "behavior-cloning-baseline")
     train(config, config.window_exit_meters)
-    (tmp_path / "behavior-cloning-baseline.pt").rename(tmp_path / "act.pt")
+    (tmp_path / "behavior-cloning-baseline.pt").rename(
+        tmp_path / "resnet50-baseline.pt"
+    )
     with pytest.raises(ValueError, match="behavior-cloning-baseline"):
-        train(config_for(tmp_path, "act"), 0.17)
+        train(config_for(tmp_path, "resnet50-baseline"), config.window_exit_meters)
 
 
 @needs_dataset

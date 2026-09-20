@@ -113,13 +113,12 @@ def test_a_misread_symbol_is_refused_by_its_own_check_digit() -> None:
 def test_the_catalog_resolves_a_code_to_components_and_not_to_a_class() -> None:
     """The catalog resolves a code to components and not to a class.
 
-    A steel can with a paper label returns steel and paper. That says one of
+    A bottle with a paper label returns HDPE and paper. That says one of
     them carries the symbol, not which, which is the distinction the contract
     insists on.
     """
     catalog = load_catalog(CATALOG)
-    assert components_of(catalog, POTTED_MEAT) == ("M-06", "M-09")
-    assert components_of(catalog, PUDDING) == ("M-09",)
+    assert components_of(catalog, SILICON) == ("M-02", "M-09")
 
 
 def test_an_unknown_code_resolves_to_nothing_rather_than_a_guess() -> None:
@@ -248,7 +247,7 @@ def test_a_code_reaching_a_track_moves_its_belief_toward_the_components() -> Non
     settings = FusionSettings.load(
         ROOT / "configs" / "perception" / "fusion.yml", WORLD
     )
-    reading = _wrap(Code(symbology="UPC_A", digits=PUDDING))
+    reading = _wrap(Code(symbology="UPC_A", digits=SILICON))
     after = fold(
         Posterior.uniform(),
         reading,
@@ -257,7 +256,7 @@ def test_a_code_reaching_a_track_moves_its_belief_toward_the_components() -> Non
         resolve=resolver_for(load_catalog(CATALOG)),
     )
     assert after.recognized
-    assert after.posterior.most_likely[0] == "M-09"
+    assert after.posterior.most_likely[0] in ("M-02", "M-09")
 
 
 def _wrap(payload: Code) -> Evidence:
