@@ -9,11 +9,13 @@ travel axis only. That model makes two claims, that every object travels at
 exactly the belt's speed and that lateral drift is exactly zero, and only
 the first is nearly true.
 
-The second is what a pick inherits. Measured on the shipped line, an object
-rolling or settling drifts sideways by a mean of 10 mm over half a second
-and 41 mm over 2.5 seconds, against a jaw whose narrowest side clearance is
-8.7 mm. Downstream of the sensing gate nothing observes it again, so the
-drift accumulates unopposed into the pose the arm is sent to.
+The second is what a pick inherits. An object rolling or settling drifts
+sideways by more over the interception horizon than the jaw has side
+clearance, and downstream of the sensing gate nothing observes it again, so
+the drift accumulates unopposed into the pose the arm is sent to. The
+figures are in
+[measurements.md](../measurements.md#what-a-velocity-estimate-recovers)
+rather than here, so re-measuring them does not leave a stale copy behind.
 
 ## Scope
 
@@ -52,10 +54,10 @@ velocity is known from configuration before any observation arrives and the
 filter should barely move it, while the lateral velocity has to be learned
 entirely from successive observations.
 
-This is measured rather than argued. Letting the filter learn the travel
-velocity took the pick-zone median from 45.6 mm to 81.4 mm, because the
-residual it learns from on that axis is the segmentation's noise rather than
-the object's motion.
+This is measured rather than argued: letting the filter learn the travel
+velocity nearly doubles the pick-zone median, because the residual it
+learns from on that axis is the segmentation's noise rather than the
+object's motion. The sweep is in measurements.md.
 
 The travel gain is small rather than zero, because the feed controller moves
 the belt and a velocity frozen at whatever the speed was when the track
@@ -142,10 +144,9 @@ after.** The drift the filter learns is a constant velocity and the drift it
 learns from is not: increments measured over growing horizons fall away,
 because an object that is rolling is also settling. An estimate fitted
 inside the gate and extrapolated two seconds past it therefore
-over-predicts. Sweeping the lateral gain from 0.1 to 0.8 recovers four
-millimetres of a forty-five millimetre median and is flat across that whole
-range, which is what a model recovering all it can recover looks like. The
-tail gets slightly worse, 123 mm to 131 mm at the ninetieth percentile,
+over-predicts. Sweeping the lateral gain recovers about a tenth of the
+pick-zone median and is flat across the whole range, which is what a model
+recovering all it can recover looks like, and the tail gets slightly worse,
 which is the price of extrapolating a decaying drift as though it were
 constant.
 

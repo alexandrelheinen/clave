@@ -21,10 +21,15 @@
 # poses and none of the motion this is meant to show is visible.
 video:
   frames_per_second: 30
-  # Simulated seconds between rendered frames. At 0.01 with 30 frames a
-  # second the recording plays at one third of simulated time, which is slow
-  # enough to follow a traverse and fast enough not to bore.
-  interval_seconds: 0.01
+  # Simulated seconds between rendered frames. At 0.0333 with 30 frames a
+  # second the recording plays at real time, which is what a reader
+  # comparing the arm against the belt needs.
+  #
+  # It was 0.01, which played at a third of real time and cost three times
+  # the frames. Rendering is the whole cost of a run with video on: a sixty
+  # second rollout is six thousand frames at 0.01 and eighteen hundred
+  # here, against nine seconds of physics and segmentation put together.
+  interval_seconds: 0.0333
 
 default_view: line
 

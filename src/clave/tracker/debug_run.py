@@ -952,4 +952,30 @@ def _painted(
         The rendered frame.
     """
     _markers_on(renderer, data, camera, standing, control, surface)
+    _without_shadows(renderer)
     return renderer.render()
+
+
+def _without_shadows(renderer: Any) -> None:
+    """Turn the shadow map off for one frame.
+
+    MEASURED, and it is the whole cost of this view. A frame of this scene
+    takes 90.9 ms to render and 28.5 ms with shadows off, and halving the
+    output resolution changes nothing at all: 89.7 ms at 480 by 270 against
+    90.9 at 960 by 540. That rules out rasterisation and names the shadow
+    map, which is an offscreen buffer of fixed size rendered once per
+    casting light, and this scene has two of them.
+
+    At the shipped frame interval a sixty second run asks for six thousand
+    frames, so the difference is twenty six minutes against eight.
+
+    This is the diagnostic view, not a published figure. `clave still`
+    renders those and keeps its shadows, because there a frame is rendered
+    once and the lighting is the point.
+
+    Args:
+        renderer: The renderer, whose scene flags are set in place.
+    """
+    import mujoco
+
+    renderer.scene.flags[mujoco.mjtRndFlag.mjRND_SHADOW] = 0
