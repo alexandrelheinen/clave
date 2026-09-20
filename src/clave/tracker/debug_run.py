@@ -43,7 +43,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from tqdm import tqdm
+try:
+    from tqdm import tqdm
+except ImportError:
+
+    def tqdm(iterable: Any, *args: Any, **kwargs: Any) -> Any:
+        return iterable
+
 
 from clave.control.guidance import Command, Motion, toward
 from clave.control.pick import JAW_OPEN
