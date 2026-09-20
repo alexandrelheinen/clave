@@ -74,9 +74,11 @@ def _get_val(
     file_env: dict[str, str],
     environ: dict[str, str] | None = None,
 ) -> str | None:
-    """Look up a setting in process environment first, then in file environment."""
+    """Look up a setting in file environment first, then in process environment."""
+    if key in file_env and file_env[key]:
+        return file_env[key]
     source = os.environ if environ is None else environ
-    return source.get(key) or file_env.get(key)
+    return source.get(key)
 
 
 def load_r2_config(
