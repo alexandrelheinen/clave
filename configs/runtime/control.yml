@@ -29,9 +29,13 @@ selection:
 
 task:
   # motion_only runs standby, tracking, parking and fault, which is what
-  # tuning arm speed against belt speed needs. full_visit adds descent, dwell
-  # and retreat. Neither grasps, because no gripper exists.
-  profile: motion_only
+  # tuning arm speed against belt speed needs: the flange rides at approach
+  # height throughout and is stepped toward each marker in turn.
+  #
+  # full_visit plans the whole pick as timed arcs instead, and grasps. The
+  # two are driven differently rather than differing only in phase count,
+  # which is why the knob is a profile and not a flag.
+  profile: full_visit
 
   # Where the flange rides while following an object, above the belt surface.
   # Clear of the tallest package in the set, which stands 140.8 mm.
@@ -58,8 +62,60 @@ task:
   # servo rather than to this number.
   arrival_tolerance_meters: 0.070
 
-  # How long the flange holds station before the visit counts as served.
+  # How long the flange holds station before the visit counts as served, and
+  # under a full visit how long the jaw is given to close. The flange rides
+  # with the belt throughout, so this is a carry and not a stop.
+  #
+  # An assumption. A 2F-85 closes its full 85 mm stroke in about 0.3 s at the
+  # speed this model actuates at, and most objects need less than the full
+  # stroke. Nothing has measured the closing time in this model yet.
   dwell_seconds: 0.30
+
+  # How far above the object a planned approach ends, and how far the retreat
+  # lifts it afterwards.
+  #
+  # Chosen, then checked against the descent algebra. Fifty millimetres is
+  # about a third of the fingers' 155.8 mm length, so the pads are already
+  # astride the object at the start of the descent rather than arriving from
+  # above it. Small matters: everything about the interception is predicted
+  # forward over the descent, so a taller clearance is a longer horizon and a
+  # worse prediction.
+  grasp_clearance_meters: 0.050
+
+  # How fast the flange is coming down when it reaches that clearance, so the
+  # approach and the descent chain without the arm stopping between them.
+  #
+  # An assumption, bounded by the algebra rather than measured. With the
+  # clearance above it puts the descent at 2Z/V = 0.40 s, four fifths of the
+  # 5Z/(2V) = 0.50 s beyond which the quintic dips below the object it is
+  # descending onto. See docs/guidance-formulation.md for that derivation.
+  approach_speed_meters_per_second: 0.25
+
+  # The longest interception a pick will plan for. Past it the object is
+  # refused rather than chased, which is the honest answer for something the
+  # arm cannot reach in the belt it has left.
+  #
+  # MEASURED against the table in docs/guidance-formulation.md: from the park
+  # pose, interceptions across the reachable window solve between 2.07 and
+  # 2.48 s, and adding the descent puts the longest at 2.88 s. Four seconds
+  # clears that with margin while still refusing an object that has already
+  # run most of the way past the arm.
+  interception_limit_seconds: 4.00
+
+  # How much longer than the soonest feasible interception to take.
+  #
+  # MEASURED, and it is not cosmetic. The bisection returns the soonest arc
+  # that fits, which by construction sits exactly on whichever ceiling binds,
+  # and docs/guidance-formulation.md records that the binding one is always
+  # speed. An arc on its ceiling cannot be re-aimed: every correction breaks
+  # the bound it was already touching, so the refinement is refused and the
+  # arm flies a three second old prediction onto an object that has drifted.
+  # Running the shipped line at 1.00 produced one re-aim per visit, all of
+  # them in the last half second.
+  #
+  # Fifteen percent is the smallest value that let a correction land on every
+  # capture of the approach. It costs about 0.35 s per visit.
+  interception_margin: 1.15
 
   # Where the arm rests when it has nothing to serve.
   #

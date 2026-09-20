@@ -240,6 +240,7 @@ def approach(
     max_speed: float,
     max_acceleration: float,
     latest: float,
+    margin: float = 1.0,
 ) -> Segment | None:
     """Return the soonest feasible arc onto the point above a moving object.
 
@@ -260,6 +261,12 @@ def approach(
         latest: The longest interception worth considering, in seconds,
             which is normally what the object has left before it leaves the
             window.
+        margin: How much longer than the soonest feasible interception to
+            take, as a multiple. One takes the soonest, which sits exactly
+            on whichever ceiling binds and therefore leaves no room to
+            re-aim the arc later: every correction breaks the bound it was
+            already touching. Anything above one buys that room at the cost
+            of a later pick.
 
     Returns:
         The arc, or None when no interception inside `latest` respects both
@@ -273,7 +280,7 @@ def approach(
         return Segment(
             start=flange,
             end=State(
-                position=_where(
+                position=where(
                     object_position, object_velocity, seconds + dt, z_offset
                 ),
                 velocity=(
@@ -300,7 +307,7 @@ def approach(
             high = middle
         else:
             low = middle
-    return arc(high)
+    return arc(min(high * margin, latest))
 
 
 def descend(
@@ -331,7 +338,7 @@ def descend(
     return Segment(
         start=approach_arc.end,
         end=State(
-            position=_where(object_position, object_velocity, arrival, 0.0),
+            position=where(object_position, object_velocity, arrival, 0.0),
             velocity=object_velocity,
             acceleration=(0.0, 0.0, 0.0),
         ),
@@ -339,8 +346,12 @@ def descend(
     )
 
 
-def _where(position: Point, velocity: Point, seconds: float, lift: float) -> Point:
+def where(position: Point, velocity: Point, seconds: float, lift: float) -> Point:
     """Return where a point carried at a constant velocity will be.
+
+    Public because the sequence in [clave.control.pick] predicts against the
+    same model the arcs here are solved against, and two copies of a
+    prediction is how the arc and the pose it aims at come to disagree.
 
     Args:
         position: Where it is now.

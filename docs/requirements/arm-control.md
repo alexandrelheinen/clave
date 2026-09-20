@@ -363,6 +363,35 @@ trusted over, the system shall project it back rather than refuse, because
 the pose the phase asked for and not the correction decides whether a
 target is reachable.
 
+`AC-MOVE-38`: The system shall plan a whole visit before the arm moves, as
+a sequence of timed arcs, and shall drive the arm from the clock rather
+than from proximity, because a jaw has to arrive at a known instant and a
+controller that finds out when it arrives by arriving cannot supply one.
+
+`AC-MOVE-39`: The system shall shut the jaw only once the flange is on the
+object, and shall hold station with the belt while it shuts, so the jaw
+closes around the object rather than sweeping it.
+
+`AC-MOVE-40`: The system shall fix the arrival time at the moment it
+commits to a candidate, and shall keep re-aiming the approach arc at a
+fresher estimate until the descent begins, because the belt model predicts
+travel along the belt exactly and predicts drift across it not at all.
+
+`AC-MOVE-41`: When no interception before the object leaves the window
+respects both ceilings, the system shall record the object as missed and
+move to the next one rather than chase it.
+
+`AC-MOVE-42`: The system shall take an interception longer than the
+soonest feasible one by a configured margin, because the soonest sits
+exactly on whichever ceiling binds and an arc on its ceiling cannot be
+re-aimed.
+
+`AC-MOVE-43`: The system shall not plan or re-aim a pick whose grasp pose
+lies outside the region the arm is trusted over.
+
+`AC-MOVE-44`: When a commanded pose is refused, the system shall discard
+the plan built on it rather than fly the rest of the sequence.
+
 ## The guidance formulation
 
 The mathematics has its own document,
@@ -619,9 +648,14 @@ selection:
   exit_weight: ...            # dimensionless, weights urgency against travel
   anchor_radius_meters: ...   # how far an estimate moves before the anchor does
 task:
-  profile: motion_only        # or full_visit
+  profile: full_visit         # or motion_only
   approach_height_meters: ...
+  arrival_tolerance_meters: ...
   dwell_seconds: ...
+  grasp_clearance_meters: ...              # AC-MOVE-32
+  approach_speed_meters_per_second: ...    # AC-MOVE-33, and AC-MOVE-35 with it
+  interception_limit_seconds: ...          # AC-MOVE-41
+  interception_margin: ...                 # AC-MOVE-42
   park_position_meters: [...]
   park_marker_color: [...]     # AC-MOVE-21
 guidance:
@@ -630,6 +664,7 @@ guidance:
 servo:
   gain: ...
   max_joint_speed_radians_per_second: ...
+  lead_seconds: ...            # AC-MOVE-36
 calibration:
   flange_offset_meters: [...]  # AC-MOVE-06
 ```
@@ -640,6 +675,8 @@ calibration:
 |---|---|
 | `Selector.update` | Values. No model, no renderer: markers in, a queue out |
 | `TaskMachine.step` | Values, driving the clock rather than the world |
+| `TaskMachine.flight` | Values, advancing the clock through a whole planned visit |
+| `pick.plan_pick` and `pick.refine` | Values, checked at the seams between arcs |
 | `guidance.toward` | Values, with the bounds checked over a swept path |
 | `servo.follow` | The compiled model, which is the only place joint angles mean anything |
 | The four together | One rollout, reporting per-visit distance to the commanded pose |

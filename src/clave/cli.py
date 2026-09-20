@@ -592,7 +592,7 @@ def _debug_tracker(root: Path, args: Any) -> int:
     Returns:
         Zero when the run completed.
     """
-    from clave.tracker.debug_run import run
+    from clave.tracker.debug_run import GRASPED_METERS, run
 
     report = run(
         root,
@@ -613,10 +613,19 @@ def _debug_tracker(root: Path, args: Any) -> int:
     print(f"  head swapped    {report.head_churn} times with the old head still there")
     print(f"  profile         {report.profile}")
     print(f"  visits served   {len(report.served)} {list(report.served)}")
+    if report.missed:
+        print(f"  no interception {len(report.missed)} {list(report.missed)}")
     if report.arrivals:
         worst = max(report.arrivals) * 1000
         mean = sum(report.arrivals) / len(report.arrivals) * 1000
         print(f"  arrival error   mean {mean:.1f} mm, worst {worst:.1f} mm")
+    if report.jaw_gaps:
+        each = ", ".join(f"{gap * 1000:.0f}" for gap in report.jaw_gaps)
+        print(f"  jaw to object   {each} mm when the jaw shut")
+    if report.lifts:
+        held = sum(1 for lift in report.lifts if lift >= GRASPED_METERS)
+        each = ", ".join(f"{lift * 1000:.0f}" for lift in report.lifts)
+        print(f"  grasps held     {held} of {len(report.lifts)}, lifts {each} mm")
     print(f"  faults          {len(report.faults)}")
     for track_id, why in report.faults:
         print(f"    track {track_id}: {why}")

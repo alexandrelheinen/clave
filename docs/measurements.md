@@ -282,13 +282,77 @@ it is told to within a millimetre, so most of the remaining 19 mm is the
 tracker's own estimate, whose residual against a belt-carried anchor was
 measured at a mean of 13.4 mm over 231 observations.
 
-**The jaw still holds nothing.** Driving the arm straight at a grasp pose
-sweeps the object off the belt before the fingers arrive: measured on a
-settled object, the approach displaced it by 5 mm to 356 mm depending on
-where the arm started, and after a descent from directly above the pinch
-point stood 182.6 mm from the object with zero pad-to-object contacts.
-Nothing about grip force or closing has been exercised, because nothing has
-yet been closed on.
+### Flying a planned pick
+
+Planning the whole visit as timed arcs, rather than stepping a reference
+toward a pose, closes the control side of the problem. Over a 20 second
+rollout on the shipped line, the flange reaches the pose the plan asks for
+at the instant the jaw shuts with a mean error of **2.7 mm and a worst of
+3.4 mm**, and no visit faults.
+
+Two things had to be true before that number appeared, and both were wrong
+on the first attempt:
+
+| | Arrival error, mean | Worst |
+| --- | --- | --- |
+| Plan fixed at commit | 48.1 mm | 275.4 mm |
+| Re-aimed, no room to re-aim | 58.4 mm | 281.4 mm |
+| Re-aimed, with margin and a reach check | **2.7 mm** | **3.4 mm** |
+
+The middle row is the instructive one. Re-aiming the approach at a fresher
+estimate is refused unless the arc has room to move, and the bisection
+returns the soonest feasible interception, which by construction sits
+exactly on whichever ceiling binds. At a margin of 1.00 the shipped line
+managed one correction per visit, all of them inside the last half second;
+at 1.15 a correction lands on every capture of the approach. The margin
+also pushes the interception further downstream, which can put the grasp
+pose outside the annulus, so the plan falls back to the soonest
+interception where it does.
+
+### Why the jaw still holds nothing
+
+Not the control any more. At the instant the jaw shuts, the nearest object
+to the pinch site is **94 to 619 mm away**, while the flange is 2.7 mm from
+the pose it was sent to. The arm arrives exactly where it was asked to, and
+it is asked to go where no object is.
+
+The estimate it is sent to degrades with distance from the sensing gate.
+Measuring every settled record against the nearest object it could describe,
+over a 25 second rollout:
+
+| Where the record sits | Records | Median | p90 |
+| --- | --- | --- | --- |
+| Inside the gate, x below -0.5 m | 195 | 11.7 mm | 115 mm |
+| The near pick zone, -0.5 to +0.5 m | 306 | 182 mm | 387 mm |
+| Downstream, above +0.5 m | 1885 | 644 mm | 2817 mm |
+
+The gate figure matches the 13.4 mm residual above. Everything else is dead
+reckoning: the only camera carrying the detection role stands at x = -1.00 m
+and images 0.92 m of travel, the arm's annulus runs from about -0.9 m to
++1.1 m, and no sensor observes an object again after it leaves the gate. The
+belt model carries travel along the belt exactly and carries drift across it
+not at all, and an object rolling or settling drifts sideways by a mean of
+10 mm over half a second and 41 mm over 2.5 seconds, against a jaw whose
+narrowest side clearance is 8.7 mm.
+
+The record count in that last row is the other half of it. Tracks are not
+retired when their object leaves, so they accumulate and are dead-reckoned
+indefinitely, and the arm serves them alongside the real ones.
+
+**Adding cameras over the pick zone does not fix it on its own**, which was
+worth measuring rather than assuming. With the same sensor, lens and
+standoff as the gate, one camera at x = +0.30 m took the run from 1 grasp in
+6 to 2 in 5; tiling the whole reachable span with two took it back to 1 in 5.
+The mechanism is association: a detection carries no identity and joins the
+nearest track inside a gate scaled to that track's footprint, and a track
+whose prediction is already 180 mm out falls outside its own gate, so the
+fresh observation opens a duplicate track instead of correcting the stale
+one. Open tracks ran to 28 and 51 against about a dozen objects.
+
+So the next thing to fix is perception downstream of the gate, and it is two
+changes rather than one: a sensor that sees where the arm works, and an
+association and retirement rule that lets its observations reach the track
+they belong to.
 
 ## The object set
 

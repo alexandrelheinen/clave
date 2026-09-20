@@ -131,6 +131,12 @@ normally runs are faster.
 jaw is adopted against what a municipal packaging line would install, and it
 is a simulator argument rather than a process one.
 
+This is the criterion the first open defect below blocks, and it blocks it
+from the perception side rather than the arm side. The arm reaches the pose
+it is sent to within 2.2 mm; the pose is 94 mm to 644 mm from any object.
+v1.2.0 therefore has to land before v1.4.0 can be claimed, whatever order the
+work happens to be done in.
+
 **v1.5.0 release criteria.** One chute opening per resolved channel is built
 into the conveyor structure at belt height, every one inside the region the
 arm is trusted over, with a load-time refusal for any that is not. An object
@@ -159,9 +165,37 @@ figure the benchmark reports as unmeasurable.
 
 ## Open defects
 
-Two defects found while reading the code ahead of the tracker work. Neither is
-repaired, and both are recorded here rather than fixed quietly, because each
-carries a blast radius wider than the line it sits on.
+Three defects, each recorded rather than fixed quietly because each carries a
+blast radius wider than the line it sits on. The first blocks the grasp at
+v1.4.0 and was found by measuring a pick that flew correctly and held nothing;
+the other two were found while reading the code ahead of the tracker work.
+
+- **A pose is only trustworthy inside the sensing gate, and the arm works
+  outside it.** Measured against the nearest object a record could describe,
+  the tracker's grasp point has a median error of 11.7 mm while the object is
+  inside the gate, 182 mm through the near half of the arm's reach, and 644 mm
+  beyond it. The gate camera stands at x = -1.00 m and images 0.92 m of travel;
+  the annulus runs from about -0.9 m to +1.1 m, so no sensor sees an object
+  again after it leaves the gate and every pick is made on two to five seconds
+  of dead reckoning. The belt model carries travel along the belt exactly and
+  carries drift across it not at all, and an object rolling or settling drifts
+  sideways by a mean of 41 mm over 2.5 seconds against a jaw whose narrowest
+  side clearance is 8.7 mm.
+
+  The control side is no longer the limit: the flange reaches the pose the plan
+  asks for to 2.2 mm at the instant the jaw shuts, and the nearest object is
+  94 mm to 644 mm away.
+
+  Adding cameras over the pick zone does not fix it on its own, which was
+  measured rather than assumed. A detection carries no identity and joins the
+  nearest track inside a gate scaled to that track's footprint, so a track
+  already 180 mm out falls outside its own gate and the fresh observation opens
+  a duplicate instead of correcting the stale one; open tracks ran to 28 and 51
+  against about a dozen objects. The repair is two changes rather than one, a
+  sensor that sees where the arm works and an association and retirement rule
+  that lets its observations reach the track they belong to, and the second of
+  those is [learned-tracker](requirements/learned-tracker.md) at v1.2.0. See
+  [measurements.md](measurements.md#why-the-jaw-still-holds-nothing).
 
 - **The sensing gate does not cover the belt it stands over.** Measured by
   sweeping objects laterally and reading the segmentation render, `gate_wide`
