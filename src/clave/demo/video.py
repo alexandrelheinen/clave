@@ -18,7 +18,23 @@ from pathlib import Path
 import numpy as np
 from numpy.typing import NDArray
 
+from clave.errors import ClaveError
+
 ENCODER = "ffmpeg"
+
+CLOSE_TIMEOUT_SECONDS = 120.0
+"""How long to give the encoder to finish after the last frame.
+
+Generous, because the encoder still has queued frames to write when the
+last one arrives. Bounded, because the alternative to a bound is a run that
+never ends.
+"""
+
+
+class VideoError(ClaveError):
+    """The encoder failed, so the recording cannot be trusted."""
+
+
 """The tool that turns raw frames into a file."""
 
 
@@ -101,6 +117,8 @@ class VideoRecorder:
             ],
             stdin=subprocess.PIPE,
             stdout=subprocess.DEVNULL,
+            # Captured rather than discarded, so a failed encode says why.
+            # It is drained in `close`, which is what keeps it from filling.
             stderr=subprocess.PIPE,
         )
 
@@ -117,10 +135,44 @@ class VideoRecorder:
         self.frames += 1
 
     def close(self) -> None:
-        """Finish the file and wait for the encoder."""
-        if self._process.stdin is not None:
-            self._process.stdin.close()
-        self._process.wait(timeout=120)
+        """Finish the file and wait for the encoder.
+
+        Draining stderr is not optional and leaving it undrained is a
+        deadlock rather than untidiness. The encoder's stderr is a pipe with
+        a buffer of about 64 kB, and an encoder that fills it blocks writing
+        there, stops reading its stdin, and never exits; the caller then
+        waits on a process that is waiting on the caller. Short recordings
+        hide it because the encoder never writes enough to fill the buffer,
+        so it appears as a run that hangs only once it is long enough to
+        matter.
+
+        `communicate` reads both pipes and waits in one step, which is the
+        only combination that cannot deadlock.
+
+        Raises:
+            VideoError: If the encoder failed, carrying what it wrote to
+                stderr. A recording that silently produced an unplayable
+                file is worse than one that says it did not work.
+        """
+        # `communicate` closes stdin itself, so closing it first leaves it
+        # with a closed file to flush and raises rather than waiting.
+        try:
+            _, complaint = self._process.communicate(timeout=CLOSE_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired:
+            # Killing beats leaving it behind. A caller that has returned its
+            # report is about to exit, and an encoder still holding the
+            # output file keeps the process alive with nothing left to do.
+            self._process.kill()
+            _, complaint = self._process.communicate()
+            raise VideoError(
+                f"{ENCODER} did not finish within {CLOSE_TIMEOUT_SECONDS} s "
+                f"and was killed, so {self.settings.path} is incomplete"
+            ) from None
+        if self._process.returncode:
+            raise VideoError(
+                f"{ENCODER} exited {self._process.returncode}: "
+                f"{complaint.decode(errors='replace').strip() or 'no message'}"
+            )
 
 
 def available() -> bool:
