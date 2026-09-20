@@ -11,7 +11,9 @@ policy live in [CONTRIBUTING.md](../CONTRIBUTING.md).
 ## Physical and kinematic variable naming: `who_what_where`
 
 Variables representing physical quantities, spatial poses, velocities, and
-measurements follow a structured grammar:
+measurements follow a structured grammar. The complete vocabulary of tokens,
+entities, reference frames, and units is exhaustively defined in the
+[Physical Variables Glossary](glossary.md).
 
 ```
 [who_]what[_where][_unit]
