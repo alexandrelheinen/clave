@@ -2,9 +2,9 @@
 
 The shared baseline for Rust and Python style, naming, and error handling
 lives in
-[standards/guidelines/languages/rs.md](../standards/guidelines/languages/rs.md)
+[.guidelines/languages/rs.md](../.guidelines/languages/rs.md)
 and
-[standards/guidelines/languages/py.md](../standards/guidelines/languages/py.md).
+[.guidelines/languages/py.md](../.guidelines/languages/py.md).
 This file covers only what is specific to CLAVE. Method, gates, and merge
 policy live in [CONTRIBUTING.md](../CONTRIBUTING.md).
 
@@ -35,7 +35,7 @@ with it. `crates/clave-safety/contract/proposal.md` specifies the boundary. Thro
 ## Hardened by default
 
 Safety-layer crates take the hardened lint tier from
-[languages/rs.md](../standards/guidelines/languages/rs.md#hardened-for-real-time-unsafe-and-ffi-crates).
+[languages/rs.md](../.guidelines/languages/rs.md#hardened-for-real-time-unsafe-and-ffi-crates).
 A coordinate that silently overflows, a bound check that silently truncates,
 or an actuator limit that silently wraps is a fault in this domain, not a
 style question.

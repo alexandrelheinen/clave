@@ -1,7 +1,8 @@
-[submodule "standards/guidelines"]
-	path = standards/guidelines
+[submodule ".guidelines"]
+	path = .guidelines
 	url = https://github.com/alexandrelheinen/guidelines.git
 	branch = main
+	update = merge
 [submodule "third_party/robotis_mujoco_menagerie"]
 	path = third_party/robotis_mujoco_menagerie
 	url = https://github.com/ROBOTIS-GIT/robotis_mujoco_menagerie.git

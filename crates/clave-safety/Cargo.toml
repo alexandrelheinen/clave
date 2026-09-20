@@ -19,7 +19,7 @@ thiserror.workspace = true
 
 # Cargo refuses to merge an inherited lint table with a local one, so this
 # crate repeats the workspace baseline beside the hardened tier it needs. The
-# two tiers are defined in standards/guidelines/languages/rs.md.
+# two tiers are defined in .guidelines/languages/rs.md.
 [lints.rust]
 unsafe_op_in_unsafe_fn = "deny"
 missing_docs = "warn"

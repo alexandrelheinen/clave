@@ -51,7 +51,7 @@ later is a port. Grasping and placement stay out.
 - **Rust owns the runtime, Python owns the learning.** Training code is Python.
   The SITL runtime that runs inference, applies the safety check, and publishes
   a decision is Rust under the lint tiers in
-  [languages/rs.md](../standards/guidelines/languages/rs.md).
+  [languages/rs.md](../.guidelines/languages/rs.md).
 - **Licenses are recorded before a dependency is adopted.** Every dataset, mesh
   set, and pretrained checkpoint carries its license in the review that
   proposes it.

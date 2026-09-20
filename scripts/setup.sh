@@ -19,10 +19,10 @@ report() {
 }
 
 echo "==> Submodules"
-if [[ -f standards/guidelines/README.md ]]; then
-  echo "  ok      standards checked out"
+if [[ -f .guidelines/README.md ]]; then
+  echo "  ok      guidelines checked out"
 else
-  echo "  fetching standards submodules"
+  echo "  fetching guidelines submodule"
   git submodule update --init --recursive
 fi
 
@@ -58,7 +58,7 @@ else
 fi
 
 echo "==> Agent toolchain"
-echo "  See standards/README.md for the Claude Code plugins."
+echo "  See AGENTS.md for agent instructions."
 
 if [[ "${missing}" -ne 0 ]]; then
   echo

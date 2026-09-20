@@ -3,11 +3,11 @@
 This document is the single source of truth for CLAVE's own project
 context: what this repository is, its quality gates, and its merge policy.
 Generic method, writing, and naming rules live in
-[standards/](standards/README.md) and are not repeated here.
+[.guidelines/](.guidelines/README.md) and are not repeated here.
 
-`AGENTS.md`, `CLAUDE.md`, `CURSOR.md`, and
+`AGENTS.md`, `CLAUDE.md`, and
 `.github/copilot-instructions.md` are thin bridges that point here and at
-the standards. Do not write rules into them.
+the guidelines. Do not write rules into them.
 
 ## Table of contents
 
@@ -62,15 +62,14 @@ cd clave
 ```
 
 `scripts/setup.sh` reports what is missing and how to install it rather
-than installing toolchains behind your back. The agent toolchain, meaning
-the Claude Code plugins, is documented in
-[standards/README.md](standards/README.md).
+than installing toolchains behind your back. The agent toolchain
+is documented in [AGENTS.md](AGENTS.md).
 
 ## Method
 
 Spec-driven development and TDD are defined in
-[workflow/sdd.md](standards/guidelines/workflow/sdd.md) and
-[workflow/tdd.md](standards/guidelines/workflow/tdd.md). No toolkit drives
+[.guidelines/workflow/sdd.md](.guidelines/workflow/sdd.md) and
+[.guidelines/workflow/tdd.md](.guidelines/workflow/tdd.md). No toolkit drives
 them here: a spec is a document you write.
 
 Specifications are committed under [docs/requirements/](docs/requirements/),
@@ -96,13 +95,13 @@ Before every push on a branch:
 
 It must exit 0, and CI runs the same script so the two cannot disagree.
 The Rust gates it will run once the first crate lands are fixed by
-[languages/rs.md](standards/guidelines/languages/rs.md): `cargo fmt
+[.guidelines/languages/rs.md](.guidelines/languages/rs.md): `cargo fmt
 --check`, `cargo clippy -D warnings`, `cargo nextest run`, doc tests,
 `cargo doc` with warnings denied, `cargo deny check`, and coverage at 80%
 or better. Those are not per-PR negotiations.
 
 No secrets in the tree, ever. Commit format and PR hygiene follow
-[workflow/commits.md](standards/guidelines/workflow/commits.md).
+[.guidelines/workflow/commits.md](.guidelines/workflow/commits.md).
 
 ## Physical fidelity
 
@@ -151,14 +150,14 @@ version of the arm the simulation actually runs.
 - Keep history rebase-friendly and commits atomic.
 - Scale the evidence in the pull request body to the blast radius of the
   change, per
-  [agents/claude.md](standards/guidelines/agents/claude.md).
+  [.guidelines/agents/claude.md](.guidelines/agents/claude.md).
 - Agents open and update pull requests. The maintainer merges, unless the
   maintainer asks otherwise in the active task.
 
 ## Rules for AI agents
 
 General agent behavior, including the no-fabricated-evidence rule, follows
-[agents/claude.md](standards/guidelines/agents/claude.md). CLAVE adds:
+[.guidelines/agents/claude.md](.guidelines/agents/claude.md). CLAVE adds:
 
 1. Do not claim a gate passed without running it, and do not claim hardware
    validation of any kind. This machine has no camera, no belt, and no arm.
@@ -174,18 +173,18 @@ General agent behavior, including the no-fabricated-evidence rule, follows
    metrics. Policy performance data is archived but not a substitute for
    specification and test evidence.
 6. When writing training code or policy interfaces, follow Python and Rust
-   style rules from [standards/guidelines/languages/](standards/guidelines/languages/),
+   style rules from [.guidelines/languages/](.guidelines/languages/),
    and document policy versioning and interface contracts in crate docs.
 
 The precedence order when documents disagree is in
-[standards/README.md](standards/README.md#precedence).
+[.guidelines/README.md](.guidelines/README.md#precedence).
 
 ## Documented deviations
 
 The shared guidelines allow a project to deviate on purpose, provided the
 deviation is written down. CLAVE has one. Where an installed skill or
 plugin disagrees with the guidelines instead, the answer is in
-[integrations/toolkits.md](standards/guidelines/integrations/toolkits.md),
+[.guidelines/integrations/toolkits.md](.guidelines/integrations/toolkits.md),
 not here.
 
 - **Project name.** `style/naming.md` requires US English everywhere.

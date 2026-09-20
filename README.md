@@ -165,7 +165,7 @@ it the scanned objects.
 | `third_party/robotis_mujoco_menagerie` | 185 MB | Sibling ROBOTIS arms, kept for comparison |
 | `third_party/ycb_sim` | 24 MB | 10 YCB packages, 4 used |
 | `third_party/aws-robomaker-small-warehouse-world` | 17 MB | Warehouse props and textures |
-| `standards/guidelines` | Under 10 MB | The shared guidelines |
+| `.guidelines` | Under 10 MB | The shared guidelines |
 
 ## What runs today
 
@@ -231,7 +231,7 @@ outside the v1.x line. What CLAVE takes from each sibling is itemized in the
 | --- | --- |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | The constitution: quality gates, merge policy, agent rules |
 | [docs/guidelines.md](docs/guidelines.md) | Coding notes specific to CLAVE, on top of the shared baseline |
-| [standards/](standards/README.md) | Shared guidelines, the SDD method, and the agent toolchain |
+| [.guidelines/](.guidelines/README.md) | Shared guidelines and the SDD method |
 | [docs/roadmap.md](docs/roadmap.md) | The ladder to v1.0.0, its release criteria, and the spec dependency order |
 | [docs/architecture.md](docs/architecture.md) | What each block does, its inputs and outputs, and what is deliberately absent |
 | [docs/measurements.md](docs/measurements.md) | Every measured number a gate or a configuration value rests on |

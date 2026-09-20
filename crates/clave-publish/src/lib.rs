@@ -42,7 +42,7 @@
 //! # Hardened lint tier
 //!
 //! This crate sits on the capture-to-decision path, so it carries the hardened
-//! lint tier from `standards/guidelines/languages/rs.md`. Cargo refuses to
+//! lint tier from `.guidelines/languages/rs.md`. Cargo refuses to
 //! merge an inherited lint table with a local one, so the crate manifest
 //! repeats the workspace baseline beside the hardened tier.
 //!

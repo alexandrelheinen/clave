@@ -10,8 +10,8 @@ fail() {
   exit 1
 }
 
-echo "==> [1/3] standards submodule"
-for sub in standards/guidelines; do
+echo "==> [1/3] guidelines submodule"
+for sub in .guidelines; do
   [[ -f "${sub}/README.md" ]] || fail "${sub} is not checked out. Run: git submodule update --init --recursive"
 done
 if git submodule status --recursive | grep -q '^+'; then
@@ -24,8 +24,8 @@ echo "==> [1b/3] merge conflict markers"
 # A conflict marker committed into a tracked file is invisible to every other
 # gate: ruff and mypy never see Markdown, and a corrupted document still renders.
 # One slipped into a committed document and survived a merge to main.
-if git grep -nE '^(<<<<<<< |={7}$|>>>>>>> )' -- . ':!standards' ':!third_party' >/dev/null 2>&1; then
-  git grep -nE '^(<<<<<<< |={7}$|>>>>>>> )' -- . ':!standards' ':!third_party' >&2
+if git grep -nE '^(<<<<<<< |={7}$|>>>>>>> )' -- . ':!.guidelines' ':!third_party' >/dev/null 2>&1; then
+  git grep -nE '^(<<<<<<< |={7}$|>>>>>>> )' -- . ':!.guidelines' ':!third_party' >&2
   fail "a merge conflict marker is committed in a tracked file"
 fi
 echo "no conflict markers"
@@ -54,7 +54,7 @@ fi
 echo "==> [3/3] rust workspace"
 if [[ ! -f Cargo.toml ]]; then
   echo "no Cargo.toml yet, skipping Rust gates."
-  echo "The gates land with the first crate, per standards/guidelines/languages/rs.md."
+  echo "The gates land with the first crate, per .guidelines/languages/rs.md."
   echo "validate: OK"
   exit 0
 fi
