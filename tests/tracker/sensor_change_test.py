@@ -256,7 +256,7 @@ def test_no_consumer_counts_cameras() -> None:
     """
     raw = load(WORLD)
     declared = len(require(raw, "cameras"))
-    assert declared == 4
+    assert declared == 5
     package = ROOT / "src" / "clave" / "tracker"
     for path in package.rglob("*.py"):
         text = path.read_text()

@@ -34,4 +34,80 @@ mass:
   # Seven of the eleven classes have no object, so they have no band and the
   # mass of an object in one of them is unknown rather than estimated. That is
   # the honest reading and it is what the band says.
-  densities_from_world: true
+  #
+  # There is no key here to switch this off, and there was one. `densities_from
+  # _world: true` read as a choice and was not: nothing ever looked at it, and
+  # the loader has always taken the bands from the world unconditionally.
+
+# How the tracker carries an estimate between observations.
+#
+# The model used to be that every object travels at exactly the belt's speed
+# and drifts sideways not at all. The first is very nearly true and the
+# second is false: measured on the shipped line, an object rolling or
+# settling drifts 10 mm sideways over half a second and 41 mm over 2.5, and
+# the jaw's narrowest side clearance is 8.7 mm. So the tracker estimates a
+# velocity per object instead of assuming one.
+#
+# These are alpha-beta gains, which is the steady-state Kalman filter for a
+# constant-velocity model. `alpha` is the fraction of the residual applied to
+# the position and `beta` the fraction applied to the velocity. At alpha 1
+# and beta 0 the filter is exactly what the tracker did before it existed:
+# replace the position, never learn a velocity.
+motion:
+  # Along belt travel. The belt drives this axis rigidly, so the velocity is
+  # known from configuration before any observation arrives and the filter
+  # should barely move it. A high alpha because the observation is the only
+  # thing that knows where along the belt the object actually is, and a very
+  # low beta because a velocity wandering off the belt's own is the
+  # segmentation's noise rather than the object's motion.
+  # MEASURED: letting the filter learn this velocity is actively harmful.
+  # Raising beta here from 0.05 to 0.30 took the pick-zone median from 45.6 mm
+  # to 81.4 mm, because the belt drives travel rigidly and the residual the
+  # filter would be learning from is the segmentation's noise rather than the
+  # object's motion.
+  #
+  # Not zero, though. The feed controller moves the belt, so a velocity frozen
+  # at whatever the speed was when the track opened goes stale. A small beta
+  # lets it follow the drive without chasing pixels.
+  along:
+    alpha: 0.80
+    beta: 0.05
+
+  # Across the belt. Nothing drives this axis, so the velocity has to be
+  # learned entirely from successive observations and beta carries the whole
+  # burden. Higher than along-travel by an order of magnitude for that
+  # reason, and the cost is that lateral segmentation noise reaches the
+  # velocity estimate.
+  # MEASURED by sweeping beta against ground truth over one rollout, so the
+  # settings see identical observations. Pick-zone median, against 45.6 mm
+  # for the replace-outright model this filter took over from:
+  #
+  #   beta 0.1 -> 41.4 mm     beta 0.4 -> 41.7 mm
+  #   beta 0.2 -> 41.1 mm     beta 0.8 -> 41.7 mm
+  #
+  # Flat, which says the filter is recovering what a constant-velocity model
+  # can recover and the value hardly matters. Four millimetres of forty-five.
+  # 0.20 is taken for the best median and for being the quietest of the ones
+  # that tie. The p90 is slightly worse at every setting, 123 mm to 131 mm,
+  # which is the price of a model that extrapolates a drift that is decaying.
+  across:
+    alpha: 0.70
+    beta: 0.20
+
+# When the tracker gives up on a track.
+lifecycle:
+  # How long a track may go unobserved before it is dropped.
+  #
+  # MEASURED, and the absence of any bound was a defect rather than a
+  # tuning choice. Tracks were never retired, so they were dead reckoned
+  # indefinitely: over a two minute rollout, records sitting past the arm's
+  # reach had a median error of 10.2 m and outnumbered the ones inside the
+  # sensing gate by nineteen to one. The arm chose its next object from
+  # among them.
+  #
+  # One and a half seconds is three capture intervals, so a track survives
+  # two missed detections and dies on the third. That is long enough to ride
+  # out a frame where an object is occluded or segments as one with its
+  # neighbour, and short enough that nothing the arm is offered has been
+  # unobserved for longer than half the interception it is about to plan.
+  retire_after_seconds: 1.5

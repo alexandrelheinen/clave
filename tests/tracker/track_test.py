@@ -297,10 +297,12 @@ def test_a_code_stays_attached_as_the_track_travels() -> None:
         ),
         at_nanos=SECOND,
     )
-    later = SECOND + 4 * SECOND
+    # Inside the retirement bound, because a track nobody has observed for
+    # longer than that is dropped rather than carried forward.
+    later = SECOND + SECOND
     record = held.settle(at_nanos=later)[0]
     assert record.codes == ("037600138727",)
-    assert record.footprint.center[0] == pytest.approx(-1.0 + BELT_SPEED * 4.0)
+    assert record.footprint.center[0] == pytest.approx(-1.0 + BELT_SPEED * 1.0)
 
 
 def test_a_track_is_propagated_to_the_instant_it_is_settled_at() -> None:
@@ -308,9 +310,9 @@ def test_a_track_is_propagated_to_the_instant_it_is_settled_at() -> None:
     held = tracker()
     held.observe(detection(at=SECOND, x=-1.0), at_nanos=SECOND)
     at_gate = held.settle(at_nanos=SECOND)[0].footprint.center[0]
-    downstream = held.settle(at_nanos=SECOND + 2 * SECOND)[0].footprint.center[0]
+    downstream = held.settle(at_nanos=SECOND + SECOND)[0].footprint.center[0]
     assert at_gate == pytest.approx(-1.0)
-    assert downstream == pytest.approx(-1.0 + BELT_SPEED * 2.0)
+    assert downstream == pytest.approx(-1.0 + BELT_SPEED * 1.0)
 
 
 def test_valid_until_is_the_measured_window_exit() -> None:
@@ -450,3 +452,35 @@ def test_without_an_unmeasured_extent_the_two_would_not_have_met() -> None:
     held.observe(label(object_id=3, class_id="M-06"), at_nanos=SECOND)
     held.observe(detection(at=SECOND, x=-0.97), at_nanos=SECOND)
     assert len(held.settle(at_nanos=SECOND)) == 2
+
+
+def test_a_track_nobody_has_observed_is_retired() -> None:
+    """AC-TRACK-36: a track nobody has observed is retired.
+
+    Carried forward instead, it is dead reckoned indefinitely. Measured
+    before this existed, records past the arm's reach had a median error of
+    ten metres and outnumbered the ones inside the sensing gate nineteen to
+    one, and the arm chose its next object from among them.
+    """
+    held = tracker()
+    held.observe(detection(at=SECOND, x=-1.0), at_nanos=SECOND)
+    bound = held.settings.retire_after
+    assert held.settle(at_nanos=SECOND + int(bound * 0.9 * SECOND))
+    assert held.retired == 0
+    assert held.settle(at_nanos=SECOND + int(bound * 1.1 * SECOND)) == ()
+    assert held.retired == 1
+
+
+def test_a_track_still_being_observed_is_not_retired() -> None:
+    """AC-TRACK-36: a track still being observed is not retired.
+
+    The non-vacuous half. A bound that dropped everything would pass the
+    test above and describe a tracker that tracks nothing.
+    """
+    held = tracker()
+    at = SECOND
+    for _ in range(12):
+        held.observe(detection(at=at, x=-1.0), at_nanos=at)
+        assert held.settle(at_nanos=at), "retired while still being seen"
+        at += SECOND // 2
+    assert held.retired == 0

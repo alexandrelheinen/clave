@@ -30,6 +30,7 @@ import math
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -44,6 +45,7 @@ from clave.tracker.evidence import (
     Material,
     Payload,
 )
+from clave.tracker.motion import Gains
 from clave.world.config import Range, load, require
 
 REJECT = "reject"
@@ -178,11 +180,20 @@ class FusionSettings:
         densities: Bulk density band per material class, in kilograms per cubic
             meter. A class with no object in the world has no entry, and the
             mass of an object in one is unknown rather than estimated.
+        along: Filter gains for the belt travel axis.
+        across: Filter gains for the lateral axis.
+        retire_after: How long a track may go unobserved before it is
+            dropped, in seconds. An object nobody has seen for that long is
+            not an object whose position is known, and carrying it forward
+            produces a confident record about a fiction.
     """
 
     posterior_floor: float
     recency_half_life: float
     densities: dict[str, Range]
+    along: Gains
+    across: Gains
+    retire_after: float
 
     @classmethod
     def load(cls, path: Path, world: Path) -> FusionSettings:
@@ -219,11 +230,65 @@ class FusionSettings:
                 f"a half life of {half_life} describes no decay, so no reading "
                 f"would ever age"
             )
+        motion = require(raw, "motion")
         return cls(
             posterior_floor=floor,
             recency_half_life=half_life,
             densities=_densities_of(load(world)),
+            along=_gains(require(motion, "along", "motion"), "motion.along"),
+            across=_gains(require(motion, "across", "motion"), "motion.across"),
+            retire_after=_retirement(raw),
         )
+
+
+def _retirement(raw: dict[str, Any]) -> float:
+    """Read how long a track may go unobserved before it is dropped.
+
+    Args:
+        raw: The parsed fusion configuration.
+
+    Returns:
+        The bound in seconds.
+
+    Raises:
+        FusionError: If the key is absent or not above zero. A bound at or
+            below zero retires a track the instant it opens.
+    """
+    value = float(
+        require(require(raw, "lifecycle"), "retire_after_seconds", "lifecycle")
+    )
+    if not value > 0.0:
+        raise FusionError(
+            f"a retirement bound of {value} s drops a track before its first "
+            f"observation has been read"
+        )
+    return value
+
+
+def _gains(block: dict[str, Any], path: str) -> Gains:
+    """Read one axis's filter gains.
+
+    Args:
+        block: The axis block.
+        path: Dotted path, for the message.
+
+    Returns:
+        The gains.
+
+    Raises:
+        FusionError: If either gain is absent or outside the unit range. A
+            gain above one over-corrects past the observation and one below
+            zero corrects away from it, and neither describes a filter.
+    """
+    alpha = float(require(block, "alpha", path))
+    beta = float(require(block, "beta", path))
+    for name, value in (("alpha", alpha), ("beta", beta)):
+        if not 0.0 <= value <= 1.0:
+            raise FusionError(
+                f"{path}.{name} is {value}, and a gain outside zero to one "
+                f"corrects past the observation or away from it"
+            )
+    return Gains(alpha=alpha, beta=beta)
 
 
 def _densities_of(world: dict[str, object]) -> dict[str, Range]:

@@ -289,11 +289,9 @@ structure:
   leg_inset_meters: 0.12
   # The frame the belt surface sits on, spanning the legs.
   frame_depth_meters: 0.05
-  # The pedestal the manipulator is bolted to.
-  # Narrow enough that the mounting plate clears the belt edge.
-  pedestal_radius_meters: 0.045
-  pedestal_plate_radius_meters: 0.055
-  pedestal_plate_thickness_meters: 0.012
+  # The pedestal the manipulator is bolted to is not described here. It was,
+  # as a cylinder with a mounting plate, and nothing has read those three
+  # keys since it became a box sized by arm.pedestal_footprint_meters.
 
 environment:
   # Scene dressing from the MIT-0 AWS RoboMaker warehouse, the same collection
@@ -386,6 +384,30 @@ cameras:
     lens: hf8xa-5m
     long_axis: across
     position_meters: [-1.00, 0.0, 1.942]
+
+  # Detection again, over the part of the belt the arm can actually reach.
+  #
+  # MEASURED, and it is the difference between picking an object and picking
+  # a prediction. Sweeping an object along the belt and reading the
+  # segmentation, `gate_wide` detects it out to x = -0.275 m and no further.
+  # The arm's annulus runs to x = +1.034 m on the centreline, so 1.31 m of
+  # the zone the arm actually works in was never observed: every pick there
+  # was made on an estimate dead reckoned since the object left the gate.
+  #
+  # The same sweep puts one camera's reach at about 0.72 m either side of
+  # itself, so a single one at x = +0.38 m covers -0.345 m to +1.105 m. That
+  # overlaps the gate by 70 mm and reaches past the far edge of the annulus,
+  # which closes the zone with one camera rather than the three an earlier
+  # attempt used.
+  #
+  # Same sensor, lens and standoff as the gate, so its pixels are worth the
+  # same on the belt and the fusion has no calibration step to get wrong.
+  - id: pick_wide
+    role: detection
+    sensor: imx264
+    lens: hf8xa-5m
+    long_axis: across
+    position_meters: [0.38, 0.0, 1.942]
 
   # Barcode reading. An EAN-13 narrow module is about 0.33 mm and decoding
   # wants roughly two pixels across it, so 0.165 mm per pixel is the floor.

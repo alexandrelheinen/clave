@@ -29,6 +29,9 @@ from clave.tracker.belt_frame import Footprint, elapsed_seconds, propagate
 from clave.tracker.evidence import Code, Detection, Evidence, GroundTruth, Height, Role
 from clave.tracker.fusion import FusionSettings, Posterior, Resolver, fold, mass_band
 from clave.tracker.intake import Intake
+from clave.tracker.motion import Estimate
+from clave.tracker.motion import begin as begin_motion
+from clave.tracker.motion import fold as fold_motion
 from clave.world.config import Range
 
 NANOS_PER_SECOND = 1_000_000_000
@@ -50,6 +53,10 @@ class Track:
         evidence: Which roles have contributed.
         simulated: Which record fields derive from the simulator's label.
         label: The simulator's object id, when one was folded in.
+        motion: Where the filter believes the object is and how fast it is
+            going, or None before any detection has opened one. It is the
+            estimate a consumer is propagated from; `footprint` keeps the
+            extents and the yaw, which the filter does not model.
         first_seen_nanos: When it opened.
         last_updated_nanos: When it last took evidence.
     """
@@ -66,18 +73,31 @@ class Track:
     evidence: frozenset[Role] = frozenset()
     simulated: frozenset[str] = frozenset()
     label: int | None = None
+    motion: Estimate | None = None
 
     def at(self, at_nanos: int, belt_speed: float) -> Footprint:
         """Return where this track is at a later instant.
 
+        Carried by the filter's own velocity estimate where one exists, and
+        by the configured belt speed where none does. The difference is the
+        lateral axis: the belt model says an object never drifts sideways,
+        and an object rolling or settling does, by tens of millimetres over
+        the horizon a pick is planned across.
+
         Args:
             at_nanos: The instant wanted.
-            belt_speed: Belt speed in meters per second.
+            belt_speed: Belt speed in meters per second, used only before a
+                detection has opened an estimate.
 
         Returns:
-            The footprint, carried along belt travel.
+            The footprint, with its extents and yaw unchanged.
         """
-        return propagate(self.footprint, belt_speed, self.observed_at_nanos, at_nanos)
+        if self.motion is None:
+            return propagate(
+                self.footprint, belt_speed, self.observed_at_nanos, at_nanos
+            )
+        x, y = self.motion.at(at_nanos / NANOS_PER_SECOND)
+        return replace(self.footprint, center=(x, y, self.footprint.center[2]))
 
     def summarize(self, at_nanos: int, belt_speed: float) -> TrackSummary:
         """Return this track as an associator is allowed to see it.
@@ -197,6 +217,7 @@ class Tracker:
     resolve: Resolver | None = None
     _tracks: dict[int, Track] = field(default_factory=dict)
     _next_id: int = 1
+    _retired: int = 0
 
     def observe(self, evidence: Evidence, at_nanos: int) -> None:
         """Fold one reading into whichever track it belongs to.
@@ -224,19 +245,53 @@ class Tracker:
             track = self._open(cue, at_nanos)
         self._fold(track, admitted, at_nanos)
 
+    @property
+    def retired(self) -> int:
+        """How many tracks have been dropped for going unobserved."""
+        return self._retired
+
     def settle(self, at_nanos: int) -> tuple[WasteObject, ...]:
-        """Describe every open track as of one instant.
+        """Describe every track still worth describing, as of one instant.
+
+        Retires first. A track nobody has observed for longer than the
+        configured bound is dropped rather than carried forward, because its
+        position is no longer known and a record says nothing about how old
+        the estimate behind it is. Carried forward instead, such a track is
+        dead reckoned indefinitely: measured before this existed, records
+        past the arm's reach had a median error of ten metres and
+        outnumbered the ones inside the sensing gate nineteen to one.
+
+        Dropping it also clears the association gate. A stale track sits
+        where nothing is, and a fresh detection landing near the real object
+        fails to join it and opens a duplicate instead.
 
         Args:
             at_nanos: The instant to describe them at.
 
         Returns:
-            One record per track, in the order the tracks opened.
+            One record per surviving track, in the order the tracks opened.
         """
+        self._retire(at_nanos)
         return tuple(
             self._settle(track, at_nanos)
             for track in sorted(self._tracks.values(), key=lambda t: t.track_id)
         )
+
+    def _retire(self, at_nanos: int) -> None:
+        """Drop every track whose position estimate has gone stale.
+
+        Args:
+            at_nanos: Now.
+        """
+        bound = self.settings.retire_after
+        stale = [
+            track_id
+            for track_id, track in self._tracks.items()
+            if elapsed_seconds(track.observed_at_nanos, at_nanos) > bound
+        ]
+        for track_id in stale:
+            del self._tracks[track_id]
+        self._retired += len(stale)
 
     def _extent(self) -> float:
         """Return the width to assume before anything has measured one."""
@@ -289,7 +344,28 @@ class Tracker:
 
         payload = evidence.payload
         if isinstance(payload, Detection):
-            track.footprint = payload.footprint
+            seen = payload.footprint.center
+            at_seconds = evidence.observed_at_nanos / NANOS_PER_SECOND
+            track.motion = (
+                begin_motion((seen[0], seen[1]), self.belt_speed, at_seconds)
+                if track.motion is None
+                else fold_motion(
+                    track.motion,
+                    (seen[0], seen[1]),
+                    at_seconds,
+                    self.settings.along,
+                    self.settings.across,
+                )
+            )
+            # The extents and the yaw come from the observation as they
+            # always did: the filter models where an object is going, not
+            # how wide it is. Its centre is overwritten by the estimate,
+            # which is the whole difference from replacing outright.
+            filtered = track.motion.position
+            track.footprint = replace(
+                payload.footprint,
+                center=(filtered[0], filtered[1], seen[2]),
+            )
             track.observed_at_nanos = evidence.observed_at_nanos
             if payload.height is not None:
                 track.height = payload.height

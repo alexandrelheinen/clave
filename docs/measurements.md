@@ -451,6 +451,53 @@ samples is noise either way: the binomial spread at a quarter is about
 seven points. It stays because predicting with a speed the belt is not
 running at is wrong whatever a forty-sample run says about it.
 
+### What a velocity estimate recovers
+
+The tracker now estimates a velocity per object from successive
+observations and carries it between them with that, rather than asserting
+the belt's speed along travel and no drift at all across. It is an
+alpha-beta filter, which is the steady-state Kalman filter for a
+constant-velocity model, and
+[motion-estimate.md](requirements/motion-estimate.md) carries why.
+
+Swept against ground truth over one rollout, so every setting sees
+identical observations:
+
+| Lateral velocity gain | Gate median | Pick zone median | Pick zone p90 |
+| --- | --- | --- | --- |
+| Replace outright, the old model | 8.9 mm | 45.6 mm | 123 mm |
+| 0.10 | 9.3 mm | 41.4 mm | 132 mm |
+| 0.20 | 9.1 mm | **41.1 mm** | 131 mm |
+| 0.40 | 9.6 mm | 41.7 mm | 133 mm |
+| 0.80 | 8.9 mm | 41.7 mm | 133 mm |
+| 0.40, and learning travel velocity too | 10.0 mm | **81.4 mm** | 221 mm |
+
+Three things to read off it.
+
+**The filter recovers four millimetres of forty-five, and the gain hardly
+matters.** Flat from 0.1 to 0.8 is what a model recovering everything a
+constant-velocity assumption can recover looks like. The rest of the error
+is not the filter's to remove.
+
+**The tail gets slightly worse**, 123 mm to 131 mm, which is the price of
+extrapolating a drift that is decaying as though it were constant. The
+increments of lateral drift over growing horizons are 8.8, 8.1, 7.5, 6.5
+and 5.3 mm, so an object that is rolling is also settling, and a constant
+velocity fitted inside the gate over-predicts two seconds past it.
+
+**Learning the travel velocity is actively harmful**, nearly doubling the
+pick-zone median. The belt drives that axis rigidly, so the residual the
+filter would learn from there is the segmentation's noise rather than the
+object's motion. The travel gain is kept small rather than zero only
+because the feed controller moves the belt and a frozen velocity goes
+stale.
+
+On the pick itself the effect is below what a run resolves: 10 of 39
+grasps held with the filter against 8 of 39 without, on a binomial spread
+of about seven points. The filter stays because four millimetres is real
+and because asserting a drift of zero is asserting something false, not
+because forty samples showed it.
+
 ## The object set
 
 Selection was bounded by the previous arm's 0.180 m spline stroke. The UR10e's
