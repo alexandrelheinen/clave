@@ -56,8 +56,11 @@ class Phase(enum.Enum):
 class Profile(enum.Enum):
     """Which phases of a visit a run puts the arm through.
 
-    Neither profile grasps. No gripper exists in the model, so the phases one
-    would need are absent from both rather than present and skipped.
+    The two profiles do not differ only in how many phases they run. They are
+    driven differently: a motion-only visit is stepped toward a goal and ends
+    when the flange gets there, while a full visit is planned as timed arcs
+    and ends when the clock says so. A pick needs the second, because a jaw
+    has to arrive at a known instant moving with the object.
     """
 
     MOTION_ONLY = "motion_only"
@@ -68,7 +71,7 @@ class Profile(enum.Enum):
     """
 
     FULL_VISIT = "full_visit"
-    """Adds descent, dwell and retreat to the motion-only phases."""
+    """Adds descent, grasp and retreat, planned as one timed sequence."""
 
 
 @dataclass(frozen=True)
@@ -97,7 +100,17 @@ class TaskSettings:
         arrival_tolerance: How close the flange has to be to a pose before it
             counts as arrived, in meters.
         dwell_seconds: How long the flange holds station before a visit counts
-            as served.
+            as served. Under a full visit this is also how long the jaw is
+            given to close, because the two are the same wait.
+        grasp_clearance: How far above the object a planned approach ends, in
+            meters, and how far the retreat lifts it. Full visit only.
+        approach_speed: How fast the flange is descending when it reaches
+            that clearance, in meters per second. Full visit only.
+        interception_limit: The longest interception a pick will plan for, in
+            seconds. Beyond it the object is refused rather than chased.
+        interception_margin: How much longer than the soonest feasible
+            interception to take, as a multiple, so the arc has room to be
+            re-aimed later.
         park_position: Where the arm rests with nothing to serve.
         park_marker_color: What the park pose is drawn in, as red, green and
             blue in the unit range.
@@ -107,6 +120,10 @@ class TaskSettings:
     approach_height: float
     arrival_tolerance: float
     dwell_seconds: float
+    grasp_clearance: float
+    approach_speed: float
+    interception_limit: float
+    interception_margin: float
     park_position: Point
     park_marker_color: Point
 
@@ -202,6 +219,14 @@ class ControlSettings:
                 approach_height=_positive(task, "approach_height_meters", "task"),
                 arrival_tolerance=_positive(task, "arrival_tolerance_meters", "task"),
                 dwell_seconds=float(require(task, "dwell_seconds", "task")),
+                grasp_clearance=_positive(task, "grasp_clearance_meters", "task"),
+                approach_speed=_positive(
+                    task, "approach_speed_meters_per_second", "task"
+                ),
+                interception_limit=_positive(
+                    task, "interception_limit_seconds", "task"
+                ),
+                interception_margin=_positive(task, "interception_margin", "task"),
                 park_position=_point(task, "park_position_meters", "task"),
                 park_marker_color=_point(task, "park_marker_color", "task"),
             ),

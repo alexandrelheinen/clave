@@ -32,7 +32,10 @@ def test_the_shipped_configuration_loads() -> None:
     settings = shipped()
     assert settings.selection.exit_weight > 0.0
     assert settings.selection.anchor_radius > 0.0
-    assert settings.task.profile is Profile.MOTION_ONLY
+    assert settings.task.profile is Profile.FULL_VISIT
+    assert settings.task.grasp_clearance > 0.0
+    assert settings.task.approach_speed > 0.0
+    assert settings.task.interception_limit > 0.0
     assert settings.guidance.max_speed > 0.0
     assert settings.servo.gain > 0.0
 

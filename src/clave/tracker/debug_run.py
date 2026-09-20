@@ -10,12 +10,21 @@ on it. The markers are scene geometry rather than paint on a frame, so MuJoCo
 shades and occludes them like any other solid, and nothing touches the image
 after the renderer is finished with it.
 
-Two cameras run and they never mix. The tracker segments the nadir gate,
-because that is the sensor the line actually carries. The human watches an
-view named in `configs/debug/tracker.yml`, because a grasp pose seen from
+The sensing cameras and the watching camera never mix. The tracker segments
+every camera carrying the detection role, because those are the sensors the
+line actually has, and it is handed nothing else. The human watches a view
+named in `configs/debug/tracker.yml`, because a grasp pose seen from
 straight above has no approach to read. That file carries two views and the
 run takes one by name: one camera cannot both read a 60 mm jaw and hold the
 park pose in frame.
+
+**The report separates flying from grasping.** An arm can reach the pose it
+was sent to perfectly and still hold nothing, which is what happens when the
+pose is not where the object is, so the run reports the distance to the
+commanded pose, the distance from the jaw to the nearest object at the
+instant it shuts, and how far each visit actually lifted anything. Only the
+last of those is a grasp, and reading the first as one is how a broken pick
+looks solved.
 
 A window opens when a display is available and the run writes its artifacts
 either way, because a machine with no display is the ordinary case for this
@@ -31,10 +40,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from clave.control.guidance import Motion, toward
+from clave.control.guidance import Command, Motion, toward
+from clave.control.pick import JAW_OPEN
 from clave.control.selection import Selector
 from clave.control.servo import follow
-from clave.control.settings import ControlSettings, Phase
+from clave.control.settings import ControlSettings, Phase, Point
 from clave.control.task import TaskMachine
 from clave.errors import ClaveError
 from clave.tracker.adapters.detection import detections_from_masks
@@ -46,7 +56,7 @@ from clave.tracker.fusion import FusionSettings
 from clave.tracker.intake import Deployment, Intake
 from clave.tracker.listing import described_fields
 from clave.tracker.markers import draw, draw_park, markers_for
-from clave.tracker.sensors import load_sensors, require_role
+from clave.tracker.sensors import load_sensors, of_role, require_role
 from clave.tracker.track import Tracker
 from clave.world import arm as armmod
 from clave.world import belt, config, scene
@@ -57,6 +67,16 @@ NANOS_PER_SECOND = 1_000_000_000
 
 _VISITING = frozenset({Phase.TRACK, Phase.DESCEND, Phase.RETREAT})
 """The phases that are about an object rather than about going home."""
+
+GRASPED_METERS = 0.010
+"""How far a visit has to raise an object before the jaw was holding it.
+
+Measured against where the object was lying when the plan was made, not
+against the belt: a settled object already rests with its center above the
+surface, and by a different amount for every mesh in the set. Ten
+millimetres is above the millimetre of settling jitter and far below the
+50 mm clearance a retreat lifts to, so nothing sits near the boundary.
+"""
 
 
 class DebugRunError(ClaveError):
@@ -81,8 +101,23 @@ class DebugRunReport:
             rebuild that keeps its head costs nothing, and one that does not
             sends the arm somewhere else mid-traverse.
         served: Tracks the arm finished a visit to.
+        missed: Tracks no interception existed for, which the arm gave up
+            rather than chased. Distinct from a fault: the pose was fine and
+            the timing was not.
         arrivals: How far the flange was from the pose each completed visit
-            asked for, at the end of its dwell, in meters.
+            asked for, in meters. Measured at the end of the dwell under a
+            stepped profile and at the instant the jaw reaches the object
+            under a planned one.
+        lifts: How far each completed visit raised the object that ended up
+            nearest the jaw, in meters, against where that object was lying
+            when the plan was made. This is the figure that says whether the
+            jaw held anything: a failed grasp reads near zero however well
+            the arm flew.
+        jaw_gaps: How far the nearest object was from the pinch site at the
+            instant the jaw shut, in meters, one per visit. It separates the
+            two ways a pick fails: a large gap is a flight that arrived
+            somewhere the object was not, and a small gap with no lift is a
+            grasp that could not hold.
         profile: Which task profile the run used, because a distance to a
             tracked pose and a distance to a descended pose are not the same
             measurement.
@@ -113,7 +148,10 @@ class DebugRunReport:
     reorders: dict[str, int]
     head_churn: int
     served: tuple[int, ...]
+    missed: tuple[int, ...]
     arrivals: tuple[float, ...]
+    lifts: tuple[float, ...]
+    jaw_gaps: tuple[float, ...]
     profile: str
     closest_approach: float | None
     closest_live: float | None
@@ -174,7 +212,13 @@ def run(
     raw = config.load(root / "configs" / "world" / "sorting_line.yml")
     sensors = load_sensors(raw)
     try:
-        wide = require_role(sensors, Role.DETECTION)
+        # Every detection camera, not the first one. A line with a single
+        # camera over the sensing gate can only ever hand the arm an estimate
+        # that has been dead reckoned since the object left that gate, and
+        # what the belt model does not predict is exactly what a jaw closing
+        # on 8.7 mm of side clearance cannot absorb.
+        require_role(sensors, Role.DETECTION)
+        detecting = of_role(sensors, Role.DETECTION)
     except SensorError as error:
         raise DebugRunError(str(error)) from error
 
@@ -249,11 +293,28 @@ def run(
         x, y = armmod.project_into_reach(base_xy, pose[0], pose[1])
         return x, y, pose[2]
 
-    selector = Selector(
-        control.selection,
-        lambda pose: bool(armmod.reachable(indices, np.array(pose, dtype=float))),
+    def admits(pose: tuple[float, float, float]) -> bool:
+        """Whether the arm is trusted at a pose.
+
+        Args:
+            pose: The pose.
+
+        Returns:
+            Whether it lies inside the region the safety layer enforces.
+            Selection and planning ask the same question of the same
+            function, so the queue cannot offer what a plan would refuse.
+        """
+        return bool(armmod.reachable(indices, np.array(pose, dtype=float)))
+
+    selector = Selector(control.selection, admits)
+    task = TaskMachine(
+        control.task,
+        control.calibration,
+        belt_surface=surface,
+        belt_speed=plan.belt.speed,
+        guidance=control.guidance,
+        admits=admits,
     )
-    task = TaskMachine(control.task, control.calibration, belt_surface=surface)
     goal = None
     refusal: str | None = None
     # How near the flange ever got to what a phase asked for. Without
@@ -263,6 +324,14 @@ def run(
     head_churn = 0
     previous_head: int | None = None
     closest = float("inf")
+    # How far each visit raised the object it went for, against where that
+    # object was resting when the plan was made. A flight can be perfect and
+    # this still read zero, which is the whole point of measuring it apart.
+    lifts: list[float] = []
+    # And how near the jaw came to any object at all when it shut, which is
+    # the figure that separates a flight that missed from a grasp that let go.
+    gaps: list[float] = []
+    resting: dict[str, float] = {}
     # And how near it got to where the head actually was at that instant.
     # Without interception the commanded pose is as old as the decision
     # interval, so the gap between these two figures is the staleness the
@@ -272,6 +341,9 @@ def run(
     # fed back afterwards. Seeding it from the flange every tick would make it
     # chase the arm instead of leading it.
     motion = Motion(position=_flange(indices, data), speed=0.0)
+    # And which way it is going, which a plan needs so its first arc begins
+    # where the motion already is instead of asking for a step in velocity.
+    moving: Point = (0.0, 0.0, 0.0)
     # The furthest any joint may be commanded to move in one tick. Near a
     # wrist singularity the damped solve still asks for a large joint motion
     # to buy a small Cartesian one, and this is what keeps the command
@@ -304,7 +376,51 @@ def run(
             # The deciders run at the capture cadence and the servo runs at
             # the physics rate, because a goal half a second old is still the
             # right goal while a joint command half a second old is a lurch.
-            if goal is not None:
+            # A planned visit is the exception in one direction only: the
+            # plan was decided once, and it is sampled here every tick.
+            place = _flange(indices, data)
+            was_flying = task.flying
+            flown = task.flight(data.time, place)
+            command = None
+            if flown is not None:
+                command = Command(
+                    position=flown.position,
+                    yaw=flown.yaw,
+                    speed=math.dist((0.0, 0.0, 0.0), flown.velocity),
+                    velocity=flown.velocity,
+                    aim=flown.position,
+                )
+                armmod.hold(data, indices, flown.grip)
+                if flown.phase is Phase.HOLD and len(gaps) < len(lifts) + 1:
+                    # The first tick of the hold is the instant the jaw
+                    # reaches the object, which is the one a pick is decided
+                    # on. Later ticks are the carry.
+                    nearest = _in_the_jaw(
+                        mujoco, model, data, conveyor, _pinch(indices, data)
+                    )
+                    gaps.append(float("inf") if nearest is None else nearest[1])
+                # Guidance resumes from where the plan left the reference, so
+                # the park move after a visit does not start by jumping back
+                # to wherever the reference had been before the plan.
+                motion = Motion(position=command.position, speed=command.speed)
+            elif was_flying:
+                # The plan ran out on this tick and the visit is recorded.
+                # Open the jaw, stand still, and let the next capture decide.
+                armmod.hold(data, indices, JAW_OPEN)
+                nearest = _in_the_jaw(
+                    mujoco, model, data, conveyor, _pinch(indices, data)
+                )
+                lifts.append(
+                    0.0
+                    if nearest is None or nearest[0] not in resting
+                    else _object_place(mujoco, model, data, nearest[0])[2]
+                    - resting[nearest[0]]
+                )
+                resting = {}
+                goal = None
+                moving = (0.0, 0.0, 0.0)
+                motion = Motion(position=keep_inside(place), speed=0.0)
+            elif goal is not None:
                 command = toward(
                     motion,
                     goal,
@@ -315,6 +431,9 @@ def run(
                     keep_inside,
                 )
                 motion = Motion(position=command.position, speed=command.speed)
+
+            if command is not None:
+                moving = command.velocity
                 stepped = follow(
                     model,
                     data,
@@ -327,10 +446,10 @@ def run(
                 )
                 if stepped.refusal is not None:
                     refusal = stepped.refusal
-                elif goal.phase in _VISITING:
-                    closest = min(
-                        closest, math.dist(_flange(indices, data), command.position)
-                    )
+                elif flown is not None or (
+                    goal is not None and goal.phase in _VISITING
+                ):
+                    closest = min(closest, math.dist(place, command.position))
 
             # The video renders on its own cadence. The capture cadence is
             # what the tracker decides at, and watching a decision rate is
@@ -347,15 +466,17 @@ def run(
             captures += 1
             now = int(data.time * NANOS_PER_SECOND)
 
-            masks.update_scene(data, camera=wide.source_id)
-            found = segment_masks(model, masks.render())
-            if found:
+            for eye_on in detecting:
+                masks.update_scene(data, camera=eye_on.source_id)
+                found = segment_masks(model, masks.render())
+                if not found:
+                    continue
                 for reading in detections_from_masks(
                     found,
-                    source_id=wide.source_id,
+                    source_id=eye_on.source_id,
                     observed_at_nanos=now,
-                    camera=wide.position,
-                    optics=wide.optics,
+                    camera=eye_on.position,
+                    optics=eye_on.optics,
                     surface_height=surface + 0.05,
                     render=render,
                     belt_surface=surface,
@@ -395,7 +516,7 @@ def run(
             ):
                 head_churn += 1
             previous_head = head_id
-            goal = task.step(queue, flange, data.time, refusal)
+            goal = task.step(queue, flange, data.time, refusal, moving)
             refusal = None
             if goal.phase in _VISITING:
                 head = next(
@@ -412,6 +533,12 @@ def run(
                 # the reference inside it is what turned one refusal into
                 # every refusal after it.
                 motion = Motion(position=keep_inside(flange), speed=0.0)
+                moving = (0.0, 0.0, 0.0)
+            if task.flying and not resting:
+                # Snapshot how high everything is lying before the arm
+                # touches anything, so a lift is measured against where the
+                # object actually was.
+                resting = _resting(mujoco, model, data, conveyor)
 
             # The markers go in before the render and live only until the next
             # update_scene, so they reach this view and no other. The gate the
@@ -446,7 +573,10 @@ def run(
         reorders=reorders,
         head_churn=head_churn,
         served=task.served,
+        missed=task.missed,
         arrivals=task.arrivals,
+        lifts=tuple(lifts),
+        jaw_gaps=tuple(gaps),
         profile=control.task.profile.value,
         closest_approach=None if closest == float("inf") else closest,
         closest_live=None if closest_live == float("inf") else closest_live,
@@ -509,6 +639,22 @@ def _park_the_arm(
     mujoco.mj_forward(model, data)
 
 
+def _pinch(indices: Any, data: Any) -> tuple[float, float, float]:
+    """Return where the jaw closes, as three meters.
+
+    Args:
+        indices: The arm indices.
+        data: Its state, with forward kinematics already current.
+
+    Returns:
+        The pinch site's position. Every commanded pose is against the
+        flange, because that is what the trusted reach was swept against,
+        and this is where the object actually ends up.
+    """
+    place = data.site_xpos[indices.pinch_site]
+    return float(place[0]), float(place[1]), float(place[2])
+
+
 def _flange(indices: Any, data: Any) -> tuple[float, float, float]:
     """Return where the flange stands, as three meters.
 
@@ -521,6 +667,78 @@ def _flange(indices: Any, data: Any) -> tuple[float, float, float]:
     """
     place = armmod.end_effector_position(data, indices)
     return float(place[0]), float(place[1]), float(place[2])
+
+
+def _object_place(
+    mujoco: Any, model: Any, data: Any, name: str
+) -> tuple[float, float, float]:
+    """Return where one conveyor object stands, as three meters.
+
+    Args:
+        mujoco: The imported module.
+        model: The compiled model.
+        data: Its state.
+        name: The body's name.
+
+    Returns:
+        The center of mass, not the body origin. These meshes carry their
+        origin wherever the scanner left it, which for most of the set is
+        the base, so an origin height answers a different question from the
+        one a lift is asking.
+    """
+    body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, name)
+    place = data.xipos[body]
+    return float(place[0]), float(place[1]), float(place[2])
+
+
+def _resting(mujoco: Any, model: Any, data: Any, conveyor: Any) -> dict[str, float]:
+    """Return how high every object on the belt is lying right now.
+
+    Args:
+        mujoco: The imported module.
+        model: The compiled model.
+        data: Its state.
+        conveyor: The belt.
+
+    Returns:
+        Each body's name against the height of its center of mass. Taken
+        before a plan begins, so a lift is measured against where the object
+        actually was rather than against the belt: these meshes rest with
+        their centers anywhere from twenty to seventy millimetres up.
+    """
+    return {
+        item.name: _object_place(mujoco, model, data, item.name)[2]
+        for item in conveyor.active
+    }
+
+
+def _in_the_jaw(
+    mujoco: Any, model: Any, data: Any, conveyor: Any, pinch: tuple[float, float, float]
+) -> tuple[str, float] | None:
+    """Return the object the jaw is closed on, and how far off center it sits.
+
+    Found by proximity to the pinch site rather than by identity. Which
+    object the arm believed it was going for is the tracker's claim, and a
+    measurement that trusted it would report the claim rather than the
+    grasp; what is in the jaw is in the jaw.
+
+    Args:
+        mujoco: The imported module.
+        model: The compiled model.
+        data: Its state.
+        conveyor: The belt.
+        pinch: Where the jaw closes.
+
+    Returns:
+        The body's name and its distance from the pinch site, or None when
+        the belt is empty.
+    """
+    nearest, best = None, float("inf")
+    for item in conveyor.active:
+        gap = math.dist(pinch, _object_place(mujoco, model, data, item.name))
+        if gap < best:
+            nearest, best = (item.name, gap), gap
+    return nearest
 
 
 def _recorder(view: dict[str, Any], out: Path, fps: int, interval: float) -> Any:

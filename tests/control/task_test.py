@@ -1,8 +1,10 @@
-"""The phases of one visit, under the motion-only profile.
+"""The phases of one visit, under both profiles.
 
-Etapa A runs standby, tracking, parking and fault. Descent, dwell at the
-grasp plane and retreat belong to the full-visit profile and arrive later, so
-nothing here exercises them.
+The two are driven differently and are tested differently because of it. A
+motion-only visit is stepped toward a goal and ends when the flange gets
+there, so its tests move the flange onto the goal by hand. A full visit is
+planned as timed arcs and ends when the clock says so, so its tests advance
+the clock and read what the plan asks for.
 """
 
 from __future__ import annotations
@@ -16,15 +18,18 @@ from clave.control.selection import Candidate, Queue
 from clave.control.settings import (
     CalibrationSettings,
     ControlSettings,
+    GuidanceSettings,
     Phase,
     Profile,
     TaskSettings,
 )
-from clave.control.task import TaskMachine
+from clave.control.task import TaskError, TaskMachine
 
 ROOT = Path(__file__).resolve().parents[2]
 BELT_SURFACE = 0.90
 PARK = (0.45, -1.00, 1.20)
+BELT_SPEED = 0.314
+LIMITS = GuidanceSettings(max_speed=1.00, max_acceleration=2.50)
 
 
 def task_settings(**overrides: object) -> TaskSettings:
@@ -34,6 +39,10 @@ def task_settings(**overrides: object) -> TaskSettings:
         "approach_height": 0.220,
         "arrival_tolerance": 0.010,
         "dwell_seconds": 0.30,
+        "grasp_clearance": 0.050,
+        "approach_speed": 0.25,
+        "interception_limit": 4.00,
+        "interception_margin": 1.15,
         "park_position": PARK,
         "park_marker_color": (0.85, 0.10, 0.10),
     }
@@ -42,11 +51,18 @@ def task_settings(**overrides: object) -> TaskSettings:
 
 
 def machine(**overrides: object) -> TaskMachine:
-    """A machine with no calibration offset unless a test adds one."""
+    """A machine with no calibration offset unless a test adds one.
+
+    The belt and the ceilings go in whatever the profile, because a
+    motion-only machine ignores them and a test that switches profile should
+    not also have to remember to switch its fixture.
+    """
     return TaskMachine(
         task_settings(**overrides),
         CalibrationSettings(flange_offset=(0.0, 0.0, 0.0)),
         belt_surface=BELT_SURFACE,
+        belt_speed=BELT_SPEED,
+        guidance=LIMITS,
     )
 
 
@@ -198,57 +214,180 @@ def test_a_track_that_leaves_the_queue_is_abandoned() -> None:
     assert arm.served == ()
 
 
-def test_a_full_visit_descends_dwells_and_retreats() -> None:
-    """AC-MOVE-18: a full visit descends, dwells and retreats."""
-    arm = machine(profile=Profile.FULL_VISIT)
-    only = candidate(1, x=0.30)
+def _fly(arm: TaskMachine, only: Candidate, span: float = 8.0) -> list[Phase]:
+    """Run a planned visit to its end and return the phases it passed through.
+
+    Args:
+        arm: The machine, already committed or about to be.
+        only: The candidate to serve.
+        span: How many seconds to run for at worst.
+
+    Returns:
+        The phases seen, in order and without repeats.
+    """
+    arm.step(queue_of(only), PARK, 0.0)
     seen: list[Phase] = []
     at_seconds = 0.0
-    # Hold the flange on whatever the phase asks for, so the visit advances
-    # on arrival rather than on the arm happening to be somewhere.
-    goal = arm.step(queue_of(only), PARK, at_seconds)
-    for _ in range(40):
-        at_seconds += 0.2
-        seen.append(goal.phase)
-        goal = arm.step(queue_of(only), goal.position, at_seconds)
-        if goal.phase is Phase.STANDBY:
+    while at_seconds < span:
+        at_seconds += 0.01
+        flown = arm.flight(at_seconds, PARK)
+        if flown is None:
             break
-    ordered = list(dict.fromkeys(seen))
-    assert ordered[:3] == [Phase.TRACK, Phase.DESCEND, Phase.RETREAT]
-    # What follows is the arm going home, which is not part of the visit.
-    assert set(ordered[3:]) <= {Phase.PARK, Phase.STANDBY}
+        seen.append(flown.phase)
+    return list(dict.fromkeys(seen))
+
+
+def test_a_full_visit_tracks_descends_grasps_and_retreats() -> None:
+    """AC-MOVE-18: a full visit tracks, descends, grasps and retreats."""
+    arm = machine(profile=Profile.FULL_VISIT)
+    assert _fly(arm, candidate(1, x=0.30)) == [
+        Phase.TRACK,
+        Phase.DESCEND,
+        Phase.HOLD,
+        Phase.RETREAT,
+    ]
     assert arm.served == (1,)
+    assert arm.flying is False
 
 
-def test_a_full_visit_descends_to_the_pose_the_marker_stands_at() -> None:
-    """AC-MOVE-18: a full visit descends to the pose the marker stands at.
+def test_a_planned_visit_shuts_the_jaw_only_once_it_is_on_the_object() -> None:
+    """AC-MOVE-38: a planned visit shuts the jaw only once it is on the object.
 
-    The descent height comes from the candidate rather than from the
-    approach height, which is the whole difference between the two profiles.
+    A jaw that closes on the way down sweeps the object off the belt, which
+    is exactly the failure the whole formulation exists to remove.
     """
     arm = machine(profile=Profile.FULL_VISIT)
     only = candidate(1, x=0.30)
-    goal = arm.step(queue_of(only), PARK, 0.0)
-    assert goal.position[2] == pytest.approx(BELT_SURFACE + 0.220)
-    goal = arm.step(queue_of(only), goal.position, 0.1)
-    goal = arm.step(queue_of(only), goal.position, 0.5)
-    assert goal.phase is Phase.DESCEND
-    assert goal.position[2] == pytest.approx(only.flange[2])
+    arm.step(queue_of(only), PARK, 0.0)
+    at_seconds, shut_from = 0.0, None
+    while at_seconds < 8.0:
+        at_seconds += 0.01
+        flown = arm.flight(at_seconds, PARK)
+        if flown is None:
+            break
+        if flown.grip > 0.0 and shut_from is None:
+            shut_from = flown.phase
+    assert shut_from is Phase.HOLD
 
 
-def test_a_descent_keeps_riding_the_belt() -> None:
-    """AC-MOVE-10: a descent keeps riding the belt.
+def test_a_planned_visit_meets_the_object_moving_with_the_belt() -> None:
+    """AC-MOVE-39: a planned visit meets the object moving with the belt.
 
-    The belt does not stop while the flange comes down, so a descent to a
-    fixed point would put the flange where the object was when it started.
+    A jaw arriving at rest has the object sliding through it at belt speed,
+    which is the one thing a grasp cannot tolerate.
     """
     arm = machine(profile=Profile.FULL_VISIT)
     only = candidate(1, x=0.30)
-    goal = arm.step(queue_of(only), PARK, 0.0)
-    goal = arm.step(queue_of(only), goal.position, 0.1)
-    goal = arm.step(queue_of(only), goal.position, 0.5)
-    assert goal.phase is Phase.DESCEND
-    assert goal.rides_belt is True
+    arm.step(queue_of(only), PARK, 0.0)
+    at_seconds = 0.0
+    while at_seconds < 8.0:
+        at_seconds += 0.01
+        flown = arm.flight(at_seconds, PARK)
+        assert flown is not None
+        if flown.phase is Phase.HOLD:
+            assert flown.velocity == pytest.approx((BELT_SPEED, 0.0, 0.0), abs=1e-9)
+            return
+    pytest.fail("the visit never reached the object")
+
+
+def test_a_planned_visit_descends_onto_where_the_object_will_be() -> None:
+    """AC-MOVE-40: a planned visit descends onto where the object will be.
+
+    Not onto where it was. The belt carries the object the whole time the
+    arm is travelling, so the pick pose is the marker's pose carried forward
+    by the interception and the descent together.
+    """
+    arm = machine(profile=Profile.FULL_VISIT)
+    only = candidate(1, x=0.30)
+    arm.step(queue_of(only), PARK, 0.0)
+    at_seconds, pick = 0.0, None
+    while at_seconds < 8.0:
+        at_seconds += 0.01
+        flown = arm.flight(at_seconds, PARK)
+        assert flown is not None
+        if flown.phase is Phase.HOLD:
+            pick, elapsed = flown.position, at_seconds
+            break
+    assert pick is not None
+    assert pick[2] == pytest.approx(only.flange[2], abs=1e-3)
+    assert pick[0] == pytest.approx(only.flange[0] + BELT_SPEED * elapsed, abs=5e-3)
+
+
+def test_an_object_with_no_interception_is_missed_rather_than_chased() -> None:
+    """AC-MOVE-41: an object with no interception is missed rather than chased.
+
+    A candidate about to leave the belt cannot be reached in the time it has
+    left, and the arm gives it up: chasing it costs the objects behind it.
+    """
+    arm = machine(profile=Profile.FULL_VISIT)
+    leaving = Candidate(
+        track_id=7,
+        anchor=(0.30, 0.0, 0.945),
+        flange=(0.30, 0.0, 1.035),
+        closing_axis=0.0,
+        distance_before_leaving=0.01,
+    )
+    goal = arm.step(queue_of(leaving), PARK, 0.0)
+    assert arm.missed == (7,)
+    assert arm.flying is False
+    assert goal.position == PARK
+    # And it is not offered again on the next capture.
+    assert arm.step(queue_of(leaving), PARK, 0.5).track_id is None
+
+
+def test_a_plan_owns_the_arm_until_it_runs_out() -> None:
+    """AC-MOVE-42: a plan owns the arm until it runs out.
+
+    Re-deciding mid-flight turns an interception into a chase: each fresh arc
+    is solved against a fresh estimate and the arm never arrives.
+    """
+    arm = machine(profile=Profile.FULL_VISIT)
+    first = candidate(1, x=0.30)
+    arm.step(queue_of(first), PARK, 0.0)
+    arm.flight(0.01, PARK)
+    nearer = candidate(2, x=0.40)
+    goal = arm.step(queue_of(nearer, first), PARK, 0.5)
+    assert goal.track_id == 1
+    assert arm.flying is True
+
+
+def test_a_refusal_tears_up_the_plan_it_was_built_on() -> None:
+    """AC-MOVE-43: a refusal tears up the plan it was built on.
+
+    Every arc after the refused pose was built on it, so continuing to fly
+    them would command the rest of a sequence whose premise the solver has
+    already rejected.
+    """
+    arm = machine(profile=Profile.FULL_VISIT)
+    only = candidate(1, x=0.30)
+    arm.step(queue_of(only), PARK, 0.0)
+    assert arm.flying is True
+    arm.step(queue_of(only), PARK, 0.5, refusal="outside the annulus")
+    assert arm.flying is False
+    assert arm.flight(0.6, PARK) is None
+    assert arm.faults == ((1, "outside the annulus"),)
+
+
+def test_the_full_visit_profile_refuses_to_run_without_ceilings() -> None:
+    """AC-MOVE-44: the full-visit profile refuses to run without ceilings."""
+    with pytest.raises(TaskError, match="ceilings"):
+        TaskMachine(
+            task_settings(profile=Profile.FULL_VISIT),
+            CalibrationSettings(flange_offset=(0.0, 0.0, 0.0)),
+            belt_surface=BELT_SURFACE,
+            belt_speed=BELT_SPEED,
+        )
+
+
+def test_the_full_visit_profile_refuses_to_run_on_a_stopped_belt() -> None:
+    """AC-MOVE-44: the full-visit profile refuses to run on a stopped belt."""
+    with pytest.raises(TaskError, match="carries nothing to intercept"):
+        TaskMachine(
+            task_settings(profile=Profile.FULL_VISIT),
+            CalibrationSettings(flange_offset=(0.0, 0.0, 0.0)),
+            belt_surface=BELT_SURFACE,
+            guidance=LIMITS,
+        )
 
 
 def test_the_motion_only_profile_never_descends() -> None:
@@ -279,7 +418,13 @@ def test_the_shipped_configuration_builds_a_machine() -> None:
     from clave.world.config import load
 
     settings = ControlSettings.load(load(ROOT / "configs" / "runtime" / "control.yml"))
-    arm = TaskMachine(settings.task, settings.calibration, belt_surface=BELT_SURFACE)
+    arm = TaskMachine(
+        settings.task,
+        settings.calibration,
+        belt_surface=BELT_SURFACE,
+        belt_speed=BELT_SPEED,
+        guidance=settings.guidance,
+    )
     assert arm.step(queue_of(), PARK, 0.0).phase in {Phase.PARK, Phase.STANDBY}
 
 
@@ -294,3 +439,43 @@ def test_a_refusal_with_nothing_queued_is_still_recorded() -> None:
     goal = arm.step(queue_of(), PARK, 0.0, refusal="the envelope said no")
     assert goal.phase is Phase.FAULT
     assert arm.faults == ((None, "the envelope said no"),)
+
+
+def test_a_plan_is_re_aimed_while_the_arm_is_still_approaching() -> None:
+    """AC-MOVE-40: a plan is re-aimed while the arm is still approaching.
+
+    The arrival time does not move with it, so everything downstream stays
+    scheduled against the same instant.
+    """
+    arm = machine(profile=Profile.FULL_VISIT)
+    first = candidate(1, x=0.30)
+    arm.step(queue_of(first), PARK, 0.0)
+    before = arm.step(queue_of(first), PARK, 0.01)
+    drifted = Candidate(
+        track_id=1,
+        anchor=(0.34, 0.05, 0.945),
+        flange=(0.34, 0.05, 1.035),
+        closing_axis=math.pi / 2.0,
+        distance_before_leaving=1.5,
+    )
+    arm.step(queue_of(drifted), PARK, 0.50)
+    arm.flight(0.50, PARK)
+    assert arm.flying is True
+    after = arm.step(queue_of(drifted), PARK, 0.51)
+    assert math.dist(before.position, after.position) > 0.010
+
+
+def test_a_pick_outside_the_trusted_region_is_never_planned() -> None:
+    """AC-MOVE-43: a pick outside the trusted region is never planned."""
+    arm = TaskMachine(
+        task_settings(profile=Profile.FULL_VISIT),
+        CalibrationSettings(flange_offset=(0.0, 0.0, 0.0)),
+        belt_surface=BELT_SURFACE,
+        belt_speed=BELT_SPEED,
+        guidance=LIMITS,
+        admits=lambda pose: False,
+    )
+    only = candidate(1, x=0.30)
+    assert arm.step(queue_of(only), PARK, 0.0).position == PARK
+    assert arm.flying is False
+    assert arm.missed == (1,)
