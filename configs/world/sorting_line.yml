@@ -226,10 +226,10 @@ effector:
   # and estimates no depth, the `Height` role is refused at intake, and a
   # `WasteObject` on this line therefore carries no height at all. A depth
   # sensor would replace this constant with a reading and change nothing else.
-  # Adjusted to 35 mm: with 50 mm pads (half-height 25 mm), the bottom edge
-  # of the pad sits exactly 10 mm (1 cm) above the conveyor belt surface,
-  # providing minimal safe clearance while grasping flat and thin items.
-  grasp_height_meters: 0.035
+  # Pick offset from the pad closing plane to the conveyor belt surface. Keep
+  # this in YAML because it depends on the installed end effector and the
+  # desired approach clearance, not on the tracker or arm controller.
+  grasp_height_meters: 0.005
 
 # Where a picked object goes. One funnel per channel the routing policy
 # resolves to, set beside the belt at belt height on the arm's own side, each
