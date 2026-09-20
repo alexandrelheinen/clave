@@ -246,7 +246,21 @@ def run(
 
     from clave.tracker.sensors import SensorError
 
-    raw = config.load(root / "configs" / "world" / "sorting_line.yml")
+    world_path = root / "configs" / "world" / "sorting_line.yml"
+    control_path = root / "configs" / "runtime" / "control.yml"
+    debug_path = root / "configs" / "debug" / "tracker.yml"
+    fusion_path = root / "configs" / "perception" / "fusion.yml"
+    packaging_path = root / "configs" / "perception" / "packaging.yml"
+    LOGGER.debug(
+        "loading simulation configs: world=%s control=%s debug=%s fusion=%s "
+        "packaging=%s",
+        world_path,
+        control_path,
+        debug_path,
+        fusion_path,
+        packaging_path,
+    )
+    raw = config.load(world_path)
     sensors = load_sensors(raw)
     try:
         # Every detection camera, not the first one. A line with a single
@@ -266,10 +280,8 @@ def run(
         config.require(config.require(raw, "arm"), "max_grasp_width_meters", "arm")
     )
     effector = Effector.load(raw)
-    control = ControlSettings.load(
-        config.load(root / "configs" / "runtime" / "control.yml")
-    )
-    debug = config.load(root / "configs" / "debug" / "tracker.yml")
+    control = ControlSettings.load(config.load(control_path))
+    debug = config.load(debug_path)
     view = _view(debug, view_name)
 
     model, data, plan = scene.build(raw, np.random.default_rng(seed), root)
@@ -297,10 +309,7 @@ def run(
     tracker = Tracker(
         intake=Intake(Deployment.SIMULATED, sensors),
         associator=SimulatorIdentity(),
-        settings=FusionSettings.load(
-            root / "configs" / "perception" / "fusion.yml",
-            root / "configs" / "world" / "sorting_line.yml",
-        ),
+        settings=FusionSettings.load(fusion_path, world_path),
         belt_speed=plan.belt.speed,
         window_exit=belt.window_exit(plan) or 1.034,
         # Seeded from the layout and updated every capture below, because the
@@ -308,8 +317,19 @@ def run(
         # the run drew is wrong by however far the controller has trimmed it.
         unmeasured_extent=grasp,
         resolve=resolver_for(
-            load_catalog(root / "configs" / "perception" / "packaging.yml")
+            load_catalog(packaging_path)
         ),
+    )
+
+    LOGGER.debug(
+        "resolved simulation parameters: belt_speed=%.3f m/s surface=%.3f m "
+        "jaw_opening=%.3f m render=%dx%d view=%s",
+        plan.belt.speed,
+        surface,
+        grasp,
+        render[0],
+        render[1],
+        view_name or "default",
     )
 
     width, height = render

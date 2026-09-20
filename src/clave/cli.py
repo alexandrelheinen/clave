@@ -768,6 +768,12 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
     _configure_logging(getattr(args, "command_log_level", None) or args.log_level)
+    LOGGER.debug(
+        "parsed CLI arguments: command=%s root=%s log_level=%s",
+        args.command,
+        args.root,
+        getattr(args, "command_log_level", None) or args.log_level,
+    )
     try:
         if args.command == "verify-manifest":
             return _verify_manifest(args.root)
@@ -827,6 +833,16 @@ def _debug_tracker(root: Path, args: Any) -> int:
     """
     from clave.tracker.debug_run import GRASPED_METERS, run
 
+    LOGGER.debug(
+        "sim parameters: seconds=%.3f (use sim --seconds to override), seed=%d, "
+        "out=%s, video=%s, window=%s, view=%s",
+        args.seconds,
+        args.seed,
+        args.out,
+        args.video,
+        not args.no_window,
+        args.view,
+    )
     report = run(
         root,
         out=args.out if args.out.is_absolute() else root / args.out,
