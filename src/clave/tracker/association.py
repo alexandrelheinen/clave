@@ -161,7 +161,9 @@ class SimulatorIdentity:
             for track in tracks:
                 if track.label == cue.label:
                     return Association(track_id=track.track_id)
-            return Association(track_id=None)
+            # Detection may have opened the track before its simulator label
+            # arrives. Fall back to geometry so the label joins that track.
+            tracks = tuple(track for track in tracks if track.label is None)
         if cue.footprint is None:
             return Association(track_id=None)
         return Association(track_id=_nearest_within_gate(cue.footprint, tracks))

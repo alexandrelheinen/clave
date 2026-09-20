@@ -428,6 +428,28 @@ def test_a_detection_joins_the_track_ground_truth_opened() -> None:
     assert len(records) == 1, "one object is one track, not two"
     assert records[0].evidence == frozenset({Role.GROUND_TRUTH, Role.DETECTION})
     assert records[0].material == "M-06"
+
+
+def test_ground_truth_joins_a_detection_track_opened_first() -> None:
+    """Ground truth labels a detection track when it arrives second."""
+    held = Tracker(
+        intake=Intake(
+            Deployment.SIMULATED,
+            load_sensors(load(ROOT / "configs" / "world" / "sorting_line.yml")),
+        ),
+        associator=SimulatorIdentity(),
+        settings=settings(),
+        belt_speed=BELT_SPEED,
+        window_exit=WINDOW_EXIT,
+        unmeasured_extent=0.180,
+    )
+    held.observe(detection(at=SECOND, x=-0.97), at_nanos=SECOND)
+    held.observe(label(object_id=3, class_id="M-06"), at_nanos=SECOND)
+
+    records = held.settle(at_nanos=SECOND)
+    assert len(records) == 1
+    assert records[0].material == "M-06"
+    assert records[0].evidence == frozenset({Role.GROUND_TRUTH, Role.DETECTION})
     assert records[0].height is not None, "the geometry reached the same track"
 
 
