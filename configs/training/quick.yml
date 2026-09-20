@@ -1,0 +1,12 @@
+# Quick training run for verification and cloud backup.
+
+training:
+  candidate: behavior-cloning-baseline
+  dataset: datasets/synthetic
+  checkpoints: runs/quick
+  epochs: 3
+  batch_size: 16
+  learning_rate: 0.001
+  seed: 42
+  window_exit_meters: 1.034
+  act_chunk_size: 10
