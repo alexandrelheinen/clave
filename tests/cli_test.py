@@ -1,5 +1,6 @@
 """Tests for the command entry points the gate calls."""
 
+import logging
 from pathlib import Path
 
 import pytest
@@ -9,17 +10,21 @@ from clave.cli import main
 ROOT = Path(__file__).resolve().parents[1]
 
 
+@pytest.fixture(autouse=True)
+def _capture_info(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.INFO)
+
+
 def test_verify_manifest_passes_on_the_real_repository(
-    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """The gate's command succeeds on a clean tree."""
-
     assert main(["--root", str(ROOT), "verify-manifest"]) == 0
-    assert "ok       smoke" in capsys.readouterr().out
+    assert "ok       smoke" in caplog.text
 
 
 def test_verify_manifest_fails_when_bytes_changed(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     """A mutated artifact fails the gate, non-zero."""
     (tmp_path / "corpora" / "fixtures").mkdir(parents=True)
@@ -29,11 +34,11 @@ def test_verify_manifest_fails_when_bytes_changed(
         'source = "corpora/fixtures/smoke.csv"\nsha256 = "0000"\n'
     )
     assert main(["--root", str(tmp_path), "verify-manifest"]) == 1
-    assert "digest_mismatch" in capsys.readouterr().out
+    assert "digest_mismatch" in caplog.text
 
 
 def test_record_digest_reports_a_digest(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     """The command reports rather than writes."""
     (tmp_path / "corpora").mkdir()
@@ -43,12 +48,12 @@ def test_record_digest_reports_a_digest(
     target = tmp_path / "x.csv"
     target.write_text("hello\n")
     assert main(["--root", str(tmp_path), "record-digest", "x", str(target)]) == 0
-    assert len(capsys.readouterr().out.strip()) == 64
+    assert any(len(record.message.strip()) == 64 for record in caplog.records)
     assert manifest.read_text() == before
 
 
 def test_malformed_manifest_exits_non_zero(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     """The gate fails and names the entry."""
     (tmp_path / "corpora").mkdir()
@@ -57,7 +62,7 @@ def test_malformed_manifest_exits_non_zero(
         '[[artifact]]\nname = "dup"\nsource = "b"\n'
     )
     assert main(["--root", str(tmp_path), "verify-manifest"]) == 1
-    assert "dup" in capsys.readouterr().err
+    assert "dup" in caplog.text
 
 
 def test_no_command_is_an_error() -> None:
@@ -99,7 +104,7 @@ def _write_outcomes(path: Path, correct: bool) -> None:
 
 
 def test_validate_run_prints_a_report(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     """The harness runs from one command."""
     outcomes = tmp_path / "outcomes.json"
@@ -113,27 +118,27 @@ def test_validate_run_prints_a_report(
             str(outcomes),
         ]
     )
-    captured = capsys.readouterr().out
+    captured = caplog.text
     assert "## What was run" in captured
     assert "## What was concluded" in captured
     assert "synthetic fixture, not a measurement" in captured
 
 
 def test_validate_run_exits_non_zero_when_a_gate_fails(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     """An unmet gate is a failure, not a reported number."""
     outcomes = tmp_path / "outcomes.json"
     _write_outcomes(outcomes, correct=False)
     assert main(["--root", str(ROOT), "validate-run", "--outcomes", str(outcomes)]) == 1
-    assert "FAIL" in capsys.readouterr().out
+    assert "FAIL" in caplog.text
 
 
 def test_validate_run_reports_a_malformed_records_file(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     """A bad record fails the command naming what was wrong."""
     outcomes = tmp_path / "outcomes.json"
     outcomes.write_text('{"provenance": "fixture", "outcomes": [{"object_id": "a"}]}')
     assert main(["--root", str(ROOT), "validate-run", "--outcomes", str(outcomes)]) == 1
-    assert "true_class" in capsys.readouterr().err
+    assert "true_class" in caplog.text

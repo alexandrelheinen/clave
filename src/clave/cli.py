@@ -22,10 +22,9 @@ LOGGER = logging.getLogger(__name__)
 
 
 def _log_output(*values: object, file: Any = None) -> None:
-    """Write command output through logging and write to standard streams."""
+    """Write command output through logging at its appropriate severity."""
     level = logging.WARNING if file is sys.stderr else logging.INFO
     LOGGER.log(level, " ".join(str(value) for value in values))
-    print(*values, file=file if file is not None else sys.stdout)
 
 
 def _configure_logging(level: str) -> None:
