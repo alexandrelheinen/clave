@@ -216,6 +216,11 @@ class TaskMachine:
         return self._plan is not None
 
     @property
+    def plan(self) -> Plan | None:
+        """Return the active visit plan, if one is currently flying."""
+        return self._plan
+
+    @property
     def faults(self) -> tuple[tuple[int | None, str], ...]:
         """Every refusal, with the track it was about.
 

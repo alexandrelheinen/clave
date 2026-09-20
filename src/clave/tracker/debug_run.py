@@ -34,6 +34,7 @@ it is needed most.
 
 from __future__ import annotations
 
+import csv
 import logging
 import math
 import os
@@ -162,6 +163,8 @@ class DebugRunReport:
         output: Where they went.
         video_path: The playable file, or None when none was asked for or no
             encoder was found.
+        telemetry_path: The CSV telemetry file, or None when telemetry was not
+            requested.
         windowed: Whether a live window was opened.
         reason: Why no window was opened, when none was.
     """
@@ -190,8 +193,94 @@ class DebugRunReport:
     frames_written: int
     output: Path
     video_path: Path | None
+    telemetry_path: Path | None
     windowed: bool
     reason: str | None = None
+
+
+class _TelemetryWriter:
+    """Write fixed-width MuJoCo telemetry columns for PlotJuggler."""
+
+    def __init__(
+        self, path: Path, model: Any, pool_size: int, rate: float
+    ) -> None:
+        self._file = path.open("w", newline="")
+        self._writer = csv.writer(self._file)
+        self._period = 1.0 / rate
+        self.next_sample = 0.0
+        self._pool_size = pool_size
+        self._headers = [
+            "time",
+            "belt_speed",
+            "gripper_command",
+            "flange_x",
+            "flange_y",
+            "flange_z",
+            "pinch_x",
+            "pinch_y",
+            "pinch_z",
+            "phase_code",
+            "task_flying",
+        ]
+        self._headers.extend(f"qpos_{index}" for index in range(model.nq))
+        self._headers.extend(f"qvel_{index}" for index in range(model.nv))
+        self._headers.extend(f"ctrl_{index}" for index in range(model.nu))
+        for index in range(pool_size):
+            self._headers.extend(
+                (f"object_{index}_x", f"object_{index}_y", f"object_{index}_z")
+            )
+        self._writer.writerow(self._headers)
+
+    def write(
+        self,
+        model: Any,
+        data: Any,
+        indices: Any,
+        conveyor: Any,
+        belt_speed: float,
+        phase: Phase,
+        flying: bool,
+    ) -> None:
+        """Write the current state when the requested sample period is due."""
+        if float(data.time) + 1e-12 < self.next_sample:
+            return
+        flange = _flange(indices, data)
+        pinch = _pinch(indices, data)
+        row: list[object] = [
+            float(data.time),
+            belt_speed,
+            float(data.ctrl[indices.gripper_actuator]),
+            *flange,
+            *pinch,
+            list(Phase).index(phase),
+            int(flying),
+            *[float(value) for value in data.qpos],
+            *[float(value) for value in data.qvel],
+            *[float(value) for value in data.ctrl],
+        ]
+        positions = {item.index: item.name for item in conveyor.active}
+        for index in range(self._pool_size):
+            name = positions.get(index)
+            if name is None:
+                row.extend(("", "", ""))
+                continue
+            body = mujoco_body_id(model, name)
+            address = model.jnt_qposadr[model.body_jntadr[body]]
+            row.extend(float(value) for value in data.qpos[address : address + 3])
+        self._writer.writerow(row)
+        self._file.flush()
+        self.next_sample += self._period
+
+    def close(self) -> None:
+        """Flush and close the telemetry file."""
+        self._file.close()
+
+
+def mujoco_body_id(model: Any, name: str) -> int:
+    """Return a body id without importing MuJoCo at module import time."""
+    import mujoco
+
+    return int(mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, name))
 
 
 def run(
@@ -205,6 +294,9 @@ def run(
     video: bool = False,
     fps: int | None = None,
     view_name: str | None = None,
+    telemetry_path: Path | None = None,
+    telemetry_rate: float = 100.0,
+    trajectory_seconds: float = 2.0,
 ) -> DebugRunReport:
     """Drive the tracker over one rollout, annotating every capture.
 
@@ -223,6 +315,9 @@ def run(
             configuration names.
         view_name: Which view in the debug configuration to film from, or
             None for the one that file names as its default.
+        telemetry_path: CSV output path, or None to disable telemetry.
+        telemetry_rate: Telemetry samples per simulated second.
+        trajectory_seconds: Future portion of the active plan to draw.
 
     Returns:
         The report.
@@ -353,6 +448,28 @@ def run(
     start_wall = time.perf_counter()
 
     indices = armmod.locate(model)
+    telemetry = None
+    if telemetry_path is not None:
+        if telemetry_rate <= 0.0:
+            raise DebugRunError(
+                f"telemetry rate {telemetry_rate} must be above zero"
+            )
+        telemetry_path.parent.mkdir(parents=True, exist_ok=True)
+        telemetry = _TelemetryWriter(
+            telemetry_path,
+            model,
+            plan.pool_size,
+            telemetry_rate,
+        )
+        LOGGER.debug(
+            "telemetry enabled: path=%s rate=%.3f Hz",
+            telemetry_path,
+            telemetry_rate,
+        )
+    if trajectory_seconds < 0.0:
+        raise DebugRunError(
+            f"trajectory horizon {trajectory_seconds} cannot be negative"
+        )
     # Start the arm parked. The model's own initial configuration leaves the
     # flange below the trusted vertical band, so the first pose the controller
     # commands is refused for a reason that has nothing to do with the pose: a
@@ -469,6 +586,7 @@ def run(
     )
     next_capture = 0.0
     next_frame = 0.0
+    telemetry_phase = Phase.STANDBY
 
     def _interruptible(iterable):
         try:
@@ -507,6 +625,17 @@ def run(
                 counted += 1
             conveyor.speed = feeding.update(data.time, plan.timestep)
 
+            if telemetry is not None:
+                telemetry.write(
+                    model,
+                    data,
+                    indices,
+                    conveyor,
+                    feeding.speed,
+                    telemetry_phase,
+                    task.flying,
+                )
+
             # The deciders run at the capture cadence and the servo runs at
             # the physics rate, because a goal half a second old is still the
             # right goal while a joint command half a second old is a lurch.
@@ -517,6 +646,7 @@ def run(
             flown = task.flight(data.time, place)
             command = None
             if flown is not None:
+                telemetry_phase = flown.phase
                 command = Command(
                     position=flown.position,
                     yaw=flown.yaw,
@@ -538,6 +668,7 @@ def run(
                 # to wherever the reference had been before the plan.
                 motion = Motion(position=command.position, speed=command.speed)
             elif was_flying:
+                telemetry_phase = Phase.STANDBY
                 # The plan ran out on this tick and the visit is recorded.
                 # Open the jaw, stand still, and let the next capture decide.
                 armmod.hold(data, indices, JAW_OPEN)
@@ -590,7 +721,17 @@ def run(
             # a decision rate is watching an arm teleport.
             if (recorder is not None or opened) and data.time >= next_frame:
                 next_frame = data.time + movie_interval
-                frame = _painted(watching, data, eye, standing, control, surface)
+                frame = _painted(
+                    watching,
+                    data,
+                    eye,
+                    standing,
+                    control,
+                    surface,
+                    task,
+                    trajectory_seconds,
+                    indices,
+                )
                 if recorder is not None:
                     recorder.write(frame)
                 if opened and tracker_cam is not None:
@@ -772,6 +913,13 @@ def run(
             # update_scene, so they reach this view and no other. The gate the
             # tracker reads was rendered above and carries none of them.
             geoms = _markers_on(watching, data, eye, standing, control, surface)
+            geoms += _trajectory_on(
+                watching.scene,
+                task,
+                data.time,
+                trajectory_seconds,
+                _flange(indices, data),
+            )
             drawn = len(standing)
             canvas = watching.render()
 
@@ -788,6 +936,8 @@ def run(
             tracker_cam.close()
         if recorder is not None:
             recorder.close()
+        if telemetry is not None:
+            telemetry.close()
         if opened:
             cv2.destroyAllWindows()
 
@@ -816,6 +966,7 @@ def run(
         frames_written=written,
         output=out,
         video_path=None if recorder is None else recorder.settings.path,
+        telemetry_path=telemetry_path,
         windowed=opened,
         reason=reason,
     )
@@ -1144,6 +1295,122 @@ def _markers_on(
     )
 
 
+def _trajectory_on(
+    scene: Any,
+    task: TaskMachine,
+    at_seconds: float,
+    horizon_seconds: float,
+    flange: Point,
+) -> int:
+    """Draw the active plan's future path and discrete pose indicators."""
+    import mujoco
+    import numpy as np
+
+    added = _trajectory_sphere(scene, flange, 0.018, (0.95, 0.95, 0.95, 1.0))
+    plan = task.plan
+    if plan is None or horizon_seconds == 0.0:
+        return added
+
+    start = max(at_seconds, plan.started_at)
+    end = min(start + horizon_seconds, plan.started_at + plan.duration)
+    if end <= start:
+        return added
+    count = max(2, int(math.ceil((end - start) * 12.0)) + 1)
+    samples: list[tuple[Point, tuple[float, float, float, float]]] = []
+    for index in range(count):
+        instant = start + (end - start) * index / (count - 1)
+        sampled = plan.at(instant)
+        if sampled is None:
+            continue
+        phase, state, _ = sampled
+        samples.append((state.position, _trajectory_color(phase)))
+    for before, after in zip(samples, samples[1:], strict=False):
+        added += _trajectory_segment(scene, before[0], after[0], after[1])
+
+    pick = plan.legs[1].segment.end.position if len(plan.legs) > 1 else None
+    if pick is not None:
+        added += _trajectory_sphere(scene, pick, 0.022, (1.0, 0.72, 0.10, 1.0))
+    if plan.legs[-1].phase is Phase.DELIVER:
+        added += _trajectory_sphere(
+            scene,
+            plan.legs[-1].segment.end.position,
+            0.024,
+            (0.20, 0.90, 0.35, 1.0),
+        )
+    del mujoco, np
+    return added
+
+
+def _trajectory_color(phase: Phase) -> tuple[float, float, float, float]:
+    """Return a subtle color for one future trajectory phase."""
+    return {
+        Phase.TRACK: (0.20, 0.55, 0.95, 0.75),
+        Phase.DESCEND: (0.95, 0.72, 0.18, 0.85),
+        Phase.HOLD: (0.25, 0.85, 0.45, 0.85),
+        Phase.RETREAT: (0.95, 0.48, 0.18, 0.80),
+        Phase.DELIVER: (0.85, 0.35, 0.85, 0.80),
+    }.get(phase, (0.70, 0.70, 0.70, 0.65))
+
+
+def _trajectory_sphere(
+    scene: Any,
+    position: Point,
+    radius: float,
+    color: tuple[float, float, float, float],
+) -> int:
+    """Add one small trajectory indicator sphere to a render scene."""
+    import mujoco
+    import numpy as np
+
+    if scene.ngeom >= scene.maxgeom:
+        return 0
+    mujoco.mjv_initGeom(
+        scene.geoms[scene.ngeom],
+        mujoco.mjtGeom.mjGEOM_SPHERE,
+        np.array([radius, 0.0, 0.0], dtype=np.float64),
+        np.asarray(position, dtype=np.float64),
+        np.eye(3, dtype=np.float64).ravel(),
+        np.asarray(color, dtype=np.float32),
+    )
+    scene.ngeom += 1
+    return 1
+
+
+def _trajectory_segment(
+    scene: Any,
+    start: Point,
+    end: Point,
+    color: tuple[float, float, float, float],
+) -> int:
+    """Add a thin capsule between two future trajectory samples."""
+    import mujoco
+    import numpy as np
+
+    vector = np.asarray(end, dtype=np.float64) - np.asarray(start, dtype=np.float64)
+    length = float(np.linalg.norm(vector))
+    if length <= 1e-9 or scene.ngeom >= scene.maxgeom:
+        return 0
+    axis = vector / length
+    reference = np.array([0.0, 0.0, 1.0])
+    if abs(float(axis[2])) > 0.9:
+        reference = np.array([1.0, 0.0, 0.0])
+    first = np.cross(reference, axis)
+    first /= np.linalg.norm(first)
+    second = np.cross(axis, first)
+    rotation = np.column_stack((first, second, axis)).ravel()
+    midpoint = (np.asarray(start) + np.asarray(end)) / 2.0
+    mujoco.mjv_initGeom(
+        scene.geoms[scene.ngeom],
+        mujoco.mjtGeom.mjGEOM_CAPSULE,
+        np.array([0.004, length / 2.0, 0.0], dtype=np.float64),
+        midpoint,
+        rotation,
+        np.asarray(color, dtype=np.float32),
+    )
+    scene.ngeom += 1
+    return 1
+
+
 def _painted(
     renderer: Any,
     data: Any,
@@ -1151,6 +1418,9 @@ def _painted(
     standing: tuple[Any, ...],
     control: Any,
     surface: float,
+    task: TaskMachine,
+    trajectory_seconds: float,
+    indices: Any,
 ) -> Any:
     """Render one video frame with the markers standing in it.
 
@@ -1166,6 +1436,13 @@ def _painted(
         The rendered frame.
     """
     _markers_on(renderer, data, camera, standing, control, surface)
+    _trajectory_on(
+        renderer.scene,
+        task,
+        float(data.time),
+        trajectory_seconds,
+        _flange(indices, data),
+    )
     _without_shadows(renderer)
     return renderer.render()
 

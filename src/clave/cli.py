@@ -727,6 +727,29 @@ def main(argv: list[str] | None = None) -> int:
     sim.add_argument("--no-window", action="store_true")
     sim.add_argument("--video", action="store_true")
     sim.add_argument(
+        "--telemetry",
+        action="store_true",
+        help="write PlotJuggler-compatible CSV telemetry",
+    )
+    sim.add_argument(
+        "--telemetry-rate",
+        type=float,
+        default=100.0,
+        help="telemetry samples per simulated second (default: 100)",
+    )
+    sim.add_argument(
+        "--telemetry-out",
+        type=Path,
+        default=None,
+        help="telemetry CSV path (default: <out>/telemetry.csv)",
+    )
+    sim.add_argument(
+        "--trajectory-seconds",
+        type=float,
+        default=2.0,
+        help="future trajectory shown in the debug view (default: 2)",
+    )
+    sim.add_argument(
         "--log-level",
         dest="command_log_level",
         choices=("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"),
@@ -831,14 +854,23 @@ def _debug_tracker(root: Path, args: Any) -> int:
 
     LOGGER.debug(
         "sim parameters: seconds=%.3f (use sim --seconds to override), seed=%d, "
-        "out=%s, video=%s, window=%s, view=%s",
+        "out=%s, video=%s, telemetry=%s, telemetry_rate=%.3f, "
+        "trajectory_seconds=%.3f, window=%s, view=%s",
         args.seconds,
         args.seed,
         args.out,
         args.video,
+        args.telemetry,
+        args.telemetry_rate,
+        args.trajectory_seconds,
         not args.no_window,
         args.view,
     )
+    telemetry_path = None
+    if args.telemetry:
+        telemetry_path = args.telemetry_out or args.out / "telemetry.csv"
+        if not telemetry_path.is_absolute():
+            telemetry_path = root / telemetry_path
     report = run(
         root,
         out=args.out if args.out.is_absolute() else root / args.out,
@@ -848,6 +880,9 @@ def _debug_tracker(root: Path, args: Any) -> int:
         video=args.video,
         fps=args.fps,
         view_name=args.view,
+        telemetry_path=telemetry_path,
+        telemetry_rate=args.telemetry_rate,
+        trajectory_seconds=args.trajectory_seconds,
     )
     _log_output(f"  captures        {report.captures}")
     _log_output(f"  tracks open     {report.tracks}")
@@ -899,6 +934,8 @@ def _debug_tracker(root: Path, args: Any) -> int:
     _log_output(f"  frames written  {report.frames_written} to {report.output}")
     if report.video_path is not None:
         _log_output(f"  video           {report.video_path}")
+    if report.telemetry_path is not None:
+        _log_output(f"  telemetry       {report.telemetry_path}")
     if report.windowed:
         _log_output("  window          shown live")
     else:
