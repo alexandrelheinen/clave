@@ -27,6 +27,7 @@ carry is the same object as every other arc rather than a special case.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 from clave.control.settings import Phase, Point
@@ -43,7 +44,25 @@ JAW_OPEN = 0.0
 """The jaw command while the arm is travelling and descending."""
 
 JAW_SHUT = 1.0
-"""The jaw command from the moment the hold begins."""
+"""The jaw command from the moment the hold begins until the object is over
+its chute."""
+
+PEAK_OVER_MEAN = 15.0 / 8.0
+"""What a rest-to-rest quintic's peak speed is, as a multiple of its mean.
+
+Exact rather than a safety factor: with every boundary condition but the
+endpoints at zero, only one basis term survives and its derivative is
+`30 s^2 (1-s)^2`, which peaks at `15/8` in the middle.
+`docs/guidance-formulation.md` derives it.
+"""
+
+MINIMUM_DELIVERY_SECONDS = 0.05
+"""A floor on the delivery, so a chute already underneath is not a zero arc.
+
+A segment of no duration divides by its own span. The floor is far below
+any delivery the shipped geometry produces and exists so the arithmetic
+cannot be handed a zero.
+"""
 
 
 @dataclass(frozen=True)
@@ -164,6 +183,7 @@ def plan_pick(
     latest: float,
     at_seconds: float,
     margin: float = 1.0,
+    over: Point | None = None,
 ) -> Plan | None:
     """Plan a whole visit, or report that there is no time for one.
 
@@ -183,6 +203,9 @@ def plan_pick(
         margin: How much longer than the soonest feasible interception to
             take, as a multiple, leaving room for [refine] to correct the
             arc later. One leaves none.
+        over: The chute mouth to release the object over, or None to end
+            the visit at the retreat. None drops the object back on the
+            belt, which is a line with nowhere to put anything.
 
     Returns:
         The plan, or None when no interception inside `latest` respects both
@@ -211,6 +234,8 @@ def plan_pick(
         approach_speed,
         dwell_seconds,
         at_seconds,
+        over,
+        max_speed,
     )
 
 
@@ -224,6 +249,7 @@ def refine(
     max_speed: float,
     max_acceleration: float,
     at_seconds: float,
+    over: Point | None = None,
 ) -> Plan | None:
     """Re-aim a plan at a fresher estimate without moving its arrival time.
 
@@ -254,6 +280,7 @@ def refine(
         max_speed: Speed ceiling, in meters per second.
         max_acceleration: Acceleration ceiling, in meters per second squared.
         at_seconds: Simulated time.
+        over: The chute mouth to release over, carried through unchanged.
 
     Returns:
         The re-aimed plan, or None when there is nothing left to re-aim or
@@ -290,6 +317,38 @@ def refine(
         approach_speed,
         dwell_seconds,
         at_seconds,
+        over,
+        max_speed,
+    )
+
+
+def _deliver(start: State, over: Point, max_speed: float) -> Segment:
+    """Return the arc that carries the object to its chute and lets go.
+
+    The only arc of a visit nothing constrains. The object is in the jaw,
+    so where it has to be and when are both the arm's to choose, and it
+    begins and ends at rest with no interception to meet. Its duration is
+    therefore set by the distance and the speed ceiling rather than solved:
+    a rest-to-rest quintic peaks at 15/8 of its mean speed, so a duration
+    of 15/8 times the distance over the ceiling touches the ceiling once
+    and stays inside it everywhere else.
+
+    Args:
+        start: Where the retreat ended, at rest above the belt.
+        over: The chute mouth to release over.
+        max_speed: Speed ceiling, in meters per second.
+
+    Returns:
+        The arc, ending at rest over the mouth.
+    """
+    distance = math.dist(start.position, over)
+    seconds = max(PEAK_OVER_MEAN * distance / max_speed, MINIMUM_DELIVERY_SECONDS)
+    return Segment(
+        start=start,
+        end=State(
+            position=over, velocity=(0.0, 0.0, 0.0), acceleration=(0.0, 0.0, 0.0)
+        ),
+        duration=seconds,
     )
 
 
@@ -302,6 +361,8 @@ def _assemble(
     approach_speed: float,
     dwell_seconds: float,
     at_seconds: float,
+    over: Point | None = None,
+    max_speed: float = 1.0,
 ) -> Plan:
     """Hang the descent, the carry and the retreat off an approach arc.
 
@@ -323,14 +384,21 @@ def _assemble(
     )
     holding = _carry(dropping.end, dwell_seconds, belt_velocity)
     rising = _rise(holding.end, z_offset, approach_speed, belt_velocity)
+    legs = [
+        Leg(Phase.TRACK, reaching, JAW_OPEN),
+        Leg(Phase.DESCEND, dropping, JAW_OPEN),
+        Leg(Phase.HOLD, holding, JAW_SHUT),
+        Leg(Phase.RETREAT, rising, JAW_SHUT),
+    ]
+    if over is not None:
+        # The jaw stays shut through the carry and opens where the plan
+        # runs out, which is over the mouth. Opening at the end of the
+        # retreat instead drops the object back on the belt, which is what
+        # the line did before this leg existed.
+        legs.append(Leg(Phase.DELIVER, _deliver(rising.end, over, max_speed), JAW_SHUT))
     return Plan(
         track_id=track_id,
-        legs=(
-            Leg(Phase.TRACK, reaching, JAW_OPEN),
-            Leg(Phase.DESCEND, dropping, JAW_OPEN),
-            Leg(Phase.HOLD, holding, JAW_SHUT),
-            Leg(Phase.RETREAT, rising, JAW_SHUT),
-        ),
+        legs=tuple(legs),
         started_at=at_seconds,
         pick_at=at_seconds + reaching.duration + dropping.duration,
     )

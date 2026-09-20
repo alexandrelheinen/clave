@@ -123,6 +123,13 @@ class DebugRunReport:
             when the plan was made. This is the figure that says whether the
             jaw held anything: a failed grasp reads near zero however well
             the arm flew.
+        placed: How many objects went down a chute, by channel. A place is
+            the object's centre crossing below the belt surface inside a
+            mouth's footprint, which is where the system's responsibility
+            ends and the plant's begins.
+        misrouted: How many of those went down a channel their material
+            class does not route to. This is the figure `max_misroute_rate`
+            has gated with no way to produce.
         jaw_gaps: How far the nearest object was from the pinch site at the
             instant the jaw shut, in meters, one per visit. It separates the
             two ways a pick fails: a large gap is a flight that arrived
@@ -162,6 +169,8 @@ class DebugRunReport:
     arrivals: tuple[float, ...]
     lifts: tuple[float, ...]
     jaw_gaps: tuple[float, ...]
+    placed: dict[str, int]
+    misrouted: int
     feed_rate: float
     measured_rate: float
     belt_speed: float
@@ -352,6 +361,7 @@ def run(
         belt_speed=plan.belt.speed,
         guidance=control.guidance,
         admits=admits,
+        chutes=plan.chutes,
     )
     goal = None
     refusal: str | None = None
@@ -371,6 +381,21 @@ def run(
     # the figure that separates a flight that missed from a grasp that let go.
     gaps: list[float] = []
     resting: dict[str, float] = {}
+    # A place is counted once per object, the first capture its centre is
+    # seen below a mouth. Counting every capture after that would report a
+    # figure that grows while the object sits there.
+    placed: dict[str, int] = {}
+    seen_down: dict[str, str] = {}
+    misrouted = 0
+    opening = [
+        float(v)
+        for v in config.require(config.require(raw, "chutes"), "mouth_meters", "chutes")
+    ]
+    mouth = (opening[0], opening[1])
+    # Which channel each pool slot's object belongs in, learned as objects
+    # spawn rather than read once from an empty belt. Ground truth, and used
+    # only to count a misroute: nothing the controller reads comes from here.
+    routes: dict[int, str] = {}
     # And how near it got to where the head actually was at that instant.
     # Without interception the commanded pose is as old as the decision
     # interval, so the gap between these two figures is the staleness the
@@ -411,6 +436,22 @@ def run(
         for _ in range(int(seconds / plan.timestep)):
             mujoco.mj_step(model, data)
             conveyor.step(model, data)
+            # Checked every tick, not every capture. An object released
+            # over a mouth falls the belt's height in 0.43 s and the pool
+            # recycles it below 0.30 m, so at the half second capture
+            # cadence it goes from above the surface to gone without ever
+            # being seen crossing.
+            routes.update({i.index: i.channel for i in conveyor.active})
+            for name, channel in _placed(
+                mujoco, model, data, conveyor, plan.chutes, mouth, surface
+            ).items():
+                if name in seen_down:
+                    continue
+                seen_down[name] = channel
+                placed[channel] = placed.get(channel, 0) + 1
+                belongs = routes.get(int(name.rsplit("_", 1)[1]))
+                if belongs is not None and belongs != channel:
+                    misrouted += 1
             # The feed loop runs at the physics rate and reads the simulator's
             # own arrivals, which is ground truth and is why it is named as
             # such: the tracker's estimate is not usable this far down the
@@ -559,6 +600,25 @@ def run(
 
             flange = _flange(indices, data)
             queue = selector.update(standing, flange, feeding.speed, now)
+            routes.update({item.index: item.channel for item in conveyor.active})
+            for name, channel in _placed(
+                mujoco,
+                model,
+                data,
+                conveyor,
+                plan.chutes,
+                (mouth[0], mouth[1]),
+                surface,
+            ).items():
+                if name in seen_down:
+                    continue
+                seen_down[name] = channel
+                placed[channel] = placed.get(channel, 0) + 1
+                slot = int(name.rsplit("_", 1)[1])
+                belongs = routes.get(slot)
+                if belongs is not None and belongs != channel:
+                    misrouted += 1
+
             for trigger in queue.reasons:
                 reorders[trigger] += 1
             head_id = None if queue.head is None else queue.head.track_id
@@ -630,6 +690,8 @@ def run(
         arrivals=task.arrivals,
         lifts=tuple(lifts),
         jaw_gaps=tuple(gaps),
+        placed=dict(placed),
+        misrouted=misrouted,
         feed_rate=feeding.settings.rate,
         measured_rate=feeding.measured,
         belt_speed=feeding.speed,
@@ -745,6 +807,47 @@ def _object_place(
     body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, name)
     place = data.xipos[body]
     return float(place[0]), float(place[1]), float(place[2])
+
+
+def _placed(
+    mujoco: Any,
+    model: Any,
+    data: Any,
+    conveyor: Any,
+    chutes: dict[str, tuple[float, float, float]],
+    mouth: tuple[float, float],
+    surface: float,
+) -> dict[str, str]:
+    """Return which objects have gone down a chute, and which one.
+
+    A place is a plane crossing, which is what
+    `docs/requirements/sorting-outputs.md` settled on: an object whose
+    centre is below the belt surface and inside a mouth's footprint has
+    left the line through that opening. Nothing models the chute's
+    interior, because nothing below the opening is in scope.
+
+    Args:
+        mujoco: The imported module.
+        model: The compiled model.
+        data: Its state.
+        conveyor: The belt, for the objects still on it.
+        chutes: Where each channel's mouth stands.
+        mouth: Mouth size, along travel and across it.
+        surface: Height of the belt surface.
+
+    Returns:
+        Body name to the channel it went down, for those that have.
+    """
+    gone: dict[str, str] = {}
+    for item in conveyor.active:
+        x, y, z = _object_place(mujoco, model, data, item.name)
+        if z >= surface:
+            continue
+        for channel, (cx, cy, _) in chutes.items():
+            if abs(x - cx) <= mouth[0] / 2.0 and abs(y - cy) <= mouth[1] / 2.0:
+                gone[item.name] = channel
+                break
+    return gone
 
 
 def _resting(mujoco: Any, model: Any, data: Any, conveyor: Any) -> dict[str, float]:

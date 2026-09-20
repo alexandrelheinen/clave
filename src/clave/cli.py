@@ -633,6 +633,11 @@ def _debug_tracker(root: Path, args: Any) -> int:
     if report.jaw_gaps:
         each = ", ".join(f"{gap * 1000:.0f}" for gap in report.jaw_gaps)
         print(f"  jaw to object   {each} mm when the jaw shut")
+    if report.placed or report.misrouted:
+        total = sum(report.placed.values())
+        each = ", ".join(f"{c}: {n}" for c, n in sorted(report.placed.items()))
+        print(f"  placed          {total} down a chute ({each})")
+        print(f"  misrouted       {report.misrouted} of {total}")
     if report.lifts:
         held = sum(1 for lift in report.lifts if lift >= GRASPED_METERS)
         each = ", ".join(f"{lift * 1000:.0f}" for lift in report.lifts)

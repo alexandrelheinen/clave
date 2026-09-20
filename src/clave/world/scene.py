@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import math
 import warnings
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -108,7 +108,11 @@ class SceneLayout:
             to the arm's own base rather than to the belt, because that is what
             the sweep measured.
         pedestal: Footprint of the support the arm stands on, in meters.
-        channels: Channel identifiers, one bin each.
+        channels: Channel identifiers, one chute each.
+        chutes: Where each channel's chute mouth stands, in world meters.
+            Computed here rather than where the geometry is built, so the
+            arm releasing over an opening and the opening itself come from
+            one arithmetic.
         objects: The object set the pool draws from.
         pool_size: How many object bodies exist.
         timestep: Simulation timestep in seconds.
@@ -128,6 +132,7 @@ class SceneLayout:
     objects: tuple[ObjectSpec, ...]
     pool_size: int
     timestep: float
+    chutes: dict[str, tuple[float, float, float]] = field(default_factory=dict)
     dressed: bool = False
 
 
@@ -244,6 +249,9 @@ def layout(raw: dict[str, Any], rng: np.random.Generator) -> SceneLayout:
         tool_above_base=(float(band[0]), float(band[1])),
         pedestal=(float(pedestal[0]), float(pedestal[1])),
         channels=channels(specs),
+        chutes=_chute_mouths(
+            require(raw, "chutes"), channels(specs), belt.surface_height
+        ),
         objects=specs,
         pool_size=int(require(spawn_cfg, "pool_size", "spawn")),
         timestep=float(require(physics, "timestep_seconds", "physics")),
@@ -281,9 +289,6 @@ def _add_chutes(
             a channel that can never be served, and catching that at load
             beats counting it as a fault at run time.
     """
-    offset = float(require(cfg, "offset_from_belt_meters", "chutes"))
-    first = float(require(cfg, "first_position_meters", "chutes"))
-    spacing = float(require(cfg, "spacing_meters", "chutes"))
     mouth = [float(v) for v in require(cfg, "mouth_meters", "chutes")]
     throat = [float(v) for v in require(cfg, "throat_meters", "chutes")]
     fall = float(require(cfg, "throat_height_meters", "chutes"))
@@ -294,8 +299,8 @@ def _add_chutes(
 
     top = plan.belt.surface_height
     mouths: dict[str, Any] = {}
-    for index, channel in enumerate(plan.channels):
-        x = first + index * spacing
+    for channel in plan.channels:
+        x, offset, _ = plan.chutes[channel]
         _refuse_unreachable(plan, channel, x, offset, top)
         _refuse_over_pedestal(plan, channel, x, mouth[0])
         mouths[channel] = _add_funnel(
@@ -446,6 +451,31 @@ def _refuse_over_pedestal(
             f"the pedestal at x={plan.arm_base[0]:+.3f} m, so its take-away "
             f"conveyor would run through the structure carrying the arm"
         )
+
+
+def _chute_mouths(
+    cfg: dict[str, Any], names: tuple[str, ...], surface: float
+) -> dict[str, tuple[float, float, float]]:
+    """Return where each channel's chute mouth stands.
+
+    Args:
+        cfg: The `chutes` configuration block.
+        names: The channels the routing policy resolves to.
+        surface: Height of the belt surface, which the mouths sit at.
+
+    Returns:
+        Channel identifier to the centre of its mouth.
+
+    Raises:
+        WorldConfigError: If a key is absent.
+    """
+    offset = float(require(cfg, "offset_from_belt_meters", "chutes"))
+    first = float(require(cfg, "first_position_meters", "chutes"))
+    spacing = float(require(cfg, "spacing_meters", "chutes"))
+    return {
+        channel: (first + index * spacing, offset, surface)
+        for index, channel in enumerate(names)
+    }
 
 
 WAREHOUSE_ASSETS = Path("assets") / "warehouse"

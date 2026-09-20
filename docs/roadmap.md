@@ -84,7 +84,7 @@ and when.
 | v1.2.0 | [learned-tracker](requirements/learned-tracker.md) | The association rule as a trained model, the tracking stage the platform lacks, and the runtime swap away from `associate()` | Requirements written, design open |
 | v1.3.0 | [arm-control](requirements/arm-control.md) | The arm moving to the pose a grasp marker stands at: target selection, the task state machine, guidance between waypoints, and the servo step | Requirements written, design open |
 | v1.4.0 | [end-effector](requirements/end-effector.md) | A parallel jaw on the flange, closing on an object and holding it, and pick success rate as a measured figure | Requirements written, design open |
-| v1.5.0 | [sorting-outputs](requirements/sorting-outputs.md) | A chute opening per channel, a place recorded when an object crosses one, and misroutes counted | Funnels and take-aways built and reachable, placement events open |
+| v1.5.0 | [sorting-outputs](requirements/sorting-outputs.md) | A chute opening per channel, a place recorded when an object crosses one, and misroutes counted | Funnels built, deliveries flown, places and misroutes counted; the grip does not hold through the carry |
 | v1.6.0 | [line-throughput](requirements/line-throughput.md) | A feed rate the line is asked for rather than one it happens to have, and belt speed regulated to hold it | Feed by distance and the controller are in the tree, awaiting a tag |
 
 **v1.1.0 release criteria.** `clave.tracker` produces a `WasteObject` from

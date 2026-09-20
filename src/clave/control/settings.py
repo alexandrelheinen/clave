@@ -46,6 +46,13 @@ class Phase(enum.Enum):
     RETREAT = "retreat"
     """Lifting clear of the object. Full visit only."""
 
+    DELIVER = "deliver"
+    """Carrying the object to its channel's chute. Full visit only.
+
+    The one arc of a visit no interception constrains: the object is in the
+    jaw, so where it has to be and when are both the arm's to choose.
+    """
+
     PARK = "park"
     """On the way back to rest."""
 
@@ -71,7 +78,7 @@ class Profile(enum.Enum):
     """
 
     FULL_VISIT = "full_visit"
-    """Adds descent, grasp and retreat, planned as one timed sequence."""
+    """Adds descent, grasp, retreat and delivery, planned as one sequence."""
 
 
 @dataclass(frozen=True)
