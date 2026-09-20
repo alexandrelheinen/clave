@@ -461,7 +461,7 @@ def run(
         next_capture = 0.0
         next_frame = 0.0
 
-        def _interruptible(iterable):
+        def _interruptible(iterable: Any) -> Any:
             try:
                 yield from iterable
             except KeyboardInterrupt:

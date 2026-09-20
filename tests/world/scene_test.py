@@ -45,7 +45,6 @@ def conveyor_for(
     )
 
 
-
 def test_both_narrowest_mesh_sides_must_fit_the_gripper() -> None:
     """A single thin side must not make a broad flat object graspable."""
     assert _two_narrowest_sides_fit((0.020, 0.080, 0.180), 0.085)

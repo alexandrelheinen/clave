@@ -381,7 +381,7 @@ class Conveyor:
 def _on_belt(position: Any, plan: SceneLayout) -> bool:
     """Return whether a body is still resting in the driven belt region."""
     surface = plan.belt.surface_height
-    return (
+    return bool(
         abs(position[0]) <= plan.belt.length / 2.0
         and abs(position[1]) <= plan.belt.width / 2.0
         and surface - BELT_HEIGHT_TOLERANCE

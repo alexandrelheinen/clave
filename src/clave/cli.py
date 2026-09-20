@@ -22,9 +22,10 @@ LOGGER = logging.getLogger(__name__)
 
 
 def _log_output(*values: object, file: Any = None) -> None:
-    """Write command output through logging at its appropriate severity."""
+    """Write command output through logging and write to standard streams."""
     level = logging.WARNING if file is sys.stderr else logging.INFO
     LOGGER.log(level, " ".join(str(value) for value in values))
+    print(*values, file=file if file is not None else sys.stdout)
 
 
 def _configure_logging(level: str) -> None:
@@ -317,9 +318,6 @@ def _train(
     return 0
 
 
-
-
-
 def _benchmark(
     root: Path,
     config_path: Path,
@@ -398,9 +396,6 @@ def _benchmark(
                 file=sys.stderr,
             )
     return 0 if pack.passed else 1
-
-
-
 
 
 def _still(root: Path, name: str, out: Path) -> int:
