@@ -100,14 +100,14 @@ feed:
   # MEASURED against what the arm sustains rather than chosen. A visit costs
   # the interception, the descent, the dwell and the retreat, and the arm
   # returns toward park between visits; on the shipped geometry that came to
-  # 15 completed visits in 60 s, which is 0.25 objects per second, or 15 a
-  # minute. Published robotic sorters run 60 to 140 a minute, so this line is
-  # slow, and saying so is better than feeding it a number it cannot hold.
+  # 7.5 completed visits in 60 s, which is 0.125 objects per second, or 7.5 a
+  # minute. This is half the previous setpoint, giving the arm twice the time
+  # per object while retaining the same distance-based feeder.
   #
   # A setpoint above what the arm holds is not an error and is not clamped: a
   # line fed faster than it can be picked is an ordinary condition, and it
   # shows up as objects reaching the end unpicked.
-  rate_objects_per_second: 0.25
+  rate_objects_per_second: 0.125
 
   # How long a span the measured rate is counted over.
   #
