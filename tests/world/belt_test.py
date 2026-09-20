@@ -136,6 +136,13 @@ def test_objects_reach_belt_speed_and_enter_the_window() -> None:
         assert item.channel.startswith("CH-")
 
 
+def test_a_lifted_object_is_not_driven_by_the_belt() -> None:
+    """A grasped object keeps its motion after it leaves the belt."""
+    plan = layout(speed=0.3, offset=-0.34)
+    assert belt._on_belt((0.0, 0.0, 0.90), plan)
+    assert not belt._on_belt((0.0, 0.0, 0.951), plan)
+
+
 def test_an_unpicked_object_is_not_removed() -> None:
     """A real line does not stop for a missed pick."""
     pytest.importorskip("mujoco")

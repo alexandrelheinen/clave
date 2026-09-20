@@ -21,6 +21,9 @@ from clave.world import arm
 from clave.world.config import Range
 from clave.world.scene import PARKED_X, PARKED_Z, SceneLayout
 
+BELT_HEIGHT_TOLERANCE = 0.05
+"""Vertical allowance for an object resting on the belt, in meters."""
+
 
 @dataclass(frozen=True)
 class ReachReport:
@@ -360,11 +363,7 @@ class Conveyor:
             address = model.jnt_qposadr[model.body_jntadr[body]]
             velocity = model.jnt_dofadr[model.body_jntadr[body]]
             position = data.qpos[address : address + 3]
-            on_belt = (
-                abs(position[0]) <= self.plan.belt.length / 2.0
-                and abs(position[1]) <= self.plan.belt.width / 2.0
-                and position[2] > self.plan.belt.surface_height - 0.05
-            )
+            on_belt = _on_belt(position, self.plan)
             if on_belt:
                 # Drive travel only. Vertical motion and rotation stay with
                 # physics, so contacts with the chutes and the arm remain real.
@@ -377,3 +376,15 @@ class Conveyor:
     def entered_window(self) -> list[SpawnedObject]:
         """List the objects that have been inside the reachable window."""
         return [item for item in self.active if item.entered_window]
+
+
+def _on_belt(position: Any, plan: SceneLayout) -> bool:
+    """Return whether a body is still resting in the driven belt region."""
+    surface = plan.belt.surface_height
+    return (
+        abs(position[0]) <= plan.belt.length / 2.0
+        and abs(position[1]) <= plan.belt.width / 2.0
+        and surface - BELT_HEIGHT_TOLERANCE
+        < position[2]
+        <= surface + BELT_HEIGHT_TOLERANCE
+    )
