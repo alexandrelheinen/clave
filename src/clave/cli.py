@@ -228,13 +228,19 @@ def _record_dataset(root: Path, out: Path, seed: int) -> int:
     return 0
 
 
-def _train(root: Path, config_path: Path, candidate: str | None) -> int:
+def _train(
+    root: Path,
+    config_path: Path,
+    candidate: str | None,
+    sync: bool = False,
+) -> int:
     """Train one candidate from a configuration file.
 
     Args:
         root: Repository root.
         config_path: Path to the training configuration.
         candidate: Overrides the candidate named in the file.
+        sync: Upload checkpoint to R2 and register run in D1 on completion.
 
     Returns:
         A process exit code. Non-zero when the candidate could not be loaded.
@@ -255,6 +261,34 @@ def _train(root: Path, config_path: Path, candidate: str | None) -> int:
             f"  epoch {epoch.index:2d}      loss {epoch.loss:10.4f}   "
             f"{epoch.seconds:8.1f} s"
         )
+    if sync and run.completed:
+        try:
+            from clave.storage import (
+                D1Client,
+                R2Client,
+                load_d1_config,
+                load_r2_config,
+                push_training_run,
+            )
+            from clave.training.runner import _checkpoint_path, run_record_path
+
+            r2 = R2Client(load_r2_config())
+            d1: D1Client | None = None
+            try:
+                d1 = D1Client(load_d1_config())
+            except Exception as d1_err:
+                print(f"  note     D1 tracking unavailable: {d1_err}", file=sys.stderr)
+
+            ckpt_path = _checkpoint_path(config)
+            rec_path = run_record_path(config.checkpoints, config.candidate)
+            key = push_training_run(ckpt_path, rec_path, r2, d1)
+            print(f"  synced        checkpoint to R2: {key}")
+        except Exception as exc:
+            # Offline independence (AC-DATA-08)
+            print(
+                f"  WARNING  remote sync failed: {exc}; local artifacts retained",
+                file=sys.stderr,
+            )
     return 0
 
 
@@ -332,13 +366,19 @@ def _run_sitl(
     return 0
 
 
-def _benchmark(root: Path, config_path: Path, out: Path) -> int:
+def _benchmark(
+    root: Path,
+    config_path: Path,
+    out: Path,
+    sync: bool = False,
+) -> int:
     """Run every configuration the benchmark names and report the comparison.
 
     Args:
         root: Repository root.
         config_path: The benchmark configuration.
         out: Where the evidence pack and the run directories go.
+        sync: Upload evidence pack to R2 and register benchmark in D1 on completion.
 
     Returns:
         A process exit code. Non-zero when a gate the benchmark could evaluate
@@ -378,6 +418,31 @@ def _benchmark(root: Path, config_path: Path, out: Path) -> int:
     print(pack.render())
     print()
     print(f"  evidence pack   {out / 'benchmark.json'}")
+    if sync:
+        try:
+            from clave.storage import (
+                D1Client,
+                R2Client,
+                load_d1_config,
+                load_r2_config,
+                push_benchmark,
+            )
+
+            r2 = R2Client(load_r2_config())
+            d1: D1Client | None = None
+            try:
+                d1 = D1Client(load_d1_config())
+            except Exception as d1_err:
+                print(f"  note     D1 tracking unavailable: {d1_err}", file=sys.stderr)
+
+            pack_key = push_benchmark(out / "benchmark.json", r2, d1)
+            print(f"  synced        evidence pack to R2: {pack_key}")
+        except Exception as exc:
+            # Offline independence (AC-DATA-08)
+            print(
+                f"  WARNING  remote sync failed: {exc}; local artifacts retained",
+                file=sys.stderr,
+            )
     return 0 if pack.passed else 1
 
 
@@ -456,6 +521,139 @@ def _still(root: Path, name: str, out: Path) -> int:
     return 0
 
 
+def _dataset_push(root: Path, path: Path) -> int:
+    """Push local dataset to Cloudflare R2 and register in D1 (AC-DATA-02, AC-DATA-04).
+
+    Args:
+        root: Repository root.
+        path: Path to dataset directory.
+
+    Returns:
+        Exit code.
+    """
+    from clave.storage import (
+        D1Client,
+        R2Client,
+        load_d1_config,
+        load_r2_config,
+        push_dataset,
+    )
+
+    r2_config = load_r2_config()
+    r2 = R2Client(r2_config)
+
+    d1: D1Client | None = None
+    try:
+        d1_config = load_d1_config()
+        d1 = D1Client(d1_config)
+    except Exception as exc:
+        print(f"  note     D1 registration unavailable: {exc}", file=sys.stderr)
+
+    dataset_dir = root / path if not path.is_absolute() else path
+    uploaded, skipped = push_dataset(dataset_dir, r2, d1)
+    print(f"  dataset push complete: {uploaded} uploaded, {skipped} skipped")
+    return 0
+
+
+def _dataset_pull(root: Path, digest: str, out: Path) -> int:
+    """Pull a dataset from Cloudflare R2 by digest and verify locally (AC-DATA-03).
+
+    Args:
+        root: Repository root.
+        digest: SHA-256 digest of dataset.
+        out: Target directory.
+
+    Returns:
+        Exit code.
+    """
+    from clave.storage import R2Client, load_r2_config, pull_dataset
+
+    r2_config = load_r2_config()
+    r2 = R2Client(r2_config)
+
+    destination = (root / out / digest) if not out.is_absolute() else (out / digest)
+    description = pull_dataset(digest, destination, r2)
+    print(f"  verified dataset {description.digest[:16]}... in {destination}")
+    print(f"  examples        {description.example_count}")
+    return 0
+
+
+def _storage_init_db() -> int:
+    """Initialize Cloudflare D1 tables for datasets, training runs, and benchmarks.
+
+    Returns:
+        Exit code.
+    """
+    from clave.storage import D1Client, load_d1_config
+
+    d1_config = load_d1_config()
+    d1 = D1Client(d1_config)
+    d1.init_schema()
+    print("  database schema initialized in Cloudflare D1")
+    return 0
+
+
+def _runs_list(limit: int) -> int:
+    """List historical training runs and benchmark scores from D1 (AC-DATA-07).
+
+    Args:
+        limit: Max entries per table.
+
+    Returns:
+        Exit code.
+    """
+    from clave.storage import D1Client, load_d1_config
+
+    d1_config = load_d1_config()
+    d1 = D1Client(d1_config)
+
+    training_runs = d1.list_training_runs(limit=limit)
+    benchmarks = d1.list_benchmarks(limit=limit)
+
+    print("Training Runs:")
+    if not training_runs:
+        print("  no training runs recorded")
+    else:
+        print(
+            f"  {'run_id':28s} {'candidate':12s} {'epochs':>6s} {'loss':>10s} "
+            f"{'created_at':19s}"
+        )
+        for r in training_runs:
+            loss_val = r.get("final_loss")
+            loss_str = f"{loss_val:.4f}" if loss_val is not None else "-"
+            print(
+                f"  {str(r.get('run_id', '-')):28s} "
+                f"{str(r.get('candidate', '-')):12s} "
+                f"{str(r.get('epochs', '-')):>6s} "
+                f"{loss_str:>10s} "
+                f"{str(r.get('created_at', '-'))[:19]:19s}"
+            )
+
+    print()
+    print("Benchmarks:")
+    if not benchmarks:
+        print("  no benchmarks recorded")
+    else:
+        print(
+            f"  {'benchmark_id':32s} {'configuration':20s} {'accuracy':>8s} "
+            f"{'p99 ms':>8s} {'verdict':8s}"
+        )
+        for b in benchmarks:
+            acc = b.get("overall_accuracy")
+            acc_str = f"{acc:.3f}" if acc is not None else "-"
+            p99 = b.get("decision_latency_p99_seconds")
+            p99_str = f"{p99 * 1000:.1f}" if p99 is not None else "-"
+            verdict = "PASSED" if b.get("passed") else "FAILED"
+            print(
+                f"  {str(b.get('benchmark_id', '-')):32s} "
+                f"{str(b.get('configuration_name', '-')):20s} "
+                f"{acc_str:>8s} "
+                f"{p99_str:>8s} "
+                f"{verdict:8s}"
+            )
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run a CLAVE command.
 
@@ -483,9 +681,35 @@ def main(argv: list[str] | None = None) -> int:
     rec = sub.add_parser("record-dataset", help="record a labeled dataset")
     rec.add_argument("--out", type=Path, default=Path("datasets/synthetic"))
     rec.add_argument("--seed", type=int, default=0)
+
+    # dataset subcommands
+    ds = sub.add_parser("dataset", help="manage datasets in local and remote storage")
+    ds_sub = ds.add_subparsers(dest="dataset_action", required=True)
+    ds_push = ds_sub.add_parser("push", help="push a local dataset to R2 and D1")
+    ds_push.add_argument("path", type=Path, help="path to local dataset directory")
+    ds_pull = ds_sub.add_parser("pull", help="pull a dataset from R2 by digest")
+    ds_pull.add_argument("digest", type=str, help="SHA-256 digest of dataset")
+    ds_pull.add_argument(
+        "--out", type=Path, default=Path("datasets"), help="destination directory"
+    )
+
+    # storage subcommands
+    st = sub.add_parser("storage", help="storage operations")
+    st_sub = st.add_subparsers(dest="storage_action", required=True)
+    st_sub.add_parser("init-db", help="initialize D1 database schema")
+
+    # runs subcommands
+    rn = sub.add_parser("runs", help="view experiment and training runs")
+    rn_sub = rn.add_subparsers(dest="runs_action", required=True)
+    rn_list = rn_sub.add_parser("list", help="list historical runs and benchmarks")
+    rn_list.add_argument("--limit", type=int, default=20, help="max rows to display")
+
     tr = sub.add_parser("train", help="train a candidate from a configuration")
     tr.add_argument("--config", type=Path, default=Path("configs/training/default.yml"))
     tr.add_argument("--candidate", type=str, default=None)
+    tr.add_argument(
+        "--sync", action="store_true", help="upload checkpoint and record run in D1"
+    )
     validate = sub.add_parser(
         "validate-run", help="score recorded outcomes against the validation gates"
     )
@@ -504,6 +728,9 @@ def main(argv: list[str] | None = None) -> int:
         "--config", type=Path, default=Path("configs/benchmark/default.yml")
     )
     bench_suite.add_argument("--out", type=Path, default=Path("runs/benchmark"))
+    bench_suite.add_argument(
+        "--sync", action="store_true", help="upload evidence pack and record in D1"
+    )
     still = sub.add_parser("still", help="capture a still of the world")
     still.add_argument("scenario", nargs="?", default="thumbnail")
     still.add_argument("--out", type=Path, default=Path("runs/stills"))
@@ -551,8 +778,17 @@ def main(argv: list[str] | None = None) -> int:
             return _world_probe(args.root, args.seconds, args.seed)
         if args.command == "record-dataset":
             return _record_dataset(args.root, args.out, args.seed)
+        if args.command == "dataset":
+            if args.dataset_action == "push":
+                return _dataset_push(args.root, args.path)
+            if args.dataset_action == "pull":
+                return _dataset_pull(args.root, args.digest, args.out)
+        if args.command == "storage" and args.storage_action == "init-db":
+            return _storage_init_db()
+        if args.command == "runs" and args.runs_action == "list":
+            return _runs_list(args.limit)
         if args.command == "train":
-            return _train(args.root, args.config, args.candidate)
+            return _train(args.root, args.config, args.candidate, sync=args.sync)
         if args.command == "still":
             return _still(args.root, args.scenario, args.out)
         if args.command == "debug-tracker":
@@ -560,7 +796,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "demo":
             return _demo(args.root, args.scenario, args.out, args.runtime)
         if args.command == "benchmark":
-            return _benchmark(args.root, args.config, args.out)
+            return _benchmark(args.root, args.config, args.out, sync=args.sync)
         if args.command == "run-sitl":
             return _run_sitl(
                 args.root,
