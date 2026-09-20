@@ -184,6 +184,7 @@ def plan_pick(
     at_seconds: float,
     margin: float = 1.0,
     over: Point | None = None,
+    retreat_lift: float | None = None,
 ) -> Plan | None:
     """Plan a whole visit, or report that there is no time for one.
 
@@ -206,6 +207,8 @@ def plan_pick(
         over: The chute mouth to release the object over, or None to end
             the visit at the retreat. None drops the object back on the
             belt, which is a line with nowhere to put anything.
+        retreat_lift: How far to lift during retreat, in meters. If None,
+            defaults to `z_offset`.
 
     Returns:
         The plan, or None when no interception inside `latest` respects both
@@ -236,6 +239,7 @@ def plan_pick(
         at_seconds,
         over,
         max_speed,
+        retreat_lift,
     )
 
 
@@ -250,37 +254,28 @@ def refine(
     max_acceleration: float,
     at_seconds: float,
     over: Point | None = None,
+    retreat_lift: float | None = None,
 ) -> Plan | None:
-    """Re-aim a plan at a fresher estimate without moving its arrival time.
+    """Correct a plan in flight against a fresher estimate of the object.
 
-    The interception is solved once and then held, because a duration that
-    keeps changing is a duration nothing can be scheduled against. What can
-    change is where the arm is aiming, and it has to: the belt carries the
-    x axis exactly and carries nothing else, so an object rolling or
-    settling drifts sideways out from under a pose predicted three seconds
-    ago. Measured on the shipped line, that lateral drift averages 41 mm
-    over a 2.5 second horizon and 10 mm over half a second.
-
-    So the approach arc is re-solved every capture from wherever the arm has
-    got to, onto the refreshed prediction, over whatever time is left. The
-    horizon collapses from the whole interception to the descent alone, and
-    the old arc's terminal state is the new arc's start, so nothing jumps.
-
-    Once the descent has begun there is nothing left to re-aim: the arm is
-    committed, and swapping the target under a jaw already coming down is
-    how an approach turns into a swipe.
+    Refinement keeps the arrival time already chosen and solves only for a
+    new approach arc that lands on the refreshed position at that instant.
+    The descent, the carry and the retreat are then hung off the new end
+    exactly as they were off the old one.
 
     Args:
         plan: The plan in flight.
-        object_position: Where the object is believed to be now.
-        belt_velocity: How the belt is carrying it.
+        object_position: Where the object is now believed to be.
+        belt_velocity: How the belt is moving.
         z_offset: Clearance above the object, in meters.
-        approach_speed: How fast to be descending on arrival.
+        approach_speed: How fast the flange is coming down on arrival.
         dwell_seconds: How long the jaw is given to close.
         max_speed: Speed ceiling, in meters per second.
         max_acceleration: Acceleration ceiling, in meters per second squared.
         at_seconds: Simulated time.
         over: The chute mouth to release over, carried through unchanged.
+        retreat_lift: How far to lift during retreat, in meters. If None,
+            defaults to `z_offset`.
 
     Returns:
         The re-aimed plan, or None when there is nothing left to re-aim or
@@ -319,6 +314,7 @@ def refine(
         at_seconds,
         over,
         max_speed,
+        retreat_lift,
     )
 
 
@@ -363,6 +359,7 @@ def _assemble(
     at_seconds: float,
     over: Point | None = None,
     max_speed: float = 1.0,
+    retreat_lift: float | None = None,
 ) -> Plan:
     """Hang the descent, the carry and the retreat off an approach arc.
 
@@ -375,6 +372,9 @@ def _assemble(
         approach_speed: How fast the flange is coming down on arrival.
         dwell_seconds: How long the jaw is given to close.
         at_seconds: Simulated time the approach begins.
+        over: Where to release the object over.
+        max_speed: Speed ceiling in meters per second.
+        retreat_lift: How far to lift during retreat, in meters.
 
     Returns:
         The whole visit.
@@ -383,7 +383,8 @@ def _assemble(
         reaching, object_position, belt_velocity, z_offset, approach_speed
     )
     holding = _carry(dropping.end, dwell_seconds, belt_velocity)
-    rising = _rise(holding.end, z_offset, approach_speed, belt_velocity)
+    lift = z_offset if retreat_lift is None else retreat_lift
+    rising = _rise(holding.end, lift, approach_speed, belt_velocity)
     legs = [
         Leg(Phase.TRACK, reaching, JAW_OPEN),
         Leg(Phase.DESCEND, dropping, JAW_OPEN),

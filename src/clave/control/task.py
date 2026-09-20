@@ -375,9 +375,14 @@ class TaskMachine:
         )
         if head is None:
             return
+        target = self._grasp_pose(head)
+        transit_z = self._belt_surface + self._settings.approach_height
+        retreat_lift = max(self._settings.grasp_clearance, transit_z - target[2])
+        chute = self._chutes.get(head.channel)
+        over = (chute[0], chute[1], transit_z) if chute is not None else None
         refreshed = refine(
             plan=self._plan,
-            object_position=self._grasp_pose(head),
+            object_position=target,
             belt_velocity=(self._belt_speed, 0.0, 0.0),
             z_offset=self._settings.grasp_clearance,
             approach_speed=self._settings.approach_speed,
@@ -385,7 +390,8 @@ class TaskMachine:
             max_speed=self._guidance.max_speed,
             max_acceleration=self._guidance.max_acceleration,
             at_seconds=at_seconds,
-            over=self._chutes.get(head.channel),
+            over=over,
+            retreat_lift=retreat_lift,
         )
         if refreshed is not None and self._admits(
             refreshed.legs[1].segment.end.position
@@ -432,6 +438,10 @@ class TaskMachine:
             self._serving = None
             return self._rest(flange, at_nanos)
         target = self._grasp_pose(head)
+        transit_z = self._belt_surface + self._settings.approach_height
+        retreat_lift = max(self._settings.grasp_clearance, transit_z - target[2])
+        chute = self._chutes.get(head.channel)
+        over = (chute[0], chute[1], transit_z) if chute is not None else None
         # An interception is worth planning only inside what the object has
         # left on the belt, whichever of the two limits binds first.
         leaving = head.distance_before_leaving / self._belt_speed
@@ -456,7 +466,8 @@ class TaskMachine:
                 latest=min(self._settings.interception_limit, leaving),
                 at_seconds=at_seconds,
                 margin=margin,
-                over=self._chutes.get(head.channel),
+                over=over,
+                retreat_lift=retreat_lift,
             )
             if attempt is not None and self._admits(
                 attempt.legs[1].segment.end.position
