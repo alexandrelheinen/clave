@@ -6,6 +6,7 @@ Guards AC-DATA-01 through AC-DATA-08 defined in docs/requirements/data-storage.m
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -303,7 +304,7 @@ def test_ac_data_06_push_benchmark(tmp_path: Path) -> None:
     assert kwargs["passed"] is True
 
 
-def test_ac_data_07_runs_list(capsys: pytest.CaptureFixture[str]) -> None:
+def test_ac_data_07_runs_list(caplog: pytest.LogCaptureFixture) -> None:
     """AC-DATA-07: Query and render formatted tables for runs and benchmarks."""
     d1_mock = MagicMock(spec=D1Client)
     d1_mock.list_training_runs.return_value = [
@@ -329,21 +330,21 @@ def test_ac_data_07_runs_list(capsys: pytest.CaptureFixture[str]) -> None:
     with (
         patch("clave.storage.D1Client", return_value=d1_mock),
         patch("clave.storage.load_d1_config", return_value=MagicMock()),
+        caplog.at_level(logging.INFO),
     ):
         exit_code = _runs_list(limit=5)
 
     assert exit_code == 0
-    captured = capsys.readouterr()
-    assert "Training Runs:" in captured.out
-    assert "act_cfg_data" in captured.out
-    assert "0.0215" in captured.out
-    assert "Benchmarks:" in captured.out
-    assert "resnet50 + act" in captured.out
-    assert "PASSED" in captured.out
+    assert "Training Runs:" in caplog.text
+    assert "act_cfg_data" in caplog.text
+    assert "0.0215" in caplog.text
+    assert "Benchmarks:" in caplog.text
+    assert "resnet50 + act" in caplog.text
+    assert "PASSED" in caplog.text
 
 
 def test_ac_data_08_offline_train_and_benchmark(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     """AC-DATA-08: Offline network failure logs warning and retains local files."""
     with patch(
@@ -366,11 +367,11 @@ def test_ac_data_08_offline_train_and_benchmark(
             patch(
                 "clave.training.config.TrainingConfig.load", return_value=MagicMock()
             ),
+            caplog.at_level(logging.WARNING),
         ):
             code = _train(tmp_path, Path("config.yml"), None, sync=True)
             assert code == 0
-            captured = capsys.readouterr()
-            assert "WARNING  remote sync failed" in captured.err
+            assert "WARNING  remote sync failed" in caplog.text
 
 
 def test_pull_and_restore_training_checkpoint(tmp_path: Path) -> None:
