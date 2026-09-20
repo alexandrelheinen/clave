@@ -731,6 +731,13 @@ def main(argv: list[str] | None = None) -> int:
     sim.add_argument("--no-window", action="store_true")
     sim.add_argument("--video", action="store_true")
     sim.add_argument(
+        "--log-level",
+        dest="command_log_level",
+        choices=("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"),
+        default=None,
+        help="logging verbosity (default: INFO)",
+    )
+    sim.add_argument(
         "--fps",
         type=int,
         default=None,
@@ -760,7 +767,7 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     args = parser.parse_args(argv)
-    _configure_logging(args.log_level)
+    _configure_logging(getattr(args, "command_log_level", None) or args.log_level)
     try:
         if args.command == "verify-manifest":
             return _verify_manifest(args.root)
