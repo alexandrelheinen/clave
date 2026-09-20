@@ -38,21 +38,29 @@ def conveyor_for(
     return belt.Conveyor(
         plan,
         rng,
-        config.require_range(spawn, "interval_seconds", "spawn"),
+        config.require_range(spawn, "spacing_meters", "spawn"),
         config.require_range(spawn, "lateral_offset_meters", "spawn"),
         config.require_range(spawn, "drop_height_meters", "spawn"),
         entry_margin=float(spawn["entry_margin_meters"]),
     )
 
 
-def test_the_scene_builds_with_one_bin_per_channel() -> None:
-    """The scene builds with one bin per channel."""
+def test_the_scene_builds_one_chute_per_channel() -> None:
+    """AC-DROP-01: the scene builds one chute per channel."""
     pytest.importorskip("mujoco")
     import mujoco
 
     _, _, model, _, plan = built(0)
     for channel in plan.channels:
-        assert mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, f"bin_{channel}") >= 0
+        mouth = mujoco.mj_name2id(
+            model, mujoco.mjtObj.mjOBJ_GEOM, f"chute_{channel}_mouth"
+        )
+        assert mouth >= 0
+        # AC-DROP-11: and a take-away conveyor under its throat.
+        assert (
+            mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, f"takeaway_{channel}")
+            >= 0
+        )
     assert mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "belt") >= 0
     # The manipulator arrived from the submodule under its attachment prefix.
     assert any("arm_" in (model.joint(i).name or "") for i in range(model.njnt))

@@ -185,6 +185,20 @@ class TaskMachine:
         return tuple(self._missed)
 
     @property
+    def belt_speed(self) -> float:
+        """How fast the machine believes the belt is running.
+
+        Settable, because a line whose feed rate is regulated moves its belt
+        and an interception solved against the speed the run drew is wrong by
+        however far the controller has trimmed it since.
+        """
+        return self._belt_speed
+
+    @belt_speed.setter
+    def belt_speed(self, metres_per_second: float) -> None:
+        self._belt_speed = metres_per_second
+
+    @property
     def flying(self) -> bool:
         """Whether a planned visit is currently driving the arm.
 

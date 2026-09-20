@@ -41,7 +41,7 @@ def test_every_randomizable_belt_and_spawn_value_is_a_range() -> None:
     configuration rather than a fixture."""
     raw = load(CONFIG)
     require_range(raw["belt"], "speed_meters_per_second", "belt")
-    require_range(raw["spawn"], "interval_seconds", "spawn")
+    require_range(raw["spawn"], "spacing_meters", "spawn")
     require_range(raw["spawn"], "lateral_offset_meters", "spawn")
     # Cameras are fixed installations rather than randomized quantities: a
     # sensor that moves between runs cannot be calibrated, so each entry

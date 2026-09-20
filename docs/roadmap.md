@@ -84,7 +84,8 @@ and when.
 | v1.2.0 | [learned-tracker](requirements/learned-tracker.md) | The association rule as a trained model, the tracking stage the platform lacks, and the runtime swap away from `associate()` | Requirements written, design open |
 | v1.3.0 | [arm-control](requirements/arm-control.md) | The arm moving to the pose a grasp marker stands at: target selection, the task state machine, guidance between waypoints, and the servo step | Requirements written, design open |
 | v1.4.0 | [end-effector](requirements/end-effector.md) | A parallel jaw on the flange, closing on an object and holding it, and pick success rate as a measured figure | Requirements written, design open |
-| v1.5.0 | [sorting-outputs](requirements/sorting-outputs.md) | A chute opening per channel, a place recorded when an object crosses one, and misroutes counted | Requirements written, design open |
+| v1.5.0 | [sorting-outputs](requirements/sorting-outputs.md) | A chute opening per channel, a place recorded when an object crosses one, and misroutes counted | Funnels and take-aways built and reachable, placement events open |
+| v1.6.0 | [line-throughput](requirements/line-throughput.md) | A feed rate the line is asked for rather than one it happens to have, and belt speed regulated to hold it | Feed by distance and the controller are in the tree, awaiting a tag |
 
 **v1.1.0 release criteria.** `clave.tracker` produces a `WasteObject` from
 evidence. An observation taken at one instant propagates to a later one by belt
@@ -148,6 +149,18 @@ throughput loss is not a contaminated bale. Cycle time from a published
 decision to an object crossing an opening is measured, which closes the last
 figure the benchmark reports as unmeasurable.
 
+**v1.6.0 release criteria.** The line releases objects by metres of belt
+travel rather than by elapsed seconds, so belt speed is the throughput knob
+and not only a spacing knob. A configured setpoint in objects per second is
+held by a proportional-integral controller inside the drive's own range,
+proved by a test that starts the line off setpoint and reads the error once
+it settles, and by a second that proves the loop corrects a spacing it was
+not tuned for. A setpoint the drive cannot deliver saturates and reports the
+shortfall rather than failing. A slot returns to the object pool when its
+object leaves the belt, so a rate the line holds is not a rate it holds
+until the pool is spent. No part of the loop reads perception, proved by a
+test rather than by a comment.
+
 ## Seams to watch
 
 - The material taxonomy is consumed by the asset tagging, the label mapping,
@@ -197,7 +210,8 @@ the other two were found while reading the code ahead of the tracker work.
   those is [learned-tracker](requirements/learned-tracker.md) at v1.2.0. See
   [measurements.md](measurements.md#why-the-jaw-still-holds-nothing).
 
-- **The sensing gate does not cover the belt it stands over.** Measured by
+- **RESOLVED by narrowing the belt to 0.50 m.** The sensing gate does not
+  cover the belt it stands over. Measured by
   sweeping objects laterally and reading the segmentation render, `gate_wide`
   images y from -0.400 m to +0.380 m, meaning 0.800 m of a 1.00 m belt, while
   `spawn.lateral_offset_meters` places objects out to 0.42 m. The detection
@@ -211,6 +225,12 @@ the other two were found while reading the code ahead of the tracker work.
   digest, and the input distribution every trained checkpoint saw. That is a
   world change with a real blast radius rather than a stale comment, so it is
   measured and recorded here for a decision rather than made quietly.
+
+  The decision taken was the other one: the belt narrowed to 0.50 m instead,
+  for reach-margin reasons of its own, and 0.50 m of belt is inside both the
+  calculated extent and the measured one. The lens is unchanged and the
+  disagreement between the two figures is unresolved, which costs nothing
+  while the belt sits well inside the smaller of them.
 
 - **`association_radius_meters: 0.12` in `configs/runtime/sitl.yml` was sized
   for a 0.16 m wide belt**, as its own comment says, and the belt is 1.00 m

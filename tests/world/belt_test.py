@@ -1,6 +1,7 @@
 """Tests for the conveyor drive and reachability."""
 
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pytest
@@ -67,6 +68,47 @@ def test_a_faster_belt_shortens_the_budget() -> None:
     assert fast.time_budget < slow.time_budget
 
 
+def built(
+    seed: int,
+) -> tuple[dict[str, Any], np.random.Generator, Any, Any, SceneLayout]:
+    """Build the shipped world at one seed, with a conveyor ready to drive.
+
+    Args:
+        seed: The seed.
+
+    Returns:
+        The configuration, the generator, the model, its state and the plan.
+    """
+    raw = config.load(CONFIG)
+    rng = np.random.default_rng(seed)
+    model, data, plan = scene.build(raw, rng, ROOT)
+    return raw, rng, model, data, plan
+
+
+def conveyor_for(
+    raw: dict[str, Any], rng: np.random.Generator, plan: SceneLayout
+) -> belt.Conveyor:
+    """A conveyor built from the shipped spawn configuration.
+
+    Args:
+        raw: The configuration.
+        rng: The generator.
+        plan: The resolved layout.
+
+    Returns:
+        The conveyor.
+    """
+    spawn = raw["spawn"]
+    return belt.Conveyor(
+        plan,
+        rng,
+        config.require_range(spawn, "spacing_meters", "spawn"),
+        config.require_range(spawn, "lateral_offset_meters", "spawn"),
+        config.require_range(spawn, "drop_height_meters", "spawn"),
+        entry_margin=float(spawn["entry_margin_meters"]),
+    )
+
+
 def test_objects_reach_belt_speed_and_enter_the_window() -> None:
     """Objects reach belt speed and enter the window."""
     pytest.importorskip("mujoco")
@@ -79,7 +121,7 @@ def test_objects_reach_belt_speed_and_enter_the_window() -> None:
     conveyor = belt.Conveyor(
         plan,
         rng,
-        config.require_range(spawn, "interval_seconds", "spawn"),
+        config.require_range(spawn, "spacing_meters", "spawn"),
         config.require_range(spawn, "lateral_offset_meters", "spawn"),
         config.require_range(spawn, "drop_height_meters", "spawn"),
         entry_margin=float(spawn["entry_margin_meters"]),
@@ -106,7 +148,7 @@ def test_an_unpicked_object_is_not_removed() -> None:
     conveyor = belt.Conveyor(
         plan,
         rng,
-        config.require_range(spawn, "interval_seconds", "spawn"),
+        config.require_range(spawn, "spacing_meters", "spawn"),
         config.require_range(spawn, "lateral_offset_meters", "spawn"),
         config.require_range(spawn, "drop_height_meters", "spawn"),
         entry_margin=float(spawn["entry_margin_meters"]),
@@ -145,3 +187,48 @@ def test_the_window_covers_both_halves_of_the_belt() -> None:
     # The edges a figure draws are the ones the sweep found.
     assert report.window_edges[0] == pytest.approx(min(reachable), abs=2 * step)
     assert report.window_edges[1] == pytest.approx(max(reachable), abs=2 * step)
+
+
+def test_the_feed_is_by_distance_rather_than_by_elapsed_time() -> None:
+    """AC-RATE-01: the feed is by distance rather than by elapsed time.
+
+    The property the whole loop rests on. Halving the belt speed has to
+    halve the number of objects released in a given span of time; a feed by
+    time would release the same number and only spread them further apart.
+    """
+    pytest.importorskip("mujoco")
+    import mujoco
+
+    released = {}
+    for speed in (0.30, 0.15):
+        raw, rng, model, data, plan = built(0)
+        conveyor = conveyor_for(raw, rng, plan)
+        conveyor.speed = speed
+        for _ in range(int(40.0 / plan.timestep)):
+            mujoco.mj_step(model, data)
+            conveyor.step(model, data)
+        released[speed] = len(conveyor.arrivals)
+    assert released[0.30] >= 6, "too few objects for the ratio to mean anything"
+    assert released[0.15] == pytest.approx(released[0.30] / 2, abs=1)
+
+
+def test_a_slot_returns_to_the_pool_once_its_object_leaves() -> None:
+    """AC-RATE-01: a slot returns to the pool once its object leaves.
+
+    A compiled model cannot gain bodies at run time, so a line that never
+    gives a slot back stops feeding after `pool_size` objects. A rate held
+    for ninety seconds is a different claim from a rate held.
+    """
+    pytest.importorskip("mujoco")
+    import mujoco
+
+    raw, rng, model, data, plan = built(0)
+    conveyor = conveyor_for(raw, rng, plan)
+    conveyor.speed = 0.35
+    for _ in range(int(240.0 / plan.timestep)):
+        mujoco.mj_step(model, data)
+        conveyor.step(model, data)
+    assert conveyor.retired > 0, "nothing ever left the belt"
+    assert len(conveyor.arrivals) > plan.pool_size, (
+        "the line stopped feeding once the pool was spent"
+    )

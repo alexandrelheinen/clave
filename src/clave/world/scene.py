@@ -250,6 +250,204 @@ def layout(raw: dict[str, Any], rng: np.random.Generator) -> SceneLayout:
     )
 
 
+def _add_chutes(
+    mujoco: Any, world: Any, plan: SceneLayout, cfg: dict[str, Any]
+) -> dict[str, Any]:
+    """Build one funnel per channel, each over its own take-away conveyor.
+
+    The funnel is four slanted walls from a mouth at belt height down to a
+    throat, rather than a hole in a plate. An object released near the edge
+    of a hole is stranded on its lip; the same object released over a funnel
+    slides in, which is the difference between a chute and a target the arm
+    has to hit exactly.
+
+    What sits below the throat is plant. It has no collision and nothing
+    measures it, and it is here so a channel visibly goes somewhere.
+
+    Args:
+        mujoco: The imported module.
+        world: The worldbody the geometry attaches to.
+        plan: The resolved scene layout, for the channels and the arm.
+        cfg: The `chutes` configuration block.
+
+    Returns:
+        Channel identifier to its mouth geom, so a presentation scenario can
+        recolor the openings per channel.
+
+    Raises:
+        WorldConfigError: If a key is absent, or if any mouth falls outside
+            the region the arm is trusted over, or if any mouth overlaps the
+            pedestal in the belt travel axis. A chute the arm cannot reach is
+            a channel that can never be served, and catching that at load
+            beats counting it as a fault at run time.
+    """
+    offset = float(require(cfg, "offset_from_belt_meters", "chutes"))
+    first = float(require(cfg, "first_position_meters", "chutes"))
+    spacing = float(require(cfg, "spacing_meters", "chutes"))
+    mouth = [float(v) for v in require(cfg, "mouth_meters", "chutes")]
+    throat = [float(v) for v in require(cfg, "throat_meters", "chutes")]
+    fall = float(require(cfg, "throat_height_meters", "chutes"))
+    takeaway = require(cfg, "takeaway", "chutes")
+    away_top = float(require(takeaway, "surface_height_meters", "chutes.takeaway"))
+    away_wide = float(require(takeaway, "width_meters", "chutes.takeaway"))
+    away_long = float(require(takeaway, "length_meters", "chutes.takeaway"))
+
+    top = plan.belt.surface_height
+    mouths: dict[str, Any] = {}
+    for index, channel in enumerate(plan.channels):
+        x = first + index * spacing
+        _refuse_unreachable(plan, channel, x, offset, top)
+        _refuse_over_pedestal(plan, channel, x, mouth[0])
+        mouths[channel] = _add_funnel(
+            mujoco,
+            world,
+            channel,
+            centre=(x, offset),
+            mouth=mouth,
+            throat=throat,
+            top=top,
+            fall=fall,
+        )
+        # The take-away runs out from under the throat, away from the line, so
+        # it clears the belt and the pedestal both.
+        world.add_geom(
+            name=f"takeaway_{channel}",
+            type=mujoco.mjtGeom.mjGEOM_BOX,
+            size=[away_wide / 2.0, away_long / 2.0, 0.02],
+            pos=[x, offset - away_long / 2.0, away_top],
+            rgba=[0.22, 0.22, 0.26, 1.0],
+            contype=0,
+            conaffinity=0,
+        )
+    return mouths
+
+
+def _add_funnel(
+    mujoco: Any,
+    world: Any,
+    channel: str,
+    centre: tuple[float, float],
+    mouth: list[float],
+    throat: list[float],
+    top: float,
+    fall: float,
+) -> Any:
+    """Build one funnel and return the geom that marks its mouth.
+
+    Args:
+        mujoco: The imported module.
+        world: The worldbody the geometry attaches to.
+        channel: What the funnel is for, used to name its geoms.
+        centre: Where the mouth stands, along belt travel and across it.
+        mouth: Mouth size, along travel and across it.
+        throat: Throat size, the same way round.
+        top: Height of the mouth, which is the belt surface.
+        fall: How far the throat sits below the mouth.
+
+    Returns:
+        A thin frame geom at the mouth, which is what a presentation
+        scenario recolors and what a reader sees from above.
+    """
+    x, y = centre
+    half_fall = fall / 2.0
+    for axis, (wide_at_mouth, wide_at_throat) in enumerate(
+        ((mouth[0], throat[0]), (mouth[1], throat[1]))
+    ):
+        for sign in (-1.0, 1.0):
+            # Each wall spans mouth to throat, so its tilt is the difference
+            # in half widths over the fall. A wall is a slab rotated about the
+            # other horizontal axis.
+            run = (wide_at_mouth - wide_at_throat) / 2.0
+            lean = math.atan2(run, fall)
+            length = math.hypot(run, fall) / 2.0
+            mid = sign * (wide_at_mouth + wide_at_throat) / 4.0
+            across = (mouth[1] if axis == 0 else mouth[0]) / 2.0
+            pos = [x, y, top - half_fall]
+            pos[axis] += mid
+            # Rotate about the axis the wall does not span, leaning inward.
+            angle = -sign * lean if axis == 0 else sign * lean
+            quat = (
+                [math.cos(angle / 2.0), 0.0, math.sin(angle / 2.0), 0.0]
+                if axis == 0
+                else [math.cos(angle / 2.0), math.sin(angle / 2.0), 0.0, 0.0]
+            )
+            world.add_geom(
+                name=f"chute_{channel}_{'xy'[axis]}{'lo' if sign < 0 else 'hi'}",
+                type=mujoco.mjtGeom.mjGEOM_BOX,
+                size=(
+                    [0.006, across, length] if axis == 0 else [across, 0.006, length]
+                ),
+                pos=pos,
+                quat=quat,
+                rgba=[0.30, 0.30, 0.34, 1.0],
+            )
+    return world.add_geom(
+        name=f"chute_{channel}_mouth",
+        type=mujoco.mjtGeom.mjGEOM_BOX,
+        size=[mouth[0] / 2.0, mouth[1] / 2.0, 0.004],
+        pos=[x, y, top + 0.004],
+        rgba=[0.15, 0.45, 0.65, 1.0],
+        contype=0,
+        conaffinity=0,
+    )
+
+
+def _refuse_unreachable(
+    plan: SceneLayout, channel: str, x: float, y: float, top: float
+) -> None:
+    """Refuse a chute the arm cannot reach, naming it.
+
+    Args:
+        plan: The resolved scene layout.
+        channel: What the chute is for.
+        x: Where its mouth stands along belt travel.
+        y: Where it stands across the belt.
+        top: The mouth's height.
+
+    Raises:
+        WorldConfigError: If the mouth lies outside the annulus or outside
+            the vertical band the arm is trusted over.
+    """
+    radius = math.hypot(x - plan.arm_base[0], y - plan.arm_base[1])
+    if not plan.reach_min <= radius <= plan.reach_max:
+        raise WorldConfigError(
+            f"chute {channel!r} stands {radius:.3f} m from the arm base, outside "
+            f"the {plan.reach_min:.2f} m to {plan.reach_max:.2f} m annulus, so "
+            f"that channel could never be served"
+        )
+    above = top - plan.arm_base[2]
+    low, high = plan.tool_above_base
+    if not low <= above <= high:
+        raise WorldConfigError(
+            f"chute {channel!r} opens {above:+.3f} m from the arm base, outside "
+            f"the trusted {low:+.2f} m to {high:+.2f} m band"
+        )
+
+
+def _refuse_over_pedestal(
+    plan: SceneLayout, channel: str, x: float, mouth_length: float
+) -> None:
+    """Refuse a chute whose take-away would run through the arm's pedestal.
+
+    Args:
+        plan: The resolved scene layout.
+        channel: What the chute is for.
+        x: Where its mouth stands along belt travel.
+        mouth_length: How far the mouth spans along belt travel.
+
+    Raises:
+        WorldConfigError: If the mouth overlaps the pedestal footprint in the
+            belt travel axis.
+    """
+    reach = plan.pedestal[0] / 2.0 + mouth_length / 2.0
+    if abs(x - plan.arm_base[0]) < reach:
+        raise WorldConfigError(
+            f"chute {channel!r} stands at x={x:+.3f} m, within {reach:.3f} m of "
+            f"the pedestal at x={plan.arm_base[0]:+.3f} m, so its take-away "
+            f"conveyor would run through the structure carrying the arm"
+        )
+
+
 WAREHOUSE_ASSETS = Path("assets") / "warehouse"
 """Where `scripts/import_scene_assets.py` writes the warehouse props."""
 
@@ -337,7 +535,7 @@ def _annotate_for_presentation(
     world: Any,
     plan: SceneLayout,
     annotations: dict[str, Any],
-    bins: dict[str, Any],
+    mouths: dict[str, Any],
     markers: list[tuple[Any, str]],
 ) -> None:
     """Stand the explanatory geometry in the scene, for a figure.
@@ -358,7 +556,7 @@ def _annotate_for_presentation(
         world: The worldbody the ring and the edges attach to.
         plan: The resolved scene layout.
         annotations: The `annotations` section of a still scenario.
-        bins: Channel identifier to the bin geom, for recoloring.
+        mouths: Channel identifier to its chute mouth, for recoloring.
         markers: Each object body paired with the channel it routes to.
     """
     # Imported here rather than at module scope: the reachability sweep lives
@@ -368,8 +566,8 @@ def _annotate_for_presentation(
 
     inert = {"density": 0.0, "contype": 0, "conaffinity": 0}
 
-    if annotations.get("color_bins"):
-        for channel, geom in bins.items():
+    if annotations.get("color_chutes"):
+        for channel, geom in mouths.items():
             color = _annotation_color(annotations, channel)
             if color is not None:
                 geom.rgba = color
@@ -884,7 +1082,7 @@ def build(
     import mujoco
 
     plan = layout(raw, rng)
-    bins_cfg = require(raw, "bins")
+    chutes_cfg = require(raw, "chutes")
     spawn_cfg = require(raw, "spawn")
     camera_cfg = require(raw, "cameras")
 
@@ -964,19 +1162,7 @@ def build(
             rgba=[0.30, 0.30, 0.34, 1.0],
         )
 
-    bin_size = [float(v) for v in require(bins_cfg, "size_meters", "bins")]
-    spacing = float(require(bins_cfg, "spacing_meters", "bins"))
-    offset = float(require(bins_cfg, "offset_from_belt_meters", "bins"))
-    first = -spacing * (len(plan.channels) - 1) / 2.0
-    bins: dict[str, Any] = {}
-    for index, channel in enumerate(plan.channels):
-        bins[channel] = world.add_geom(
-            name=f"bin_{channel}",
-            type=mujoco.mjtGeom.mjGEOM_BOX,
-            size=bin_size,
-            pos=[first + index * spacing, offset, bin_size[2]],
-            rgba=[0.15, 0.45, 0.65, 1.0],
-        )
+    mouths = _add_chutes(mujoco, world, plan, chutes_cfg)
 
     drop = require_range(spawn_cfg, "drop_height_meters", "spawn")
     for spec in plan.objects:
@@ -1059,7 +1245,7 @@ def build(
         )
 
     if annotations:
-        _annotate_for_presentation(mujoco, world, plan, annotations, bins, markers)
+        _annotate_for_presentation(mujoco, world, plan, annotations, mouths, markers)
 
     frame = world.add_frame()
     # The arm stands on its pedestal, so the attachment point is the pedestal's

@@ -153,7 +153,7 @@ def record(
     conveyor = belt.Conveyor(
         plan,
         rng,
-        config.require_range(spawn, "interval_seconds", "spawn"),
+        config.require_range(spawn, "spacing_meters", "spawn"),
         config.require_range(spawn, "lateral_offset_meters", "spawn"),
         config.require_range(spawn, "drop_height_meters", "spawn"),
         entry_margin=float(config.require(spawn, "entry_margin_meters", "spawn")),
