@@ -368,9 +368,7 @@ def _benchmark(
         world_digest=digest_of(root / "configs" / "world" / "sorting_line.yml"),
     )
     pack.write(out / "benchmark.json")
-    _log_output()
     _log_output(pack.render())
-    _log_output()
     _log_output(f"  evidence pack   {out / 'benchmark.json'}")
     if sync:
         try:
@@ -430,7 +428,6 @@ def _still(root: Path, name: str, out: Path) -> int:
         raise StillError(f"no still named {name!r}. Available: {', '.join(available)}")
     scenario = StillScenario.load(path)
     _log_output(f"  {scenario.description}")
-    _log_output()
     written = capture(root, scenario, out)
     _log_output(
         f"  seed            {scenario.seed}, captured at "
@@ -550,7 +547,6 @@ def _runs_list(limit: int) -> int:
                 f"{str(r.get('created_at', '-'))[:19]:19s}"
             )
 
-    _log_output()
     _log_output("Benchmarks:")
     if not benchmarks:
         _log_output("  no benchmarks recorded")
@@ -853,7 +849,6 @@ def _debug_tracker(root: Path, args: Any) -> int:
         fps=args.fps,
         view_name=args.view,
     )
-    _log_output()
     _log_output(f"  captures        {report.captures}")
     _log_output(f"  tracks open     {report.tracks}")
     _log_output(f"  markers on last {report.drawn}, as {report.geoms} geoms")
@@ -908,7 +903,6 @@ def _debug_tracker(root: Path, args: Any) -> int:
         _log_output("  window          shown live")
     else:
         _log_output(f"  window          none, {report.reason}")
-    _log_output()
     _log_output("  These frames are a debug render of the tracker alone. They are not")
     _log_output("  the runtime loop's output and must not be published as a figure.")
     _log_output("  The markers are scene geometry. Their height is a configured")
