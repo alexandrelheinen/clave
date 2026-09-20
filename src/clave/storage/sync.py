@@ -286,3 +286,76 @@ def push_benchmark(
             )
 
     return pack_key
+
+
+def pull_training_checkpoint(
+    candidate: str,
+    config_digest: str,
+    dataset_digest: str,
+    destination: Path,
+    r2: R2Client,
+) -> tuple[Path, Path]:
+    """Download a versioned model checkpoint and run record from R2.
+
+    Args:
+        candidate: Model architecture name (e.g. 'act', 'resnet50').
+        config_digest: Hyperparameter configuration digest.
+        dataset_digest: Dataset composite SHA-256 digest.
+        destination: Local directory to save checkpoint and record into.
+        r2: Connected R2 client.
+
+    Returns:
+        Tuple of (checkpoint_path, run_record_path).
+    """
+    destination.mkdir(parents=True, exist_ok=True)
+    r2_dir = f"checkpoints/{candidate}/{config_digest}_{dataset_digest}"
+    ckpt_key = f"{r2_dir}/{candidate}.pt"
+    record_key = f"{r2_dir}/{candidate}.run.json"
+
+    local_ckpt = destination / f"{candidate}.pt"
+    local_record = destination / f"{candidate}.run.json"
+
+    r2.download_file(ckpt_key, local_ckpt)
+    r2.download_file(record_key, local_record)
+    return local_ckpt, local_record
+
+
+def restore_latest_checkpoint(
+    candidate: str,
+    destination: Path,
+    r2: R2Client,
+    d1: D1Client,
+) -> tuple[Path, Path]:
+    """Look up the most recent run for a candidate in D1 and download weights.
+
+    Args:
+        candidate: Model architecture name.
+        destination: Local directory where weights will be saved.
+        r2: Connected R2 client.
+        d1: Connected D1 client.
+
+    Returns:
+        Tuple of (checkpoint_path, run_record_path).
+    """
+    sql = """
+    SELECT config_digest, dataset_digest
+    FROM training_runs
+    WHERE candidate = ?
+    ORDER BY created_at DESC
+    LIMIT 1
+    """
+    rows = d1.execute(sql, [candidate])
+    if not rows:
+        raise FileNotFoundError(
+            f"no recorded training runs found in D1 for candidate {candidate!r}"
+        )
+    row = rows[0]
+    config_digest = str(row["config_digest"])
+    dataset_digest = str(row["dataset_digest"])
+    return pull_training_checkpoint(
+        candidate=candidate,
+        config_digest=config_digest,
+        dataset_digest=dataset_digest,
+        destination=destination,
+        r2=r2,
+    )

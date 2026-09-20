@@ -654,6 +654,52 @@ def _runs_list(limit: int) -> int:
     return 0
 
 
+def _checkpoint_pull(
+    root: Path,
+    candidate: str,
+    config_digest: str | None,
+    dataset_digest: str | None,
+    latest: bool,
+    out: Path,
+) -> int:
+    """Pull model weights and run record from R2 (and D1 if latest).
+
+    Args:
+        root: Repository root.
+        candidate: Candidate architecture name.
+        config_digest: Optional hyperparameter digest.
+        dataset_digest: Optional dataset digest.
+        latest: Look up latest run in D1.
+        out: Target directory (e.g. checkpoints/).
+
+    Returns:
+        Exit code.
+    """
+    from clave.storage import (
+        D1Client,
+        R2Client,
+        load_d1_config,
+        load_r2_config,
+        pull_training_checkpoint,
+        restore_latest_checkpoint,
+    )
+
+    r2 = R2Client(load_r2_config())
+    destination = (root / out) if not out.is_absolute() else out
+
+    if latest or not (config_digest and dataset_digest):
+        d1 = D1Client(load_d1_config())
+        ckpt, rec = restore_latest_checkpoint(candidate, destination, r2, d1)
+    else:
+        ckpt, rec = pull_training_checkpoint(
+            candidate, config_digest, dataset_digest, destination, r2
+        )
+
+    print(f"  restored checkpoint: {ckpt}")
+    print(f"  restored run record: {rec}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run a CLAVE command.
 
@@ -703,6 +749,24 @@ def main(argv: list[str] | None = None) -> int:
     rn_sub = rn.add_subparsers(dest="runs_action", required=True)
     rn_list = rn_sub.add_parser("list", help="list historical runs and benchmarks")
     rn_list.add_argument("--limit", type=int, default=20, help="max rows to display")
+
+    # checkpoint subcommands
+    ck = sub.add_parser("checkpoint", help="manage trained model checkpoints")
+    ck_sub = ck.add_subparsers(dest="checkpoint_action", required=True)
+    ck_pull = ck_sub.add_parser("pull", help="pull a model checkpoint from R2")
+    ck_pull.add_argument("candidate", type=str, help="candidate name (e.g. act)")
+    ck_pull.add_argument(
+        "--config-digest", type=str, default=None, help="config digest"
+    )
+    ck_pull.add_argument(
+        "--dataset-digest", type=str, default=None, help="dataset digest"
+    )
+    ck_pull.add_argument(
+        "--latest", action="store_true", help="restore latest recorded run from D1"
+    )
+    ck_pull.add_argument(
+        "--out", type=Path, default=Path("checkpoints"), help="output directory"
+    )
 
     tr = sub.add_parser("train", help="train a candidate from a configuration")
     tr.add_argument("--config", type=Path, default=Path("configs/training/default.yml"))
@@ -787,6 +851,15 @@ def main(argv: list[str] | None = None) -> int:
             return _storage_init_db()
         if args.command == "runs" and args.runs_action == "list":
             return _runs_list(args.limit)
+        if args.command == "checkpoint" and args.checkpoint_action == "pull":
+            return _checkpoint_pull(
+                args.root,
+                args.candidate,
+                args.config_digest,
+                args.dataset_digest,
+                args.latest,
+                args.out,
+            )
         if args.command == "train":
             return _train(args.root, args.config, args.candidate, sync=args.sync)
         if args.command == "still":
