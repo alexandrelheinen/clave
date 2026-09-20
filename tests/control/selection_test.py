@@ -7,11 +7,17 @@ stability yet.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
-from clave.control.selection import Selector
+from clave.control.selection import (
+    PickabilityRule,
+    Selector,
+    all_pickability_rules,
+    pickable_in_belt,
+)
 from clave.control.settings import ControlSettings, Point, SelectionSettings
 from clave.tracker.markers import GraspMarker, color_for
 from clave.world.config import load
@@ -26,9 +32,17 @@ def everywhere(_: Point) -> bool:
     return True
 
 
-def selector(exit_weight: float = 1.0, admits: object = None) -> Selector:
+def selector(
+    exit_weight: float = 1.0,
+    admits: Callable[[Point], bool] | None = None,
+    pickability: PickabilityRule | None = None,
+) -> Selector:
     """A selector with the weight under test."""
-    return Selector(settings(exit_weight), admits or everywhere)  # type: ignore[arg-type]
+    return Selector(
+        settings(exit_weight),
+        admits or everywhere,
+        pickability=pickability,
+    )
 
 
 def settings(exit_weight: float = 1.0) -> SelectionSettings:
@@ -141,6 +155,45 @@ def test_a_marker_the_effector_cannot_open_to_is_left_out() -> None:
     wide = marker(1, x=0.10, reachable=False)
     queue = selector().update((wide,), (0.0, 0.0, 1.035), BELT_SPEED, 0)
     assert queue.order == ()
+
+
+def test_a_marker_outside_the_belt_is_left_out() -> None:
+    """AC-MOVE-45: an object outside the belt footprint never enters the pick queue."""
+    outside_x = marker(1, x=1.51)
+    outside_y = marker(2, x=0.20, y=0.26)
+    instance = selector(pickability=pickable_in_belt(length=3.0, width=0.5))
+    queue = instance.update((outside_x, outside_y), (0.0, 0.0, 1.035), BELT_SPEED, 0)
+    assert queue.order == ()
+
+
+def test_pickability_rules_can_be_composed() -> None:
+    """AC-MOVE-45: additional pick conditions can be added without changing Selector."""
+
+    def only_track_two(candidate: GraspMarker) -> bool:
+        return candidate.track_id == 2
+
+    rules = all_pickability_rules(pickable_in_belt(3.0, 0.5), only_track_two)
+    assert rules(marker(2, x=0.20))
+    assert not rules(marker(1, x=0.20))
+    assert not rules(marker(2, x=1.51))
+
+
+def test_pickability_rules_compose_inside_selector() -> None:
+    """AC-MOVE-45: custom pickability rules compose with belt bounds in the queue."""
+
+    def only_even_tracks(candidate: GraspMarker) -> bool:
+        return candidate.track_id % 2 == 0
+
+    composed = all_pickability_rules(pickable_in_belt(3.0, 0.5), only_even_tracks)
+    instance = selector(pickability=composed)
+    valid_even = marker(2, x=0.20)
+    valid_odd = marker(1, x=0.20)
+    outside_even = marker(4, x=1.60)
+
+    queue = instance.update(
+        (valid_even, valid_odd, outside_even), (0.0, 0.0, 1.035), BELT_SPEED, 0
+    )
+    assert [c.track_id for c in queue.order] == [2]
 
 
 def test_a_marker_already_past_the_window_is_left_out() -> None:

@@ -47,7 +47,7 @@ from tqdm import tqdm
 
 from clave.control.guidance import Command, Motion, toward
 from clave.control.pick import JAW_OPEN
-from clave.control.selection import Selector
+from clave.control.selection import Selector, pickable_in_belt
 from clave.control.servo import follow
 from clave.control.settings import ControlSettings, Phase, Point
 from clave.control.task import TaskMachine
@@ -201,9 +201,7 @@ class DebugRunReport:
 class _TelemetryWriter:
     """Write fixed-width MuJoCo telemetry columns for PlotJuggler."""
 
-    def __init__(
-        self, path: Path, model: Any, pool_size: int, rate: float
-    ) -> None:
+    def __init__(self, path: Path, model: Any, pool_size: int, rate: float) -> None:
         self._file = path.open("w", newline="")
         self._writer = csv.writer(self._file)
         self._period = 1.0 / rate
@@ -363,7 +361,8 @@ def run(
         # that has been dead reckoned since the object left that gate, and
         # what the belt model does not predict is exactly what a jaw closing
         # on 8.7 mm of side clearance cannot absorb.
-        require_role(sensors, Role.DETECTION)
+        detection_spec = require_role(sensors, Role.DETECTION)
+        detection_camera = detection_spec.source_id
         detecting = of_role(sensors, Role.DETECTION)
     except SensorError as error:
         raise DebugRunError(str(error)) from error
@@ -411,9 +410,7 @@ def run(
         # feed controller moves the belt and a prediction made with the speed
         # the run drew is wrong by however far the controller has trimmed it.
         unmeasured_extent=grasp,
-        resolve=resolver_for(
-            load_catalog(packaging_path)
-        ),
+        resolve=resolver_for(load_catalog(packaging_path)),
     )
 
     LOGGER.debug(
@@ -451,9 +448,7 @@ def run(
     telemetry = None
     if telemetry_path is not None:
         if telemetry_rate <= 0.0:
-            raise DebugRunError(
-                f"telemetry rate {telemetry_rate} must be above zero"
-            )
+            raise DebugRunError(f"telemetry rate {telemetry_rate} must be above zero")
         telemetry_path.parent.mkdir(parents=True, exist_ok=True)
         telemetry = _TelemetryWriter(
             telemetry_path,
@@ -507,7 +502,11 @@ def run(
         """
         return bool(armmod.reachable(indices, np.array(pose, dtype=float)))
 
-    selector = Selector(control.selection, admits)
+    selector = Selector(
+        control.selection,
+        admits,
+        pickable_in_belt(plan.belt.length, plan.belt.width),
+    )
     task = TaskMachine(
         control.task,
         control.calibration,
@@ -588,7 +587,7 @@ def run(
     next_frame = 0.0
     telemetry_phase = Phase.STANDBY
 
-    def _interruptible(iterable):
+    def _interruptible(iterable: Any) -> Any:
         try:
             yield from iterable
         except KeyboardInterrupt:
@@ -735,7 +734,7 @@ def run(
                 if recorder is not None:
                     recorder.write(frame)
                 if opened and tracker_cam is not None:
-                    tracker_cam.update_scene(data, camera="gate_wide")
+                    tracker_cam.update_scene(data, camera=detection_camera)
                     _without_shadows(tracker_cam)
                     gate_img = tracker_cam.render()
 

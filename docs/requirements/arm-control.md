@@ -392,6 +392,10 @@ lies outside the region the arm is trusted over.
 `AC-MOVE-44`: When a commanded pose is refused, the system shall discard
 the plan built on it rather than fly the rest of the sequence.
 
+`AC-MOVE-45`: The system shall only admit markers that satisfy configured
+modular pickability rules, rejecting any marker whose grasp point lies
+outside the conveyor footprint before it enters the pick queue.
+
 ## The guidance formulation
 
 The mathematics has its own document,

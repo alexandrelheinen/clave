@@ -51,6 +51,29 @@ from clave.tracker.markers import GraspMarker
 NANOS_PER_SECOND = 1_000_000_000
 """Nanoseconds in a second, for the instants a marker carries."""
 
+PickabilityRule = Callable[[GraspMarker], bool]
+"""A condition a marker must satisfy before it can enter the pick queue."""
+
+
+def pickable_in_belt(length: float, width: float) -> PickabilityRule:
+    """Return a rule accepting grasp points inside the conveyor footprint."""
+    half_length, half_width = length / 2.0, width / 2.0
+
+    def rule(marker: GraspMarker) -> bool:
+        x, y, _ = marker.grasp
+        return abs(x) <= half_length and abs(y) <= half_width
+
+    return rule
+
+
+def all_pickability_rules(*rules: PickabilityRule) -> PickabilityRule:
+    """Compose independent pickability conditions with an all-pass policy."""
+
+    def rule(marker: GraspMarker) -> bool:
+        return all(condition(marker) for condition in rules)
+
+    return rule
+
 
 @dataclass(frozen=True)
 class Candidate:
@@ -88,6 +111,7 @@ class Queue:
         reasons: Which triggers fired, among `appeared`, `retired` and
             `anchor`. Reported apart because they mean different things: a
             rebuild on a track appearing is the design working, and a rebuild
+
             on an anchor is the estimate having genuinely moved. Counting
             them together hides whether the anchors damp anything.
     """
@@ -124,7 +148,10 @@ class Selector:
     """
 
     def __init__(
-        self, settings: SelectionSettings, admits: Callable[[Point], bool]
+        self,
+        settings: SelectionSettings,
+        admits: Callable[[Point], bool],
+        pickability: PickabilityRule | None = None,
     ) -> None:
         """Hold the settings the ordering reads and the region it aims inside.
 
@@ -134,9 +161,15 @@ class Selector:
                 than computed here, so the region selection aims inside is
                 the same object `clave.world.arm` enforces and cannot drift
                 from it.
+            pickability: Conditions a marker must satisfy before entering the
+                queue, composed outside the ordering algorithm. Defaults to
+                accepting every marker when omitted.
         """
         self._settings = settings
         self._admits = admits
+        self._pickability = (
+            pickability if pickability is not None else all_pickability_rules()
+        )
         self._anchors: dict[int, _Anchor] = {}
         self._order: tuple[int, ...] = ()
 
@@ -279,13 +312,14 @@ class Selector:
     def _admissible(self, marker: GraspMarker, at_nanos: int) -> bool:
         """Return whether a marker is worth ordering at all.
 
-        Three different refusals, and keeping them apart matters. The jaw may
+        Four different refusals, and keeping them apart matters. The jaw may
         not open wide enough, which is what `GraspMarker.reachable` reports.
         The arm may not be trusted over the pose, which is a different
-        question about a different machine and is what `admits` answers. And
-        the window may already have closed. Ordering a marker that fails any
-        of them spends a visit on something the arm was always going to
-        refuse.
+        question about a different machine and is what `admits` answers. The
+        pickability condition may refuse it, which is what `pickability`
+        enforces. And the window may already have closed. Ordering a marker
+        that fails any of them spends a visit on something the arm was always
+        going to refuse.
 
         Args:
             marker: The marker.
@@ -298,6 +332,7 @@ class Selector:
             marker.reachable
             and marker.valid_until_nanos > at_nanos
             and self._admits(marker.flange)
+            and self._pickability(marker)
         )
 
     def _cost(self, candidate: Candidate, flange: Point) -> float:
