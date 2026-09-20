@@ -26,36 +26,68 @@ window.
 
 | Quantity | Value |
 | --- | --- |
-| Visits completed | 17 in 180 s |
-| Objects given up for want of an interception | 4 |
+| Visits completed | 38 in 180 s |
+| Objects given up for want of an interception | 32 |
 | Faults | 0 |
-| Flange to the pose it was sent to, median | 2 mm |
-| The same, worst | 688 mm, on one visit of seventeen |
+| Flange to the pose it was sent to, median | 2.5 mm |
+| The same, worst | 4.1 mm, none above 50 mm |
 
-**Read the median, not the mean.** Sixteen of seventeen visits arrive
-within 2 to 4 mm of the pose the plan asked for. One arrives 688 mm away.
-A mean over that set reads 43 mm, which describes no visit that happened,
-and it was reported that way here until the distribution was looked at.
-The command-line report now prints the median, the worst, and how many
-exceeded 50 mm.
+**Read the median, not the mean.** An earlier configuration produced
+sixteen visits at 2 to 4 mm and one at 688 mm, and a mean over that set
+reads 43 mm, which describes no visit that happened. It was reported that
+way here until the distribution was looked at. The command-line report now
+prints the median, the worst, and how many exceeded 50 mm.
 
-That single outlier is not explained. It completed without a fault, so the
-servo accepted every pose it was given and the arm did not reach one of
-them. Contact with an object or with a chute wall is the leading
-suspicion and neither has been confirmed. It is recorded rather than
-smoothed over.
+That outlier has not recurred since the delivery leg landed, and thirty
+eight visits is not enough to say it is gone. It was never explained: it
+completed without a fault, so the servo accepted every pose it was given
+and the arm did not reach one of them.
+
+Thirty two objects were given up for want of an interception against
+thirty eight served, which is the price of the delivery. The arm is busy
+carrying for about a second and a half per visit, and objects arriving in
+that window are past reach by the time it is free.
+
+## The delivery
+
+A visit now ends over the chute its object routes to, rather than at the
+retreat. Before this leg existed the plan ran out fifty millimetres above
+the belt and the jaw opened there, which dropped the object back where it
+came from.
+
+| Quantity | Value |
+| --- | --- |
+| Objects placed down a chute | 1 |
+| Misrouted | 0 of 1 |
+| Visits completed | 38 |
+| Grasps that held to the retreat | 8 of 38 |
+
+One placement in thirty-eight visits is the first end-to-end sort this
+line has done: detected, tracked, intercepted, grasped, carried and
+released into the channel its class routes to, with the channel correct.
+It is also one, and the gap between it and the eight grasps that held
+through the retreat is where the next work is. Seven objects were in the
+jaw at the top of the lift and were not in it over the mouth.
+
+The delivery arc is the only one of the five that no interception
+constrains, so its duration comes from the distance and the speed ceiling
+rather than from a solve. A rest-to-rest quintic peaks at 15/8 of its mean
+speed, so taking that as the duration touches the ceiling once and stays
+inside it everywhere else. Whether 15/8 of the mean is also what the grip
+survives is the open question those seven objects are asking.
 
 ## The grasp
 
 | Quantity | Value |
 | --- | --- |
-| Grasps that held | 4 of 17 |
-| Jaw to the nearest object when it shut, best | 19 mm |
-| The same, typical | 30 to 60 mm |
-| The same, worst | 741 mm |
+| Grasps that held to the retreat | 8 of 38 |
+| Objects placed down a chute | 1 |
+| Jaw to the nearest object when it shut, best | 25 mm |
+| The same, typical | 30 to 80 mm |
+| The same, worst | 1277 mm |
 
-Four in seventeen is the honest figure for this configuration and it is not
-a good one. What the jaw-gap column says is why: the arm arrives where it
+Eight in thirty eight is the honest figure for this configuration and it is
+not a good one. What the jaw-gap column says is why: the arm arrives where it
 was sent to within 2 mm, and where it was sent is 30 to 60 mm from the
 object on a good visit. The jaw's clear opening is 85.2 mm, so an object
 60 mm wide leaves 12.6 mm of side clearance, and a 30 mm error closes the
@@ -72,6 +104,7 @@ order the changes landed.
 | 0.50 m belt, metered feed | 39 | 2 mm | 18 to 339 mm | 8 of 39 |
 | Plus the velocity filter | 39 | 2 mm | 21 to 277 mm | 10 of 39 |
 | Plus retirement and pick-zone coverage | 17 | 2 mm | 19 to 741 mm | 4 of 17 |
+| Plus the delivery leg | 38 | 2.5 mm | 25 to 1277 mm | 8 of 38, 1 placed |
 
 The last row needs its explanation attached, because read alone it says the
 change made things worse and that is not what happened.
@@ -86,7 +119,7 @@ one.
 
 The grasp rate per visit tells the same story from the other side: 4 of 17
 is 24 percent, against 10 of 39 at 26 percent. Statistically the same, on
-samples this size.
+samples this size, and 8 of 38 at 21 percent is the same again.
 
 ## What limits it
 

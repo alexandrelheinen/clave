@@ -65,6 +65,8 @@ class Candidate:
         closing_axis: Rotation of the jaw about the belt normal, or None when
             the footprint had no axis to turn one to.
         distance_before_leaving: How much belt the object has left, in meters.
+        channel: Where it routes to, so the visit knows which chute to
+            release over without resolving a taxonomy identifier itself.
     """
 
     track_id: int
@@ -72,6 +74,7 @@ class Candidate:
     flange: Point
     closing_axis: float | None
     distance_before_leaving: float
+    channel: str = ""
 
 
 @dataclass(frozen=True)
@@ -335,4 +338,5 @@ def _candidate(
         flange=marker.flange,
         closing_axis=marker.closing_axis,
         distance_before_leaving=max(0.0, seconds * belt_speed),
+        channel=marker.channel,
     )

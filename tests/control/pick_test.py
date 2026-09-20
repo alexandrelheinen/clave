@@ -298,3 +298,60 @@ def test_a_margin_buys_its_room_by_intercepting_later() -> None:
     assert roomy.pick_at == pytest.approx(
         (soonest.pick_at - 0.40) * 1.15 + 0.40, rel=1e-6
     )
+
+
+def test_a_visit_ends_over_its_chute_rather_than_over_the_belt() -> None:
+    """AC-DROP-05: a visit ends over its chute rather than over the belt.
+
+    Without a delivery leg the plan runs out at the retreat and the jaw
+    opens fifty millimetres above the belt, which drops the object back
+    where it came from. That is what the line did before this existed.
+    """
+    mouth = (0.58, -0.42, 0.90)
+    plan = a_plan(over=mouth)
+    assert plan is not None
+    assert [leg.phase for leg in plan.legs][-1] is Phase.DELIVER
+    last = plan.legs[-1].segment
+    assert last.end.position == pytest.approx(mouth)
+    assert last.end.velocity == pytest.approx((0.0, 0.0, 0.0))
+
+
+def test_the_jaw_holds_all_the_way_to_the_chute() -> None:
+    """AC-DROP-05: the jaw holds all the way to the chute.
+
+    Opening at the end of the retreat is the failure this leg removes, so
+    the grip has to survive every leg after the hold.
+    """
+    plan = a_plan(over=(0.58, -0.42, 0.90))
+    assert plan is not None
+    after_hold = False
+    for leg in plan.legs:
+        if leg.phase is Phase.HOLD:
+            after_hold = True
+        if after_hold:
+            assert leg.grip == JAW_SHUT, f"{leg.phase} let go early"
+
+
+def test_the_delivery_stays_inside_the_speed_ceiling() -> None:
+    """AC-DROP-05: the delivery stays inside the speed ceiling.
+
+    Nothing constrains this arc's duration from outside, so it is set from
+    the distance and the ceiling: a rest-to-rest quintic peaks at 15/8 of
+    its mean speed, and taking that as the duration touches the ceiling
+    once rather than crossing it.
+    """
+    plan = a_plan(over=(1.14, -0.42, 0.90), max_speed=1.00)
+    assert plan is not None
+    assert plan.legs[-1].segment.peak_speed() <= 1.00 + 1e-6
+
+
+def test_no_chute_means_no_delivery_rather_than_a_broken_one() -> None:
+    """AC-DROP-05: no chute means no delivery rather than a broken one.
+
+    A channel with no opening is a configuration error the world refuses at
+    load. Here it means the caller asked for a visit that ends at the
+    retreat, which is what the motion-only profiles want.
+    """
+    plan = a_plan()
+    assert plan is not None
+    assert [leg.phase for leg in plan.legs][-1] is Phase.RETREAT

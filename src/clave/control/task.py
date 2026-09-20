@@ -103,6 +103,7 @@ class TaskMachine:
         belt_speed: float = 0.0,
         guidance: GuidanceSettings | None = None,
         admits: Callable[[Point], bool] | None = None,
+        chutes: dict[str, Point] | None = None,
     ) -> None:
         """Hold the settings and the belt the approach height is measured from.
 
@@ -119,6 +120,10 @@ class TaskMachine:
                 without that check. Supplied rather than computed here, so
                 the region a pick aims inside is the one the safety layer
                 enforces and cannot drift from it.
+            chutes: Where each channel's chute mouth stands. A visit ends
+                over the one its object routes to; without them it ends at
+                the retreat and the object goes back on the belt, which is
+                a line with nowhere to put anything.
 
         Raises:
             TaskError: If the profile plans arcs and was given neither the
@@ -141,6 +146,7 @@ class TaskMachine:
         self._belt_speed = belt_speed
         self._guidance = guidance
         self._admits = admits if admits is not None else _anywhere
+        self._chutes = chutes or {}
         self._serving: int | None = None
         self._arrived_at: float | None = None
         self._phase = Phase.STANDBY
@@ -379,6 +385,7 @@ class TaskMachine:
             max_speed=self._guidance.max_speed,
             max_acceleration=self._guidance.max_acceleration,
             at_seconds=at_seconds,
+            over=self._chutes.get(head.channel),
         )
         if refreshed is not None and self._admits(
             refreshed.legs[1].segment.end.position
@@ -449,6 +456,7 @@ class TaskMachine:
                 latest=min(self._settings.interception_limit, leaving),
                 at_seconds=at_seconds,
                 margin=margin,
+                over=self._chutes.get(head.channel),
             )
             if attempt is not None and self._admits(
                 attempt.legs[1].segment.end.position

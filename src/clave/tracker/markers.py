@@ -27,6 +27,7 @@ import math
 from dataclasses import dataclass
 from typing import Any
 
+from clave.taxonomy import REJECT_CHANNEL, channel_of
 from clave.tracker.track import WasteObject
 from clave.world.effector import Effector
 
@@ -94,6 +95,10 @@ class GraspMarker:
         reachable: Whether the effector opens that wide at all.
         extent: The footprint's larger horizontal side, which sizes the disc
             drawn when there is no axis.
+        channel: Where the object routes to, resolved from its material
+            class. Carried here because the arm has to know which chute to
+            release over, and the alternative is the task layer resolving a
+            taxonomy identifier it has no other reason to hold.
         color: The track's color, as red, green and blue in the unit range.
     """
 
@@ -109,6 +114,7 @@ class GraspMarker:
     reachable: bool
     extent: float
     color: tuple[float, float, float]
+    channel: str = REJECT_CHANNEL
 
 
 RESERVED_HUE = 0.05
@@ -192,6 +198,7 @@ def marker_for(
         opening=opening,
         oriented=oriented,
         reachable=opening <= effector.opening,
+        channel=_channel_of(record.material),
         extent=record.footprint.major_extent,
         color=color_for(record.track_id),
     )
@@ -375,3 +382,21 @@ def _spin(yaw: float) -> Any:
 
     cos, sin = math.cos(yaw), math.sin(yaw)
     return np.array([cos, -sin, 0.0, sin, cos, 0.0, 0.0, 0.0, 1.0], dtype=np.float64)
+
+
+def _channel_of(material: str) -> str:
+    """Return the channel a material class routes to.
+
+    Args:
+        material: A taxonomy identifier, or `reject` when the tracker could
+            not settle on one.
+
+    Returns:
+        The channel. Anything outside the taxonomy goes to the reject
+        channel rather than raising: a track the tracker cannot classify is
+        an ordinary outcome and the line has somewhere to put it.
+    """
+    try:
+        return channel_of(material)
+    except KeyError:
+        return REJECT_CHANNEL
