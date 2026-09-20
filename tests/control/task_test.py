@@ -466,16 +466,46 @@ def test_a_plan_is_re_aimed_while_the_arm_is_still_approaching() -> None:
 
 
 def test_a_pick_outside_the_trusted_region_is_never_planned() -> None:
-    """AC-MOVE-43: a pick outside the trusted region is never planned."""
+    """AC-MOVE-43: a pick outside the trusted region is never planned.
+
+    The arm is where it should be and the grasp pose is not, which is the
+    candidate's problem and is recorded against it. Contrast with the test
+    below, where the arm itself is out of place and the candidate is fine.
+    """
     arm = TaskMachine(
         task_settings(profile=Profile.FULL_VISIT),
         CalibrationSettings(flange_offset=(0.0, 0.0, 0.0)),
         belt_surface=BELT_SURFACE,
         belt_speed=BELT_SPEED,
         guidance=LIMITS,
-        admits=lambda pose: False,
+        admits=lambda pose: pose == PARK,
     )
     only = candidate(1, x=0.30)
     assert arm.step(queue_of(only), PARK, 0.0).position == PARK
     assert arm.flying is False
     assert arm.missed == (1,)
+
+
+def test_no_plan_is_built_from_a_pose_the_arm_should_not_be_in() -> None:
+    """AC-MOVE-43: no plan is built from a pose the arm should not be in.
+
+    A plan begins where the arm is, so planning from outside the trusted
+    region produces a first pose the servo refuses, and the refusal tears up
+    the plan that caused it. The next capture builds the same one again.
+    Measured on the shipped line that latched: one excursion became 46
+    faults and the arm never moved again.
+    """
+    outside = (0.45, -1.00, 1.48)
+    arm = TaskMachine(
+        task_settings(profile=Profile.FULL_VISIT),
+        CalibrationSettings(flange_offset=(0.0, 0.0, 0.0)),
+        belt_surface=BELT_SURFACE,
+        belt_speed=BELT_SPEED,
+        guidance=LIMITS,
+        admits=lambda pose: pose != outside,
+    )
+    goal = arm.step(queue_of(candidate(1, x=0.30)), outside, 0.0)
+    assert arm.flying is False
+    assert goal.position == PARK, "the arm was not sent home to recover"
+    # And the candidate is not blamed: nothing is wrong with it.
+    assert arm.missed == ()

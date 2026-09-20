@@ -136,8 +136,10 @@ ground-truth associator silently.
 
 Ids are append-only and never reused. `AC-TRACK-01` through `AC-TRACK-26` were
 spent by the perception record, whose document is in git history; this spec
-continues at `AC-TRACK-27`. Tests name the id
-they guard in a test name or a comment.
+continues at `AC-TRACK-27` and spends through `AC-TRACK-29`.
+[motion-estimate.md](motion-estimate.md) continues at `AC-TRACK-30`, sharing
+this prefix because it is the same tracker. Tests name the id they guard in
+a test name or a comment.
 
 ## Design notes
 

@@ -108,7 +108,10 @@ class DebugRunReport:
         arrivals: How far the flange was from the pose each completed visit
             asked for, in meters. Measured at the end of the dwell under a
             stepped profile and at the instant the jaw reaches the object
-            under a planned one.
+            under a planned one. Read its median rather than its mean: the
+            distribution is a tight cluster with occasional strays, and a
+            mean over seventeen visits moved from 3 mm to 43 mm on one of
+            them.
         feed_rate: What the line was asked to carry, in objects per second.
         measured_rate: What it achieved over the controller's window, at the
             end of the run.
@@ -313,9 +316,20 @@ def run(
     base_xy = (float(indices.base_position[0]), float(indices.base_position[1]))
 
     def keep_inside(pose: tuple[float, float, float]) -> tuple[float, float, float]:
-        """Push a stepped pose back out of the hole at the centre of the annulus."""
+        """Push a pose back into the region the arm is trusted over.
+
+        All three axes. Correcting only the horizontal ones leaves a
+        reference reseeded from a flange that has overshot the vertical band
+        still outside it, and every pose after that is refused.
+
+        Args:
+            pose: The pose.
+
+        Returns:
+            The pose, unchanged where it was already inside.
+        """
         x, y = armmod.project_into_reach(base_xy, pose[0], pose[1])
-        return x, y, pose[2]
+        return x, y, armmod.project_into_band(float(indices.base_position[2]), pose[2])
 
     def admits(pose: tuple[float, float, float]) -> bool:
         """Whether the arm is trusted at a pose.

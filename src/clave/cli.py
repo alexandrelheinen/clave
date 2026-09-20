@@ -620,9 +620,16 @@ def _debug_tracker(root: Path, args: Any) -> int:
     if report.missed:
         print(f"  no interception {len(report.missed)} {list(report.missed)}")
     if report.arrivals:
-        worst = max(report.arrivals) * 1000
-        mean = sum(report.arrivals) / len(report.arrivals) * 1000
-        print(f"  arrival error   mean {mean:.1f} mm, worst {worst:.1f} mm")
+        # Median rather than mean, and the count of outliers beside it. The
+        # mean lied: sixteen visits at 2 to 4 mm and one at 688 mm reads as
+        # "43 mm", which describes no visit that happened.
+        ranked = sorted(report.arrivals)
+        middle = ranked[len(ranked) // 2] * 1000
+        stray = sum(1 for gap in ranked if gap > 0.050)
+        print(
+            f"  arrival error   median {middle:.1f} mm, worst "
+            f"{ranked[-1] * 1000:.1f} mm, {stray} over 50 mm"
+        )
     if report.jaw_gaps:
         each = ", ".join(f"{gap * 1000:.0f}" for gap in report.jaw_gaps)
         print(f"  jaw to object   {each} mm when the jaw shut")

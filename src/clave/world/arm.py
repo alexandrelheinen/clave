@@ -557,6 +557,30 @@ def _descend(
     return np.array([float(scratch.qpos[model.jnt_qposadr[j]]) for j in arm.joint_ids])
 
 
+def project_into_band(base_z: float, z: float) -> float:
+    """Pull a height back into the vertical band the arm is trusted over.
+
+    The horizontal projection has a companion for the same reason: a pose
+    the arm is not trusted at is refused, and a refusal that nothing can
+    correct latches. The arm overshoots the band by a few millimetres under
+    its own dynamics, and once it is outside, a reference reseeded from the
+    measured flange is outside too, so every pose after it is refused and
+    the arm never moves again. Measured on the shipped line, one excursion
+    of 7 mm past the ceiling produced 226 refusals in three minutes.
+
+    Args:
+        base_z: Height of the arm's mounting face.
+        z: The height wanted.
+
+    Returns:
+        The height, unchanged when it was already inside the band.
+    """
+    lowest, highest = TOOL_ABOVE_BASE_METERS
+    floor = base_z + lowest + REACH_MARGIN_METERS
+    ceiling = base_z + highest - REACH_MARGIN_METERS
+    return min(max(z, floor), ceiling)
+
+
 def project_into_reach(
     base_xy: tuple[float, float], x: float, y: float
 ) -> tuple[float, float]:

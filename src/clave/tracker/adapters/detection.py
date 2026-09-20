@@ -162,6 +162,13 @@ def detections_from_masks(
     readings = []
     for mask in masks.values():
         major, minor, yaw, oriented = oriented_extent(mask)
+        if major * metres <= 0.0 or minor * metres <= 0.0:
+            # A sliver at the very edge of the frame segments to a mask one
+            # pixel across, whose projected extent rounds to nothing. A
+            # footprint refuses to be built from that, and refusing is
+            # right: a detection of no size is not a detection. Dropping it
+            # here is what keeps one pixel from ending a run, which it did.
+            continue
         left, top, right, bottom = mask.bounds
         x, y = to_belt(
             (left + right) / 2.0,

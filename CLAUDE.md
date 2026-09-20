@@ -34,6 +34,7 @@ in context.
 | The version ladder, release criteria, and the open defects each step closes | [docs/roadmap.md](docs/roadmap.md) |
 | What a feature has to do, and the ids its tests reference | [docs/requirements/](docs/requirements/) |
 | Why an option was chosen over the ones the field actually uses | [docs/research/](docs/research/) |
+| What the line currently achieves, and how good the code is | [docs/reports/](docs/reports/) |
 | The mathematics the arm's motion is planned with | [docs/guidance-formulation.md](docs/guidance-formulation.md) |
 | How a waste object is described, independently of which sensor saw it | [docs/perception-contract.md](docs/perception-contract.md) |
 | Coding notes specific to CLAVE | [docs/guidelines.md](docs/guidelines.md) |

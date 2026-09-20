@@ -56,7 +56,10 @@ def test_sensors_are_found_by_role_and_the_lookup_takes_no_id() -> None:
     """Role is the only key a consumer may use."""
     sensors = shipped()
     assert len(of_role(sensors, Role.CODE)) == 3
-    assert len(of_role(sensors, Role.DETECTION)) == 1
+    # Two detection cameras: one over the sensing gate and one over the part
+    # of the belt the arm reaches, because a pick made on an estimate last
+    # observed at the gate is a pick made on dead reckoning.
+    assert len(of_role(sensors, Role.DETECTION)) == 2
     assert of_role(sensors, Role.SPECTRAL) == ()
 
 
@@ -97,7 +100,9 @@ def test_adding_a_camera_of_an_existing_role_changes_nothing_else() -> None:
     raw["cameras"] = [
         *raw["cameras"],
         dict(
-            raw["cameras"][1], id="gate_code_fourth", position_meters=[-1.0, 0.16, 1.63]
+            next(camera for camera in raw["cameras"] if camera["role"] == "code"),
+            id="gate_code_fourth",
+            position_meters=[-1.0, 0.16, 1.63],
         ),
     ]
     after = load_sensors(raw)

@@ -411,6 +411,19 @@ class TaskMachine:
         """
         # The constructor refused this profile without ceilings to plan under.
         assert self._guidance is not None
+        if not self._admits(flange):
+            # A plan begins where the arm is, so an arm outside the region it
+            # is trusted over produces a plan whose very first pose the servo
+            # refuses, and the refusal tears up the plan that caused it, and
+            # the next capture builds the same one again. Measured on the
+            # shipped line that latched: one excursion became 46 faults and
+            # the arm never moved again.
+            #
+            # Going home is the recovery, because the park pose is inside the
+            # region by construction and the servo will take it. The
+            # candidate is not recorded as missed: nothing is wrong with it.
+            self._serving = None
+            return self._rest(flange, at_nanos)
         target = self._grasp_pose(head)
         # An interception is worth planning only inside what the object has
         # left on the belt, whichever of the two limits binds first.

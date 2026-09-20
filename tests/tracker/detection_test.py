@@ -375,3 +375,26 @@ def test_the_adapter_finds_a_real_object_where_the_world_actually_put_it() -> No
             assert found_y == pytest.approx(placed_y, abs=0.005)
     finally:
         renderer.close()
+
+
+def test_a_mask_too_small_to_have_a_size_is_dropped() -> None:
+    """AC-TRACK-38: a mask too small to have a size is dropped.
+
+    A sliver at the edge of the frame segments to a mask a pixel across,
+    whose projected extent rounds to nothing. A footprint refuses to be
+    built from that, and the refusal used to end the run: one pixel, three
+    minutes of rollout gone.
+    """
+    sliver = PixelMask(width=640, height=480, runs=((10, 20, 1),))
+    assert (
+        detections_from_masks(
+            {"1": sliver},
+            source_id="gate_wide",
+            observed_at_nanos=0,
+            camera=(0.0, 0.0, 1.942),
+            optics=WIDE,
+            surface_height=0.95,
+            render=(640, 480),
+        )
+        == ()
+    )
