@@ -153,3 +153,38 @@ def test_an_absent_encoder_is_reported_rather_than_fatal(
     monkeypatch.setattr(shutil, "which", lambda _: None)
     assert not available()
     assert open_recorder(settings(tmp_path / "nothing.mp4")) is None
+
+
+def test_the_recorder_drains_the_encoder_rather_than_deadlocking(
+    tmp_path: Path,
+) -> None:
+    """The encoder's stderr is a pipe and an undrained pipe is a deadlock.
+
+    Its buffer is about 64 kB. An encoder that fills it blocks writing
+    there, stops reading its stdin, and never exits, and the caller then
+    waits on a process that is waiting on the caller. Short recordings hide
+    it, which is why this writes enough to matter: the run that found it
+    was sixty seconds long and the one before it, at five, was fine.
+    """
+    from clave.demo.video import VideoSettings, open_recorder
+
+    recorder = open_recorder(
+        VideoSettings(
+            path=tmp_path / "drained.mp4",
+            width=64,
+            height=48,
+            frames_per_second=30,
+            interval_seconds=0.03,
+            azimuth=90.0,
+            elevation=-20.0,
+            distance=3.0,
+            lookat=(0.0, 0.0, 1.0),
+        )
+    )
+    if recorder is None:
+        pytest.skip("no encoder installed")
+    frame = np.zeros((48, 64, 3), dtype=np.uint8)
+    for _ in range(400):
+        recorder.write(frame)
+    recorder.close()
+    assert (tmp_path / "drained.mp4").stat().st_size > 0
