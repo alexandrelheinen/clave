@@ -49,10 +49,21 @@ cross-belt and cascade layouts move material between stages, and the robot
 inside a stage still drops into a chute. Making a lane the target would
 model a machine the survey did not find.
 
+That leaves what sits under the chute, and a take-away conveyor per channel
+is one of the things a plant actually puts there, alongside a bunker. It is
+modelled here because a funnel ending in nothing reads as unfinished
+geometry rather than as equipment, and because a reader watching a run
+should be able to see where a channel goes. It is scenery in the strict
+sense: the place is still the plane crossing at the opening, nothing below
+it is measured, and the take-away leads off the end of the world.
+
 ## Constraints
 
-- **The opening is beside the belt and at belt height.** Its job is to be
-  out of the arm's way, which is what makes the release a sideways move.
+- **The opening is beside the belt and at belt height, on the arm's own
+  side.** Its job is to be out of the arm's way, which is what makes the
+  release a sideways move. Putting the bank across the belt would make
+  every release a reach over the line, which is a longer move and passes
+  the effector over objects it is not picking.
 - **Every dimension is configuration.** Opening size, spacing, height and
   the standoff from the belt edge are YAML keys that fail at load when
   absent, like every other tunable in the world.
@@ -103,6 +114,20 @@ rather than removed from the world.
 
 `AC-DROP-09`: The system shall draw each opening in the debug view in the
 colour of its channel, so a reader can check a placement by looking.
+
+`AC-DROP-10`: The system shall build the openings as funnels narrowing from
+a mouth at belt height to a throat, rather than as holes, so an object
+released near an edge is guided in rather than stranded on a lip.
+
+`AC-DROP-11`: The system shall build one take-away conveyor per channel
+below its funnel throat, carrying material away from the line. It is plant
+downstream of the opening and nothing measures it, so it has no collision
+with anything the arm can reach and no test reads its state.
+
+`AC-DROP-12`: The system shall place the openings clear of the arm
+pedestal's footprint in the belt travel axis, so a take-away conveyor
+running out from under a funnel does not intersect the structure carrying
+the arm.
 
 ## Design notes
 

@@ -116,7 +116,7 @@ so there is no placement to measure to.
 | Quantity | Value | Read by |
 | --- | --- | --- |
 | Belt length | 3.00 m | `configs/world/sorting_line.yml` |
-| Belt width | 1.00 m | same |
+| Belt width | 0.50 m | same, narrowed; see below |
 | Belt surface height | 0.90 m | same |
 | Belt speed | 0.25 to 0.35 m/s | same |
 | Arm base, the pedestal top | 0.90 m, 0.70 m off the belt centerline | same |
@@ -133,6 +133,33 @@ than from the origin: the belt is centered on the origin, so a sweep that starts
 there measures the downstream half and reports 1.036 m for a window that is
 twice that. At the configured belt speeds the window is 5.92 s of travel at
 0.35 m/s and 8.28 s at 0.25 m/s, and 6.60 s at the 0.31 m/s a fixed seed draws.
+
+### Narrowing the belt to 0.50 m
+
+The belt was 1.00 m wide and the reason for narrowing it is reach margin
+rather than cost. Sweeping 51 lateral samples through the same reachability
+test the safety layer applies:
+
+| | 1.00 m belt | 0.50 m belt |
+| --- | --- | --- |
+| Radius at the near edge, x = 0 | 0.200 m | **0.450 m** |
+| Radius at the far edge, x = 0 | 1.200 m | **0.950 m** |
+| Lateral samples reachable | 51 of 51 | 51 of 51 |
+| Window along travel at the far edge | 0.70 m | **1.62 m** |
+
+The near-edge figure is the one that mattered and it was a defect rather
+than a margin: 0.200 m is inside the 0.25 m dead zone the annulus leaves
+around the base, so a strip of the belt nearest the arm could not be reached
+at all near x = 0 even though every lateral position was reachable somewhere
+in its travel. The far edge sat at 1.200 m against a 1.25 m outer limit,
+where the arm is most extended and its lag against a moving command is
+worst.
+
+Narrowing also brings the whole belt inside what the sensing gate images.
+The optical calculation and the measured extent disagree, at 1.100 m across
+and 0.780 m, and that disagreement does not have to be settled here: 0.50 m
+of belt is inside both, so the defect the roadmap carried about the gate not
+covering the belt it stands over is closed either way.
 
 ## Sensing
 
@@ -311,10 +338,15 @@ interception where it does.
 
 ### Why the jaw still holds nothing
 
-Not the control any more. At the instant the jaw shuts, the nearest object
-to the pinch site is **94 to 619 mm away**, while the flange is 2.7 mm from
-the pose it was sent to. The arm arrives exactly where it was asked to, and
-it is asked to go where no object is.
+Measured on the 1.00 m belt fed by elapsed time. Narrowing the belt and
+metering the feed moved every figure below without being aimed at them, and
+[What the narrower, metered line does to the pick](#what-the-narrower-metered-line-does-to-the-pick)
+carries the current numbers. The diagnosis did not change, only its size.
+
+Not the control. At the instant the jaw shuts, the nearest object to the
+pinch site is **94 to 619 mm away**, while the flange is 2.7 mm from the
+pose it was sent to. The arm arrives exactly where it was asked to, and it
+is asked to go where no object is.
 
 The estimate it is sent to degrades with distance from the sensing gate.
 Measuring every settled record against the nearest object it could describe,
@@ -353,6 +385,71 @@ So the next thing to fix is perception downstream of the gate, and it is two
 changes rather than one: a sensor that sees where the arm works, and an
 association and retirement rule that lets its observations reach the track
 they belong to.
+
+### Holding the line at a feed rate
+
+The line now carries a rate it is asked for rather than whatever the spawn
+timer produced. Objects are released every so many metres of belt travel,
+and a proportional-integral controller trims belt speed to hold the
+measured rate on setpoint. Over a 180 second run at a setpoint of 0.250
+objects per second, it settles at **0.256 objects per second with the belt
+at 0.304 m/s**, which is off both drive limits and within 4 mm/s of the
+0.300 m/s the mean spacing predicts.
+
+Two corrections were needed and both are worth recording.
+
+**The controller was a double integrator, not a PI.** Written in velocity
+form, adding the proportional term to the command each tick, it accumulates
+that term five hundred times a second at the physics rate: an error of a
+tenth of an object per second moved the belt by 2.5 m/s in one second of
+simulated time. The loop pinned itself to a drive limit on any error at all
+and stayed there, which is exactly what the shipped line did before the fix,
+reading 0.267 against a 0.250 setpoint while sitting at 0.250 m/s. In
+positional form, with both terms added to the speed the run drew, it
+settles.
+
+**The measurement window was too short.** A rate is a count over a window,
+so its uncertainty goes as the square root of the count. At this setpoint a
+30 second window holds about 7 objects and estimates the rate to roughly a
+third, and the loop chases that noise. Ninety seconds holds about 22 and
+estimates it to roughly a fifth. A slow line cannot be metered quickly, and
+that is arithmetic rather than a tuning failure.
+
+**The pool had to start recycling.** A compiled MuJoCo model cannot gain
+bodies at run time, so the line drew from a fixed pool of 22 and stopped
+feeding once it was spent. A rate the line holds for ninety seconds is a
+different claim from a rate the line holds, so a slot now returns to the
+pool when its object runs off the end of the belt.
+
+### What the narrower, metered line does to the pick
+
+Neither change was aimed at the grasp, and both moved it, because a slower
+belt is a shorter dead-reckoning horizon and a sparser one is a cleaner
+scene. Measured over runs of 20 to 180 seconds:
+
+| | Before | After |
+| --- | --- | --- |
+| Objects given up for want of an interception | 11 of 16 | **0 of 39** |
+| Jaw to the nearest object when it shut | 94 to 644 mm | **18 to 339 mm**, mostly 30 to 45 |
+| Grasps that held | 0 of 5 | **8 of 39** |
+| Flange to the pose it was sent to | 2.2 mm | 2.1 mm |
+
+The arm's own accuracy did not change and was never the limit. What changed
+is how far the pose it is sent to has drifted by the time it gets there.
+Four fifths of grasps still fail, and the failures are still the visits
+whose jaw gap runs to 100 mm and beyond, which is the same open defect: no
+sensor observes an object after it leaves the gate.
+
+**One correction inside this change is below what the run can resolve, and
+is worth keeping anyway.** Making belt speed variable left the tracker, the
+task machine, guidance and selection all predicting with the speed the run
+drew rather than the speed the belt is running at. The controller moves
+0.3125 to 0.304 m/s, and 0.0085 m/s over a two and a half second
+interception is 21 mm, which is the order of the jaw's side clearance.
+Fixing it moved the grasp count from 10 of 40 to 8 of 39, which on forty
+samples is noise either way: the binomial spread at a quarter is about
+seven points. It stays because predicting with a speed the belt is not
+running at is wrong whatever a forty-sample run says about it.
 
 ## The object set
 

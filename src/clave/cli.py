@@ -121,7 +121,7 @@ def _world_probe(root: Path, seconds: float, seed: int) -> int:
     conveyor = belt.Conveyor(
         plan,
         rng,
-        config.require_range(spawn, "interval_seconds", "spawn"),
+        config.require_range(spawn, "spacing_meters", "spawn"),
         config.require_range(spawn, "lateral_offset_meters", "spawn"),
         config.require_range(spawn, "drop_height_meters", "spawn"),
         entry_margin=float(config.require(spawn, "entry_margin_meters", "spawn")),
@@ -132,7 +132,7 @@ def _world_probe(root: Path, seconds: float, seed: int) -> int:
     print(f"  reachable window  {report.window_length:.3f} m")
     print(f"  belt speed        {report.belt_speed:.3f} m/s")
     print(f"  time budget       {report.time_budget:.3f} s per object")
-    print(f"  channels          {len(plan.channels)} bins")
+    print(f"  channels          {len(plan.channels)} chutes")
 
     for _ in range(int(seconds / plan.timestep)):
         mujoco.mj_step(model, data)
@@ -612,6 +612,10 @@ def _debug_tracker(root: Path, args: Any) -> int:
     print(f"  queue rebuilt   {rebuilt}, of {report.captures} captures")
     print(f"  head swapped    {report.head_churn} times with the old head still there")
     print(f"  profile         {report.profile}")
+    print(
+        f"  feed rate       {report.measured_rate:.3f} of "
+        f"{report.feed_rate:.3f} objects/s, belt at {report.belt_speed:.3f} m/s"
+    )
     print(f"  visits served   {len(report.served)} {list(report.served)}")
     if report.missed:
         print(f"  no interception {len(report.missed)} {list(report.missed)}")

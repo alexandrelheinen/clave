@@ -181,20 +181,49 @@ class Conveyor:
     Attributes:
         plan: The resolved scene layout.
         rng: Generator used for spawn timing and placement.
-        interval: Range the next spawn delay is drawn from.
+        spacing: Range the gap to the next object is drawn from, in metres of
+            belt travel rather than in seconds. A metering feeder doses by
+            distance, and it is what makes belt speed a throughput knob: the
+            arrival rate is speed over spacing, so a controller with speed as
+            its actuator has authority over it. Dosing by time leaves the
+            rate at one over the interval whatever the belt does.
         lateral: Range the lateral placement is drawn from.
         drop: Range the drop height above the belt is drawn from.
+        speed: What the belt is running at now, in meters per second. Held
+            here rather than read from the layout because a feed controller
+            moves it, and the layout is the line as configured rather than
+            the line as it is running.
     """
 
     plan: SceneLayout
     rng: np.random.Generator
-    interval: Range
+    spacing: Range
     lateral: Range
     drop: Range
     entry_margin: float = 0.0
     active: list[SpawnedObject] = field(default_factory=list)
+    speed: float | None = None
+    _free: list[int] = field(default_factory=list)
     _next_free: int = 0
-    _next_spawn: float = 0.0
+    _travelled: float = 0.0
+    _retired: int = 0
+    _due: float | None = None
+    _arrived: list[float] = field(default_factory=list)
+
+    @property
+    def retired(self) -> int:
+        """How many objects have run off the end of the belt."""
+        return self._retired
+
+    @property
+    def running(self) -> float:
+        """How fast the belt is running, in meters per second."""
+        return self.plan.belt.speed if self.speed is None else self.speed
+
+    @property
+    def arrivals(self) -> tuple[float, ...]:
+        """When each object entered the line, in simulated seconds."""
+        return tuple(self._arrived)
 
     @property
     def report(self) -> ReachReport:
@@ -236,7 +265,8 @@ class Conveyor:
         """
         import mujoco
 
-        for slot in range(self._next_free, self.plan.pool_size):
+        parked = list(range(self._next_free, self.plan.pool_size)) + self._free
+        for slot in parked:
             body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, f"object_{slot}")
             address = model.jnt_qposadr[model.body_jntadr[body]]
             velocity = model.jnt_dofadr[model.body_jntadr[body]]
@@ -247,6 +277,54 @@ class Conveyor:
             ]
             data.qpos[address + 3 : address + 7] = [1.0, 0.0, 0.0, 0.0]
             data.qvel[velocity : velocity + 6] = 0.0
+
+    def _claim(self) -> int | None:
+        """Return a pool slot to spawn into, or None when the pool is full.
+
+        Returns:
+            A slot freed by an object that has left the belt, or the next
+            never-used one, or None while every slot is occupied. None is a
+            real condition rather than an error: it means the line is
+            carrying as many objects as the pool allows, and the feed waits.
+        """
+        if self._free:
+            return self._free.pop(0)
+        if self._next_free < self.plan.pool_size:
+            slot = self._next_free
+            self._next_free += 1
+            return slot
+        return None
+
+    def _recycle(self, model: Any, data: Any) -> None:
+        """Return objects that have run off the end of the belt to the pool.
+
+        A compiled MuJoCo model cannot gain bodies at run time, so a line
+        that never gives a slot back stops feeding after `pool_size` objects
+        however long it runs. That turns a rate the line is asked to hold
+        into a rate it can hold for ninety seconds, which is not the same
+        claim.
+
+        Args:
+            model: The compiled model.
+            data: Its state, modified in place.
+        """
+        import mujoco
+
+        past = self.plan.belt.length / 2.0
+        staying = []
+        for item in self.active:
+            body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, item.name)
+            address = model.jnt_qposadr[model.body_jntadr[body]]
+            gone = (
+                float(data.qpos[address]) > past
+                or float(data.qpos[address + 2]) < self.plan.belt.surface_height - 0.60
+            )
+            if gone:
+                self._free.append(item.index)
+                self._retired += 1
+            else:
+                staying.append(item)
+        self.active = staying
 
     def step(self, model: Any, data: Any) -> None:
         """Advance spawning and belt drive by one simulation step.
@@ -259,10 +337,23 @@ class Conveyor:
 
         self._hold_parked(model, data)
 
-        if data.time >= self._next_spawn and self._next_free < self.plan.pool_size:
-            self._place(model, data, self._next_free)
-            self._next_free += 1
-            self._next_spawn = data.time + self.interval.sample(self.rng)
+        # Feed by distance, not by elapsed time. The travel is integrated
+        # from the speed the belt is actually running at, so a controller
+        # that slows the belt genuinely slows the feed rather than only
+        # spreading the same objects further apart.
+        self._recycle(model, data)
+        if self._due is None:
+            self._due = self.spacing.sample(self.rng)
+        self._travelled += self.running * self.plan.timestep
+        if self._travelled >= self._due:
+            # Claimed only once a spawn is actually due. Asking for a slot
+            # every tick and discarding it burns the pool in one second.
+            slot = self._claim()
+            if slot is not None:
+                self._place(model, data, slot)
+                self._travelled -= self._due
+                self._due = self.spacing.sample(self.rng)
+                self._arrived.append(float(data.time))
 
         for item in self.active:
             body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, item.name)
@@ -276,8 +367,8 @@ class Conveyor:
             )
             if on_belt:
                 # Drive travel only. Vertical motion and rotation stay with
-                # physics, so contacts with bins and the arm remain real.
-                data.qvel[velocity] = self.plan.belt.speed
+                # physics, so contacts with the chutes and the arm remain real.
+                data.qvel[velocity] = self.running
             if on_belt and within_reach(
                 (float(position[0]), float(position[1]), float(position[2])), self.plan
             ):

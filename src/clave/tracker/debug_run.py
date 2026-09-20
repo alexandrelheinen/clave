@@ -61,6 +61,7 @@ from clave.tracker.track import Tracker
 from clave.world import arm as armmod
 from clave.world import belt, config, scene
 from clave.world.effector import Effector
+from clave.world.feed import FeedSettings, RateController
 
 NANOS_PER_SECOND = 1_000_000_000
 """Nanoseconds in a second, for the instants an observation carries."""
@@ -108,6 +109,12 @@ class DebugRunReport:
             asked for, in meters. Measured at the end of the dwell under a
             stepped profile and at the instant the jaw reaches the object
             under a planned one.
+        feed_rate: What the line was asked to carry, in objects per second.
+        measured_rate: What it achieved over the controller's window, at the
+            end of the run.
+        belt_speed: What the feed controller ended up commanding, in meters
+            per second. Reported beside the two rates so a reader can tell a
+            line that held its setpoint from one that saturated trying.
         lifts: How far each completed visit raised the object that ended up
             nearest the jaw, in meters, against where that object was lying
             when the plan was made. This is the figure that says whether the
@@ -152,6 +159,9 @@ class DebugRunReport:
     arrivals: tuple[float, ...]
     lifts: tuple[float, ...]
     jaw_gaps: tuple[float, ...]
+    feed_rate: float
+    measured_rate: float
+    belt_speed: float
     profile: str
     closest_approach: float | None
     closest_live: float | None
@@ -240,10 +250,21 @@ def run(
     conveyor = belt.Conveyor(
         plan,
         np.random.default_rng(seed),
-        config.require_range(spawn, "interval_seconds", "spawn"),
+        config.require_range(spawn, "spacing_meters", "spawn"),
         config.require_range(spawn, "lateral_offset_meters", "spawn"),
         config.require_range(spawn, "drop_height_meters", "spawn"),
         entry_margin=float(config.require(spawn, "entry_margin_meters", "spawn")),
+    )
+    # The belt speed the layout drew is where the loop starts, not where it
+    # stays. Its range becomes the drive's limits rather than a distribution.
+    drive = config.require_range(
+        config.require(raw, "belt"), "speed_meters_per_second", "belt"
+    )
+    feeding = RateController(
+        settings=FeedSettings.load(raw),
+        lowest=drive.low,
+        highest=drive.high,
+        speed=plan.belt.speed,
     )
 
     tracker = Tracker(
@@ -255,6 +276,9 @@ def run(
         ),
         belt_speed=plan.belt.speed,
         window_exit=belt.window_exit(plan) or 1.034,
+        # Seeded from the layout and updated every capture below, because the
+        # feed controller moves the belt and a prediction made with the speed
+        # the run drew is wrong by however far the controller has trimmed it.
         unmeasured_extent=grasp,
         resolve=resolver_for(
             load_catalog(root / "configs" / "perception" / "packaging.yml")
@@ -328,6 +352,7 @@ def run(
     # object was resting when the plan was made. A flight can be perfect and
     # this still read zero, which is the whole point of measuring it apart.
     lifts: list[float] = []
+    counted = 0
     # And how near the jaw came to any object at all when it shut, which is
     # the figure that separates a flight that missed from a grasp that let go.
     gaps: list[float] = []
@@ -372,6 +397,14 @@ def run(
         for _ in range(int(seconds / plan.timestep)):
             mujoco.mj_step(model, data)
             conveyor.step(model, data)
+            # The feed loop runs at the physics rate and reads the simulator's
+            # own arrivals, which is ground truth and is why it is named as
+            # such: the tracker's estimate is not usable this far down the
+            # belt, so a loop built on it would regulate an opinion.
+            while len(conveyor.arrivals) > counted:
+                feeding.arrived(conveyor.arrivals[counted])
+                counted += 1
+            conveyor.speed = feeding.update(data.time, plan.timestep)
 
             # The deciders run at the capture cadence and the servo runs at
             # the physics rate, because a goal half a second old is still the
@@ -426,7 +459,7 @@ def run(
                     goal,
                     plan.timestep,
                     control.guidance,
-                    plan.belt.speed,
+                    feeding.speed,
                     int(data.time * NANOS_PER_SECOND),
                     keep_inside,
                 )
@@ -465,6 +498,12 @@ def run(
             next_capture = data.time + capture_interval
             captures += 1
             now = int(data.time * NANOS_PER_SECOND)
+            # Everything that predicts along the belt reads the speed the belt
+            # is running at, not the one the layout drew. The feed controller
+            # moves it, and over a two second interception a one percent error
+            # is millimetres against a jaw with eight of clearance.
+            tracker.belt_speed = feeding.speed
+            task.belt_speed = feeding.speed
 
             for eye_on in detecting:
                 masks.update_scene(data, camera=eye_on.source_id)
@@ -505,7 +544,7 @@ def run(
             standing = markers_for(records, effector, surface)
 
             flange = _flange(indices, data)
-            queue = selector.update(standing, flange, plan.belt.speed, now)
+            queue = selector.update(standing, flange, feeding.speed, now)
             for trigger in queue.reasons:
                 reorders[trigger] += 1
             head_id = None if queue.head is None else queue.head.track_id
@@ -577,6 +616,9 @@ def run(
         arrivals=task.arrivals,
         lifts=tuple(lifts),
         jaw_gaps=tuple(gaps),
+        feed_rate=feeding.settings.rate,
+        measured_rate=feeding.measured,
+        belt_speed=feeding.speed,
         profile=control.task.profile.value,
         closest_approach=None if closest == float("inf") else closest,
         closest_live=None if closest_live == float("inf") else closest_live,

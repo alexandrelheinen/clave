@@ -20,19 +20,38 @@ belt:
   # vertical. A sweep confirms every lateral position on a 1.00 m belt is
   # reachable at some point in its travel. docs/measurements.md carries it.
   length_meters: 3.00
-  # Fully covered, which the previous belt was not. A swept check finds all 51
-  # lateral samples across this width reachable, so nothing here is written off
-  # as a second arm's job the way the previous line's far strip was.
-  width_meters: 1.00
+  # Narrowed from 1.00 m, and the reason is reach margin rather than cost.
+  #
+  # At 1.00 m the near edge sat at y = -0.50, which is 0.20 m from the arm
+  # base in the lateral axis and therefore inside the 0.25 m dead zone the
+  # annulus leaves around the base: a strip of the belt closest to the arm
+  # could not be reached at all near x = 0. The far edge sat at 1.20 m of
+  # radius, near the 1.25 m outer limit, where the arm is most extended and
+  # its lag against a moving command is worst.
+  #
+  # At 0.50 m the near edge is 0.45 m of radius and the far edge 0.95 m, so
+  # the whole width sits in the middle of the annulus. It also brings the
+  # belt inside what the sensing gate actually images, which closes a defect
+  # the roadmap carried. docs/measurements.md has both sweeps.
+  width_meters: 0.50
   # Ergonomic picking-line height. A manual sort station puts the belt near a
   # standing operator's waist, and a robot retrofitted onto such a line
   # inherits it.
   surface_height_meters: 0.90
-  # A robotic sorting line rather than a manual one. Manual picking lines run
-  # slower because a human reaches at roughly 1 pick per 2 s; published
-  # robotic sorters sustain 60 to 140 picks per minute. At 0.31 m/s an object
-  # stays inside the arm's annulus for 3.3 s crossing the centerline, which is
-  # ample against the 1.0 second cycle budget.
+  # A range, drawn once per run from the seed, not a fixed speed. A line whose
+  # speed never varies trains a policy that has memorised one speed.
+  #
+  # A robotic sorting line rather than a manual one, which is a class argument
+  # and not a measurement of a particular machine. Manual picking lines run
+  # slower because a human reaches at roughly 1 pick per 2 s; published robotic
+  # sorters sustain 60 to 140 picks per minute. At the 0.31 m/s a fixed seed
+  # draws, an object stays inside the arm's annulus for 6.60 s, against a
+  # 1.0 second cycle budget.
+  #
+  # That figure was 3.3 s here and was wrong for the reason
+  # docs/measurements.md records: the sweep behind it started at the origin
+  # and so measured the downstream half of a window centred on it. The window
+  # is 2.071 m, from -1.034 m to +1.034 m.
   speed_meters_per_second: [0.25, 0.35]
   # Side guides keep tipped cylinders from rolling off. A real line has them.
   guide_height_meters: 0.04
@@ -55,12 +74,78 @@ spawn:
   # Objects enter this far inside the belt's leading edge. Spawning exactly on
   # the edge lets an object tip off before the belt drive engages.
   entry_margin_meters: 0.08
-  interval_seconds: [0.8, 2.5]
-  # Inside the belt's half width, so nothing spawns against a side guide. The
-  # whole span is now reachable, so unlike the previous line this range does
-  # not deliberately place objects the arm has to refuse.
-  lateral_offset_meters: [-0.42, 0.42]
+  # Objects are released every so many metres of belt travel, not every so
+  # many seconds. A metering feeder doses by distance, and that is what makes
+  # belt speed a throughput knob: the arrival rate is speed over spacing. Fed
+  # by time, the rate is one over the interval whatever the belt does, and
+  # the controller below would have no authority over the quantity it is
+  # asked to regulate. docs/requirements/line-throughput.md carries the
+  # arithmetic.
+  #
+  # A mean spacing of 1.20 m against the 0.25 objects per second the arm
+  # sustains puts the belt at 0.300 m/s, which sits in the middle of the
+  # drive's range, so the controller has room in both directions.
+  spacing_meters: [1.00, 1.40]
+  # Inside the belt's half width, keeping the same 0.08 m clearance from the
+  # side guides that the 1.00 m belt used. The whole span is reachable, so
+  # this range does not deliberately place objects the arm has to refuse.
+  lateral_offset_meters: [-0.17, 0.17]
   drop_height_meters: [0.01, 0.03]
+
+# Holding the line at a rate rather than letting it be whatever the feeder
+# produced. docs/requirements/line-throughput.md carries the spec.
+feed:
+  # What the line is asked to carry.
+  #
+  # MEASURED against what the arm sustains rather than chosen. A visit costs
+  # the interception, the descent, the dwell and the retreat, and the arm
+  # returns toward park between visits; on the shipped geometry that came to
+  # 15 completed visits in 60 s, which is 0.25 objects per second, or 15 a
+  # minute. Published robotic sorters run 60 to 140 a minute, so this line is
+  # slow, and saying so is better than feeding it a number it cannot hold.
+  #
+  # A setpoint above what the arm holds is not an error and is not clamped: a
+  # line fed faster than it can be picked is an ordinary condition, and it
+  # shows up as objects reaching the end unpicked.
+  rate_objects_per_second: 0.25
+
+  # How long a span the measured rate is counted over.
+  #
+  # MEASURED, and the first value was too short for an instructive reason. A
+  # rate is a count divided by a window, so its uncertainty is the square
+  # root of the count: at this setpoint a 30 s window holds about 7 objects
+  # and estimates the rate to roughly a third. The loop then chases that
+  # noise and pins itself to a drive limit, which is what the shipped line
+  # did, sitting at 0.250 m/s while reading 0.267 against a 0.250 setpoint.
+  #
+  # Ninety seconds holds about 22 objects and estimates the rate to roughly a
+  # fifth. A slow line cannot be metered quickly, and that is arithmetic
+  # rather than a tuning failure.
+  window_seconds: 90.0
+
+  # Metres per second of belt speed per object per second of error, and the
+  # same per accumulated error second.
+  #
+  # A starting point rather than a tuned pair. The proportional term alone
+  # leaves steady-state error, because holding the rate needs a non-zero
+  # speed and a proportional term produces output only from error; the
+  # integral term is what sits the loop on the setpoint. Derivative earns
+  # nothing here, since the measured rate is already a windowed average and
+  # carries the noise a derivative would amplify.
+  # The controller is positional: both terms are added to the speed the run
+  # drew, not to the speed commanded last tick. The velocity form was tried
+  # and is wrong here, because adding a proportional term to the command at
+  # the physics rate makes that term an integrator of its own, five hundred
+  # times a second, and the loop pins itself to a drive limit on any error.
+  #
+  # At 0.40, an error of one tenth of an object per second moves the belt by
+  # 0.04 m/s, which is a third of the drive's range: firm without being able
+  # to cross the range on counting noise alone. The integral term supplies
+  # whatever standing offset the realised spacing needs, and at 0.01 it takes
+  # about a hundred seconds to do it, which is the order of the measurement
+  # window and therefore as fast as the loop can see.
+  proportional_gain: 0.40
+  integral_gain: 0.01
 
 arm:
   # A Universal Robots UR10e, adopted from MuJoCo Menagerie and vendored under
@@ -145,17 +230,52 @@ effector:
   # object set, which is where a jaw would close on them.
   grasp_height_meters: 0.045
 
-bins:
-  # One bin per distinct channel across the object set below.
+# Where a picked object goes. One funnel per channel the routing policy
+# resolves to, set beside the belt at belt height on the arm's own side, each
+# feeding a take-away conveyor below it. docs/requirements/sorting-outputs.md
+# carries why a funnel and not a container or a lane, and every number here
+# is checked against the arm's annulus at load rather than trusted.
+chutes:
+  # Measured from the belt centreline, so it has to clear the belt's half
+  # width, which is 0.25 m. At 0.42 m the mouth stands 0.17 m clear of the
+  # side guide and 0.13 m clear of the pedestal face at y = -0.55, and the
+  # mouth centre sits 0.28 m from the base in the lateral axis, outside the
+  # 0.25 m dead zone the annulus leaves around it.
   #
-  # The offset is measured from the belt centreline, so it has to clear the
-  # belt's half width. At 0.32 m it did on a 0.32 m belt and does not on a
-  # 1.00 m one: the bins stood on the floor underneath the conveyor, which the
-  # first regenerated still showed plainly. They now stand 0.25 m clear of the
-  # belt edge, and are sized to read at a 3.00 m line rather than a 1.20 m one.
-  spacing_meters: 0.34
-  size_meters: [0.14, 0.14, 0.12]
-  offset_from_belt_meters: 0.75
+  # Negative because the arm stands at y = -0.70. Putting the bank on the far
+  # side would make every release a reach across the line.
+  offset_from_belt_meters: -0.42
+
+  # Where the bank starts along belt travel, and how far apart the mouths sit.
+  #
+  # The bank is pushed downstream rather than centred on the arm, and that is
+  # the pedestal's doing rather than an aesthetic choice. A bank of four
+  # centred on x = 0 always straddles the pedestal's 0.30 m footprint, and a
+  # take-away conveyor running out from under those two mouths would pass
+  # through the structure carrying the arm. Starting at x = +0.30 m puts the
+  # nearest mouth 0.04 m clear of that footprint.
+  #
+  # At 0.28 m spacing the four mouths stand at x = 0.30, 0.58, 0.86 and 1.14,
+  # which is 0.41 m to 1.17 m of radius from the base: inside the 1.25 m outer
+  # limit with 80 mm to spare on the furthest.
+  first_position_meters: 0.30
+  spacing_meters: 0.28
+
+  # The mouth is what the arm releases over and the throat is what the object
+  # falls through. A funnel rather than a hole, so an object let go near an
+  # edge is guided in rather than left on a lip.
+  mouth_meters: [0.22, 0.22]
+  throat_meters: [0.12, 0.12]
+  throat_height_meters: 0.62
+
+  # The take-away conveyor under each throat. Plant downstream of the opening:
+  # nothing measures it, nothing collides with it, and it runs off the end of
+  # the world. It is here so a funnel does not end in nothing, and so a reader
+  # watching a run can see where a channel goes.
+  takeaway:
+    surface_height_meters: 0.30
+    width_meters: 0.24
+    length_meters: 1.40
 
 structure:
   # The belt and the arm used to float. Nothing below changes a trajectory: a
@@ -186,8 +306,9 @@ environment:
   #
   # Each prop names a mesh, where it stands, and how far it is turned. The
   # near props stand further out than they did on the 0.32 m belt: the channel
-  # bins now sit 0.75 m from the centreline, and a prop at 0.95 m stood against
-  # them rather than clear of the line.
+  # chute bank now sits 0.42 m from the centreline on the arm's side, and a
+  # prop at 0.95 m stood against the old floor bins rather than clear of the
+  # line.
   props:
     - mesh: shelf.obj
       position_meters: [-0.40, 2.30, 0.0]

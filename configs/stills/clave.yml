@@ -33,9 +33,9 @@ annotations:
     CH-FIBER: [0.95, 0.68, 0.20]
     CH-PLASTIC-OTHER: [0.82, 0.38, 0.86]
     CH-FERROUS: [0.36, 0.84, 0.50]
-  # The bins carry the same colors, so a reader can follow a marker to the bin
-  # its class routes to without a caption.
-  color_bins: true
+  # The chute mouths carry the same colors, so a reader can follow a marker to
+  # the opening its class routes to without a caption.
+  color_chutes: true
   reach_ring:
     # Both radii: the outer one bounds the annulus and the inner one is the
     # dead zone the belt carries an object out of.
@@ -72,9 +72,9 @@ lighting:
       diffuse: [0.26, 0.25, 0.28]
       specular: [0.05, 0.05, 0.05]
       cast_shadow: false
-    # A second key from the bins' side. The arm-side key leaves the conveyor's
-    # far face unlit, and one of the three figures is shot from that side
-    # because it is the only side the bins can be seen from.
+    # A second key from across the line. The arm-side key leaves the
+    # conveyor's far face unlit, and one of the three figures is shot from
+    # over there.
     - position_meters: [-1.60, 2.40, 2.10]
       direction: [0.45, -0.70, -0.55]
       diffuse: [0.40, 0.39, 0.37]
@@ -90,10 +90,10 @@ cameras:
   # One camera per figure, named for the file it writes: clave-line.png,
   # clave-overhead.png and clave-window.png, which are the names the project
   # page already points at.
-  # The line from the bins' side, which is the only side they are visible from:
-  # they stand on the floor at 0.25 m from the belt and the belt is 0.90 m
-  # high, so any camera on the arm's side has the conveyor between it and them.
-  # The arm reaches toward the camera over the belt.
+  # The line from across the belt, with the arm reaching toward the camera.
+  # The chute mouths sit at belt height on the arm's own side, so they read
+  # from here as openings the arm turns to rather than as containers, which
+  # is what they are.
   - name: line
     azimuth_degrees: 332.0
     elevation_degrees: -26.0
