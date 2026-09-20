@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import math
 import os
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -314,6 +315,8 @@ def run(
 
     out.mkdir(parents=True, exist_ok=True)
     opened, reason = _open_window(cv2, window)
+    tracker_cam = mujoco.Renderer(model, height=180, width=240) if opened else None
+    start_wall = time.perf_counter()
 
     indices = armmod.locate(model)
     # Start the arm parked. The model's own initial configuration leaves the
@@ -539,14 +542,83 @@ def run(
                 ):
                     closest = min(closest, math.dist(place, command.position))
 
-            # The video renders on its own cadence. The capture cadence is
-            # what the tracker decides at, and watching a decision rate is
-            # watching an arm teleport.
-            if recorder is not None and data.time >= next_frame:
+            # The video and live window render on their own cadence. The
+            # capture cadence is what the tracker decides at, and watching
+            # a decision rate is watching an arm teleport.
+            if (recorder is not None or opened) and data.time >= next_frame:
                 next_frame = data.time + movie_interval
-                recorder.write(
-                    _painted(watching, data, eye, standing, control, surface)
-                )
+                frame = _painted(watching, data, eye, standing, control, surface)
+                if recorder is not None:
+                    recorder.write(frame)
+                if opened and tracker_cam is not None:
+                    tracker_cam.update_scene(data, camera="gate_wide")
+                    _without_shadows(tracker_cam)
+                    gate_img = tracker_cam.render()
+
+                    display = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                    gate_bgr = cv2.cvtColor(gate_img, cv2.COLOR_RGB2BGR)
+
+                    gh, gw = gate_bgr.shape[:2]
+                    y1 = 15
+                    y2 = y1 + gh
+                    x2 = display.shape[1] - 15
+                    x1 = x2 - gw
+
+                    display[y1:y2, x1:x2] = gate_bgr
+                    cv2.rectangle(
+                        display,
+                        (x1 - 1, y1 - 1),
+                        (x2 + 1, y2 + 1),
+                        (0, 255, 255),
+                        2,
+                    )
+                    cv2.putText(
+                        display,
+                        "TRACKER (GATE CAM)",
+                        (x1 + 6, y1 + 18),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.45,
+                        (0, 255, 255),
+                        1,
+                        cv2.LINE_AA,
+                    )
+
+                    phase_name = "standby" if goal is None else goal.phase.value
+                    hud = (
+                        f"SIM: {data.time:5.2f}s | BELT: {feeding.speed:4.2f} m/s | "
+                        f"PHASE: {phase_name.upper()}"
+                    )
+                    cv2.putText(
+                        display,
+                        hud,
+                        (20, 30),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.55,
+                        (255, 255, 255),
+                        2,
+                        cv2.LINE_AA,
+                    )
+                    cv2.putText(
+                        display,
+                        f"TRACKS: {len(standing)} | GRASPS: {len(lifts)}",
+                        (20, 55),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.50,
+                        (200, 200, 200),
+                        1,
+                        cv2.LINE_AA,
+                    )
+
+                    target_wall = start_wall + data.time
+                    now_wall = time.perf_counter()
+                    sleep_sec = target_wall - now_wall
+                    if sleep_sec > 0.001:
+                        time.sleep(sleep_sec)
+
+                    cv2.imshow("clave tracker debug", display)
+                    key = cv2.waitKey(1) & 0xFF
+                    if key in (27, ord("q")):
+                        break
 
             if data.time < next_capture:
                 continue
@@ -666,15 +738,11 @@ def run(
             )
             written += 1
             _write_beliefs(believed, captures, now, records)
-            if opened:
-                cv2.imshow(
-                    "clave tracker debug", cv2.cvtColor(canvas, cv2.COLOR_RGB2BGR)
-                )
-                if cv2.waitKey(1) & 0xFF == 27:
-                    break
     finally:
         watching.close()
         masks.close()
+        if tracker_cam is not None:
+            tracker_cam.close()
         if recorder is not None:
             recorder.close()
         if opened:
