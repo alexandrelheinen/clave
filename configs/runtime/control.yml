@@ -119,14 +119,10 @@ task:
 
   # Where the arm rests when it has nothing to serve.
   #
-  # Chosen against three constraints and then checked by solving for it. It
-  # sits 0.541 m from the arm base, inside the 0.25 m to 1.25 m trusted
-  # annulus. At z = 1.20 m it is inside the trusted vertical band, which runs
-  # 0.85 m to 1.35 m. And it is clear of the sensing gate: the cameras stand
-  # at x = -1.00 m and image about 0.92 m along travel, so an arm parked at
-  # x = +0.45 m and y = -1.00 m is downstream of the gate and off the belt,
-  # which spans y = -0.50 m to +0.50 m.
-  park_position_meters: [0.45, -1.00, 1.20]
+  # The four bin mouths run from x = 0.30 m to x = 1.14 m at y = -0.42 m.
+  # Park at their geometric centre: x = 0.72 m, y = -0.42 m. At z = 1.20 m
+  # it remains inside the trusted vertical band, which runs 0.85 m to 1.35 m.
+  park_position_meters: [0.72, -0.42, 1.20]
 
   # The park pose is drawn in the debug view so it can be seen rather than
   # trusted. Red, because nothing else in the scene is.
