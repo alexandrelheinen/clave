@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 
 from clave.world import belt, config, scene
-from clave.world.scene import SceneLayout
+from clave.world.scene import SceneLayout, _two_narrowest_sides_fit
 
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG = ROOT / "configs" / "world" / "sorting_line.yml"
@@ -43,6 +43,13 @@ def conveyor_for(
         config.require_range(spawn, "drop_height_meters", "spawn"),
         entry_margin=float(spawn["entry_margin_meters"]),
     )
+
+
+
+def test_both_narrowest_mesh_sides_must_fit_the_gripper() -> None:
+    """A single thin side must not make a broad flat object graspable."""
+    assert _two_narrowest_sides_fit((0.020, 0.080, 0.180), 0.085)
+    assert not _two_narrowest_sides_fit((0.020, 0.120, 0.180), 0.085)
 
 
 def test_the_scene_builds_one_chute_per_channel() -> None:

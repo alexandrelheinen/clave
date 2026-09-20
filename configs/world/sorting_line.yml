@@ -488,46 +488,14 @@ objects:
     texture: third_party/ycb_sim/textures/009_gelatin_box.png
     density_kg_per_m3: [90, 160]
 
-  - name: snack_bags
-    material_class: M-04
-    shape: mesh
-    mesh: third_party/scanned_objects/models/Now_Designs_Snack_Bags_Bicycle_2_count/model.obj
-    texture: third_party/scanned_objects/models/Now_Designs_Snack_Bags_Bicycle_2_count/texture.png
-    density_kg_per_m3: [40, 90]
-
-  # The four YCB packages the 55.7 mm jaw excluded. What bounds an object now is
-  # `arm.max_grasp_width_meters` at 0.180 m, and all four clear it. The master
-  # chef can is 102.5 mm across and was the largest thing the old gripper
-  # refused outright. The end effector is specified separately and is what will
-  # set the next bound.
+  # The YCB packages that remain have both narrowest sides below the current
+  # 85 mm jaw opening. Flat packages with only one thin side are excluded by
+  # the compiled-mesh check rather than being allowed onto the belt.
   - name: tomato_soup_can
     material_class: M-06
     shape: mesh
     mesh: third_party/ycb_sim/meshes/005_tomato_soup_can.msh
     texture: third_party/ycb_sim/textures/005_tomato_soup_can.png
-    density_kg_per_m3: [180, 320]
-
-  - name: potted_meat_can
-    material_class: M-06
-    shape: mesh
-    mesh: third_party/ycb_sim/meshes/010_potted_meat_can.msh
-    texture: third_party/ycb_sim/textures/010_potted_meat_can.png
-    density_kg_per_m3: [180, 320]
-
-  # Taken as HDPE. A squeeze bottle of this shape is usually HDPE or LDPE, and
-  # the label noise that inference carries is the accepted trade.
-  - name: mustard_bottle
-    material_class: M-02
-    shape: mesh
-    mesh: third_party/ycb_sim/meshes/006_mustard_bottle.msh
-    texture: third_party/ycb_sim/textures/006_mustard_bottle.png
-    density_kg_per_m3: [80, 140]
-
-  - name: tuna_fish_can
-    material_class: M-06
-    shape: mesh
-    mesh: third_party/ycb_sim/meshes/007_tuna_fish_can.msh
-    texture: third_party/ycb_sim/textures/007_tuna_fish_can.png
     density_kg_per_m3: [180, 320]
 
   # --- M-09, paperboard: the cartons a kitchen produces most of ---
@@ -538,13 +506,6 @@ objects:
     mesh: third_party/scanned_objects/models/CoQ10/model.obj
     texture: third_party/scanned_objects/models/CoQ10/texture.png
     density_kg_per_m3: [70, 130]
-
-  - name: pudding_box
-    material_class: M-09
-    shape: mesh
-    mesh: third_party/ycb_sim/meshes/008_pudding_box.msh
-    texture: third_party/ycb_sim/textures/008_pudding_box.png
-    density_kg_per_m3: [90, 160]
 
   - name: sprinkles_jar
     material_class: M-04
@@ -569,26 +530,12 @@ objects:
     texture: third_party/scanned_objects/models/Folic_Acid/texture.png
     density_kg_per_m3: [70, 130]
 
-  - name: sugar_box
-    material_class: M-09
-    shape: mesh
-    mesh: third_party/ycb_sim/meshes/004_sugar_box.msh
-    texture: third_party/ycb_sim/textures/004_sugar_box.png
-    density_kg_per_m3: [90, 160]
-
   - name: haircolor_bottle
     material_class: M-02
     shape: mesh
     mesh: third_party/scanned_objects/models/Just_For_Men_Shampoo_In_Haircolor_Darkest_Brown_50/model.obj
     texture: third_party/scanned_objects/models/Just_For_Men_Shampoo_In_Haircolor_Darkest_Brown_50/texture.png
     density_kg_per_m3: [80, 140]
-
-  - name: donut_carton
-    material_class: M-09
-    shape: mesh
-    mesh: third_party/scanned_objects/models/Little_Debbie_Donut_Sticks_6_cake_donuts_10_oz_total/model.obj
-    texture: third_party/scanned_objects/models/Little_Debbie_Donut_Sticks_6_cake_donuts_10_oz_total/texture.png
-    density_kg_per_m3: [90, 160]
 
   - name: caplet_tub
     material_class: M-02

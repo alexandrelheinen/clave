@@ -749,10 +749,9 @@ def _check_mesh_objects_fit(
     A mesh carries its size in the file, so the check happens here, against the
     vertices MuJoCo compiled. Both ask the same question.
 
-    The width measured is the narrower of the two horizontal extents, because
-    an object resting on a belt is grasped across its narrow axis. That is what
-    lets a tuna can through at 33.5 mm lying down while its 85.5 mm diameter
-    would not fit standing up.
+    Both of the two narrowest extents must fit the opening. A single thin side
+    is not enough: a flat object with one thin edge and two broad sides still
+    cannot fit between the fingers.
 
     Args:
         mujoco: The imported module.
@@ -774,14 +773,21 @@ def _check_mesh_objects_fit(
         start, count = model.mesh_vertadr[mesh], model.mesh_vertnum[mesh]
         vertices = model.mesh_vert[start : start + count]
         extents = vertices.max(axis=0) - vertices.min(axis=0)
-        width = float(min(sorted(extents)[:2]))
-        if width > limit:
+        narrowest = sorted(float(extent) for extent in extents)[:2]
+        if not _two_narrowest_sides_fit(extents, limit):
             raise WorldConfigError(
-                f"object {spec.name!r} measures {width * 1000:.1f} mm across its "
-                f"narrowest horizontal axis, and the gripper opens "
+                f"object {spec.name!r} has two narrowest sides of "
+                f"{narrowest[0] * 1000:.1f} mm and {narrowest[1] * 1000:.1f} mm, "
+                f"but the gripper opens "
                 f"{limit * 1000:.1f} mm. A world that spawns objects it cannot "
                 f"grasp measures a task the arm cannot perform."
             )
+
+
+def _two_narrowest_sides_fit(extents: Any, limit: float) -> bool:
+    """Return whether both narrowest object sides are below the jaw opening."""
+    narrowest = sorted(float(extent) for extent in extents)[:2]
+    return len(narrowest) == 2 and max(narrowest) < limit
 
 
 def _add_conveyor_modules(
