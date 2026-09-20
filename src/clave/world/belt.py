@@ -320,7 +320,7 @@ class Conveyor:
             address = model.jnt_qposadr[model.body_jntadr[body]]
             gone = (
                 float(data.qpos[address]) > past
-                or float(data.qpos[address + 2]) < self.plan.belt.surface_height - 0.60
+                or float(data.qpos[address + 2]) < 0.05
             )
             if gone:
                 self._free.append(item.index)
@@ -368,6 +368,9 @@ class Conveyor:
                 # Drive travel only. Vertical motion and rotation stay with
                 # physics, so contacts with the chutes and the arm remain real.
                 data.qvel[velocity] = self.running
+            elif _on_takeaway(position, self.plan):
+                # Drive sorted objects along the take-away conveyor away from the line.
+                data.qvel[velocity + 1] = -0.20
             if on_belt and within_reach(
                 (float(position[0]), float(position[1]), float(position[2])), self.plan
             ):
@@ -388,3 +391,14 @@ def _on_belt(position: Any, plan: SceneLayout) -> bool:
         < position[2]
         <= surface + BELT_HEIGHT_TOLERANCE
     )
+
+
+def _on_takeaway(position: Any, plan: SceneLayout) -> bool:
+    """Return whether a body is resting on one of the take-away conveyors."""
+    x, y, z = float(position[0]), float(position[1]), float(position[2])
+    if not (0.25 <= z <= 0.45):
+        return False
+    for cx, cy, _ in plan.chutes.values():
+        if abs(x - cx) <= 0.15 and (cy - 1.50 <= y <= cy + 0.10):
+            return True
+    return False

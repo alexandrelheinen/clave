@@ -323,14 +323,39 @@ def _add_chutes(
         )
         # The take-away runs out from under the throat, away from the line, so
         # it clears the belt and the pedestal both.
+        takeaway_y = offset + throat[1] / 2.0 - away_long / 2.0
         world.add_geom(
             name=f"takeaway_{channel}",
             type=mujoco.mjtGeom.mjGEOM_BOX,
             size=[away_wide / 2.0, away_long / 2.0, 0.02],
-            pos=[x, offset - away_long / 2.0, away_top],
+            pos=[x, takeaway_y, away_top - 0.02],
             rgba=[0.22, 0.22, 0.26, 1.0],
-            contype=0,
-            conaffinity=0,
+            contype=1,
+            conaffinity=1,
+        )
+        guide_h = 0.04
+        for sign in (-1.0, 1.0):
+            world.add_geom(
+                name=f"takeaway_{channel}_guide_{'lo' if sign < 0 else 'hi'}",
+                type=mujoco.mjtGeom.mjGEOM_BOX,
+                size=[0.005, away_long / 2.0, guide_h / 2.0],
+                pos=[
+                    x + sign * (away_wide / 2.0 + 0.005),
+                    takeaway_y,
+                    away_top + guide_h / 2.0,
+                ],
+                rgba=[0.30, 0.30, 0.34, 1.0],
+            )
+        world.add_geom(
+            name=f"takeaway_{channel}_end",
+            type=mujoco.mjtGeom.mjGEOM_BOX,
+            size=[away_wide / 2.0 + 0.01, 0.005, guide_h / 2.0],
+            pos=[
+                x,
+                offset + throat[1] / 2.0 - away_long - 0.005,
+                away_top + guide_h / 2.0,
+            ],
+            rgba=[0.30, 0.30, 0.34, 1.0],
         )
     return mouths
 
@@ -378,7 +403,7 @@ def _add_funnel(
             pos = [x, y, top - half_fall]
             pos[axis] += mid
             # Rotate about the axis the wall does not span, leaning inward.
-            angle = -sign * lean if axis == 0 else sign * lean
+            angle = sign * lean if axis == 0 else -sign * lean
             quat = (
                 [math.cos(angle / 2.0), 0.0, math.sin(angle / 2.0), 0.0]
                 if axis == 0
@@ -399,7 +424,7 @@ def _add_funnel(
         type=mujoco.mjtGeom.mjGEOM_BOX,
         size=[mouth[0] / 2.0, mouth[1] / 2.0, 0.004],
         pos=[x, y, top + 0.004],
-        rgba=[0.15, 0.45, 0.65, 1.0],
+        rgba=[0.15, 0.45, 0.65, 0.0],
         contype=0,
         conaffinity=0,
     )

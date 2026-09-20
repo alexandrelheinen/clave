@@ -267,12 +267,11 @@ chutes:
   # edge is guided in rather than left on a lip.
   mouth_meters: [0.22, 0.22]
   throat_meters: [0.12, 0.12]
-  throat_height_meters: 0.62
+  throat_height_meters: 0.58
 
   # The take-away conveyor under each throat. Plant downstream of the opening:
-  # nothing measures it, nothing collides with it, and it runs off the end of
-  # the world. It is here so a funnel does not end in nothing, and so a reader
-  # watching a run can see where a channel goes.
+  # receives sorted items, guides them, and carries them away from the sorting
+  # line.
   takeaway:
     surface_height_meters: 0.30
     width_meters: 0.24
@@ -315,15 +314,6 @@ environment:
     - mesh: shelf_e.obj
       position_meters: [-0.40, -2.40, 0.0]
       yaw_degrees: 180.0
-    - mesh: trash_can.obj
-      position_meters: [1.75, -1.50, 0.0]
-      yaw_degrees: 25.0
-    - mesh: pallet_jack.obj
-      position_meters: [-2.00, -1.65, 0.0]
-      yaw_degrees: 70.0
-    - mesh: bucket.obj
-      position_meters: [1.70, 1.60, 0.0]
-      yaw_degrees: 0.0
 
 # Every sensor that observes the belt. The tracker fuses by `role` and never
 # by `id`, so adding, moving or removing a camera changes this list and nothing
