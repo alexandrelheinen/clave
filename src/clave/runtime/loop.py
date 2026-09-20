@@ -376,6 +376,7 @@ def run(
 
     os.environ.setdefault("MUJOCO_GL", "osmesa")
     import mujoco
+    from tqdm import tqdm
 
     from clave.candidates.bench import _machine
 
@@ -383,6 +384,8 @@ def run(
     rng = np.random.default_rng(settings.seed)
     model, data, plan = scene.build(raw, rng, root)
     spawn = config.require(raw, "spawn")
+    effector = config.require(raw, "effector")
+    finger_length = float(config.require(effector, "finger_length_meters", "effector"))
     conveyor = belt.Conveyor(
         plan,
         rng,
@@ -441,17 +444,26 @@ def run(
     with bridge:
         next_capture = 0.0
         next_frame = 0.0
-        for _ in range(int(settings.seconds / plan.timestep)):
+        
+        def _interruptible(iterable):
+            try:
+                yield from iterable
+            except KeyboardInterrupt:
+                print("\nSimulation interrupted by user. Finalizing...")
+
+        for _ in _interruptible(tqdm(range(int(settings.seconds / plan.timestep)), desc="Simulating", unit="step")):
             mujoco.mj_step(model, data)
             conveyor.step(model, data)
             labels = _labels(model, data, conveyor, exit_coordinate)
             reachable = [label for label in labels if label.in_reachable_window]
             if reachable:
+                target = np.array(reachable[0].position)
+                target[2] += finger_length
                 armmod.step_toward(
                     model,
                     data,
                     indices,
-                    np.array(reachable[0].position),
+                    target,
                     gain=ARM_GAIN,
                 )
             if (

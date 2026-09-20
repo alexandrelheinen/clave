@@ -41,6 +41,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from tqdm import tqdm
+
 from clave.control.guidance import Command, Motion, toward
 from clave.control.pick import JAW_OPEN
 from clave.control.selection import Selector
@@ -435,8 +437,15 @@ def run(
     )
     next_capture = 0.0
     next_frame = 0.0
+
+    def _interruptible(iterable):
+        try:
+            yield from iterable
+        except KeyboardInterrupt:
+            print("\nSimulation interrupted by user. Finalizing...")
+
     try:
-        for _ in range(int(seconds / plan.timestep)):
+        for _ in _interruptible(tqdm(range(int(seconds / plan.timestep)), desc="Simulating", unit="step")):
             mujoco.mj_step(model, data)
             conveyor.step(model, data)
             # Checked every tick, not every capture. An object released

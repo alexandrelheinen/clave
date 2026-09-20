@@ -23,7 +23,7 @@ video:
   frames_per_second: 30
   # Simulated seconds between rendered frames. At 0.05 with 30 frames a second,
   # the recording plays at 1.5 times simulated time.
-  interval_seconds: 0.05
+  interval_seconds: 0.03333
   # An oblique view down the belt, which shows the objects arriving and the arm
   # reaching across them. The overhead camera the model sees is a different
   # view and a worse one to watch.
@@ -35,4 +35,4 @@ video:
   azimuth_degrees: 150.0
   elevation_degrees: -26.0
   distance_meters: 4.40
-  lookat_meters: [0.0, -0.10, 1.00]
+  lookat_meters: [0.0, 0.0, 1.00]
