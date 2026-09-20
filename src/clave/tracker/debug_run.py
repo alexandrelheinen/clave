@@ -34,6 +34,7 @@ it is needed most.
 
 from __future__ import annotations
 
+import logging
 import math
 import os
 import time
@@ -65,6 +66,8 @@ from clave.world import arm as armmod
 from clave.world import belt, config, scene
 from clave.world.effector import Effector
 from clave.world.feed import FeedSettings, RateController
+
+LOGGER = logging.getLogger(__name__)
 
 NANOS_PER_SECOND = 1_000_000_000
 """Nanoseconds in a second, for the instants an observation carries."""
@@ -228,6 +231,15 @@ def run(
         DebugRunError: If the world declares no detection camera.
     """
     os.environ.setdefault("MUJOCO_GL", "osmesa")
+    LOGGER.debug(
+        "initializing tracker debug run: root=%s out=%s seconds=%.3f seed=%d "
+        "capture_interval=%.3f",
+        root,
+        out,
+        seconds,
+        seed,
+        capture_interval,
+    )
     import cv2
     import mujoco
     import numpy as np
@@ -442,10 +454,12 @@ def run(
         try:
             yield from iterable
         except KeyboardInterrupt:
-            print("\nSimulation interrupted by user. Finalizing...")
+            LOGGER.warning("simulation interrupted by user; finalizing")
 
     try:
-        for _ in _interruptible(tqdm(range(int(seconds / plan.timestep)), desc="Simulating", unit="step")):
+        steps = int(seconds / plan.timestep)
+        progress = tqdm(range(steps), desc="Simulating", unit="step")
+        for _ in _interruptible(progress):
             mujoco.mj_step(model, data)
             conveyor.step(model, data)
             # Checked every tick, not every capture. An object released

@@ -23,11 +23,20 @@ from __future__ import annotations
 
 import hashlib
 import io
+import logging
 import shutil
 import sys
 import urllib.request
 import zipfile
 from pathlib import Path
+
+LOGGER = logging.getLogger(__name__)
+
+
+def _log_output(*values: object, file: object = None) -> None:
+    """Write importer output through logging at its appropriate severity."""
+    level = logging.WARNING if file is sys.stderr else logging.INFO
+    LOGGER.log(level, " ".join(str(value) for value in values))
 
 ROOT = Path(__file__).resolve().parent.parent
 SOURCE = ROOT / "third_party" / "aws-robomaker-small-warehouse-world" / "models"
@@ -86,6 +95,7 @@ def convert(name: str, model: str) -> tuple[str, tuple[float, float, float]]:
     """
     import trimesh
 
+    LOGGER.debug("loading warehouse mesh %s from %s", name, model)
     candidates = sorted((SOURCE / model / "meshes").glob("*visual*.DAE"))
     if not candidates:
         raise FileNotFoundError(f"{model} has no visual mesh")
@@ -116,16 +126,17 @@ def import_conveyor() -> tuple[float, float, float] | None:
     """
     import trimesh
 
+    LOGGER.debug("loading conveyor archive from %s", CONVEYOR_URL)
     try:
         with urllib.request.urlopen(CONVEYOR_URL, timeout=120) as response:
             payload = response.read()
     except OSError as error:
-        print(f"  could not reach Gazebo Fuel: {error}", file=sys.stderr)
+        _log_output(f"  could not reach Gazebo Fuel: {error}", file=sys.stderr)
         return None
 
     digest = hashlib.sha256(payload).hexdigest()
     if digest != CONVEYOR_SHA256:
-        print(
+        _log_output(
             f"  the conveyor archive hashes to {digest}, and this build pins\n"
             f"  {CONVEYOR_SHA256}. Refusing bytes nobody described.",
             file=sys.stderr,
@@ -176,8 +187,13 @@ def main() -> int:
     Returns:
         A process exit code.
     """
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+    LOGGER.debug("initializing asset importer: source=%s output=%s", SOURCE, OUT)
     if not SOURCE.is_dir():
-        print(
+        _log_output(
             "the warehouse submodule is not checked out. Run:\n"
             "  git submodule update --init "
             "third_party/aws-robomaker-small-warehouse-world",
@@ -187,7 +203,7 @@ def main() -> int:
     try:
         import trimesh  # noqa: F401
     except ImportError:
-        print(
+        _log_output(
             'trimesh and pycollada are needed. Run: uv pip install "clave[assets]"',
             file=sys.stderr,
         )
@@ -198,7 +214,7 @@ def main() -> int:
     for name, (model, upstream) in sorted(TEXTURES.items()):
         source = SOURCE / model / "materials" / "textures" / upstream
         if not source.is_file():
-            print(f"  missing texture {source}", file=sys.stderr)
+            _log_output(f"  missing texture {source}", file=sys.stderr)
             continue
         shutil.copyfile(source, OUT / "textures" / name)
 
@@ -221,16 +237,22 @@ def main() -> int:
         manifest.append(f"| `textures/{name}` | `{model}` | texture |")
     (OUT / "IMPORTED.md").write_text("\n".join(manifest) + "\n")
 
-    print(f"  wrote {len(rows)} meshes and {len(TEXTURES)} textures to {OUT}")
+    _log_output(f"  wrote {len(rows)} meshes and {len(TEXTURES)} textures to {OUT}")
     for name, extents in rows:
-        print(f"    {name:18s} {extents[0]:.3f} x {extents[1]:.3f} x {extents[2]:.3f} m")
+        _log_output(
+            f"    {name:18s} {extents[0]:.3f} x {extents[1]:.3f} x "
+            f"{extents[2]:.3f} m"
+        )
 
     module = import_conveyor()
     if module is None:
-        print("  the conveyor module was not imported; the belt stays a box")
+        _log_output("  the conveyor module was not imported; the belt stays a box")
         return 0
-    print(f"  wrote the conveyor module to {CONVEYOR_OUT}")
-    print(f"    module.obj         {module[0]:.3f} x {module[1]:.3f} x {module[2]:.3f} m")
+    _log_output(f"  wrote the conveyor module to {CONVEYOR_OUT}")
+    _log_output(
+        f"    module.obj         {module[0]:.3f} x {module[1]:.3f} x "
+        f"{module[2]:.3f} m"
+    )
     return 0
 
 

@@ -7,6 +7,7 @@ can change without editing shell.
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 from pathlib import Path
 from typing import Any
@@ -17,6 +18,22 @@ from clave.errors import ClaveError
 
 DEFAULT_MANIFEST = Path("corpora/manifest.toml")
 DEFAULT_GATES = Path("configs/validation/gates.yml")
+LOGGER = logging.getLogger(__name__)
+
+
+def _log_output(*values: object, file: Any = None) -> None:
+    """Write command output through logging at its appropriate severity."""
+    level = logging.WARNING if file is sys.stderr else logging.INFO
+    LOGGER.log(level, " ".join(str(value) for value in values))
+
+
+def _configure_logging(level: str) -> None:
+    """Configure the process-wide log level selected by the operator."""
+    logging.basicConfig(
+        level=getattr(logging, level.upper()),
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+    LOGGER.debug("logging configured at %s", level.upper())
 
 
 def _verify_manifest(root: Path) -> int:
@@ -36,13 +53,13 @@ def _verify_manifest(root: Path) -> int:
     for name, artifact in sorted(manifest.artifacts.items()):
         local = root / artifact.source
         if not local.is_file():
-            print(f"  remote   {name}: not fetched locally")
+            _log_output(f"  remote   {name}: not fetched locally")
             continue
         result = verify(artifact, local)
         if result.available:
-            print(f"  ok       {name}")
+            _log_output(f"  ok       {name}")
         else:
-            print(f"  FAILED   {name}: {result.status.value}")
+            _log_output(f"  FAILED   {name}: {result.status.value}")
             failures += 1
     return 1 if failures else 0
 
@@ -59,8 +76,10 @@ def _record(root: Path, name: str, path: Path) -> int:
         A process exit code.
     """
     manifest = Manifest.load(root / DEFAULT_MANIFEST)
-    print(record_digest(manifest[name], path))
-    print("Review this digest, then add it to the manifest by hand.", file=sys.stderr)
+    _log_output(record_digest(manifest[name], path))
+    _log_output(
+        "Review this digest, then add it to the manifest by hand.", file=sys.stderr
+    )
     return 0
 
 
@@ -77,18 +96,18 @@ def _bench_candidates(warmup: int, repetitions: int) -> int:
     """
     from clave.candidates.registry import sweep
 
-    print(
+    _log_output(
         f"{'candidate':28s} {'stage':11s} "
         f"{'params':>10s} {'median':>12s} {'spread':>10s}"
     )
     for spec, result, note in sweep(warmup=warmup, repetitions=repetitions):
         if result is None or result.median_latency_seconds is None:
-            print(
+            _log_output(
                 f"{spec.name:28s} {spec.stage.value:11s} "
                 f"{'-':>10s} {'-':>12s} {'-':>10s}  {note}"
             )
             continue
-        print(
+        _log_output(
             f"{spec.name:28s} {spec.stage.value:11s} "
             f"{result.parameter_count / 1e6:9.2f}M "
             f"{result.median_latency_seconds * 1000:11.1f}ms "
@@ -127,22 +146,24 @@ def _world_probe(root: Path, seconds: float, seed: int) -> int:
         entry_margin=float(config.require(spawn, "entry_margin_meters", "spawn")),
     )
     report = conveyor.report
-    print(f"  reach annulus     {report.reach_min:.3f} to {report.reach_max:.3f} m")
-    print(f"  belt offset       {report.belt_offset:.3f} m")
-    print(f"  reachable window  {report.window_length:.3f} m")
-    print(f"  belt speed        {report.belt_speed:.3f} m/s")
-    print(f"  time budget       {report.time_budget:.3f} s per object")
-    print(f"  channels          {len(plan.channels)} chutes")
+    _log_output(
+        f"  reach annulus     {report.reach_min:.3f} to {report.reach_max:.3f} m"
+    )
+    _log_output(f"  belt offset       {report.belt_offset:.3f} m")
+    _log_output(f"  reachable window  {report.window_length:.3f} m")
+    _log_output(f"  belt speed        {report.belt_speed:.3f} m/s")
+    _log_output(f"  time budget       {report.time_budget:.3f} s per object")
+    _log_output(f"  channels          {len(plan.channels)} chutes")
 
     for _ in range(int(seconds / plan.timestep)):
         mujoco.mj_step(model, data)
         conveyor.step(model, data)
 
-    print(f"  simulated         {data.time:.2f} s")
-    print(f"  spawned           {len(conveyor.active)}")
-    print(f"  entered window    {len(conveyor.entered_window())}")
+    _log_output(f"  simulated         {data.time:.2f} s")
+    _log_output(f"  spawned           {len(conveyor.active)}")
+    _log_output(f"  entered window    {len(conveyor.entered_window())}")
     if not report.reachable:
-        print("  FAILED   the belt never enters the arm's reach")
+        _log_output("  FAILED   the belt never enters the arm's reach")
         return 1
     return 0
 
@@ -167,7 +188,7 @@ def _validate_run(root: Path, outcomes: Path, gates: Path | None) -> int:
         load_outcomes(outcomes),
         GateConfig.load(gates if gates is not None else root / DEFAULT_GATES),
     )
-    print(report.render())
+    _log_output(report.render())
     return 0 if report.passed else 1
 
 
@@ -208,20 +229,22 @@ def _record_dataset(root: Path, out: Path, seed: int) -> int:
                 rollout_id=f"rollout_{index:03d}",
             )
         )
-        print(f"  recorded rollout_{index:03d}: {len(rollouts[-1].examples)} examples")
+        _log_output(
+            f"  recorded rollout_{index:03d}: {len(rollouts[-1].examples)} examples"
+        )
 
     plan = splits.split(tuple(r.rollout_id for r in rollouts), proportions, seed)
     description = dataset.write(
         out, tuple(rollouts), plan.parts, seed, rollouts[0].examples[0].config_digest
     )
 
-    print(f"  digest            {description.digest[:16]}...")
-    print(f"  examples          {description.example_count}")
+    _log_output(f"  digest            {description.digest[:16]}...")
+    _log_output(f"  examples          {description.example_count}")
     for name in ("train", "validation", "test", "overall"):
         part = description.composition[name]
         absent = list(part["absent_classes"])  # type: ignore[call-overload]
         present = dict(part["class_counts"])  # type: ignore[call-overload]
-        print(
+        _log_output(
             f"  {name:16s}  {part['example_count']:4d} frames, "
             f"{len(present)} classes present, {len(absent)} absent"
         )
@@ -251,13 +274,13 @@ def _train(
     config = TrainingConfig.load(root / config_path, candidate)
     run = train(config, config.window_exit_meters)
     if run.unavailable_reason is not None:
-        print(f"  UNAVAILABLE  {config.candidate}: {run.unavailable_reason}")
+        _log_output(f"  UNAVAILABLE  {config.candidate}: {run.unavailable_reason}")
         return 1
-    print(f"  candidate     {run.candidate}")
-    print(f"  machine       {run.machine}, {run.threads} threads")
-    print(f"  dataset       {run.dataset_digest[:16]}...")
+    _log_output(f"  candidate     {run.candidate}")
+    _log_output(f"  machine       {run.machine}, {run.threads} threads")
+    _log_output(f"  dataset       {run.dataset_digest[:16]}...")
     for epoch in run.epochs:
-        print(
+        _log_output(
             f"  epoch {epoch.index:2d}      loss {epoch.loss:10.4f}   "
             f"{epoch.seconds:8.1f} s"
         )
@@ -277,15 +300,17 @@ def _train(
             try:
                 d1 = D1Client(load_d1_config())
             except Exception as d1_err:
-                print(f"  note     D1 tracking unavailable: {d1_err}", file=sys.stderr)
+                _log_output(
+                    f"  note     D1 tracking unavailable: {d1_err}", file=sys.stderr
+                )
 
             ckpt_path = _checkpoint_path(config)
             rec_path = run_record_path(config.checkpoints, config.candidate)
             key = push_training_run(ckpt_path, rec_path, r2, d1)
-            print(f"  synced        checkpoint to R2: {key}")
+            _log_output(f"  synced        checkpoint to R2: {key}")
         except Exception as exc:
             # Offline independence (AC-DATA-08)
-            print(
+            _log_output(
                 f"  WARNING  remote sync failed: {exc}; local artifacts retained",
                 file=sys.stderr,
             )
@@ -328,10 +353,10 @@ def _benchmark(
 
     scored = []
     for configuration in config.configurations:
-        print(f"  running         {configuration.name}")
+        _log_output(f"  running         {configuration.name}")
         result = run_configuration(root, config, configuration, out / "runs")
         if not result.available:
-            print(f"  UNAVAILABLE     {result.unavailable_reason}")
+            _log_output(f"  UNAVAILABLE     {result.unavailable_reason}")
         scored.append(score(result, gates))
 
     pack = EvidencePack(
@@ -343,10 +368,10 @@ def _benchmark(
         world_digest=digest_of(root / "configs" / "world" / "sorting_line.yml"),
     )
     pack.write(out / "benchmark.json")
-    print()
-    print(pack.render())
-    print()
-    print(f"  evidence pack   {out / 'benchmark.json'}")
+    _log_output()
+    _log_output(pack.render())
+    _log_output()
+    _log_output(f"  evidence pack   {out / 'benchmark.json'}")
     if sync:
         try:
             from clave.storage import (
@@ -362,13 +387,15 @@ def _benchmark(
             try:
                 d1 = D1Client(load_d1_config())
             except Exception as d1_err:
-                print(f"  note     D1 tracking unavailable: {d1_err}", file=sys.stderr)
+                _log_output(
+                    f"  note     D1 tracking unavailable: {d1_err}", file=sys.stderr
+                )
 
             pack_key = push_benchmark(out / "benchmark.json", r2, d1)
-            print(f"  synced        evidence pack to R2: {pack_key}")
+            _log_output(f"  synced        evidence pack to R2: {pack_key}")
         except Exception as exc:
             # Offline independence (AC-DATA-08)
-            print(
+            _log_output(
                 f"  WARNING  remote sync failed: {exc}; local artifacts retained",
                 file=sys.stderr,
             )
@@ -402,16 +429,16 @@ def _still(root: Path, name: str, out: Path) -> int:
         )
         raise StillError(f"no still named {name!r}. Available: {', '.join(available)}")
     scenario = StillScenario.load(path)
-    print(f"  {scenario.description}")
-    print()
+    _log_output(f"  {scenario.description}")
+    _log_output()
     written = capture(root, scenario, out)
-    print(
+    _log_output(
         f"  seed            {scenario.seed}, captured at "
         f"{scenario.capture_at_seconds:.2f} simulated seconds"
     )
-    print(f"  size            {scenario.width} x {scenario.height}")
+    _log_output(f"  size            {scenario.width} x {scenario.height}")
     for file in written:
-        print(f"  wrote           {file}")
+        _log_output(f"  wrote           {file}")
     return 0
 
 
@@ -441,11 +468,11 @@ def _dataset_push(root: Path, path: Path) -> int:
         d1_config = load_d1_config()
         d1 = D1Client(d1_config)
     except Exception as exc:
-        print(f"  note     D1 registration unavailable: {exc}", file=sys.stderr)
+        _log_output(f"  note     D1 registration unavailable: {exc}", file=sys.stderr)
 
     dataset_dir = root / path if not path.is_absolute() else path
     uploaded, skipped = push_dataset(dataset_dir, r2, d1)
-    print(f"  dataset push complete: {uploaded} uploaded, {skipped} skipped")
+    _log_output(f"  dataset push complete: {uploaded} uploaded, {skipped} skipped")
     return 0
 
 
@@ -467,8 +494,8 @@ def _dataset_pull(root: Path, digest: str, out: Path) -> int:
 
     destination = (root / out / digest) if not out.is_absolute() else (out / digest)
     description = pull_dataset(digest, destination, r2)
-    print(f"  verified dataset {description.digest[:16]}... in {destination}")
-    print(f"  examples        {description.example_count}")
+    _log_output(f"  verified dataset {description.digest[:16]}... in {destination}")
+    _log_output(f"  examples        {description.example_count}")
     return 0
 
 
@@ -483,7 +510,7 @@ def _storage_init_db() -> int:
     d1_config = load_d1_config()
     d1 = D1Client(d1_config)
     d1.init_schema()
-    print("  database schema initialized in Cloudflare D1")
+    _log_output("  database schema initialized in Cloudflare D1")
     return 0
 
 
@@ -504,18 +531,18 @@ def _runs_list(limit: int) -> int:
     training_runs = d1.list_training_runs(limit=limit)
     benchmarks = d1.list_benchmarks(limit=limit)
 
-    print("Training Runs:")
+    _log_output("Training Runs:")
     if not training_runs:
-        print("  no training runs recorded")
+        _log_output("  no training runs recorded")
     else:
-        print(
+        _log_output(
             f"  {'run_id':28s} {'candidate':12s} {'epochs':>6s} {'loss':>10s} "
             f"{'created_at':19s}"
         )
         for r in training_runs:
             loss_val = r.get("final_loss")
             loss_str = f"{loss_val:.4f}" if loss_val is not None else "-"
-            print(
+            _log_output(
                 f"  {str(r.get('run_id', '-')):28s} "
                 f"{str(r.get('candidate', '-')):12s} "
                 f"{str(r.get('epochs', '-')):>6s} "
@@ -523,12 +550,12 @@ def _runs_list(limit: int) -> int:
                 f"{str(r.get('created_at', '-'))[:19]:19s}"
             )
 
-    print()
-    print("Benchmarks:")
+    _log_output()
+    _log_output("Benchmarks:")
     if not benchmarks:
-        print("  no benchmarks recorded")
+        _log_output("  no benchmarks recorded")
     else:
-        print(
+        _log_output(
             f"  {'benchmark_id':32s} {'configuration':20s} {'accuracy':>8s} "
             f"{'p99 ms':>8s} {'verdict':8s}"
         )
@@ -538,7 +565,7 @@ def _runs_list(limit: int) -> int:
             p99 = b.get("decision_latency_p99_seconds")
             p99_str = f"{p99 * 1000:.1f}" if p99 is not None else "-"
             verdict = "PASSED" if b.get("passed") else "FAILED"
-            print(
+            _log_output(
                 f"  {str(b.get('benchmark_id', '-')):32s} "
                 f"{str(b.get('configuration_name', '-')):20s} "
                 f"{acc_str:>8s} "
@@ -589,8 +616,8 @@ def _checkpoint_pull(
             candidate, config_digest, dataset_digest, destination, r2
         )
 
-    print(f"  restored checkpoint: {ckpt}")
-    print(f"  restored run record: {rec}")
+    _log_output(f"  restored checkpoint: {ckpt}")
+    _log_output(f"  restored run record: {rec}")
     return 0
 
 
@@ -605,6 +632,12 @@ def main(argv: list[str] | None = None) -> int:
     """
     parser = argparse.ArgumentParser(prog="clave", description=__doc__)
     parser.add_argument("--root", type=Path, default=Path.cwd())
+    parser.add_argument(
+        "--log-level",
+        choices=("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"),
+        default="INFO",
+        help="logging verbosity (default: INFO)",
+    )
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("verify-manifest", help="verify every locally present artifact")
     record = sub.add_parser("record-digest", help="report a digest for review")
@@ -727,6 +760,7 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     args = parser.parse_args(argv)
+    _configure_logging(args.log_level)
     try:
         if args.command == "verify-manifest":
             return _verify_manifest(args.root)
@@ -766,7 +800,7 @@ def main(argv: list[str] | None = None) -> int:
             return _validate_run(args.root, args.outcomes, args.gates)
         return _record(args.root, args.name, args.path)
     except ClaveError as exc:
-        print(f"  FAILED   {exc}", file=sys.stderr)
+        _log_output(f"  FAILED   {exc}", file=sys.stderr)
         return 1
 
 
@@ -796,21 +830,23 @@ def _debug_tracker(root: Path, args: Any) -> int:
         fps=args.fps,
         view_name=args.view,
     )
-    print()
-    print(f"  captures        {report.captures}")
-    print(f"  tracks open     {report.tracks}")
-    print(f"  markers on last {report.drawn}, as {report.geoms} geoms")
+    _log_output()
+    _log_output(f"  captures        {report.captures}")
+    _log_output(f"  tracks open     {report.tracks}")
+    _log_output(f"  markers on last {report.drawn}, as {report.geoms} geoms")
     rebuilt = ", ".join(f"{why} {count}" for why, count in report.reorders.items())
-    print(f"  queue rebuilt   {rebuilt}, of {report.captures} captures")
-    print(f"  head swapped    {report.head_churn} times with the old head still there")
-    print(f"  profile         {report.profile}")
-    print(
+    _log_output(f"  queue rebuilt   {rebuilt}, of {report.captures} captures")
+    _log_output(
+        f"  head swapped    {report.head_churn} times with the old head still there"
+    )
+    _log_output(f"  profile         {report.profile}")
+    _log_output(
         f"  feed rate       {report.measured_rate:.3f} of "
         f"{report.feed_rate:.3f} objects/s, belt at {report.belt_speed:.3f} m/s"
     )
-    print(f"  visits served   {len(report.served)} {list(report.served)}")
+    _log_output(f"  visits served   {len(report.served)} {list(report.served)}")
     if report.missed:
-        print(f"  no interception {len(report.missed)} {list(report.missed)}")
+        _log_output(f"  no interception {len(report.missed)} {list(report.missed)}")
     if report.arrivals:
         # Median rather than mean, and the count of outliers beside it. The
         # mean lied: sixteen visits at 2 to 4 mm and one at 688 mm reads as
@@ -818,42 +854,42 @@ def _debug_tracker(root: Path, args: Any) -> int:
         ranked = sorted(report.arrivals)
         middle = ranked[len(ranked) // 2] * 1000
         stray = sum(1 for gap in ranked if gap > 0.050)
-        print(
+        _log_output(
             f"  arrival error   median {middle:.1f} mm, worst "
             f"{ranked[-1] * 1000:.1f} mm, {stray} over 50 mm"
         )
     if report.jaw_gaps:
         each = ", ".join(f"{gap * 1000:.0f}" for gap in report.jaw_gaps)
-        print(f"  jaw to object   {each} mm when the jaw shut")
+        _log_output(f"  jaw to object   {each} mm when the jaw shut")
     if report.placed or report.misrouted:
         total = sum(report.placed.values())
         each = ", ".join(f"{c}: {n}" for c, n in sorted(report.placed.items()))
-        print(f"  placed          {total} down a chute ({each})")
-        print(f"  misrouted       {report.misrouted} of {total}")
+        _log_output(f"  placed          {total} down a chute ({each})")
+        _log_output(f"  misrouted       {report.misrouted} of {total}")
     if report.lifts:
         held = sum(1 for lift in report.lifts if lift >= GRASPED_METERS)
         each = ", ".join(f"{lift * 1000:.0f}" for lift in report.lifts)
-        print(f"  grasps held     {held} of {len(report.lifts)}, lifts {each} mm")
-    print(f"  faults          {len(report.faults)}")
+        _log_output(f"  grasps held     {held} of {len(report.lifts)}, lifts {each} mm")
+    _log_output(f"  faults          {len(report.faults)}")
     for track_id, why in report.faults:
-        print(f"    track {track_id}: {why}")
-    print(f"  ended in        {report.phase}")
+        _log_output(f"    track {track_id}: {why}")
+    _log_output(f"  ended in        {report.phase}")
     if report.closest_approach is not None:
-        print(f"  to commanded    {report.closest_approach * 1000:.0f} mm")
+        _log_output(f"  to commanded    {report.closest_approach * 1000:.0f} mm")
     if report.closest_live is not None:
-        print(f"  to the object   {report.closest_live * 1000:.0f} mm")
-    print(f"  frames written  {report.frames_written} to {report.output}")
+        _log_output(f"  to the object   {report.closest_live * 1000:.0f} mm")
+    _log_output(f"  frames written  {report.frames_written} to {report.output}")
     if report.video_path is not None:
-        print(f"  video           {report.video_path}")
+        _log_output(f"  video           {report.video_path}")
     if report.windowed:
-        print("  window          shown live")
+        _log_output("  window          shown live")
     else:
-        print(f"  window          none, {report.reason}")
-    print()
-    print("  These frames are a debug render of the tracker alone. They are not")
-    print("  the runtime loop's output and must not be published as a figure.")
-    print("  The markers are scene geometry. Their height is a configured")
-    print("  standoff, because no sensor on this line estimates one.")
+        _log_output(f"  window          none, {report.reason}")
+    _log_output()
+    _log_output("  These frames are a debug render of the tracker alone. They are not")
+    _log_output("  the runtime loop's output and must not be published as a figure.")
+    _log_output("  The markers are scene geometry. Their height is a configured")
+    _log_output("  standoff, because no sensor on this line estimates one.")
     return 0
 
 

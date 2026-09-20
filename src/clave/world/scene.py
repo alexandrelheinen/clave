@@ -10,6 +10,7 @@ CLAVE does not vendor meshes.
 
 from __future__ import annotations
 
+import logging
 import math
 import warnings
 from dataclasses import dataclass, field, replace
@@ -21,6 +22,8 @@ import numpy as np
 from clave.world import arm
 from clave.world.config import WorldConfigError, require, require_range
 from clave.world.objects import ObjectSpec, channels, parse
+
+LOGGER = logging.getLogger(__name__)
 
 FLANGE_SITE = "attachment_site"
 """The face the gripper bolts to, as the arm model names it before prefixing.
@@ -229,6 +232,11 @@ def layout(raw: dict[str, Any], rng: np.random.Generator) -> SceneLayout:
     spawn_cfg = require(raw, "spawn")
     specs = parse(
         require(raw, "objects"),
+        float(require(arm_cfg, "max_grasp_width_meters", "arm")),
+    )
+    LOGGER.debug(
+        "world layout: %d object templates, jaw limit %.3f m, seed state initialized",
+        len(specs),
         float(require(arm_cfg, "max_grasp_width_meters", "arm")),
     )
 
@@ -1117,12 +1125,19 @@ def build(
     """
     import mujoco
 
+    LOGGER.debug("loading MuJoCo scene assets from %s", root)
     plan = layout(raw, rng)
     chutes_cfg = require(raw, "chutes")
     spawn_cfg = require(raw, "spawn")
     camera_cfg = require(raw, "cameras")
 
     mujoco_spec = mujoco.MjSpec()
+    LOGGER.debug(
+        "initializing MuJoCo world: timestep %.6f s, pool size %d, channels %s",
+        plan.timestep,
+        plan.pool_size,
+        plan.channels,
+    )
     mujoco_spec.option.timestep = plan.timestep
     # Adopt the manipulator's contact settings rather than the defaults, since
     # its grasp behavior was tuned with them.

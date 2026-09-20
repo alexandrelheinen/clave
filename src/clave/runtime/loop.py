@@ -9,6 +9,7 @@ path works, never as evidence that the path is right.
 from __future__ import annotations
 
 import json
+import logging
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -26,6 +27,8 @@ from clave.tracker.evidence import Role
 from clave.tracker.sensors import load_sensors, require_role
 from clave.world import arm as armmod
 from clave.world import belt, config, scene
+
+LOGGER = logging.getLogger(__name__)
 
 NANOS_PER_SECOND = 1_000_000_000
 """Nanoseconds in a second, for the monotonic times the boundary carries."""
@@ -114,6 +117,7 @@ class RuntimeSettings:
         Raises:
             RuntimeConfigError: If a key is missing or a class is unknown.
         """
+        LOGGER.debug("loading runtime settings from %s", path)
         raw = yaml.safe_load(path.read_text())
         runtime = _require(raw, "runtime")
         routing = _require(raw, "routing")
@@ -123,7 +127,7 @@ class RuntimeSettings:
                 raise RuntimeConfigError(
                     f"routing.channels names {class_id!r}, which is not in the taxonomy"
                 )
-        return cls(
+        settings = cls(
             perception=str(_require(runtime, "perception", "runtime")),
             policy=str(_require(runtime, "policy", "runtime")),
             checkpoints=Path(str(_require(runtime, "checkpoints", "runtime"))),
@@ -147,6 +151,18 @@ class RuntimeSettings:
                 ),
             ),
         )
+        LOGGER.debug(
+            "runtime settings initialized: perception=%s policy=%s seconds=%.3f "
+            "capture_interval=%.3f seed=%d frame=%dx%d",
+            settings.perception,
+            settings.policy,
+            settings.seconds,
+            settings.capture_interval_seconds,
+            settings.seed,
+            settings.frame_width,
+            settings.frame_height,
+        )
+        return settings
 
 
 def _require(mapping: Any, key: str, path: str = "") -> Any:
@@ -444,14 +460,16 @@ def run(
     with bridge:
         next_capture = 0.0
         next_frame = 0.0
-        
+
         def _interruptible(iterable):
             try:
                 yield from iterable
             except KeyboardInterrupt:
-                print("\nSimulation interrupted by user. Finalizing...")
+                LOGGER.warning("simulation interrupted by user; finalizing")
 
-        for _ in _interruptible(tqdm(range(int(settings.seconds / plan.timestep)), desc="Simulating", unit="step")):
+        steps = int(settings.seconds / plan.timestep)
+        progress = tqdm(range(steps), desc="Simulating", unit="step")
+        for _ in _interruptible(progress):
             mujoco.mj_step(model, data)
             conveyor.step(model, data)
             labels = _labels(model, data, conveyor, exit_coordinate)
