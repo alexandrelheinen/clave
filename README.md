@@ -45,48 +45,82 @@ The split between learned policy and deterministic safety is where Rust
 earns its place, and the perception stage becomes a replaceable component
 behind a contract.
 
+## Installation
+
+```bash
+git clone --recurse-submodules https://github.com/alexandrelheinen/clave.git
+cd clave
+./scripts/setup.sh                  # reports missing tools, installs nothing silently
+
+uv venv .venv && . .venv/bin/activate
+uv pip install -e ".[dev,world]"    # Python deps, MuJoCo, dev tooling
+cargo build --release -p clave-sitl # Rust safety layer
+
+# Optional: scene dressing (shelves, pallets, trash cans).
+# Without it the belt uses a plain box on legs and the floor a gray plane.
+uv pip install -e ".[assets]" && python scripts/import_scene_assets.py
+```
+
 ## Running it
 
-Two commands do something visible. Both need the world extra and a built
-runtime: `uv pip install -e ".[dev,world]"` and `cargo build --release -p
-clave-sitl`. For the scene assets, also run
-`uv pip install -e ".[assets]" && python scripts/import_scene_assets.py` once.
-Without it the belt falls back to a plain box on legs and the floor to a gray
-plane; everything still runs and the world reports which it used.
+Everything that runs the simulation lives under a single command:
 
 ```bash
-python -m clave.cli demo sorting-line
+clave sim
 ```
 
-Runs one scenario end to end and records a video of the simulation it ran.
-Objects ride the belt, inference proposes a pick, the Rust safety layer accepts
-or overrides it, and the decision is published. Every tunable, including the
-angle the video is filmed from, lives in `configs/demos/`. Nothing is drawn on a
-frame: the video is what MuJoCo rendered.
+By default it runs the sorting-line simulation and annotates the rollout with
+everything the tracker believes: markers, beliefs, queue decisions, arrival
+errors and grasp lifts. A window opens when a display is available.
+
+### `sim` options
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--video` | off | Write a playable `.mp4` beside the frame PNGs |
+| `--no-window` | off | Suppress the live viewer (headless rendering) |
+| `--seconds N` | `14.0` | Simulated seconds to run |
+| `--seed N` | `0` | RNG seed for belt speed, placement and spawn timing |
+| `--fps N` | from config | Playback rate of the recorded video |
+| `--view NAME` | from config | Which camera view in `configs/debug/tracker.yml` to film from |
+| `--out DIR` | `runs/debug/tracker` | Where frame PNGs, records and the video go |
+| `--still [SCENARIO]` | — | Capture still frames instead of running the simulation. Names a scenario under `configs/stills/` (default: `thumbnail`) |
+| `--still-out DIR` | `runs/stills` | Output directory for stills |
+
+### Examples
 
 ```bash
-python -m clave.cli benchmark
+# Run headlessly and record a video
+clave sim --video --no-window
+
+# Longer run with a different seed
+clave sim --video --no-window --seconds 60 --seed 42
+
+# Film from the wide "line" view
+clave sim --video --no-window --view line
+
+# Capture publication-quality still frames
+clave sim --still
+
+# Capture stills from a named scenario
+clave sim --still thumbnail --still-out renders/
 ```
 
-Runs every configuration in `configs/benchmark/default.yml` over the same seeds
-and prints one comparison, with an evidence pack beside it. Read
+### Other commands
+
+```bash
+clave benchmark       # compare every configuration in one table
+clave record-dataset  # record labeled rollouts for training
+clave train --candidate <name>          # train one candidate
+clave validate-run --outcomes <file>    # score against gates
+```
+
+The benchmark runs every configuration in `configs/benchmark/default.yml` over
+the same seeds and prints one comparison, with an evidence pack beside it. Read
 [docs/measurements.md](docs/measurements.md) before reading the table, because
 two of the five headline metrics cannot be measured yet and that document says
 why.
 
-```bash
-python -m clave.cli still thumbnail
-```
-
-Captures three 1920 by 1080 frames of a real rollout, lit for a page rather
-than for a dataset. The lighting and the cameras live in `configs/stills/` and
-reach the world as an argument, so `configs/world/sorting_line.yml`, which data
-generation, training, validation and the benchmark all read, is untouched by
-them.
-
-Smaller commands: `clave run-sitl` for one loop with latency, `clave record-dataset`
-to record rollouts, `clave train --candidate <name>` to train one, and
-`clave validate-run --outcomes <file>` to score records against the gates.
 
 ## The simulated line, and its dimensions
 

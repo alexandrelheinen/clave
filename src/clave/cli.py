@@ -292,78 +292,7 @@ def _train(
     return 0
 
 
-def _run_sitl(
-    root: Path,
-    config_path: Path,
-    scripted: bool,
-    directory: Path,
-    seconds: float | None,
-    publish_to_ros: bool,
-) -> int:
-    """Run the software-in-the-loop runtime and report what it did.
 
-    Args:
-        root: Repository root.
-        config_path: Path to the runtime configuration.
-        scripted: Run the scripted expert instead of the trained checkpoints.
-        directory: Where the sockets, the runtime configuration and the record
-            go.
-        seconds: Overrides how many simulated seconds to run, which is how a
-            measurement gets enough samples for a percentile to mean anything.
-        publish_to_ros: Put every published decision on a ROS 2 topic.
-
-    Returns:
-        A process exit code.
-    """
-    from clave.runtime import loop
-    from clave.runtime.inference import (
-        CheckpointPredictor,
-        Predictor,
-        ScriptedPredictor,
-    )
-
-    settings = loop.RuntimeSettings.load(root / config_path)
-    if seconds is not None:
-        settings = loop.RuntimeSettings(**{**vars(settings), "seconds": seconds})
-    predictor: Predictor
-    if scripted:
-        predictor = ScriptedPredictor()
-    else:
-        predictor = CheckpointPredictor(
-            checkpoints=root / settings.checkpoints,
-            perception=settings.perception,
-            policy=settings.policy,
-            presence_floor=settings.presence_floor,
-            association_radius=settings.association_radius_meters,
-        )
-    report = loop.run(root, settings, predictor, directory, publish_to_ros)
-    loop.write_record(directory / "sitl.json", report)
-
-    print(f"  predictor       {report.predictor}")
-    print(f"  machine         {report.machine}, {report.threads} threads")
-    size = f"{report.frame_width}x{report.frame_height}"
-    print(f"  frames          {report.frames} at {size}")
-    print(f"  proposals       {report.proposals}, {report.silent_frames} silent frames")
-    for name in sorted(report.counters):
-        print(f"  {name:22s}  {report.counters[name]}")
-    print(f"  decisions back  {report.decisions_received}")
-    if publish_to_ros:
-        print(f"  published       {report.published_to_ros} on ROS 2")
-        if report.ros_unavailable_reason is not None:
-            print(f"  NO ROS          {report.ros_unavailable_reason}")
-    print(
-        f"  budget          {report.budget_seconds:.3f} s at "
-        f"{report.belt_speed:.3f} m/s"
-    )
-    print(
-        f"  latency         median {report.percentile(0.50) * 1000:.1f} ms, "
-        f"p99 {report.percentile(0.99) * 1000:.1f} ms"
-    )
-    print(
-        "  The models saw 240 frames of parametric primitives. This measures "
-        "the mechanism, not whether a decision is right."
-    )
-    return 0
 
 
 def _benchmark(
@@ -446,42 +375,7 @@ def _benchmark(
     return 0 if pack.passed else 1
 
 
-def _demo(root: Path, name: str, out: Path, runtime: Path) -> int:
-    """Run one named scenario and report what it did.
 
-    Args:
-        root: Repository root.
-        name: Scenario name, matching a file under configs/demos/.
-        out: Where the record and the video go.
-        runtime: The runtime configuration to start from.
-
-    Returns:
-        A process exit code.
-    """
-    from clave.demo.runner import play, summary
-    from clave.demo.scenario import Scenario, ScenarioError
-
-    demos = root / "configs" / "demos"
-    # A scenario is named with hyphens and its file with underscores, as every
-    # other configuration file in this repository is. Both spellings resolve,
-    # so nobody has to remember which convention applies where.
-    for candidate in (name, name.replace("-", "_")):
-        path = demos / f"{candidate}.yml"
-        if path.is_file():
-            break
-    else:
-        available = sorted(
-            entry.stem.replace("_", "-") for entry in demos.glob("*.yml")
-        )
-        raise ScenarioError(
-            f"no scenario named {name!r}. Available: {', '.join(available)}"
-        )
-    scenario = Scenario.load(path, out)
-    print(f"  {scenario.description}")
-    print()
-    report = play(root, scenario, runtime, out)
-    print(summary(scenario, report))
-    return 0
 
 
 def _still(root: Path, name: str, out: Path) -> int:
@@ -779,12 +673,6 @@ def main(argv: list[str] | None = None) -> int:
     )
     validate.add_argument("--outcomes", type=Path, required=True)
     validate.add_argument("--gates", type=Path, default=None)
-    sitl = sub.add_parser(
-        "run-sitl", help="run the loop from frame to published decision"
-    )
-    sitl.add_argument("--config", type=Path, default=Path("configs/runtime/sitl.yml"))
-    sitl.add_argument("--out", type=Path, default=Path("runs/sitl"))
-    sitl.add_argument("--seconds", type=float, default=None)
     bench_suite = sub.add_parser(
         "benchmark", help="compare every configuration in one table"
     )
@@ -795,41 +683,47 @@ def main(argv: list[str] | None = None) -> int:
     bench_suite.add_argument(
         "--sync", action="store_true", help="upload evidence pack and record in D1"
     )
-    still = sub.add_parser("still", help="capture a still of the world")
-    still.add_argument("scenario", nargs="?", default="thumbnail")
-    still.add_argument("--out", type=Path, default=Path("runs/stills"))
-    dbg = sub.add_parser(
-        "debug-tracker", help="annotate a rollout with everything the tracker believes"
+    sim = sub.add_parser(
+        "sim",
+        help="run the sorting-line simulation",
+        description=(
+            "Run the sorting-line simulation. By default the tracker debug "
+            "view is shown, annotating the rollout with markers and beliefs. "
+            "Use --still to capture still frames instead."
+        ),
     )
-    dbg.add_argument("--out", type=Path, default=Path("runs/debug/tracker"))
-    dbg.add_argument("--seconds", type=float, default=14.0)
-    dbg.add_argument("--seed", type=int, default=0)
-    dbg.add_argument("--no-window", action="store_true")
-    dbg.add_argument("--video", action="store_true")
-    dbg.add_argument(
+    sim.add_argument("--out", type=Path, default=Path("runs/debug/tracker"))
+    sim.add_argument("--seconds", type=float, default=14.0)
+    sim.add_argument("--seed", type=int, default=0)
+    sim.add_argument("--no-window", action="store_true")
+    sim.add_argument("--video", action="store_true")
+    sim.add_argument(
         "--fps",
         type=int,
         default=None,
         help="playback rate, or the rate configs/debug/tracker.yml names",
     )
-    dbg.add_argument(
+    sim.add_argument(
         "--view",
         default=None,
         help="which view in configs/debug/tracker.yml to film from",
     )
-    demo = sub.add_parser("demo", help="run one named scenario and record it")
-    demo.add_argument("scenario", nargs="?", default="sorting-line")
-    demo.add_argument("--out", type=Path, default=Path("runs/demos"))
-    demo.add_argument("--runtime", type=Path, default=Path("configs/runtime/sitl.yml"))
-    sitl.add_argument(
-        "--ros",
-        action="store_true",
-        help="publish every decision on a ROS 2 topic",
+    sim.add_argument(
+        "--still",
+        nargs="?",
+        const="thumbnail",
+        default=None,
+        metavar="SCENARIO",
+        help=(
+            "capture still frames instead of running the simulation. "
+            "Names a scenario under configs/stills/ (default: thumbnail)"
+        ),
     )
-    sitl.add_argument(
-        "--scripted",
-        action="store_true",
-        help="propose with the scripted expert instead of the trained models",
+    sim.add_argument(
+        "--still-out",
+        type=Path,
+        default=Path("runs/stills"),
+        help="output directory for stills (used with --still)",
     )
 
     args = parser.parse_args(argv)
@@ -862,23 +756,12 @@ def main(argv: list[str] | None = None) -> int:
             )
         if args.command == "train":
             return _train(args.root, args.config, args.candidate, sync=args.sync)
-        if args.command == "still":
-            return _still(args.root, args.scenario, args.out)
-        if args.command == "debug-tracker":
+        if args.command == "sim":
+            if args.still is not None:
+                return _still(args.root, args.still, args.still_out)
             return _debug_tracker(args.root, args)
-        if args.command == "demo":
-            return _demo(args.root, args.scenario, args.out, args.runtime)
         if args.command == "benchmark":
             return _benchmark(args.root, args.config, args.out, sync=args.sync)
-        if args.command == "run-sitl":
-            return _run_sitl(
-                args.root,
-                args.config,
-                args.scripted,
-                args.out,
-                args.seconds,
-                args.ros,
-            )
         if args.command == "validate-run":
             return _validate_run(args.root, args.outcomes, args.gates)
         return _record(args.root, args.name, args.path)
