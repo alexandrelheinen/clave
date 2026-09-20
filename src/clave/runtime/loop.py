@@ -392,7 +392,13 @@ def run(
 
     os.environ.setdefault("MUJOCO_GL", "osmesa")
     import mujoco
-    from tqdm import tqdm
+
+    try:
+        from tqdm import tqdm
+    except ImportError:
+
+        def tqdm(iterable: Any, *args: Any, **kwargs: Any) -> Any:
+            return iterable
 
     from clave.candidates.bench import _machine
 
