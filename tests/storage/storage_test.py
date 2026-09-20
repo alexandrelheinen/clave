@@ -371,3 +371,28 @@ def test_ac_data_08_offline_train_and_benchmark(
             assert code == 0
             captured = capsys.readouterr()
             assert "WARNING  remote sync failed" in captured.err
+
+
+def test_pull_and_restore_training_checkpoint(tmp_path: Path) -> None:
+    """Download checkpoint by digests and restore latest from D1."""
+    dest_dir = tmp_path / "ckpts"
+    r2_mock = MagicMock(spec=R2Client)
+    d1_mock = MagicMock(spec=D1Client)
+
+    from clave.storage.sync import (
+        pull_training_checkpoint,
+        restore_latest_checkpoint,
+    )
+
+    ckpt, rec = pull_training_checkpoint("act", "cfg1", "data2", dest_dir, r2_mock)
+    assert ckpt == dest_dir / "act.pt"
+    assert rec == dest_dir / "act.run.json"
+    assert r2_mock.download_file.call_count == 2
+
+    d1_mock.execute.return_value = [
+        {"config_digest": "cfg_latest", "dataset_digest": "data_latest"}
+    ]
+    ckpt_l, rec_l = restore_latest_checkpoint("act", dest_dir, r2_mock, d1_mock)
+    assert ckpt_l == dest_dir / "act.pt"
+    assert rec_l == dest_dir / "act.run.json"
+    assert r2_mock.download_file.call_count == 4

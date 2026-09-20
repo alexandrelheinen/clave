@@ -18,9 +18,11 @@ from clave.storage.d1 import D1Client, D1Error
 from clave.storage.r2 import R2Client, R2Error
 from clave.storage.sync import (
     pull_dataset,
+    pull_training_checkpoint,
     push_benchmark,
     push_dataset,
     push_training_run,
+    restore_latest_checkpoint,
 )
 
 __all__ = [
@@ -36,7 +38,9 @@ __all__ = [
     "load_r2_config",
     "load_storage_config",
     "pull_dataset",
+    "pull_training_checkpoint",
     "push_benchmark",
     "push_dataset",
     "push_training_run",
+    "restore_latest_checkpoint",
 ]
