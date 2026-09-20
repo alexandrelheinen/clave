@@ -8,6 +8,88 @@ and
 This file covers only what is specific to CLAVE. Method, gates, and merge
 policy live in [CONTRIBUTING.md](../CONTRIBUTING.md).
 
+## Physical and kinematic variable naming: `who_what_where`
+
+Variables representing physical quantities, spatial poses, velocities, and
+measurements follow a structured grammar:
+
+```
+[who_]what[_where][_unit]
+```
+
+Where:
+- **`who`**: The body or entity the variable belongs to (e.g. `camera`,
+  `flange`, `object`, `jaw`, `belt`, `chute`).
+- **`what`**: The physical property or measurement (e.g. `position`,
+  `velocity`, `acceleration`, `pose`, `yaw`, `speed`, `force`, `torque`).
+  Qualifiers (`target`, `current`, `min`, `max`) precede `who` or `what`:
+  `target_flange_position_world`, `max_belt_speed`.
+- **`where`**: The coordinate frame of reference the quantity is expressed in
+  (e.g. `world`, `camera`, `belt`, `flange`, `base`, `joint`).
+- **`unit`**: Required **only when the quantity is not in standard SI units**.
+  SI units ($m$, $m/s$, $m/s^2$, $rad$, $rad/s$, $kg$, $s$, $N$) are the
+  default and **never** take a unit suffix. Non-SI quantities append the unit
+  name explicitly (`deg`, `mm`, `ms`, `nanos`, `px`).
+
+### Examples
+
+| Variable | Meaning |
+|---|---|
+| `flange_position_world` | Flange position in the world reference frame ($m$, SI) |
+| `object_velocity_belt` | Object velocity in the conveyor belt reference frame ($m/s$, SI) |
+| `camera_pose_world` | 3D pose of the camera in world coordinates (SI) |
+| `flange_yaw_deg` | Flange rotation in degrees (non-SI unit suffix required) |
+| `capture_timestamp_nanos` | Sensor acquisition timestamp in nanoseconds (non-SI) |
+| `detection_bbox_px` | Detection bounding box in camera pixel coordinates (non-SI) |
+
+### Abstraction and omission rules
+
+Good software abstraction models general operations without coupling them to
+specific bodies or frames. Omit segments when an abstraction does not need them:
+
+1. **Omitting `who` (Entity abstraction)**:
+   Algorithms that operate on generic spatial coordinates regardless of which
+   physical body is moving omit the body prefix. A frame transformation or
+   spatial planner takes a `position_world` or `velocity_base`, not an
+   `object_position_world`.
+   ```python
+   # Generic frame transformation: works for any body
+   def to_camera_frame(position_world: Point) -> Point: ...
+   ```
+
+2. **Omitting `where` (Frame abstraction)**:
+   Quantities that are frame-invariant (such as scalar distances, speeds, norms,
+   or clearances), or local algorithms that operate strictly in a local or
+   implied canonical space, omit the reference frame.
+   ```python
+   # Frame-invariant scalar quantities
+   jaw_opening = 0.085  # meters (SI)
+   grasp_clearance = 0.020  # meters (SI)
+   ```
+
+3. **Omitting both `who` and `where` (Pure mathematical abstraction)**:
+   Core mathematical formulation (splines, PID loops, numerical solvers,
+   numerical integration) operates on abstract states. In these components,
+   `position`, `velocity`, and `acceleration` stand alone without body or frame
+   bindings.
+   ```python
+   # Pure trajectory segment: uncoupled from body and frame
+   @dataclass(frozen=True)
+   class State:
+       position: Point
+       velocity: Point
+       acceleration: Point
+   ```
+
+### Counts and collections
+
+- Integer counts take a `_count` suffix: `sensor_count`, `chute_count`, not
+  `num_sensors` or `n_chutes`.
+- Collections are plural nouns, not suffixed with `_list` or `_array`:
+  `chute_mouths`, `candidates`, `tracks`, not `chute_mouth_list`.
+- Configuration keys in YAML and JSON follow the same grammar, retaining
+  non-SI suffixes when needed (`spacing_meters`, `yaw_degrees`, `timeout_ms`).
+
 ## Architecture: safety layer and learned policy
 
 The system is a hybrid of deterministic safety in Rust and learned

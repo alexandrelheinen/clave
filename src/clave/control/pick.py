@@ -173,27 +173,32 @@ class Plan:
 def plan_pick(
     flange: State,
     track_id: int,
-    object_position: Point,
-    belt_velocity: Point,
-    z_offset: float,
-    approach_speed: float,
-    dwell_seconds: float,
-    max_speed: float,
-    max_acceleration: float,
-    latest: float,
-    at_seconds: float,
+    object_position_belt: Point | None = None,
+    belt_velocity_world: Point | None = None,
+    approach_clearance_z: float | None = None,
+    approach_speed: float = 0.0,
+    dwell_seconds: float = 0.0,
+    max_speed: float = 0.0,
+    max_acceleration: float = 0.0,
+    latest: float = 0.0,
+    at_seconds: float = 0.0,
     margin: float = 1.0,
-    over: Point | None = None,
+    target_position_world: Point | None = None,
     retreat_lift: float | None = None,
+    *,
+    object_position: Point | None = None,
+    belt_velocity: Point | None = None,
+    z_offset: float | None = None,
+    over: Point | None = None,
 ) -> Plan | None:
     """Plan a whole visit, or report that there is no time for one.
 
     Args:
         flange: Where the flange is and how it is moving.
         track_id: Which track this visit is about.
-        object_position: Where the object is now, in belt frame meters.
-        belt_velocity: How the belt is carrying it.
-        z_offset: Clearance above the object to approach and retreat at.
+        object_position_belt: Where the object is now, in belt frame meters.
+        belt_velocity_world: How the belt is carrying it.
+        approach_clearance_z: Clearance above the object to approach and retreat at.
         approach_speed: How fast to be descending on arrival.
         dwell_seconds: How long the jaw is given to close.
         max_speed: Speed ceiling, in meters per second.
@@ -204,22 +209,37 @@ def plan_pick(
         margin: How much longer than the soonest feasible interception to
             take, as a multiple, leaving room for [refine] to correct the
             arc later. One leaves none.
-        over: The chute mouth to release the object over, or None to end
-            the visit at the retreat. None drops the object back on the
-            belt, which is a line with nowhere to put anything.
+        target_position_world: The chute mouth to release the object over,
+            or None to end the visit at the retreat. None drops the object back
+            on the belt, which is a line with nowhere to put anything.
         retreat_lift: How far to lift during retreat, in meters. If None,
-            defaults to `z_offset`.
+            defaults to `approach_clearance_z`.
+        object_position: Deprecated alias for object_position_belt.
+        belt_velocity: Deprecated alias for belt_velocity_world.
+        z_offset: Deprecated alias for approach_clearance_z.
+        over: Deprecated alias for target_position_world.
 
     Returns:
         The plan, or None when no interception inside `latest` respects both
         ceilings. None is the honest answer for an object the arm cannot
         reach in the belt it has left.
     """
+    obj_pos = object_position if object_position is not None else object_position_belt
+    if obj_pos is None:
+        raise TypeError("plan_pick requires object_position_belt or object_position")
+    belt_vel = belt_velocity if belt_velocity is not None else belt_velocity_world
+    if belt_vel is None:
+        raise TypeError("plan_pick requires belt_velocity_world or belt_velocity")
+    clearance = z_offset if z_offset is not None else approach_clearance_z
+    if clearance is None:
+        raise TypeError("plan_pick requires approach_clearance_z or z_offset")
+    target_pos = over if over is not None else target_position_world
+
     reaching = approach(
         flange,
-        object_position,
-        belt_velocity,
-        z_offset,
+        obj_pos,
+        belt_vel,
+        clearance,
         approach_speed,
         max_speed,
         max_acceleration,
@@ -231,13 +251,13 @@ def plan_pick(
     return _assemble(
         reaching,
         track_id,
-        object_position,
-        belt_velocity,
-        z_offset,
+        obj_pos,
+        belt_vel,
+        clearance,
         approach_speed,
         dwell_seconds,
         at_seconds,
-        over,
+        target_pos,
         max_speed,
         retreat_lift,
     )
@@ -245,16 +265,21 @@ def plan_pick(
 
 def refine(
     plan: Plan,
-    object_position: Point,
-    belt_velocity: Point,
-    z_offset: float,
-    approach_speed: float,
-    dwell_seconds: float,
-    max_speed: float,
-    max_acceleration: float,
-    at_seconds: float,
-    over: Point | None = None,
+    object_position_belt: Point | None = None,
+    belt_velocity_world: Point | None = None,
+    approach_clearance_z: float | None = None,
+    approach_speed: float = 0.0,
+    dwell_seconds: float = 0.0,
+    max_speed: float = 0.0,
+    max_acceleration: float = 0.0,
+    at_seconds: float = 0.0,
+    target_position_world: Point | None = None,
     retreat_lift: float | None = None,
+    *,
+    object_position: Point | None = None,
+    belt_velocity: Point | None = None,
+    z_offset: float | None = None,
+    over: Point | None = None,
 ) -> Plan | None:
     """Correct a plan in flight against a fresher estimate of the object.
 
@@ -265,37 +290,57 @@ def refine(
 
     Args:
         plan: The plan in flight.
-        object_position: Where the object is now believed to be.
-        belt_velocity: How the belt is moving.
-        z_offset: Clearance above the object, in meters.
+        object_position_belt: Where the object is now believed to be.
+        belt_velocity_world: How the belt is moving.
+        approach_clearance_z: Clearance above the object, in meters.
         approach_speed: How fast the flange is coming down on arrival.
         dwell_seconds: How long the jaw is given to close.
         max_speed: Speed ceiling, in meters per second.
         max_acceleration: Acceleration ceiling, in meters per second squared.
-        at_seconds: Simulated time.
-        over: The chute mouth to release over, carried through unchanged.
+        target_position_world: The chute mouth to release over, carried
+            through unchanged.
         retreat_lift: How far to lift during retreat, in meters. If None,
-            defaults to `z_offset`.
+            defaults to `approach_clearance_z`.
+        object_position: Deprecated alias for object_position_belt.
+        belt_velocity: Deprecated alias for belt_velocity_world.
+        z_offset: Deprecated alias for approach_clearance_z.
+        over: Deprecated alias for target_position_world.
 
     Returns:
         The re-aimed plan, or None when there is nothing left to re-aim or
         the re-aimed arc breaks a ceiling. None means keep flying the plan
         already in hand rather than abandon the visit.
     """
+    obj_pos = object_position if object_position is not None else object_position_belt
+    if obj_pos is None:
+        raise TypeError("refine requires object_position_belt or object_position")
+    belt_vel = belt_velocity if belt_velocity is not None else belt_velocity_world
+    if belt_vel is None:
+        raise TypeError("refine requires belt_velocity_world or belt_velocity")
+    clearance = z_offset if z_offset is not None else approach_clearance_z
+    if clearance is None:
+        raise TypeError("refine requires approach_clearance_z or z_offset")
+    target_pos = over if over is not None else target_position_world
+
     reaching = plan.legs[0].segment
     elapsed = at_seconds - plan.started_at
     remaining = reaching.duration - elapsed
     if remaining <= 0.0:
         return None
-    dt = descent_seconds(z_offset, approach_speed)
+    dt = descent_seconds(clearance, approach_speed)
     arc = Segment(
         start=reaching.at(elapsed),
         end=State(
-            position=where(object_position, belt_velocity, remaining + dt, z_offset),
+            position=where(
+                obj_pos,
+                belt_vel,
+                remaining + dt,
+                clearance,
+            ),
             velocity=(
-                belt_velocity[0],
-                belt_velocity[1],
-                belt_velocity[2] - approach_speed,
+                belt_vel[0],
+                belt_vel[1],
+                belt_vel[2] - approach_speed,
             ),
             acceleration=(0.0, 0.0, 0.0),
         ),
@@ -306,19 +351,19 @@ def refine(
     return _assemble(
         arc,
         plan.track_id,
-        object_position,
-        belt_velocity,
-        z_offset,
+        obj_pos,
+        belt_vel,
+        clearance,
         approach_speed,
         dwell_seconds,
         at_seconds,
-        over,
+        target_pos,
         max_speed,
         retreat_lift,
     )
 
 
-def _deliver(start: State, over: Point, max_speed: float) -> Segment:
+def _deliver(start: State, target_position_world: Point, max_speed: float) -> Segment:
     """Return the arc that carries the object to its chute and lets go.
 
     The only arc of a visit nothing constrains. The object is in the jaw,
@@ -331,18 +376,20 @@ def _deliver(start: State, over: Point, max_speed: float) -> Segment:
 
     Args:
         start: Where the retreat ended, at rest above the belt.
-        over: The chute mouth to release over.
+        target_position_world: The chute mouth to release over.
         max_speed: Speed ceiling, in meters per second.
 
     Returns:
         The arc, ending at rest over the mouth.
     """
-    distance = math.dist(start.position, over)
+    distance = math.dist(start.position, target_position_world)
     seconds = max(PEAK_OVER_MEAN * distance / max_speed, MINIMUM_DELIVERY_SECONDS)
     return Segment(
         start=start,
         end=State(
-            position=over, velocity=(0.0, 0.0, 0.0), acceleration=(0.0, 0.0, 0.0)
+            position=target_position_world,
+            velocity=(0.0, 0.0, 0.0),
+            acceleration=(0.0, 0.0, 0.0),
         ),
         duration=seconds,
     )
@@ -351,13 +398,13 @@ def _deliver(start: State, over: Point, max_speed: float) -> Segment:
 def _assemble(
     reaching: Segment,
     track_id: int,
-    object_position: Point,
-    belt_velocity: Point,
-    z_offset: float,
+    object_position_belt: Point,
+    belt_velocity_world: Point,
+    approach_clearance_z: float,
     approach_speed: float,
     dwell_seconds: float,
     at_seconds: float,
-    over: Point | None = None,
+    target_position_world: Point | None = None,
     max_speed: float = 1.0,
     retreat_lift: float | None = None,
 ) -> Plan:
@@ -366,13 +413,13 @@ def _assemble(
     Args:
         reaching: The approach arc, however it was solved.
         track_id: Which track the visit is about.
-        object_position: Where the object is at `at_seconds`.
-        belt_velocity: How the belt is carrying it.
-        z_offset: Clearance above the object, in meters.
+        object_position_belt: Where the object is at `at_seconds`.
+        belt_velocity_world: How the belt is carrying it.
+        approach_clearance_z: Clearance above the object, in meters.
         approach_speed: How fast the flange is coming down on arrival.
         dwell_seconds: How long the jaw is given to close.
         at_seconds: Simulated time the approach begins.
-        over: Where to release the object over.
+        target_position_world: Where to release the object over.
         max_speed: Speed ceiling in meters per second.
         retreat_lift: How far to lift during retreat, in meters.
 
@@ -380,23 +427,29 @@ def _assemble(
         The whole visit.
     """
     dropping = descend(
-        reaching, object_position, belt_velocity, z_offset, approach_speed
+        reaching,
+        object_position_belt,
+        belt_velocity_world,
+        approach_clearance_z,
+        approach_speed,
     )
-    holding = _carry(dropping.end, dwell_seconds, belt_velocity)
-    lift = z_offset if retreat_lift is None else retreat_lift
-    rising = _rise(holding.end, lift, approach_speed, belt_velocity)
+    holding = _carry(dropping.end, dwell_seconds, belt_velocity_world)
+    lift = approach_clearance_z if retreat_lift is None else retreat_lift
+    rising = _rise(holding.end, lift, approach_speed, belt_velocity_world)
     legs = [
         Leg(Phase.TRACK, reaching, JAW_OPEN),
         Leg(Phase.DESCEND, dropping, JAW_OPEN),
         Leg(Phase.HOLD, holding, JAW_SHUT),
         Leg(Phase.RETREAT, rising, JAW_SHUT),
     ]
-    if over is not None:
-        # The jaw stays shut through the carry and opens where the plan
-        # runs out, which is over the mouth. Opening at the end of the
-        # retreat instead drops the object back on the belt, which is what
-        # the line did before this leg existed.
-        legs.append(Leg(Phase.DELIVER, _deliver(rising.end, over, max_speed), JAW_SHUT))
+    if target_position_world is not None:
+        legs.append(
+            Leg(
+                Phase.DELIVER,
+                _deliver(rising.end, target_position_world, max_speed),
+                JAW_SHUT,
+            )
+        )
     return Plan(
         track_id=track_id,
         legs=tuple(legs),

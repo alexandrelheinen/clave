@@ -97,7 +97,7 @@ class Track:
                 self.footprint, belt_speed, self.observed_at_nanos, at_nanos
             )
         x, y = self.motion.at(at_nanos / NANOS_PER_SECOND)
-        return replace(self.footprint, center=(x, y, self.footprint.center[2]))
+        return replace(self.footprint, center_belt=(x, y, self.footprint.center[2]))
 
     def summarize(self, at_nanos: int, belt_speed: float) -> TrackSummary:
         """Return this track as an associator is allowed to see it.
@@ -364,7 +364,7 @@ class Tracker:
             filtered = track.motion.position
             track.footprint = replace(
                 payload.footprint,
-                center=(filtered[0], filtered[1], seen[2]),
+                center_belt=(filtered[0], filtered[1], seen[2]),
             )
             track.observed_at_nanos = evidence.observed_at_nanos
             if payload.height is not None:
@@ -378,7 +378,7 @@ class Tracker:
             track.label = payload.object_id
             track.simulated |= {"material"}
             if track.footprint.center == self._unmeasured().center:
-                track.footprint = replace(track.footprint, center=payload.position)
+                track.footprint = replace(track.footprint, center_belt=payload.position)
                 track.observed_at_nanos = evidence.observed_at_nanos
 
     def _settle(self, track: Track, at_nanos: int) -> WasteObject:

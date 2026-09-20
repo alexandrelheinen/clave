@@ -1018,8 +1018,8 @@ def _park_the_arm(
     mujoco.mj_forward(model, data)
 
 
-def _pinch(indices: Any, data: Any) -> tuple[float, float, float]:
-    """Return where the jaw closes, as three meters.
+def _pinch_position_world(indices: Any, data: Any) -> tuple[float, float, float]:
+    """Return where the jaw closes, as three meters in world frame.
 
     Args:
         indices: The arm indices.
@@ -1034,8 +1034,11 @@ def _pinch(indices: Any, data: Any) -> tuple[float, float, float]:
     return float(place[0]), float(place[1]), float(place[2])
 
 
-def _flange(indices: Any, data: Any) -> tuple[float, float, float]:
-    """Return where the flange stands, as three meters.
+_pinch = _pinch_position_world
+
+
+def _flange_position_world(indices: Any, data: Any) -> tuple[float, float, float]:
+    """Return where the flange stands, as three meters in world frame.
 
     Args:
         indices: The arm indices.
@@ -1048,10 +1051,13 @@ def _flange(indices: Any, data: Any) -> tuple[float, float, float]:
     return float(place[0]), float(place[1]), float(place[2])
 
 
-def _object_place(
+_flange = _flange_position_world
+
+
+def _object_position_world(
     mujoco: Any, model: Any, data: Any, name: str
 ) -> tuple[float, float, float]:
-    """Return where one conveyor object stands, as three meters.
+    """Return where one conveyor object stands, as three meters in world frame.
 
     Args:
         mujoco: The imported module.
@@ -1068,6 +1074,9 @@ def _object_place(
     body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, name)
     place = data.xipos[body]
     return float(place[0]), float(place[1]), float(place[2])
+
+
+_object_place = _object_position_world
 
 
 def _placed(

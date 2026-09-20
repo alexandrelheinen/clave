@@ -118,7 +118,7 @@ class TaskSettings:
         interception_margin: How much longer than the soonest feasible
             interception to take, as a multiple, so the arc has room to be
             re-aimed later.
-        park_position: Where the arm rests with nothing to serve.
+        park_position_world: Where the arm rests with nothing to serve.
         park_marker_color: What the park pose is drawn in, as red, green and
             blue in the unit range.
     """
@@ -131,8 +131,44 @@ class TaskSettings:
     approach_speed: float
     interception_limit: float
     interception_margin: float
-    park_position: Point
+    park_position_world: Point
     park_marker_color: Point
+
+    def __init__(
+        self,
+        profile: Profile,
+        approach_height: float,
+        arrival_tolerance: float,
+        dwell_seconds: float,
+        grasp_clearance: float,
+        approach_speed: float,
+        interception_limit: float,
+        interception_margin: float,
+        park_position_world: Point | None = None,
+        park_marker_color: Point = (0.0, 0.0, 0.0),
+        *,
+        park_position: Point | None = None,
+    ) -> None:
+        pos = park_position_world if park_position_world is not None else park_position
+        if pos is None:
+            raise TypeError(
+                "TaskSettings requires park_position_world or park_position"
+            )
+        object.__setattr__(self, "profile", profile)
+        object.__setattr__(self, "approach_height", approach_height)
+        object.__setattr__(self, "arrival_tolerance", arrival_tolerance)
+        object.__setattr__(self, "dwell_seconds", dwell_seconds)
+        object.__setattr__(self, "grasp_clearance", grasp_clearance)
+        object.__setattr__(self, "approach_speed", approach_speed)
+        object.__setattr__(self, "interception_limit", interception_limit)
+        object.__setattr__(self, "interception_margin", interception_margin)
+        object.__setattr__(self, "park_position_world", pos)
+        object.__setattr__(self, "park_marker_color", park_marker_color)
+
+    @property
+    def park_position(self) -> Point:
+        """Backwards compatibility alias for park_position_world."""
+        return self.park_position_world
 
 
 @dataclass(frozen=True)
@@ -234,7 +270,7 @@ class ControlSettings:
                     task, "interception_limit_seconds", "task"
                 ),
                 interception_margin=_positive(task, "interception_margin", "task"),
-                park_position=_point(task, "park_position_meters", "task"),
+                park_position_world=_point(task, "park_position_meters", "task"),
                 park_marker_color=_point(task, "park_marker_color", "task"),
             ),
             guidance=GuidanceSettings(

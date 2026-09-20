@@ -88,15 +88,15 @@ def follow(
         The step. A refused pose writes no actuator command, so the arm holds
         whatever it was last told.
     """
-    led: Point = (
+    led_position_world: Point = (
         command.position[0] + command.velocity[0] * lead_seconds,
         command.position[1] + command.velocity[1] * lead_seconds,
         command.position[2] + command.velocity[2] * lead_seconds,
     )
     if keep_inside is not None:
-        led = keep_inside(led)
-    target = np.array(led, dtype=np.float64)
-    if not armmod.reachable(arm, target):
+        led_position_world = keep_inside(led_position_world)
+    target_position_world = np.array(led_position_world, dtype=np.float64)
+    if not armmod.reachable(arm, target_position_world):
         # Hold, rather than write nothing. An uncommanded arm sags under
         # gravity, the sag puts the flange outside the trusted band, and from
         # there every pose is refused for a reason the controller caused. The
@@ -105,7 +105,7 @@ def follow(
         holding = armmod.joint_positions(model, data, arm)
         for slot, actuator in enumerate(arm.actuator_ids):
             data.ctrl[actuator] = holding[slot]
-        return Step(joints=holding, refusal=_why(arm, target))
+        return Step(joints=holding, refusal=_why(arm, target_position_world))
 
     # A goal that asked for no rotation gets the one the tool already holds,
     # which is how an unoriented footprint reaches the actuators without
@@ -116,7 +116,7 @@ def follow(
             model,
             data,
             arm,
-            target,
+            target_position_world,
             gain=gain,
             yaw=yaw,
             max_joint_step=max_joint_step,
@@ -125,12 +125,12 @@ def follow(
     )
 
 
-def _why(arm: armmod.ArmIndices, target: NDArray[np.float64]) -> str:
+def _why(arm: armmod.ArmIndices, target_position_world: NDArray[np.float64]) -> str:
     """Return why a pose is outside the region the arm is trusted over.
 
     Args:
         arm: The arm indices.
-        target: The pose that was refused.
+        target_position_world: The pose that was refused.
 
     Returns:
         A sentence naming which bound it broke, so a fault says something a
@@ -139,8 +139,8 @@ def _why(arm: armmod.ArmIndices, target: NDArray[np.float64]) -> str:
     import math
 
     radius = math.hypot(
-        float(target[0]) - float(arm.base_position[0]),
-        float(target[1]) - float(arm.base_position[1]),
+        float(target_position_world[0]) - float(arm.base_position[0]),
+        float(target_position_world[1]) - float(arm.base_position[1]),
     )
     if not armmod.REACH_MIN_METERS <= radius <= armmod.REACH_MAX_METERS:
         return (
@@ -149,7 +149,7 @@ def _why(arm: armmod.ArmIndices, target: NDArray[np.float64]) -> str:
             f"{armmod.REACH_MAX_METERS:.2f} m annulus"
         )
     lowest, highest = armmod.TOOL_ABOVE_BASE_METERS
-    above = float(target[2]) - float(arm.base_position[2])
+    above = float(target_position_world[2]) - float(arm.base_position[2])
     return (
         f"{above:+.3f} m from the base, outside the trusted "
         f"{lowest:+.2f} m to {highest:+.2f} m band"

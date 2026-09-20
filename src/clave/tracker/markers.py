@@ -82,39 +82,107 @@ class GraspMarker:
             the record. A pose and the window it holds for travel together
             here for the same reason they travel together in the published
             decision: a pose with no expiry is a pose somebody will use late.
-        grasp: Where the pads would close, in belt frame meters.
-        flange: Where the face the tool bolts to would sit.
-        pads: The two pad centers, or an empty tuple when the footprint has no
-            axis to turn a jaw to.
+        pinch_position_belt: Where the pads would close, in belt frame meters.
+        flange_position_world: Where the face the tool bolts to would sit.
+        pad_positions_belt: The pad centers in belt frame, or an empty tuple when
+            the footprint has no axis to turn a jaw to.
         pad_size: One pad's half-extents, in its own frame: along the closing
             direction, across it, and vertical.
-        closing_axis: Rotation of the closing direction about the belt normal,
+        closing_yaw_belt: Rotation of the closing direction about the belt normal,
             in radians, or None when the footprint is not oriented.
         opening: How far the jaw would have to open, in meters.
-        oriented: Whether `closing_axis` means anything.
+        oriented: Whether `closing_yaw_belt` means anything.
         reachable: Whether the effector opens that wide at all.
         extent: The footprint's larger horizontal side, which sizes the disc
             drawn when there is no axis.
+        color: The track's color, as red, green and blue in the unit range.
         channel: Where the object routes to, resolved from its material
             class. Carried here because the arm has to know which chute to
             release over, and the alternative is the task layer resolving a
             taxonomy identifier it has no other reason to hold.
-        color: The track's color, as red, green and blue in the unit range.
     """
 
     track_id: int
     valid_until_nanos: int
-    grasp: Point
-    flange: Point
-    pads: tuple[Point, ...]
+    pinch_position_belt: Point
+    flange_position_world: Point
+    pad_positions_belt: tuple[Point, ...]
     pad_size: Point
-    closing_axis: float | None
+    closing_yaw_belt: float | None
     opening: float
     oriented: bool
     reachable: bool
     extent: float
     color: tuple[float, float, float]
     channel: str = REJECT_CHANNEL
+
+    def __init__(
+        self,
+        track_id: int,
+        valid_until_nanos: int,
+        pinch_position_belt: Point | None = None,
+        flange_position_world: Point | None = None,
+        pad_positions_belt: tuple[Point, ...] | None = None,
+        pad_size: Point = (0.0, 0.0, 0.0),
+        closing_yaw_belt: float | None = None,
+        opening: float = 0.0,
+        oriented: bool = False,
+        reachable: bool = False,
+        extent: float = 0.0,
+        color: tuple[float, float, float] = (0.0, 0.0, 0.0),
+        channel: str = REJECT_CHANNEL,
+        *,
+        grasp: Point | None = None,
+        flange: Point | None = None,
+        pads: tuple[Point, ...] | None = None,
+        closing_axis: float | None = None,
+    ) -> None:
+        p_grasp = grasp if grasp is not None else pinch_position_belt
+        if p_grasp is None:
+            raise TypeError("GraspMarker requires pinch_position_belt or grasp")
+        p_flange = flange if flange is not None else flange_position_world
+        if p_flange is None:
+            raise TypeError("GraspMarker requires flange_position_world or flange")
+        p_pads = (
+            pads
+            if pads is not None
+            else (() if pad_positions_belt is None else pad_positions_belt)
+        )
+        axis = closing_axis if closing_axis is not None else closing_yaw_belt
+
+        object.__setattr__(self, "track_id", track_id)
+        object.__setattr__(self, "valid_until_nanos", valid_until_nanos)
+        object.__setattr__(self, "pinch_position_belt", p_grasp)
+        object.__setattr__(self, "flange_position_world", p_flange)
+        object.__setattr__(self, "pad_positions_belt", p_pads)
+        object.__setattr__(self, "pad_size", pad_size)
+        object.__setattr__(self, "closing_yaw_belt", axis)
+        object.__setattr__(self, "opening", opening)
+        object.__setattr__(self, "oriented", oriented)
+        object.__setattr__(self, "reachable", reachable)
+        object.__setattr__(self, "extent", extent)
+        object.__setattr__(self, "color", color)
+        object.__setattr__(self, "channel", channel)
+
+    @property
+    def grasp(self) -> Point:
+        """Backwards compatibility alias for pinch_position_belt."""
+        return self.pinch_position_belt
+
+    @property
+    def flange(self) -> Point:
+        """Backwards compatibility alias for flange_position_world."""
+        return self.flange_position_world
+
+    @property
+    def closing_axis(self) -> float | None:
+        """Backwards compatibility alias for closing_yaw_belt."""
+        return self.closing_yaw_belt
+
+    @property
+    def pads(self) -> tuple[Point, ...]:
+        """Backwards compatibility alias for pad_positions_belt."""
+        return self.pad_positions_belt
 
 
 RESERVED_HUE = 0.05
@@ -151,22 +219,32 @@ def color_for(track_id: int) -> tuple[float, float, float]:
 
 
 def marker_for(
-    record: WasteObject, effector: Effector, belt_surface: float
+    record: WasteObject,
+    effector: Effector,
+    belt_surface_height_world: float | None = None,
+    *,
+    belt_surface: float | None = None,
 ) -> GraspMarker:
     """Return where the effector would go for one record.
 
     Args:
         record: What the tracker settled.
         effector: The effector the pick geometry assumes.
-        belt_surface: Height of the belt surface, in meters.
+        belt_surface_height_world: Height of the belt surface, in meters.
+        belt_surface: Legacy keyword alias for belt_surface_height_world.
 
     Returns:
         The marker. Its horizontal position, closing axis and opening come
         from the record; its height comes from `effector`, because nothing on
         this line measures one.
     """
+    surface = (
+        belt_surface_height_world
+        if belt_surface_height_world is not None
+        else (0.0 if belt_surface is None else belt_surface)
+    )
     x, y, _ = record.grasp_point
-    pad_z = belt_surface + effector.grasp_height
+    pad_z = surface + effector.grasp_height
     opening = record.grasp_width
     oriented = record.footprint.oriented
 
@@ -186,15 +264,15 @@ def marker_for(
     return GraspMarker(
         track_id=record.track_id,
         valid_until_nanos=record.valid_until_nanos,
-        grasp=(x, y, pad_z),
-        flange=(x, y, pad_z + effector.finger_length),
-        pads=pads,
+        pinch_position_belt=(x, y, pad_z),
+        flange_position_world=(x, y, pad_z + effector.finger_length),
+        pad_positions_belt=pads,
         pad_size=(
             effector.pad_thickness / 2.0,
             effector.pad_depth / 2.0,
             effector.pad_height / 2.0,
         ),
-        closing_axis=axis,
+        closing_yaw_belt=axis,
         opening=opening,
         oriented=oriented,
         reachable=opening <= effector.opening,
@@ -205,20 +283,30 @@ def marker_for(
 
 
 def markers_for(
-    records: tuple[WasteObject, ...], effector: Effector, belt_surface: float
+    records: tuple[WasteObject, ...],
+    effector: Effector,
+    belt_surface_height_world: float | None = None,
+    *,
+    belt_surface: float | None = None,
 ) -> tuple[GraspMarker, ...]:
     """Return one marker per record, in the order given.
 
     Args:
         records: What the tracker settled at one instant.
         effector: The effector the pick geometry assumes.
-        belt_surface: Height of the belt surface, in meters.
+        belt_surface_height_world: Height of the belt surface, in meters.
+        belt_surface: Legacy keyword alias for belt_surface_height_world.
 
     Returns:
         The markers. A track that retired is absent from `records` and
         therefore absent here, which is how a marker stops being drawn.
     """
-    return tuple(marker_for(record, effector, belt_surface) for record in records)
+    surface = (
+        belt_surface_height_world
+        if belt_surface_height_world is not None
+        else (0.0 if belt_surface is None else belt_surface)
+    )
+    return tuple(marker_for(record, effector, surface) for record in records)
 
 
 def draw(scene: Any, markers: tuple[GraspMarker, ...]) -> int:
@@ -262,9 +350,12 @@ def draw(scene: Any, markers: tuple[GraspMarker, ...]) -> int:
 
 def draw_park(
     scene: Any,
-    position: Point,
-    color: tuple[float, float, float],
-    belt_surface: float,
+    position_world: Point | None = None,
+    color: tuple[float, float, float] = (1.0, 0.0, 0.0),
+    belt_surface_height_world: float | None = None,
+    *,
+    position: Point | None = None,
+    belt_surface: float | None = None,
 ) -> int:
     """Add the park pose to a scene, and report how many geoms that took.
 
@@ -275,10 +366,12 @@ def draw_park(
 
     Args:
         scene: The `mjvScene` to add to.
-        position: Where the flange rests.
+        position_world: Where the flange rests in world coordinates.
         color: What to draw it in, as red, green and blue in the unit range.
-        belt_surface: Height of the belt surface, in meters, which is where
+        belt_surface_height_world: Height of the belt surface, in meters, which is where
             the post stops.
+        position: Legacy keyword alias for position_world.
+        belt_surface: Legacy keyword alias for belt_surface_height_world.
 
     Returns:
         How many geoms were added, which is fewer than asked for when the
@@ -287,11 +380,20 @@ def draw_park(
     import mujoco
     import numpy as np
 
+    pos = position_world if position_world is not None else position
+    if pos is None:
+        raise TypeError("draw_park requires position_world or position")
+    surface = (
+        belt_surface_height_world
+        if belt_surface_height_world is not None
+        else (0.0 if belt_surface is None else belt_surface)
+    )
+
     rgba = np.array([*color, OPAQUE], dtype=np.float32)
-    x, y, z = position
-    half_post = max((z - belt_surface) / 2.0, PARK_BALL_RADIUS)
+    x, y, z = pos
+    half_post = max((z - surface) / 2.0, PARK_BALL_RADIUS)
     solids: tuple[tuple[int, Point, Point], ...] = (
-        (int(mujoco.mjtGeom.mjGEOM_SPHERE), (PARK_BALL_RADIUS, 0.0, 0.0), position),
+        (int(mujoco.mjtGeom.mjGEOM_SPHERE), (PARK_BALL_RADIUS, 0.0, 0.0), pos),
         (
             int(mujoco.mjtGeom.mjGEOM_CYLINDER),
             (PARK_POST_RADIUS, half_post, 0.0),

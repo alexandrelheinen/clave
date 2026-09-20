@@ -39,23 +39,55 @@ class Footprint:
     """An oriented box on the belt, in belt frame meters.
 
     Attributes:
-        center: Where the box sits, in belt frame meters.
+        center_belt: Where the box sits, in belt frame meters.
         major_extent: The longer horizontal side, in meters.
         minor_extent: The shorter horizontal side, in meters. This is what a
             jaw would have to open to, which is why the two are named rather
             than ordered by axis.
-        yaw: Rotation of the major axis about the belt normal, in radians.
+        yaw_belt: Rotation of the major axis about the belt normal, in radians.
         oriented: Whether the yaw means anything. An object that is circular in
             plan has no major axis to find, and a confident random yaw on a
             circular footprint is worse than an absent one because the safety
             layer acts on it.
     """
 
-    center: tuple[float, float, float]
+    center_belt: tuple[float, float, float]
     major_extent: float
     minor_extent: float
-    yaw: float
+    yaw_belt: float
     oriented: bool = True
+
+    def __init__(
+        self,
+        center_belt: tuple[float, float, float] | None = None,
+        major_extent: float = 0.0,
+        minor_extent: float = 0.0,
+        yaw_belt: float | None = None,
+        oriented: bool = True,
+        *,
+        center: tuple[float, float, float] | None = None,
+        yaw: float | None = None,
+    ) -> None:
+        c = center_belt if center_belt is not None else center
+        if c is None:
+            raise TypeError("Footprint requires center_belt or center")
+        y = yaw_belt if yaw_belt is not None else (0.0 if yaw is None else yaw)
+        object.__setattr__(self, "center_belt", c)
+        object.__setattr__(self, "major_extent", major_extent)
+        object.__setattr__(self, "minor_extent", minor_extent)
+        object.__setattr__(self, "yaw_belt", y)
+        object.__setattr__(self, "oriented", oriented)
+        self.__post_init__()
+
+    @property
+    def center(self) -> tuple[float, float, float]:
+        """Backwards compatibility alias for center_belt."""
+        return self.center_belt
+
+    @property
+    def yaw(self) -> float:
+        """Backwards compatibility alias for yaw_belt."""
+        return self.yaw_belt
 
     def __post_init__(self) -> None:
         """Refuse a box that names its axes the wrong way round.
@@ -96,10 +128,12 @@ def elapsed_seconds(earlier_nanos: int, later_nanos: int) -> float:
 
 
 def carry(
-    point: tuple[float, float, float],
-    belt_speed: float,
-    observed_at_nanos: int,
-    to_nanos: int,
+    position_belt: tuple[float, float, float] | None = None,
+    belt_speed: float = 0.0,
+    observed_at_nanos: int = 0,
+    to_nanos: int = 0,
+    *,
+    point: tuple[float, float, float] | None = None,
 ) -> tuple[float, float, float]:
     """Carry one point along the belt to a later instant.
 
@@ -109,11 +143,12 @@ def carry(
     not grow a second definition of which way the belt runs.
 
     Args:
-        point: Where it was, in belt frame meters.
+        position_belt: Where it was, in belt frame meters.
         belt_speed: Belt speed in meters per second.
         observed_at_nanos: When it was there.
         to_nanos: The instant to carry it to. May precede the observation, in
             which case the point is carried upstream.
+        point: Legacy keyword alias for position_belt.
 
     Returns:
         Where it is at `to_nanos`.
@@ -121,13 +156,16 @@ def carry(
     Raises:
         FrameError: If the belt speed is negative or not finite.
     """
+    p = position_belt if position_belt is not None else point
+    if p is None:
+        raise TypeError("carry requires position_belt or point")
     if not math.isfinite(belt_speed) or belt_speed < 0.0:
         raise FrameError(
             f"belt speed is {belt_speed!r}; a belt that runs backwards or "
             f"nowhere describes no line this can propagate along"
         )
     travel = belt_speed * elapsed_seconds(observed_at_nanos, to_nanos)
-    return point[0] + travel, point[1], point[2]
+    return p[0] + travel, p[1], p[2]
 
 
 def propagate(
@@ -157,10 +195,12 @@ def propagate(
         FrameError: If the belt speed is negative or not finite.
     """
     return Footprint(
-        center=carry(footprint.center, belt_speed, observed_at_nanos, to_nanos),
+        center_belt=carry(
+            footprint.center_belt, belt_speed, observed_at_nanos, to_nanos
+        ),
         major_extent=footprint.major_extent,
         minor_extent=footprint.minor_extent,
-        yaw=footprint.yaw,
+        yaw_belt=footprint.yaw_belt,
         oriented=footprint.oriented,
     )
 

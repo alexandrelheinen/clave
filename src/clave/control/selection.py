@@ -81,11 +81,11 @@ class Candidate:
 
     Attributes:
         track_id: The identity this came from.
-        anchor: Where the ordering scored it, which lags the live pose by up
-            to the anchor radius and is what holds the order still.
-        flange: Where the marker wants the flange, live rather than
-            quantised, because that is what the arm is commanded to.
-        closing_axis: Rotation of the jaw about the belt normal, or None when
+        anchor_position_belt: Where the ordering scored it, which lags the live
+            pose by up to the anchor radius and is what holds the order still.
+        flange_position_world: Where the marker wants the flange, live rather
+            than quantised, because that is what the arm is commanded to.
+        closing_yaw_belt: Rotation of the jaw about the belt normal, or None when
             the footprint had no axis to turn one to.
         distance_before_leaving: How much belt the object has left, in meters.
         channel: Where it routes to, so the visit knows which chute to
@@ -93,11 +93,54 @@ class Candidate:
     """
 
     track_id: int
-    anchor: Point
-    flange: Point
-    closing_axis: float | None
+    anchor_position_belt: Point
+    flange_position_world: Point
+    closing_yaw_belt: float | None
     distance_before_leaving: float
     channel: str = ""
+
+    def __init__(
+        self,
+        track_id: int,
+        anchor_position_belt: Point | None = None,
+        flange_position_world: Point | None = None,
+        closing_yaw_belt: float | None = None,
+        distance_before_leaving: float = 0.0,
+        channel: str = "",
+        *,
+        anchor: Point | None = None,
+        flange: Point | None = None,
+        closing_axis: float | None = None,
+    ) -> None:
+        p_anchor = anchor if anchor is not None else anchor_position_belt
+        if p_anchor is None:
+            raise TypeError("Candidate requires anchor_position_belt or anchor")
+        p_flange = flange if flange is not None else flange_position_world
+        if p_flange is None:
+            raise TypeError("Candidate requires flange_position_world or flange")
+        axis = closing_axis if closing_axis is not None else closing_yaw_belt
+
+        object.__setattr__(self, "track_id", track_id)
+        object.__setattr__(self, "anchor_position_belt", p_anchor)
+        object.__setattr__(self, "flange_position_world", p_flange)
+        object.__setattr__(self, "closing_yaw_belt", axis)
+        object.__setattr__(self, "distance_before_leaving", distance_before_leaving)
+        object.__setattr__(self, "channel", channel)
+
+    @property
+    def anchor(self) -> Point:
+        """Alias for anchor_position_belt."""
+        return self.anchor_position_belt
+
+    @property
+    def flange(self) -> Point:
+        """Alias for flange_position_world."""
+        return self.flange_position_world
+
+    @property
+    def closing_axis(self) -> float | None:
+        """Alias for closing_yaw_belt."""
+        return self.closing_yaw_belt
 
 
 @dataclass(frozen=True)
@@ -111,7 +154,6 @@ class Queue:
         reasons: Which triggers fired, among `appeared`, `retired` and
             `anchor`. Reported apart because they mean different things: a
             rebuild on a track appearing is the design working, and a rebuild
-
             on an anchor is the estimate having genuinely moved. Counting
             them together hides whether the anchors damp anything.
     """
@@ -131,13 +173,18 @@ class _Anchor:
     """Where a track was scored, and when.
 
     Attributes:
-        position: The position, in belt frame meters.
+        position_belt: The position, in belt frame meters.
         at_nanos: When it was taken, so belt travel since then can be carried
             before the anchor is compared to anything.
     """
 
-    position: Point
+    position_belt: Point
     at_nanos: int
+
+    @property
+    def position(self) -> Point:
+        """Alias for position_belt."""
+        return self.position_belt
 
 
 class Selector:
@@ -351,13 +398,16 @@ class Selector:
 
 
 def _candidate(
-    marker: GraspMarker, anchor: Point, belt_speed: float, at_nanos: int
+    marker: GraspMarker,
+    anchor_position_belt: Point,
+    belt_speed: float,
+    at_nanos: int,
 ) -> Candidate:
     """Turn one marker into a scored candidate.
 
     Args:
         marker: The marker.
-        anchor: Where the ordering scores it, carried to now.
+        anchor_position_belt: Where the ordering scores it, carried to now.
         belt_speed: How fast the belt runs, in meters per second.
         at_nanos: The instant the marker was settled at.
 
@@ -369,9 +419,9 @@ def _candidate(
     seconds = (marker.valid_until_nanos - at_nanos) / NANOS_PER_SECOND
     return Candidate(
         track_id=marker.track_id,
-        anchor=anchor,
-        flange=marker.flange,
-        closing_axis=marker.closing_axis,
+        anchor_position_belt=anchor_position_belt,
+        flange_position_world=marker.flange_position_world,
+        closing_yaw_belt=marker.closing_yaw_belt,
         distance_before_leaving=max(0.0, seconds * belt_speed),
         channel=marker.channel,
     )

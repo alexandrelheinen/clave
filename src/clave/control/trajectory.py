@@ -233,14 +233,18 @@ def descent_limit_seconds(z_offset: float, approach_speed: float) -> float:
 
 def approach(
     flange: State,
-    object_position: Point,
-    object_velocity: Point,
-    z_offset: float,
-    approach_speed: float,
-    max_speed: float,
-    max_acceleration: float,
-    latest: float,
+    object_position_belt: Point | None = None,
+    object_velocity_world: Point | None = None,
+    approach_clearance_z: float | None = None,
+    approach_speed: float = 0.0,
+    max_speed: float = 0.0,
+    max_acceleration: float = 0.0,
+    latest: float = 0.0,
     margin: float = 1.0,
+    *,
+    object_position: Point | None = None,
+    object_velocity: Point | None = None,
+    z_offset: float | None = None,
 ) -> Segment | None:
     """Return the soonest feasible arc onto the point above a moving object.
 
@@ -251,9 +255,9 @@ def approach(
 
     Args:
         flange: Where the flange is now and how it is moving.
-        object_position: Where the object is now, in belt frame meters.
-        object_velocity: How the belt is carrying it, in meters per second.
-        z_offset: Clearance above the object to approach at, in meters.
+        object_position_belt: Where the object is now, in belt frame meters.
+        object_velocity_world: How the belt is carrying it, in meters per second.
+        approach_clearance_z: Clearance above the object to approach at, in meters.
         approach_speed: How fast to be descending on arrival, in meters per
             second.
         max_speed: Speed ceiling, in meters per second.
@@ -267,6 +271,9 @@ def approach(
             re-aim the arc later: every correction breaks the bound it was
             already touching. Anything above one buys that room at the cost
             of a later pick.
+        object_position: Deprecated alias for object_position_belt.
+        object_velocity: Deprecated alias for object_velocity_world.
+        z_offset: Deprecated alias for approach_clearance_z.
 
     Returns:
         The arc, or None when no interception inside `latest` respects both
@@ -274,19 +281,32 @@ def approach(
         reach in the belt it has left, and the caller drops it rather than
         chasing it.
     """
-    dt = descent_seconds(z_offset, approach_speed)
+    obj_pos = object_position if object_position is not None else object_position_belt
+    if obj_pos is None:
+        raise TypeError("approach requires object_position_belt or object_position")
+    obj_vel = object_velocity if object_velocity is not None else object_velocity_world
+    if obj_vel is None:
+        raise TypeError("approach requires object_velocity_world or object_velocity")
+    clearance = z_offset if z_offset is not None else approach_clearance_z
+    if clearance is None:
+        raise TypeError("approach requires approach_clearance_z or z_offset")
+
+    dt = descent_seconds(clearance, approach_speed)
 
     def arc(seconds: float) -> Segment:
         return Segment(
             start=flange,
             end=State(
                 position=where(
-                    object_position, object_velocity, seconds + dt, z_offset
+                    obj_pos,
+                    obj_vel,
+                    seconds + dt,
+                    clearance,
                 ),
                 velocity=(
-                    object_velocity[0],
-                    object_velocity[1],
-                    object_velocity[2] - approach_speed,
+                    obj_vel[0],
+                    obj_vel[1],
+                    obj_vel[2] - approach_speed,
                 ),
                 acceleration=(0.0, 0.0, 0.0),
             ),
@@ -312,34 +332,51 @@ def approach(
 
 def descend(
     approach_arc: Segment,
-    object_position: Point,
-    object_velocity: Point,
-    z_offset: float,
-    approach_speed: float,
+    object_position_belt: Point | None = None,
+    object_velocity_world: Point | None = None,
+    approach_clearance_z: float | None = None,
+    approach_speed: float = 0.0,
+    *,
+    object_position: Point | None = None,
+    object_velocity: Point | None = None,
+    z_offset: float | None = None,
 ) -> Segment:
     """Return the arc from the approach point down onto the object.
 
     Args:
         approach_arc: The arc that ended above the object, whose end is this
             one's start, so the flange never stops between them.
-        object_position: Where the object was when the approach was planned.
-        object_velocity: How the belt is carrying it.
-        z_offset: The clearance the approach stood at, in meters.
+        object_position_belt: Where the object was when the approach was planned.
+        object_velocity_world: How the belt is carrying it.
+        approach_clearance_z: The clearance the approach stood at, in meters.
         approach_speed: How fast the flange is coming down, in meters per
             second.
+        object_position: Deprecated alias for object_position_belt.
+        object_velocity: Deprecated alias for object_velocity_world.
+        z_offset: Deprecated alias for approach_clearance_z.
 
     Returns:
         The arc. It ends moving with the object rather than at rest, because
         a jaw arriving stopped has the object sliding through it at belt
         speed.
     """
-    dt = descent_seconds(z_offset, approach_speed)
+    obj_pos = object_position if object_position is not None else object_position_belt
+    if obj_pos is None:
+        raise TypeError("descend requires object_position_belt or object_position")
+    obj_vel = object_velocity if object_velocity is not None else object_velocity_world
+    if obj_vel is None:
+        raise TypeError("descend requires object_velocity_world or object_velocity")
+    clearance = z_offset if z_offset is not None else approach_clearance_z
+    if clearance is None:
+        raise TypeError("descend requires approach_clearance_z or z_offset")
+
+    dt = descent_seconds(clearance, approach_speed)
     arrival = approach_arc.duration + dt
     return Segment(
         start=approach_arc.end,
         end=State(
-            position=where(object_position, object_velocity, arrival, 0.0),
-            velocity=object_velocity,
+            position=where(obj_pos, obj_vel, arrival, 0.0),
+            velocity=obj_vel,
             acceleration=(0.0, 0.0, 0.0),
         ),
         duration=dt,
