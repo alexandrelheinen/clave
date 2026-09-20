@@ -1,0 +1,12 @@
+# Training configuration for perception baseline (ResNet-50) verification.
+
+training:
+  candidate: resnet50-baseline
+  dataset: datasets/synthetic
+  checkpoints: runs
+  epochs: 5
+  batch_size: 16
+  learning_rate: 0.0003
+  seed: 0
+  window_exit_meters: 1.034
+  act_chunk_size: 10
