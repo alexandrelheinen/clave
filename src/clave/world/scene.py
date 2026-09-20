@@ -301,24 +301,26 @@ def _add_chutes(
     throat = [float(v) for v in require(cfg, "throat_meters", "chutes")]
     fall = float(require(cfg, "throat_height_meters", "chutes"))
     takeaway = require(cfg, "takeaway", "chutes")
-    away_top = float(require(takeaway, "surface_height_meters", "chutes.takeaway"))
+    takeaway_surface_height_world = float(
+        require(takeaway, "surface_height_meters", "chutes.takeaway")
+    )
     away_wide = float(require(takeaway, "width_meters", "chutes.takeaway"))
     away_long = float(require(takeaway, "length_meters", "chutes.takeaway"))
 
-    top = plan.belt.surface_height
+    belt_surface_height_world = plan.belt.surface_height
     mouths: dict[str, Any] = {}
     for channel in plan.channels:
         x, offset, _ = plan.chutes[channel]
-        _refuse_unreachable(plan, channel, x, offset, top)
+        _refuse_unreachable(plan, channel, x, offset, belt_surface_height_world)
         _refuse_over_pedestal(plan, channel, x, mouth[0])
         mouths[channel] = _add_funnel(
             mujoco,
             world,
             channel,
-            centre=(x, offset),
+            center_world=(x, offset),
             mouth=mouth,
             throat=throat,
-            top=top,
+            belt_surface_height_world=belt_surface_height_world,
             fall=fall,
         )
         # The take-away runs out from under the throat, away from the line, so
@@ -328,7 +330,7 @@ def _add_chutes(
             name=f"takeaway_{channel}",
             type=mujoco.mjtGeom.mjGEOM_BOX,
             size=[away_wide / 2.0, away_long / 2.0, 0.02],
-            pos=[x, takeaway_y, away_top - 0.02],
+            pos=[x, takeaway_y, takeaway_surface_height_world - 0.02],
             rgba=[0.22, 0.22, 0.26, 1.0],
             contype=1,
             conaffinity=1,
@@ -342,7 +344,7 @@ def _add_chutes(
                 pos=[
                     x + sign * (away_wide / 2.0 + 0.005),
                     takeaway_y,
-                    away_top + guide_h / 2.0,
+                    takeaway_surface_height_world + guide_h / 2.0,
                 ],
                 rgba=[0.30, 0.30, 0.34, 1.0],
             )
@@ -353,7 +355,7 @@ def _add_chutes(
             pos=[
                 x,
                 offset + throat[1] / 2.0 - away_long - 0.005,
-                away_top + guide_h / 2.0,
+                takeaway_surface_height_world + guide_h / 2.0,
             ],
             rgba=[0.30, 0.30, 0.34, 1.0],
         )
@@ -364,11 +366,14 @@ def _add_funnel(
     mujoco: Any,
     world: Any,
     channel: str,
-    centre: tuple[float, float],
-    mouth: list[float],
-    throat: list[float],
-    top: float,
-    fall: float,
+    center_world: tuple[float, float] | None = None,
+    mouth: list[float] | None = None,
+    throat: list[float] | None = None,
+    belt_surface_height_world: float | None = None,
+    fall: float = 0.0,
+    *,
+    centre: tuple[float, float] | None = None,
+    top: float | None = None,
 ) -> Any:
     """Build one funnel and return the geom that marks its mouth.
 
@@ -376,20 +381,35 @@ def _add_funnel(
         mujoco: The imported module.
         world: The worldbody the geometry attaches to.
         channel: What the funnel is for, used to name its geoms.
-        centre: Where the mouth stands, along belt travel and across it.
+        center_world: Where the mouth stands in world frame, along belt travel
+            and across it.
         mouth: Mouth size, along travel and across it.
         throat: Throat size, the same way round.
-        top: Height of the mouth, which is the belt surface.
+        belt_surface_height_world: Height of the mouth, which is the belt
+            surface.
         fall: How far the throat sits below the mouth.
+        centre: Legacy keyword alias for center_world.
+        top: Legacy keyword alias for belt_surface_height_world.
 
     Returns:
         A thin frame geom at the mouth, which is what a presentation
         scenario recolors and what a reader sees from above.
     """
-    x, y = centre
+    c = center_world if center_world is not None else centre
+    if c is None:
+        raise TypeError("_add_funnel requires center_world or centre")
+    t = (
+        belt_surface_height_world
+        if belt_surface_height_world is not None
+        else (0.0 if top is None else top)
+    )
+    m = mouth if mouth is not None else [0.0, 0.0]
+    th = throat if throat is not None else [0.0, 0.0]
+
+    x, y = c
     half_fall = fall / 2.0
     for axis, (wide_at_mouth, wide_at_throat) in enumerate(
-        ((mouth[0], throat[0]), (mouth[1], throat[1]))
+        ((m[0], th[0]), (m[1], th[1]))
     ):
         for sign in (-1.0, 1.0):
             # Each wall spans mouth to throat, so its tilt is the difference
@@ -399,8 +419,8 @@ def _add_funnel(
             lean = math.atan2(run, fall)
             length = math.hypot(run, fall) / 2.0
             mid = sign * (wide_at_mouth + wide_at_throat) / 4.0
-            across = (mouth[1] if axis == 0 else mouth[0]) / 2.0
-            pos = [x, y, top - half_fall]
+            across = (m[1] if axis == 0 else m[0]) / 2.0
+            pos = [x, y, t - half_fall]
             pos[axis] += mid
             # Rotate about the axis the wall does not span, leaning inward.
             angle = sign * lean if axis == 0 else -sign * lean
@@ -422,8 +442,8 @@ def _add_funnel(
     return world.add_geom(
         name=f"chute_{channel}_mouth",
         type=mujoco.mjtGeom.mjGEOM_BOX,
-        size=[mouth[0] / 2.0, mouth[1] / 2.0, 0.004],
-        pos=[x, y, top + 0.004],
+        size=[m[0] / 2.0, m[1] / 2.0, 0.004],
+        pos=[x, y, t + 0.004],
         rgba=[0.15, 0.45, 0.65, 0.0],
         contype=0,
         conaffinity=0,

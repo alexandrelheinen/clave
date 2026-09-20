@@ -319,8 +319,7 @@ class Conveyor:
             body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, item.name)
             address = model.jnt_qposadr[model.body_jntadr[body]]
             gone = (
-                float(data.qpos[address]) > past
-                or float(data.qpos[address + 2]) < 0.05
+                float(data.qpos[address]) > past or float(data.qpos[address + 2]) < 0.05
             )
             if gone:
                 self._free.append(item.index)

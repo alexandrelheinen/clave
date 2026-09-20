@@ -67,9 +67,9 @@ class Goal:
 
     Attributes:
         phase: Which phase the arm is in.
-        position: Where the flange should be, in belt frame meters.
-        yaw: What the tool should be turned to about the belt normal, or None
-            to hold the rotation the arm already has.
+        target_position_world: Where the flange should be, in world frame meters.
+        target_yaw_world: What the tool should be turned to about the belt
+            normal, or None to hold the rotation the arm already has.
         track_id: Which track this is about, or None when no track is.
         observed_at_nanos: When this pose was seen. A goal is decided once
             per capture and held for half a second while the belt keeps
@@ -80,11 +80,44 @@ class Goal:
     """
 
     phase: Phase
-    position: Point
-    yaw: float | None
-    track_id: int | None
-    observed_at_nanos: int
+    target_position_world: Point
+    target_yaw_world: float | None = None
+    track_id: int | None = None
+    observed_at_nanos: int = 0
     rides_belt: bool = False
+
+    def __init__(
+        self,
+        phase: Phase,
+        target_position_world: Point | None = None,
+        target_yaw_world: float | None = None,
+        track_id: int | None = None,
+        observed_at_nanos: int = 0,
+        rides_belt: bool = False,
+        *,
+        position: Point | None = None,
+        yaw: float | None = None,
+    ) -> None:
+        pos = target_position_world if target_position_world is not None else position
+        if pos is None:
+            raise TypeError("Goal requires target_position_world or position")
+        y = target_yaw_world if target_yaw_world is not None else yaw
+        object.__setattr__(self, "phase", phase)
+        object.__setattr__(self, "target_position_world", pos)
+        object.__setattr__(self, "target_yaw_world", y)
+        object.__setattr__(self, "track_id", track_id)
+        object.__setattr__(self, "observed_at_nanos", observed_at_nanos)
+        object.__setattr__(self, "rides_belt", rides_belt)
+
+    @property
+    def position(self) -> Point:
+        """Backwards compatibility alias for target_position_world."""
+        return self.target_position_world
+
+    @property
+    def yaw(self) -> float | None:
+        """Backwards compatibility alias for target_yaw_world."""
+        return self.target_yaw_world
 
 
 class TaskMachine:
@@ -99,18 +132,20 @@ class TaskMachine:
         self,
         settings: TaskSettings,
         calibration: CalibrationSettings,
-        belt_surface: float,
+        belt_surface_height_world: float | None = None,
         belt_speed: float = 0.0,
         guidance: GuidanceSettings | None = None,
         admits: Callable[[Point], bool] | None = None,
         chutes: dict[str, Point] | None = None,
+        *,
+        belt_surface: float | None = None,
     ) -> None:
         """Hold the settings and the belt the approach height is measured from.
 
         Args:
             settings: The phases, the tolerances and the park pose.
             calibration: The offset between a marker's pose and the flange.
-            belt_surface: Height of the belt surface, in meters.
+            belt_surface_height_world: Height of the belt surface, in meters.
             belt_speed: How fast the belt runs, in meters per second, which a
                 planned visit needs to know where the object will be.
             guidance: The speed and acceleration ceilings a planned arc has to
@@ -124,11 +159,17 @@ class TaskMachine:
                 over the one its object routes to; without them it ends at
                 the retreat and the object goes back on the belt, which is
                 a line with nowhere to put anything.
+            belt_surface: Legacy keyword alias for belt_surface_height_world.
 
         Raises:
             TaskError: If the profile plans arcs and was given neither the
                 ceilings to plan them under nor a belt to plan them against.
         """
+        surface = (
+            belt_surface_height_world
+            if belt_surface_height_world is not None
+            else (0.0 if belt_surface is None else belt_surface)
+        )
         if settings.profile is Profile.FULL_VISIT:
             if guidance is None:
                 raise TaskError(
@@ -142,7 +183,7 @@ class TaskMachine:
                 )
         self._settings = settings
         self._calibration = calibration
-        self._belt_surface = belt_surface
+        self._belt_surface_height_world = surface
         self._belt_speed = belt_speed
         self._guidance = guidance
         self._admits = admits if admits is not None else _anywhere
@@ -157,6 +198,11 @@ class TaskMachine:
         self._plan_yaw: float | None = None
         self._pick_error: float | None = None
         self._missed: list[int] = []
+
+    @property
+    def belt_surface(self) -> float:
+        """Backwards compatibility alias for belt_surface_height_world."""
+        return self._belt_surface_height_world
 
     @property
     def served(self) -> tuple[int, ...]:
@@ -234,10 +280,12 @@ class TaskMachine:
     def step(
         self,
         queue: Queue,
-        flange: Point,
-        at_seconds: float,
+        flange_position_world: Point | None = None,
+        at_seconds: float = 0.0,
         refusal: str | None = None,
         reference_velocity: Point = (0.0, 0.0, 0.0),
+        *,
+        flange: Point | None = None,
     ) -> Goal:
         """Decide what the arm is doing, and say where it wants the flange.
 
@@ -248,20 +296,26 @@ class TaskMachine:
 
         Args:
             queue: The order selection produced.
-            flange: Where the flange stands.
+            flange_position_world: Where the flange stands in world frame.
             at_seconds: Simulated time, which the dwell is measured against.
             refusal: Why the last commanded pose was refused, or None.
             reference_velocity: How fast the reference is moving, so a plan
                 begins where the motion already is rather than asking for a
                 step in velocity. Zero is right whenever the arm is at rest,
                 which is where a visit normally starts.
+            flange: Legacy keyword alias for flange_position_world.
 
         Returns:
             The goal for this tick.
         """
+        flange_pos = (
+            flange_position_world if flange_position_world is not None else flange
+        )
+        if flange_pos is None:
+            raise TypeError("step requires flange_position_world or flange")
         at_nanos = int(at_seconds * NANOS_PER_SECOND)
         if refusal is not None:
-            return self._fault(queue, flange, refusal, at_nanos)
+            return self._fault(queue, flange_pos, refusal, at_nanos)
 
         if self._plan is not None:
             self._reaim(queue, at_seconds)
@@ -270,17 +324,19 @@ class TaskMachine:
         head = self._next(queue)
         if head is None:
             self._serving, self._arrived_at = None, None
-            return self._rest(flange, at_nanos)
+            return self._rest(flange_pos, at_nanos)
 
         if self._settings.profile is Profile.FULL_VISIT:
-            return self._commit(head, flange, reference_velocity, at_seconds, at_nanos)
+            return self._commit(
+                head, flange_pos, reference_velocity, at_seconds, at_nanos
+            )
 
         if head.track_id != self._serving:
             self._serving, self._arrived_at = head.track_id, None
             self._phase = Phase.TRACK
 
         goal = self._track(head, at_nanos, self._phase)
-        gap = math.dist(flange, goal.position)
+        gap = math.dist(flange_pos, goal.position)
         if gap > self._settings.arrival_tolerance:
             # Not there yet, so the dwell has not started. A visit that
             # completes because time passed rather than because the arm
@@ -301,9 +357,15 @@ class TaskMachine:
         self._served.append(head.track_id)
         self._serving, self._arrived_at = None, None
         self._phase = Phase.STANDBY
-        return self.step(queue, flange, at_seconds)
+        return self.step(queue, flange_pos, at_seconds)
 
-    def flight(self, at_seconds: float, flange: Point) -> Flight | None:
+    def flight(
+        self,
+        at_seconds: float,
+        flange_position_world: Point | None = None,
+        *,
+        flange: Point | None = None,
+    ) -> Flight | None:
         """Drive one tick of a planned visit, or report that none is flying.
 
         Called at the rate the arm is actually commanded at, which is the
@@ -312,19 +374,25 @@ class TaskMachine:
 
         Args:
             at_seconds: Simulated time.
-            flange: Where the flange stands, read only to measure how near it
-                came to the object when the jaw closed.
+            flange_position_world: Where the flange stands, read only to
+                measure how near it came to the object when the jaw closed.
+            flange: Legacy keyword alias for flange_position_world.
 
         Returns:
             What to command, or None when no plan is flying. None on the tick
             a plan runs out, which is also when the visit is recorded, so a
             caller that stops asking on None never misses the end.
         """
+        flange_pos = (
+            flange_position_world if flange_position_world is not None else flange
+        )
+        if flange_pos is None:
+            raise TypeError("flight requires flange_position_world or flange")
         if self._plan is None:
             return None
         sampled = self._plan.at(at_seconds)
         if sampled is None:
-            self._finish(flange)
+            self._finish(flange_pos)
             return None
         phase, state, grip = sampled
         if phase is Phase.HOLD and self._pick_error is None:
@@ -332,7 +400,7 @@ class TaskMachine:
             # the first tick of it is the one a pick is decided on. Later
             # ticks are the carry, and measuring there would report how well
             # the arm rides the belt rather than how well it arrived.
-            self._pick_error = math.dist(flange, state.position)
+            self._pick_error = math.dist(flange_pos, state.position)
         self._phase = phase
         return Flight(
             phase=phase,
@@ -355,9 +423,9 @@ class TaskMachine:
         """
         offset = self._calibration.flange_offset
         return (
-            head.flange[0] + offset[0],
-            head.flange[1] + offset[1],
-            head.flange[2] + offset[2],
+            head.flange_position_world[0] + offset[0],
+            head.flange_position_world[1] + offset[1],
+            head.flange_position_world[2] + offset[2],
         )
 
     def _reaim(self, queue: Queue, at_seconds: float) -> None:
@@ -381,10 +449,14 @@ class TaskMachine:
         if head is None:
             return
         target = self._grasp_pose(head)
-        transit_z = self._belt_surface + self._settings.approach_height
-        retreat_lift = max(self._settings.grasp_clearance, transit_z - target[2])
+        transit_height_world = (
+            self._belt_surface_height_world + self._settings.approach_height
+        )
+        retreat_lift = max(
+            self._settings.grasp_clearance, transit_height_world - target[2]
+        )
         chute = self._chutes.get(head.channel)
-        over = (chute[0], chute[1], transit_z) if chute is not None else None
+        over = (chute[0], chute[1], transit_height_world) if chute is not None else None
         refreshed = refine(
             plan=self._plan,
             object_position=target,
@@ -443,10 +515,14 @@ class TaskMachine:
             self._serving = None
             return self._rest(flange, at_nanos)
         target = self._grasp_pose(head)
-        transit_z = self._belt_surface + self._settings.approach_height
-        retreat_lift = max(self._settings.grasp_clearance, transit_z - target[2])
+        transit_height_world = (
+            self._belt_surface_height_world + self._settings.approach_height
+        )
+        retreat_lift = max(
+            self._settings.grasp_clearance, transit_height_world - target[2]
+        )
         chute = self._chutes.get(head.channel)
-        over = (chute[0], chute[1], transit_z) if chute is not None else None
+        over = (chute[0], chute[1], transit_height_world) if chute is not None else None
         # An interception is worth planning only inside what the object has
         # left on the belt, whichever of the two limits binds first.
         leaving = head.distance_before_leaving / self._belt_speed
@@ -484,15 +560,15 @@ class TaskMachine:
             self._serving = None
             return self._rest(flange, at_nanos)
         self._plan = plan
-        self._plan_yaw = head.closing_axis
+        self._plan_yaw = head.closing_yaw_belt
         self._serving = head.track_id
         self._pick_error = None
         self._phase = Phase.TRACK
         return Goal(
             phase=Phase.TRACK,
             rides_belt=True,
-            position=plan.legs[0].segment.end.position,
-            yaw=head.closing_axis,
+            target_position_world=plan.legs[0].segment.end.position,
+            target_yaw_world=head.closing_yaw_belt,
             track_id=head.track_id,
             observed_at_nanos=at_nanos,
         )
@@ -519,8 +595,8 @@ class TaskMachine:
         return Goal(
             phase=self._phase,
             rides_belt=True,
-            position=position,
-            yaw=self._plan_yaw,
+            target_position_world=position,
+            target_yaw_world=self._plan_yaw,
             track_id=self._plan.track_id,
             observed_at_nanos=at_nanos,
         )
@@ -581,19 +657,19 @@ class TaskMachine:
         """
         offset = self._calibration.flange_offset
         above = (
-            head.flange[2] - self._belt_surface
+            head.flange_position_world[2] - self._belt_surface_height_world
             if phase is Phase.DESCEND
             else self._settings.approach_height
         )
         return Goal(
             phase=phase,
             rides_belt=True,
-            position=(
-                head.flange[0] + offset[0],
-                head.flange[1] + offset[1],
-                self._belt_surface + above + offset[2],
+            target_position_world=(
+                head.flange_position_world[0] + offset[0],
+                head.flange_position_world[1] + offset[1],
+                self._belt_surface_height_world + above + offset[2],
             ),
-            yaw=head.closing_axis,
+            target_yaw_world=head.closing_yaw_belt,
             track_id=head.track_id,
             observed_at_nanos=at_nanos,
         )
@@ -609,12 +685,12 @@ class TaskMachine:
             The park pose, under the phase that says whether the arm is still
             travelling to it.
         """
-        park = self._settings.park_position
+        park = self._settings.park_position_world
         arrived = math.dist(flange, park) <= self._settings.arrival_tolerance
         return Goal(
             phase=Phase.STANDBY if arrived else Phase.PARK,
-            position=park,
-            yaw=None,
+            target_position_world=park,
+            target_yaw_world=None,
             track_id=None,
             observed_at_nanos=at_nanos,
         )
@@ -651,8 +727,8 @@ class TaskMachine:
         self._phase = Phase.STANDBY
         return Goal(
             phase=Phase.FAULT,
-            position=flange,
-            yaw=None,
+            target_position_world=flange,
+            target_yaw_world=None,
             track_id=faulted,
             observed_at_nanos=at_nanos,
         )

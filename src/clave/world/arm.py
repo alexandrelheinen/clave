@@ -256,19 +256,25 @@ def joint_positions(model: Any, data: Any, arm: ArmIndices) -> NDArray[np.float6
     return np.array([float(data.qpos[model.jnt_qposadr[j]]) for j in arm.joint_ids])
 
 
-def end_effector_position(data: Any, arm: ArmIndices) -> NDArray[np.float64]:
+def end_effector_position_world(data: Any, arm: ArmIndices) -> NDArray[np.float64]:
     """Read where the flange currently is, in world coordinates."""
     return np.array(data.site_xpos[arm.tool_site], dtype=np.float64)
+
+
+end_effector_position = end_effector_position_world
 
 
 def solve(
     model: Any,
     data: Any,
     arm: ArmIndices,
-    target: NDArray[np.float64],
-    yaw: float = 0.0,
+    target_position_world: NDArray[np.float64] | None = None,
+    yaw_world: float | None = None,
     attempts: int = 6,
     iterations: int = 300,
+    *,
+    target: NDArray[np.float64] | None = None,
+    yaw: float | None = None,
 ) -> NDArray[np.float64]:
     """Solve joint angles putting the flange at a target with the tool down.
 
@@ -286,11 +292,13 @@ def solve(
         model: The compiled model.
         data: Its state, read for a warm start and not modified.
         arm: The arm indices.
-        target: Desired flange position in world coordinates.
-        yaw: Desired tool rotation about the vertical, in radians.
+        target_position_world: Desired flange position in world coordinates.
+        yaw_world: Desired tool rotation about the vertical, in radians.
         attempts: Random restarts before giving up. One means warm start only,
             which is what a controller tracking a moving target wants.
         iterations: Descent steps per attempt.
+        target: Legacy keyword alias for target_position_world.
+        yaw: Legacy keyword alias for yaw_world.
 
     Returns:
         Six joint angles, every one inside its limit.
@@ -299,6 +307,12 @@ def solve(
         ReachError: If the target lies outside the trusted annulus, or if no
             attempt converged, naming which.
     """
+    target_pos = target_position_world if target_position_world is not None else target
+    if target_pos is None:
+        raise TypeError("solve requires target_position_world or target")
+    resolved_yaw = yaw_world if yaw_world is not None else (0.0 if yaw is None else yaw)
+    target = target_pos
+    yaw = resolved_yaw
     import mujoco
 
     if not reaches(
@@ -421,10 +435,13 @@ def step_toward(
     model: Any,
     data: Any,
     arm: ArmIndices,
-    target: NDArray[np.float64],
-    gain: float,
-    yaw: float = 0.0,
+    target_position_world: NDArray[np.float64] | None = None,
+    gain: float = 0.0,
+    yaw_world: float | None = None,
     max_joint_step: float | None = None,
+    *,
+    target: NDArray[np.float64] | None = None,
+    yaw: float | None = None,
 ) -> NDArray[np.float64]:
     """Move the commanded joint angles one step toward a Cartesian target.
 
@@ -447,9 +464,9 @@ def step_toward(
         model: The compiled model.
         data: Its state, with forward kinematics already current.
         arm: The arm indices.
-        target: Desired flange position in world coordinates.
+        target_position_world: Desired flange position in world coordinates.
         gain: Fraction of the remaining joint error to command per step.
-        yaw: Desired tool rotation about the vertical, in radians.
+        yaw_world: Desired tool rotation about the vertical, in radians.
         max_joint_step: How far any one joint's command may move from the
             command before it, in radians, or None to command whatever the
             solve asked for. Near a wrist singularity the Jacobian loses rank
@@ -465,10 +482,18 @@ def step_toward(
             that lead instead of the command rate leaves almost no driving
             error: the arm then crawls, and a flange asked to follow a belt
             at 0.31 m/s falls a metre behind inside two seconds.
+        target: Legacy keyword alias for target_position_world.
+        yaw: Legacy keyword alias for yaw_world.
 
     Returns:
         The commanded joint angles after the step.
     """
+    target_pos = target_position_world if target_position_world is not None else target
+    if target_pos is None:
+        raise TypeError("step_toward requires target_position_world or target")
+    resolved_yaw = yaw_world if yaw_world is not None else (0.0 if yaw is None else yaw)
+    target = target_pos
+    yaw = resolved_yaw
     current = joint_positions(model, data, arm)
     if not reachable(arm, target):
         return current
@@ -630,7 +655,7 @@ def project_into_reach(
     return base_xy[0] + offset_x * scale, base_xy[1] + offset_y * scale
 
 
-def pinch_position(data: Any, arm: ArmIndices) -> NDArray[np.float64]:
+def pinch_position_world(data: Any, arm: ArmIndices) -> NDArray[np.float64]:
     """Return where the jaw closes, in world coordinates.
 
     Args:
@@ -641,6 +666,9 @@ def pinch_position(data: Any, arm: ArmIndices) -> NDArray[np.float64]:
         The position.
     """
     return np.array(data.site_xpos[arm.pinch_site], dtype=np.float64)
+
+
+pinch_position = pinch_position_world
 
 
 def hold(data: Any, arm: ArmIndices, closed: float) -> None:
@@ -657,7 +685,7 @@ def hold(data: Any, arm: ArmIndices, closed: float) -> None:
     data.ctrl[arm.gripper_actuator] = span * GRIPPER_FULLY_CLOSED
 
 
-def tool_yaw(data: Any, arm: ArmIndices) -> float:
+def tool_yaw_world(data: Any, arm: ArmIndices) -> float:
     """Return the tool's current rotation about the belt normal, in radians.
 
     Read from the tool frame rather than from the joints, because the frame is
@@ -675,23 +703,35 @@ def tool_yaw(data: Any, arm: ArmIndices) -> float:
     return float(math.atan2(frame[1, 0], frame[0, 0]))
 
 
-def reachable(arm: ArmIndices, target: NDArray[np.float64]) -> bool:
+tool_yaw = tool_yaw_world
+
+
+def reachable(
+    arm: ArmIndices,
+    target_position_world: NDArray[np.float64] | None = None,
+    *,
+    target: NDArray[np.float64] | None = None,
+) -> bool:
     """Report whether a target lies inside the trusted workspace.
 
     Args:
         arm: The arm indices.
-        target: A position in world coordinates.
+        target_position_world: A position in world coordinates.
+        target: Legacy keyword alias for target_position_world.
 
     Returns:
         Whether the annulus and the height band both admit it. This is the
         region test rather than a solve, so it is cheap and deterministic.
     """
+    target_pos = target_position_world if target_position_world is not None else target
+    if target_pos is None:
+        raise TypeError("reachable requires target_position_world or target")
     if not reaches(
         (float(arm.base_position[0]), float(arm.base_position[1])),
-        float(target[0]),
-        float(target[1]),
+        float(target_pos[0]),
+        float(target_pos[1]),
     ):
         return False
     lowest, highest = TOOL_ABOVE_BASE_METERS
-    above = float(target[2]) - float(arm.base_position[2])
+    above = float(target_pos[2]) - float(arm.base_position[2])
     return lowest <= above <= highest
