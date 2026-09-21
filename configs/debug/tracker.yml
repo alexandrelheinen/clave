@@ -42,7 +42,7 @@ views:
     height: 540
     azimuth_degrees: 135.0
     elevation_degrees: -32.0
-    distance_meters: 2.10
+    distance_meters: 4.00
     lookat_meters: [-0.15, 0.00, 1.02]
 
   # The whole machine, including the park pose. Wide enough that a jaw is
@@ -54,5 +54,5 @@ views:
     height: 540
     azimuth_degrees: 180.0
     elevation_degrees: -26.0
-    distance_meters: 2.60
+    distance_meters: 4.00
     lookat_meters: [0.00, -0.45, 1.05]
