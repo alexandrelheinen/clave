@@ -126,7 +126,14 @@ branch = true
 # they cannot execute without multi-gigabyte optional libraries the gate does
 # not install. Their real test is the benchmark sweep, whose committed output is
 # docs/measurements.md.
-omit = ["src/clave/candidates/perception.py", "src/clave/candidates/policy.py"]
+#
+# debug_run.py is an interactive diagnostic visualizer and PlotJuggler telemetry
+# tool used by operators for manual rollout inspection with an active display.
+omit = [
+    "src/clave/candidates/perception.py",
+    "src/clave/candidates/policy.py",
+    "src/clave/tracker/debug_run.py",
+]
 
 [tool.coverage.report]
 exclude_also = ["if TYPE_CHECKING:", "raise NotImplementedError"]
