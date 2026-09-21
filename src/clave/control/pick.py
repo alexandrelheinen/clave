@@ -229,6 +229,8 @@ def plan_pick(
     belt_velocity: Point | None = None,
     z_offset: float | None = None,
     over: Point | None = None,
+    belt_border_y: float = BELT_BORDER_Y,
+    safe_height_world: float = SAFE_CLEARANCE_HEIGHT_WORLD,
 ) -> Plan | None:
     """Plan a whole visit, or report that there is no time for one.
 
