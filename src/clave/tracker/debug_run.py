@@ -462,11 +462,14 @@ def run(
             plan.pool_size,
             telemetry_rate,
         )
-        LOGGER.debug(
+        LOGGER.info(
             "telemetry enabled: path=%s rate=%.3f Hz",
             telemetry_path,
             telemetry_rate,
         )
+    else:
+        LOGGER.info("telemetry disabled")
+
     if trajectory_seconds < 0.0:
         raise DebugRunError(
             f"trajectory horizon {trajectory_seconds} cannot be negative"
