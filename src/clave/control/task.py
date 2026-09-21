@@ -137,6 +137,9 @@ class TaskMachine:
         guidance: GuidanceSettings | None = None,
         admits: Callable[[Point], bool] | None = None,
         chutes: dict[str, Point] | None = None,
+        belt_width: float = 0.50,
+        belt_center_y: float = 0.0,
+        belt_border_y: float | None = None,
         *,
         belt_surface: float | None = None,
     ) -> None:
@@ -159,6 +162,10 @@ class TaskMachine:
                 over the one its object routes to; without them it ends at
                 the retreat and the object goes back on the belt, which is
                 a line with nowhere to put anything.
+            belt_width: Width of the belt in meters.
+            belt_center_y: Lateral center coordinate of the belt in meters.
+            belt_border_y: Lateral position of the belt border on the chute side,
+                or None to compute from belt_center_y - belt_width / 2.0.
             belt_surface: Legacy keyword alias for belt_surface_height_world.
 
         Raises:
@@ -188,6 +195,17 @@ class TaskMachine:
         self._guidance = guidance
         self._admits = admits if admits is not None else _anywhere
         self._chutes = chutes or {}
+        self._belt_border_y = (
+            belt_border_y
+            if belt_border_y is not None
+            else (belt_center_y - belt_width / 2.0)
+        )
+        safe_clearance: float = (
+            settings.safe_clearance
+            if settings.safe_clearance is not None
+            else settings.approach_height
+        )
+        self._safe_height_world = self._belt_surface_height_world + safe_clearance
         self._serving: int | None = None
         self._arrived_at: float | None = None
         self._phase = Phase.STANDBY
@@ -449,10 +467,7 @@ class TaskMachine:
         if head is None:
             return
         target = self._grasp_pose(head)
-        transit_height_world = max(
-            self._belt_surface_height_world + self._settings.approach_height,
-            1.20,
-        )
+        transit_height_world = self._safe_height_world
         retreat_lift = max(
             self._settings.grasp_clearance, transit_height_world - target[2]
         )
@@ -470,6 +485,9 @@ class TaskMachine:
             at_seconds=at_seconds,
             over=over,
             retreat_lift=retreat_lift,
+            belt_border_y=self._belt_border_y,
+            safe_height_world=transit_height_world,
+            cross_speed=self._settings.approach_speed,
         )
         if refreshed is not None:
             descent_leg = next(
@@ -518,10 +536,7 @@ class TaskMachine:
             self._serving = None
             return self._rest(flange, at_nanos)
         target = self._grasp_pose(head)
-        transit_height_world = max(
-            self._belt_surface_height_world + self._settings.approach_height,
-            1.20,
-        )
+        transit_height_world = self._safe_height_world
         retreat_lift = max(
             self._settings.grasp_clearance, transit_height_world - target[2]
         )
@@ -553,6 +568,9 @@ class TaskMachine:
                 margin=margin,
                 over=over,
                 retreat_lift=retreat_lift,
+                belt_border_y=self._belt_border_y,
+                safe_height_world=transit_height_world,
+                cross_speed=self._settings.approach_speed,
             )
             if attempt is not None:
                 descent_leg = next(

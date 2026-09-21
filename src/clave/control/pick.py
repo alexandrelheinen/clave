@@ -64,15 +64,6 @@ any delivery the shipped geometry produces and exists so the arithmetic
 cannot be handed a zero.
 """
 
-BELT_BORDER_Y = -0.25
-"""The y-coordinate of the belt border on the chute and arm side, in meters."""
-
-SAFE_CLEARANCE_HEIGHT_WORLD = 1.20
-"""Flange height giving safe clearance above the belt side barrier, in meters."""
-
-DEFAULT_CROSS_SPEED = 0.25
-"""Speed across the belt border, in meters per second."""
-
 
 def _fit_segment(
     start: State,
@@ -229,8 +220,11 @@ def plan_pick(
     belt_velocity: Point | None = None,
     z_offset: float | None = None,
     over: Point | None = None,
-    belt_border_y: float = BELT_BORDER_Y,
-    safe_height_world: float = SAFE_CLEARANCE_HEIGHT_WORLD,
+    belt_width: float = 0.50,
+    belt_center_y: float = 0.0,
+    belt_border_y: float | None = None,
+    safe_height_world: float | None = None,
+    cross_speed: float | None = None,
 ) -> Plan | None:
     """Plan a whole visit, or report that there is no time for one.
 
@@ -259,6 +253,14 @@ def plan_pick(
         belt_velocity: Deprecated alias for belt_velocity_world.
         z_offset: Deprecated alias for approach_clearance_z.
         over: Deprecated alias for target_position_world.
+        belt_width: Width of the belt in meters, used to compute border position.
+        belt_center_y: Lateral center of the belt in meters.
+        belt_border_y: Lateral coordinate of the belt border on the chute side,
+            or None to compute from belt_center_y - belt_width / 2.0.
+        safe_height_world: Flange height giving safe clearance above the belt side
+            barrier, in meters, or None to derive from flange or target height.
+        cross_speed: Speed across the belt border, in meters per second, or None
+            to match approach_speed.
 
     Returns:
         The plan, or None when no interception inside `latest` respects both
@@ -276,16 +278,25 @@ def plan_pick(
         raise TypeError("plan_pick requires approach_clearance_z or z_offset")
     target_pos = over if over is not None else target_position_world
     max_accel = max_acceleration if max_acceleration > 0.0 else 2.50
+    border_y = (
+        belt_border_y
+        if belt_border_y is not None
+        else (belt_center_y - belt_width / 2.0)
+    )
+    cross_v = cross_speed if cross_speed is not None else approach_speed
 
     entry_arc: Segment | None = None
     reaching: Segment | None = None
     obj_pos_at_border = obj_pos
 
-    if target_pos is not None and flange.position[1] <= belt_border_y:
-        safe_height = max(target_pos[2], safe_height_world)
+    if target_pos is not None and flange.position[1] <= border_y:
+        if safe_height_world is not None:
+            safe_height = max(target_pos[2], safe_height_world)
+        else:
+            safe_height = max(target_pos[2], flange.position[2])
         border_approach = State(
-            position=(target_pos[0], belt_border_y, safe_height),
-            velocity=(0.0, DEFAULT_CROSS_SPEED, 0.0),
+            position=(target_pos[0], border_y, safe_height),
+            velocity=(0.0, cross_v, 0.0),
             acceleration=(0.0, 0.0, 0.0),
         )
         entry_arc = _fit_segment(
@@ -339,8 +350,9 @@ def plan_pick(
         max_speed,
         retreat_lift,
         entry_segment=entry_arc,
-        belt_border_y=belt_border_y,
+        belt_border_y=border_y,
         safe_height_world=safe_height_world,
+        cross_speed=cross_v,
         max_acceleration=max_accel,
     )
 
@@ -362,8 +374,11 @@ def refine(
     belt_velocity: Point | None = None,
     z_offset: float | None = None,
     over: Point | None = None,
-    belt_border_y: float = BELT_BORDER_Y,
-    safe_height_world: float = SAFE_CLEARANCE_HEIGHT_WORLD,
+    belt_width: float = 0.50,
+    belt_center_y: float = 0.0,
+    belt_border_y: float | None = None,
+    safe_height_world: float | None = None,
+    cross_speed: float | None = None,
 ) -> Plan | None:
     """Correct a plan in flight against a fresher estimate of the object.
 
@@ -390,8 +405,11 @@ def refine(
         belt_velocity: Deprecated alias for belt_velocity_world.
         z_offset: Deprecated alias for approach_clearance_z.
         over: Deprecated alias for target_position_world.
+        belt_width: Width of the belt in meters.
+        belt_center_y: Lateral center of the belt in meters.
         belt_border_y: Lateral position of the belt border on the chute side.
         safe_height_world: Safe clearance height above the belt side barrier.
+        cross_speed: Speed across the belt border, in meters per second.
 
     Returns:
         The re-aimed plan, or None when there is nothing left to re-aim or
@@ -409,6 +427,12 @@ def refine(
         raise TypeError("refine requires approach_clearance_z or z_offset")
     target_pos = over if over is not None else target_position_world
     max_accel = max_acceleration if max_acceleration > 0.0 else 2.50
+    border_y = (
+        belt_border_y
+        if belt_border_y is not None
+        else (belt_center_y - belt_width / 2.0)
+    )
+    cross_v = cross_speed if cross_speed is not None else approach_speed
 
     track_legs = [leg for leg in plan.legs if leg.phase is Phase.TRACK]
     dt = descent_seconds(clearance, approach_speed)
@@ -464,8 +488,9 @@ def refine(
                 max_speed,
                 retreat_lift,
                 entry_segment=new_entry_arc,
-                belt_border_y=belt_border_y,
+                belt_border_y=border_y,
                 safe_height_world=safe_height_world,
+                cross_speed=cross_v,
                 max_acceleration=max_accel,
             )
         if elapsed < entry_leg.duration + track_leg.duration:
@@ -504,8 +529,9 @@ def refine(
                 target_pos,
                 max_speed,
                 retreat_lift,
-                belt_border_y=belt_border_y,
+                belt_border_y=border_y,
                 safe_height_world=safe_height_world,
+                cross_speed=cross_v,
                 max_acceleration=max_accel,
             )
         return None
@@ -546,8 +572,9 @@ def refine(
         target_pos,
         max_speed,
         retreat_lift,
-        belt_border_y=belt_border_y,
+        belt_border_y=border_y,
         safe_height_world=safe_height_world,
+        cross_speed=cross_v,
         max_acceleration=max_accel,
     )
 
@@ -590,9 +617,9 @@ def _assemble(
     retreat_lift: float | None = None,
     *,
     entry_segment: Segment | None = None,
-    belt_border_y: float = BELT_BORDER_Y,
-    safe_height_world: float = SAFE_CLEARANCE_HEIGHT_WORLD,
-    cross_speed: float = DEFAULT_CROSS_SPEED,
+    belt_border_y: float = -0.25,
+    safe_height_world: float | None = None,
+    cross_speed: float | None = None,
     max_acceleration: float = 2.50,
 ) -> Plan:
     """Hang the descent, the carry, the retreat and delivery off an approach arc.
@@ -618,6 +645,7 @@ def _assemble(
     Returns:
         The whole visit.
     """
+    cross_v = cross_speed if cross_speed is not None else approach_speed
     dropping = descend(
         reaching,
         object_position_belt,
@@ -627,7 +655,10 @@ def _assemble(
     )
     holding = _carry(dropping.end, dwell_seconds, belt_velocity_world)
     if target_position_world is not None:
-        safe_height = max(target_position_world[2], safe_height_world)
+        if safe_height_world is not None:
+            safe_height = max(target_position_world[2], safe_height_world)
+        else:
+            safe_height = max(target_position_world[2], reaching.start.position[2])
         lift = max(
             approach_clearance_z if retreat_lift is None else retreat_lift,
             safe_height - holding.end.position[2],
@@ -647,10 +678,13 @@ def _assemble(
         ]
     )
     if target_position_world is not None:
-        safe_height = max(target_position_world[2], safe_height_world)
+        if safe_height_world is not None:
+            safe_height = max(target_position_world[2], safe_height_world)
+        else:
+            safe_height = max(target_position_world[2], reaching.start.position[2])
         border_retreat = State(
             position=(target_position_world[0], belt_border_y, safe_height),
-            velocity=(0.0, -cross_speed, 0.0),
+            velocity=(0.0, -cross_v, 0.0),
             acceleration=(0.0, 0.0, 0.0),
         )
         chute_target = State(

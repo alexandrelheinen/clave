@@ -509,3 +509,18 @@ def test_no_plan_is_built_from_a_pose_the_arm_should_not_be_in() -> None:
     assert goal.position == PARK, "the arm was not sent home to recover"
     # And the candidate is not blamed: nothing is wrong with it.
     assert arm.missed == ()
+
+
+def test_task_machine_accepts_custom_belt_parameters() -> None:
+    """AC-MOVE-43: TaskMachine respects custom belt dimensions and border position."""
+    arm = TaskMachine(
+        task_settings(profile=Profile.FULL_VISIT),
+        CalibrationSettings(flange_offset=(0.0, 0.0, 0.0)),
+        belt_surface=BELT_SURFACE,
+        belt_speed=BELT_SPEED,
+        guidance=LIMITS,
+        belt_width=0.70,
+        belt_center_y=0.05,
+    )
+    # Expected border: 0.05 - 0.70 / 2.0 = -0.30
+    assert arm._belt_border_y == pytest.approx(-0.30)
