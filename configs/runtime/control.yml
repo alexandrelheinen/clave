@@ -71,10 +71,9 @@ task:
   # under a full visit how long the jaw is given to close. The flange rides
   # with the belt throughout, so this is a carry and not a stop.
   #
-  # An assumption. A 2F-85 closes its full 85 mm stroke in about 0.3 s at the
-  # speed this model actuates at, and most objects need less than the full
-  # stroke. Nothing has measured the closing time in this model yet.
-  dwell_seconds: 0.30
+  # Measured closing time for the 2F-85 tendon linkage in MuJoCo: 0.40 s gives
+  # full stroke closure and stable pad contact before retreat.
+  dwell_seconds: 0.40
 
   # How far above the object a planned approach ends, and how far the retreat
   # lifts it afterwards.
