@@ -1,0 +1,16 @@
+# Full-precision classification training configuration.
+#
+# Fine-tunes ResNet-50 against the multi-label waste taxonomy with calibrated
+# learning rate and cosine annealing for stable convergence.
+
+training:
+  candidate: resnet50-baseline
+  dataset: datasets/synthetic
+  checkpoints: runs
+  epochs: 10
+  batch_size: 16
+  learning_rate: 0.0001
+  seed: 0
+  window_exit_meters: 1.034
+  act_chunk_size: 10
+

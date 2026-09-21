@@ -1,0 +1,16 @@
+# Full-precision detection training configuration.
+#
+# Trains Faster R-CNN MobileNetV3 FPN on visible bounding boxes and taxonomy
+# classes. Sized for composite detection loss convergence on the nadir gate camera.
+
+training:
+  candidate: faster-rcnn-mobilenetv3
+  dataset: datasets/synthetic
+  checkpoints: runs
+  epochs: 5
+  batch_size: 4
+  learning_rate: 0.0001
+  seed: 0
+  window_exit_meters: 1.034
+  act_chunk_size: 10
+

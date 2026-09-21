@@ -74,3 +74,24 @@ def test_policy_batches_carry_a_zeroed_state() -> None:
     _, states, actions = batches[0]  # noqa: E501
     assert float(states.abs().sum()) == 0.0
     assert actions.shape == (1, 3)
+
+
+def test_classification_batches_with_augmentation() -> None:
+    """Augmented classification batches preserve shapes and targets."""
+    pytest.importorskip("torch")
+    images, targets = next(
+        classification_batches((example(("M-01", "M-07"), True),), 1, augment=True)
+    )
+    assert tuple(images.shape) == (1, 3, 32, 32)
+    assert int(targets.sum()) == 2
+
+
+def test_detection_batches_with_augmentation() -> None:
+    """Augmented detection batches preserve box shape and class labels."""
+    pytest.importorskip("torch")
+    batches = list(detection_batches((example(("M-01",), True),), 1, augment=True))
+    assert batches
+    images, targets = batches[0]
+    assert len(images) == 1
+    assert targets[0]["boxes"].shape == (1, 4)
+    assert int(targets[0]["labels"][0]) == CLASS_INDEX["M-01"] + 1

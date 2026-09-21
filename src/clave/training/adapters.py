@@ -49,8 +49,21 @@ def _as_chw(frame: NDArray[np.uint8]) -> NDArray[np.float32]:
     return converted
 
 
+def _augment_image(image: Any) -> Any:
+    """Apply random flips and mild brightness jitter to an image tensor (C, H, W)."""
+    import torch
+
+    if torch.rand(1).item() > 0.5:
+        image = torch.flip(image, dims=[-1])
+    if torch.rand(1).item() > 0.5:
+        image = torch.flip(image, dims=[-2])
+    factor = 0.85 + 0.30 * torch.rand(1).item()
+    image = torch.clamp(image * factor, 0.0, 1.0)
+    return image
+
+
 def classification_batches(
-    examples: tuple[Example, ...], batch_size: int
+    examples: tuple[Example, ...], batch_size: int, augment: bool = False
 ) -> Iterator[tuple[Any, Any]]:
     """Yield image batches with multi-label presence targets.
 
@@ -60,6 +73,7 @@ def classification_batches(
     Args:
         examples: Training examples.
         batch_size: Examples per batch.
+        augment: Whether to apply random image augmentations.
 
     Yields:
         Image tensor and target tensor pairs.
@@ -68,7 +82,13 @@ def classification_batches(
 
     for start in range(0, len(examples), batch_size):
         chunk = examples[start : start + batch_size]
-        images = torch.from_numpy(np.stack([_as_chw(item.frame) for item in chunk]))
+        processed = [
+            _augment_image(torch.from_numpy(_as_chw(item.frame)))
+            if augment
+            else torch.from_numpy(_as_chw(item.frame))
+            for item in chunk
+        ]
+        images = torch.stack(processed)
         targets = torch.zeros((len(chunk), len(MATERIAL_CLASSES)))
         for row, item in enumerate(chunk):
             for label in item.labels:
@@ -77,7 +97,7 @@ def classification_batches(
 
 
 def detection_batches(
-    examples: tuple[Example, ...], batch_size: int
+    examples: tuple[Example, ...], batch_size: int, augment: bool = False
 ) -> Iterator[tuple[Any, Any]]:
     """Yield image batches with boxes, using visible labels alone.
 
@@ -89,6 +109,7 @@ def detection_batches(
     Args:
         examples: Training examples.
         batch_size: Examples per batch.
+        augment: Whether to apply random image augmentations.
 
     Yields:
         A list of images and a list of target dictionaries, which is the shape
@@ -99,9 +120,10 @@ def detection_batches(
     usable = [item for item in examples if item.visible_labels]
     for start in range(0, len(usable), batch_size):
         chunk = usable[start : start + batch_size]
-        images = [torch.from_numpy(_as_chw(item.frame)) for item in chunk]
+        images = []
         targets = []
         for item in chunk:
+            img = torch.from_numpy(_as_chw(item.frame))
             boxes, labels = [], []
             for label in item.visible_labels:
                 x_min, y_min, x_max, y_max = label.bbox or (0, 0, 0, 0)
@@ -113,6 +135,16 @@ def detection_batches(
                 labels.append(CLASS_INDEX[label.material_class] + 1)
             if not boxes:
                 continue
+
+            if augment:
+                if torch.rand(1).item() > 0.5:
+                    img = torch.flip(img, dims=[-1])
+                    width = float(item.frame.shape[1])
+                    boxes = [[width - b[2], b[1], width - b[0], b[3]] for b in boxes]
+                factor = 0.85 + 0.30 * torch.rand(1).item()
+                img = torch.clamp(img * factor, 0.0, 1.0)
+
+            images.append(img)
             targets.append(
                 {
                     "boxes": torch.tensor(boxes, dtype=torch.float32),

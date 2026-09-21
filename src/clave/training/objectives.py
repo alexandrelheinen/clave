@@ -78,6 +78,7 @@ def batches_for(
     batch_size: int,
     window_exit: float,
     act_chunk_size: int = 10,
+    augment: bool = False,
 ) -> Iterator[Any]:
     """Select the batch shape a candidate's objective expects.
 
@@ -86,6 +87,8 @@ def batches_for(
         examples: Training examples.
         batch_size: Examples per batch.
         window_exit: Belt coordinate where the reachable window ends.
+        act_chunk_size: Actions predicted per observation for ACT.
+        augment: Whether to apply data augmentations to perception batches.
 
     Returns:
         An iterator of batches.
@@ -97,9 +100,9 @@ def batches_for(
     from clave.training import adapters
 
     if candidate == "faster-rcnn-mobilenetv3":
-        return adapters.detection_batches(examples, batch_size)
+        return adapters.detection_batches(examples, batch_size, augment=augment)
     if candidate == "resnet50-baseline":
-        return adapters.classification_batches(examples, batch_size)
+        return adapters.classification_batches(examples, batch_size, augment=augment)
     if candidate == "act":
         return adapters.act_batches(examples, batch_size, window_exit, act_chunk_size)
     if candidate == "behavior-cloning-baseline":

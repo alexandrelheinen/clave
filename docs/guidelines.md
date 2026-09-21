@@ -145,14 +145,13 @@ quantization strategy. Every policy release documents minimum and expected
 inference latency at the quantization level it was measured at. Inference
 latency is part of the overall budget, not separate from safety checks.
 
-## Policy artifacts
+## Policy and perception artifacts
 
-Trained policies are not committed to this repository. A policy is named by
-training timestamp and checksum, fetched by a deployment script, and
-versioned in a policy registry. Training metadata (imitation data source,
-RL environment configuration, domain randomization seeds, performance
-metrics) is archived and versioned to enable policy retraining and
-comparison.
+Trained policies and perception models are not committed to this repository. A
+model is named by candidate, configuration digest, and dataset digest, uploaded
+to object storage, and retrieved via deployment commands. Training workflows,
+domain randomization, and precision validation gates are documented in
+[detection-training.md](detection-training.md).
 
 Datasets for policy training use public sources where possible (COCO for
 initial training, public waste datasets). Proprietary customer data for
