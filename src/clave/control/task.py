@@ -449,8 +449,9 @@ class TaskMachine:
         if head is None:
             return
         target = self._grasp_pose(head)
-        transit_height_world = (
-            self._belt_surface_height_world + self._settings.approach_height
+        transit_height_world = max(
+            self._belt_surface_height_world + self._settings.approach_height,
+            1.20,
         )
         retreat_lift = max(
             self._settings.grasp_clearance, transit_height_world - target[2]
@@ -470,10 +471,12 @@ class TaskMachine:
             over=over,
             retreat_lift=retreat_lift,
         )
-        if refreshed is not None and self._admits(
-            refreshed.legs[1].segment.end.position
-        ):
-            self._plan = refreshed
+        if refreshed is not None:
+            descent_leg = next(
+                leg for leg in refreshed.legs if leg.phase is Phase.DESCEND
+            )
+            if self._admits(descent_leg.segment.end.position):
+                self._plan = refreshed
 
     def _commit(
         self,
@@ -515,8 +518,9 @@ class TaskMachine:
             self._serving = None
             return self._rest(flange, at_nanos)
         target = self._grasp_pose(head)
-        transit_height_world = (
-            self._belt_surface_height_world + self._settings.approach_height
+        transit_height_world = max(
+            self._belt_surface_height_world + self._settings.approach_height,
+            1.20,
         )
         retreat_lift = max(
             self._settings.grasp_clearance, transit_height_world - target[2]
@@ -550,11 +554,13 @@ class TaskMachine:
                 over=over,
                 retreat_lift=retreat_lift,
             )
-            if attempt is not None and self._admits(
-                attempt.legs[1].segment.end.position
-            ):
-                plan = attempt
-                break
+            if attempt is not None:
+                descent_leg = next(
+                    leg for leg in attempt.legs if leg.phase is Phase.DESCEND
+                )
+                if self._admits(descent_leg.segment.end.position):
+                    plan = attempt
+                    break
         if plan is None:
             self._missed.append(head.track_id)
             self._serving = None
