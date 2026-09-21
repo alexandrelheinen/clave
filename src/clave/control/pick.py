@@ -329,9 +329,8 @@ def plan_pick(
             safe_height = max(target_pos[2], safe_height_world)
         else:
             safe_height = max(target_pos[2], flange.position[2])
-        border_x = min(1.0, max(-1.0, obj_pos[0]))
         border_approach = State(
-            position=(border_x, border_y, safe_height),
+            position=(target_pos[0], border_y, safe_height),
             velocity=(0.0, cross_v, 0.0),
             acceleration=(0.0, 0.0, 0.0),
         )

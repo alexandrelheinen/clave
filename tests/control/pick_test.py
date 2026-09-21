@@ -364,7 +364,7 @@ def test_approach_enters_via_border_with_horizontal_perpendicular_speed() -> Non
     assert plan is not None
     entry_leg = plan.legs[0]
     assert entry_leg.phase is Phase.TRACK
-    assert entry_leg.segment.end.position[0] == pytest.approx(OBJECT[0])
+    assert entry_leg.segment.end.position[0] == pytest.approx(0.58)
     assert entry_leg.segment.end.position[1] == pytest.approx(-0.25)
     assert entry_leg.segment.end.position[2] >= 1.20
     assert entry_leg.segment.end.velocity[0] == pytest.approx(0.0)
@@ -416,7 +416,7 @@ def test_parameters_govern_border_clearance_and_cross_speed() -> None:
     # Border y: 0.10 - 0.80 / 2.0 = -0.30
     entry_leg = plan.legs[0]
     assert entry_leg.phase is Phase.TRACK
-    assert entry_leg.segment.end.position[0] == pytest.approx(OBJECT[0])
+    assert entry_leg.segment.end.position[0] == pytest.approx(0.60)
     assert entry_leg.segment.end.position[1] == pytest.approx(-0.30)
     assert entry_leg.segment.end.position[2] >= 1.35
     assert entry_leg.segment.end.velocity[1] == pytest.approx(0.40)
@@ -428,3 +428,34 @@ def test_parameters_govern_border_clearance_and_cross_speed() -> None:
     assert border_retreat_leg.segment.end.position[1] == pytest.approx(-0.30)
     assert border_retreat_leg.segment.end.position[2] >= 1.35
     assert border_retreat_leg.segment.end.velocity[1] == pytest.approx(-0.40)
+
+
+def test_plan_smooths_and_updates_yaw_through_quintic_interpolation() -> None:
+    """Plan interpolates and updates tool yaw smoothly across approach."""
+    plan = a_plan()
+    assert plan is not None
+    oriented_plan = plan.with_yaw(target_yaw=1.20, initial_yaw=0.20)
+    assert oriented_plan.target_yaw == pytest.approx(1.20)
+    assert oriented_plan.initial_yaw == pytest.approx(0.20)
+
+    # At start, yaw matches initial_yaw
+    start_yaw = oriented_plan.yaw_at(oriented_plan.started_at)
+    assert start_yaw is not None
+    assert start_yaw == pytest.approx(0.20)
+
+    # At pick_at or beyond, yaw matches target_yaw
+    pick_yaw = oriented_plan.yaw_at(oriented_plan.pick_at)
+    assert pick_yaw is not None
+    assert pick_yaw == pytest.approx(1.20)
+    assert oriented_plan.yaw_at(oriented_plan.pick_at + 1.0) == pytest.approx(1.20)
+
+    # Midpoint smoothly transitions
+    mid_t = 0.5 * (oriented_plan.started_at + oriented_plan.pick_at)
+    mid_yaw = oriented_plan.yaw_at(mid_t)
+    assert mid_yaw is not None
+    assert 0.20 < mid_yaw < 1.20
+
+    # Real-time re-aiming update preserves initial yaw while changing target
+    retargeted = oriented_plan.with_yaw(target_yaw=1.45)
+    assert retargeted.target_yaw == pytest.approx(1.45)
+    assert retargeted.initial_yaw == pytest.approx(0.20)
