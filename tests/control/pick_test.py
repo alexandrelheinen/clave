@@ -355,3 +355,48 @@ def test_no_chute_means_no_delivery_rather_than_a_broken_one() -> None:
     plan = a_plan()
     assert plan is not None
     assert [leg.phase for leg in plan.legs][-1] is Phase.RETREAT
+
+
+def test_approach_enters_via_border_with_horizontal_perpendicular_speed() -> None:
+    """AC-DROP-06: approach routes through border with transverse horizontal speed."""
+    mouth = (0.58, -0.42, 0.90)
+    plan = a_plan(over=mouth)
+    assert plan is not None
+    entry_leg = plan.legs[0]
+    assert entry_leg.phase is Phase.TRACK
+    assert entry_leg.segment.end.position[0] == pytest.approx(0.58)
+    assert entry_leg.segment.end.position[1] == pytest.approx(-0.25)
+    assert entry_leg.segment.end.position[2] >= 1.20
+    assert entry_leg.segment.end.velocity[0] == pytest.approx(0.0)
+    assert entry_leg.segment.end.velocity[1] > 0.0
+    assert entry_leg.segment.end.velocity[2] == pytest.approx(0.0)
+
+
+def test_retreat_lifts_vertically_without_lateral_motion_to_safe_height() -> None:
+    """AC-DROP-06: retreat lifts vertically without lateral velocity to clear rail."""
+    mouth = (0.58, -0.42, 0.90)
+    plan = a_plan(over=mouth)
+    assert plan is not None
+    retreat_leg = next(leg for leg in plan.legs if leg.phase is Phase.RETREAT)
+    retreat = retreat_leg.segment
+    assert retreat.end.position[2] >= 1.20
+    for step in range(11):
+        state = retreat.at(retreat.duration * step / 10.0)
+        assert state.position[1] == pytest.approx(retreat.start.position[1])
+        assert state.velocity[1] == pytest.approx(0.0)
+
+
+def test_delivery_exits_via_border_with_horizontal_perpendicular_speed() -> None:
+    """AC-DROP-06: delivery passes through border with transverse horizontal speed."""
+    mouth = (0.58, -0.42, 0.90)
+    plan = a_plan(over=mouth)
+    assert plan is not None
+    deliver_legs = [leg for leg in plan.legs if leg.phase is Phase.DELIVER]
+    assert len(deliver_legs) == 2
+    border_leg = deliver_legs[0]
+    assert border_leg.segment.end.position[0] == pytest.approx(0.58)
+    assert border_leg.segment.end.position[1] == pytest.approx(-0.25)
+    assert border_leg.segment.end.position[2] >= 1.20
+    assert border_leg.segment.end.velocity[0] == pytest.approx(0.0)
+    assert border_leg.segment.end.velocity[1] < 0.0
+    assert border_leg.segment.end.velocity[2] == pytest.approx(0.0)

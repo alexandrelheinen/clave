@@ -38,8 +38,9 @@ task:
   profile: full_visit
 
   # Where the flange rides while following an object, above the belt surface.
-  # Clear of the tallest package in the set, which stands 140.8 mm.
-  approach_height_meters: 0.220
+  # Sized at 0.300 m so the flange rides at z = 1.20 m, clearing the 0.04 m
+  # side barrier with finger length 0.1558 m.
+  approach_height_meters: 0.300
 
   # How close the flange has to be to the pose a phase asked for before it
   # counts as arrived.

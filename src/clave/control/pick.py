@@ -64,6 +64,45 @@ any delivery the shipped geometry produces and exists so the arithmetic
 cannot be handed a zero.
 """
 
+BELT_BORDER_Y = -0.25
+"""The y-coordinate of the belt border on the chute and arm side, in meters."""
+
+SAFE_CLEARANCE_HEIGHT_WORLD = 1.20
+"""Flange height giving safe clearance above the belt side barrier, in meters."""
+
+DEFAULT_CROSS_SPEED = 0.25
+"""Speed across the belt border, in meters per second."""
+
+
+def _fit_segment(
+    start: State,
+    end: State,
+    max_speed: float,
+    max_acceleration: float,
+    min_duration: float = 0.50,
+) -> Segment:
+    """Return a quintic segment respecting speed and acceleration ceilings.
+
+    Args:
+        start: State at the beginning.
+        end: State at the end.
+        max_speed: Speed ceiling, in meters per second.
+        max_acceleration: Acceleration ceiling, in meters per second squared.
+        min_duration: Minimum duration to consider, in seconds.
+
+    Returns:
+        The fitted segment respecting both ceilings.
+    """
+    distance = math.dist(start.position, end.position)
+    ceiling = max(max_speed, 1e-6)
+    duration = max(PEAK_OVER_MEAN * distance / ceiling, min_duration)
+    while duration < 30.0:
+        candidate = Segment(start=start, end=end, duration=duration)
+        if candidate.fits(max_speed, max_acceleration):
+            return candidate
+        duration += 0.05
+    return candidate
+
 
 @dataclass(frozen=True)
 class Flight:
@@ -234,24 +273,61 @@ def plan_pick(
     if clearance is None:
         raise TypeError("plan_pick requires approach_clearance_z or z_offset")
     target_pos = over if over is not None else target_position_world
+    max_accel = max_acceleration if max_acceleration > 0.0 else 2.50
 
-    reaching = approach(
-        flange,
-        obj_pos,
-        belt_vel,
-        clearance,
-        approach_speed,
-        max_speed,
-        max_acceleration,
-        latest,
-        margin,
-    )
+    entry_arc: Segment | None = None
+    reaching: Segment | None = None
+    obj_pos_at_border = obj_pos
+
+    if target_pos is not None and flange.position[1] <= belt_border_y:
+        safe_height = max(target_pos[2], safe_height_world)
+        border_approach = State(
+            position=(target_pos[0], belt_border_y, safe_height),
+            velocity=(0.0, DEFAULT_CROSS_SPEED, 0.0),
+            acceleration=(0.0, 0.0, 0.0),
+        )
+        entry_arc = _fit_segment(
+            flange, border_approach, max_speed, max_accel, min_duration=0.50
+        )
+        if entry_arc.duration >= latest:
+            return None
+        remaining_latest = latest - entry_arc.duration
+        obj_pos_at_border = (
+            obj_pos[0] + belt_vel[0] * entry_arc.duration,
+            obj_pos[1],
+            obj_pos[2],
+        )
+        reaching = approach(
+            border_approach,
+            obj_pos_at_border,
+            belt_vel,
+            clearance,
+            approach_speed,
+            max_speed,
+            max_accel,
+            remaining_latest,
+            margin,
+        )
+    else:
+        reaching = approach(
+            flange,
+            obj_pos,
+            belt_vel,
+            clearance,
+            approach_speed,
+            max_speed,
+            max_accel,
+            latest,
+            margin,
+        )
+
     if reaching is None:
         return None
+
     return _assemble(
         reaching,
         track_id,
-        obj_pos,
+        obj_pos_at_border,
         belt_vel,
         clearance,
         approach_speed,
@@ -260,6 +336,10 @@ def plan_pick(
         target_pos,
         max_speed,
         retreat_lift,
+        entry_segment=entry_arc,
+        belt_border_y=belt_border_y,
+        safe_height_world=safe_height_world,
+        max_acceleration=max_accel,
     )
 
 
@@ -280,6 +360,8 @@ def refine(
     belt_velocity: Point | None = None,
     z_offset: float | None = None,
     over: Point | None = None,
+    belt_border_y: float = BELT_BORDER_Y,
+    safe_height_world: float = SAFE_CLEARANCE_HEIGHT_WORLD,
 ) -> Plan | None:
     """Correct a plan in flight against a fresher estimate of the object.
 
@@ -297,6 +379,7 @@ def refine(
         dwell_seconds: How long the jaw is given to close.
         max_speed: Speed ceiling, in meters per second.
         max_acceleration: Acceleration ceiling, in meters per second squared.
+        at_seconds: Current simulated time.
         target_position_world: The chute mouth to release over, carried
             through unchanged.
         retreat_lift: How far to lift during retreat, in meters. If None,
@@ -305,6 +388,8 @@ def refine(
         belt_velocity: Deprecated alias for belt_velocity_world.
         z_offset: Deprecated alias for approach_clearance_z.
         over: Deprecated alias for target_position_world.
+        belt_border_y: Lateral position of the belt border on the chute side.
+        safe_height_world: Safe clearance height above the belt side barrier.
 
     Returns:
         The re-aimed plan, or None when there is nothing left to re-aim or
@@ -321,13 +406,112 @@ def refine(
     if clearance is None:
         raise TypeError("refine requires approach_clearance_z or z_offset")
     target_pos = over if over is not None else target_position_world
+    max_accel = max_acceleration if max_acceleration > 0.0 else 2.50
 
-    reaching = plan.legs[0].segment
+    track_legs = [leg for leg in plan.legs if leg.phase is Phase.TRACK]
+    dt = descent_seconds(clearance, approach_speed)
     elapsed = at_seconds - plan.started_at
+
+    if len(track_legs) > 1:
+        entry_leg = track_legs[0].segment
+        track_leg = track_legs[1].segment
+        if elapsed < entry_leg.duration:
+            rem_entry = entry_leg.duration - elapsed
+            new_entry_arc = Segment(
+                start=entry_leg.at(elapsed),
+                end=entry_leg.end,
+                duration=rem_entry,
+            )
+            if not new_entry_arc.fits(max_speed, max_accel):
+                return None
+            obj_pos_at_border = (
+                obj_pos[0] + belt_vel[0] * rem_entry,
+                obj_pos[1],
+                obj_pos[2],
+            )
+            new_track_arc = Segment(
+                start=entry_leg.end,
+                end=State(
+                    position=where(
+                        obj_pos_at_border,
+                        belt_vel,
+                        track_leg.duration + dt,
+                        clearance,
+                    ),
+                    velocity=(
+                        belt_vel[0],
+                        belt_vel[1],
+                        belt_vel[2] - approach_speed,
+                    ),
+                    acceleration=(0.0, 0.0, 0.0),
+                ),
+                duration=track_leg.duration,
+            )
+            if not new_track_arc.fits(max_speed, max_accel):
+                return None
+            return _assemble(
+                new_track_arc,
+                plan.track_id,
+                obj_pos_at_border,
+                belt_vel,
+                clearance,
+                approach_speed,
+                dwell_seconds,
+                at_seconds,
+                target_pos,
+                max_speed,
+                retreat_lift,
+                entry_segment=new_entry_arc,
+                belt_border_y=belt_border_y,
+                safe_height_world=safe_height_world,
+                max_acceleration=max_accel,
+            )
+        if elapsed < entry_leg.duration + track_leg.duration:
+            rem_track = (entry_leg.duration + track_leg.duration) - elapsed
+            track_elapsed = elapsed - entry_leg.duration
+            current_state = track_leg.at(track_elapsed)
+            new_track_arc = Segment(
+                start=current_state,
+                end=State(
+                    position=where(
+                        obj_pos,
+                        belt_vel,
+                        rem_track + dt,
+                        clearance,
+                    ),
+                    velocity=(
+                        belt_vel[0],
+                        belt_vel[1],
+                        belt_vel[2] - approach_speed,
+                    ),
+                    acceleration=(0.0, 0.0, 0.0),
+                ),
+                duration=rem_track,
+            )
+            if not new_track_arc.fits(max_speed, max_accel):
+                return None
+            return _assemble(
+                new_track_arc,
+                plan.track_id,
+                obj_pos,
+                belt_vel,
+                clearance,
+                approach_speed,
+                dwell_seconds,
+                at_seconds,
+                target_pos,
+                max_speed,
+                retreat_lift,
+                belt_border_y=belt_border_y,
+                safe_height_world=safe_height_world,
+                max_acceleration=max_accel,
+            )
+        return None
+
+    reaching = track_legs[0].segment
     remaining = reaching.duration - elapsed
     if remaining <= 0.0:
         return None
-    dt = descent_seconds(clearance, approach_speed)
     arc = Segment(
         start=reaching.at(elapsed),
         end=State(
@@ -346,7 +530,7 @@ def refine(
         ),
         duration=remaining,
     )
-    if not arc.fits(max_speed, max_acceleration):
+    if not arc.fits(max_speed, max_accel):
         return None
     return _assemble(
         arc,
@@ -360,19 +544,14 @@ def refine(
         target_pos,
         max_speed,
         retreat_lift,
+        belt_border_y=belt_border_y,
+        safe_height_world=safe_height_world,
+        max_acceleration=max_accel,
     )
 
 
 def _deliver(start: State, target_position_world: Point, max_speed: float) -> Segment:
     """Return the arc that carries the object to its chute and lets go.
-
-    The only arc of a visit nothing constrains. The object is in the jaw,
-    so where it has to be and when are both the arm's to choose, and it
-    begins and ends at rest with no interception to meet. Its duration is
-    therefore set by the distance and the speed ceiling rather than solved:
-    a rest-to-rest quintic peaks at 15/8 of its mean speed, so a duration
-    of 15/8 times the distance over the ceiling touches the ceiling once
-    and stays inside it everywhere else.
 
     Args:
         start: Where the retreat ended, at rest above the belt.
@@ -407,11 +586,17 @@ def _assemble(
     target_position_world: Point | None = None,
     max_speed: float = 1.0,
     retreat_lift: float | None = None,
+    *,
+    entry_segment: Segment | None = None,
+    belt_border_y: float = BELT_BORDER_Y,
+    safe_height_world: float = SAFE_CLEARANCE_HEIGHT_WORLD,
+    cross_speed: float = DEFAULT_CROSS_SPEED,
+    max_acceleration: float = 2.50,
 ) -> Plan:
-    """Hang the descent, the carry and the retreat off an approach arc.
+    """Hang the descent, the carry, the retreat and delivery off an approach arc.
 
     Args:
-        reaching: The approach arc, however it was solved.
+        reaching: The approach tracking arc.
         track_id: Which track the visit is about.
         object_position_belt: Where the object is at `at_seconds`.
         belt_velocity_world: How the belt is carrying it.
@@ -422,6 +607,11 @@ def _assemble(
         target_position_world: Where to release the object over.
         max_speed: Speed ceiling in meters per second.
         retreat_lift: How far to lift during retreat, in meters.
+        entry_segment: Preceding arc to the intermediary border waypoint.
+        belt_border_y: Lateral coordinate of the belt border on the chute side.
+        safe_height_world: Safe clearance height above the belt side barrier.
+        cross_speed: Speed across the belt border, in meters per second.
+        max_acceleration: Acceleration ceiling in meters per second squared.
 
     Returns:
         The whole visit.
@@ -434,27 +624,56 @@ def _assemble(
         approach_speed,
     )
     holding = _carry(dropping.end, dwell_seconds, belt_velocity_world)
-    lift = approach_clearance_z if retreat_lift is None else retreat_lift
-    rising = _rise(holding.end, lift, approach_speed, belt_velocity_world)
-    legs = [
-        Leg(Phase.TRACK, reaching, JAW_OPEN),
-        Leg(Phase.DESCEND, dropping, JAW_OPEN),
-        Leg(Phase.HOLD, holding, JAW_SHUT),
-        Leg(Phase.RETREAT, rising, JAW_SHUT),
-    ]
     if target_position_world is not None:
-        legs.append(
-            Leg(
-                Phase.DELIVER,
-                _deliver(rising.end, target_position_world, max_speed),
-                JAW_SHUT,
-            )
+        safe_height = max(target_position_world[2], safe_height_world)
+        lift = max(
+            approach_clearance_z if retreat_lift is None else retreat_lift,
+            safe_height - holding.end.position[2],
         )
+    else:
+        lift = approach_clearance_z if retreat_lift is None else retreat_lift
+    rising = _rise(holding.end, lift, approach_speed, belt_velocity_world)
+    legs = []
+    if entry_segment is not None:
+        legs.append(Leg(Phase.TRACK, entry_segment, JAW_OPEN))
+    legs.extend(
+        [
+            Leg(Phase.TRACK, reaching, JAW_OPEN),
+            Leg(Phase.DESCEND, dropping, JAW_OPEN),
+            Leg(Phase.HOLD, holding, JAW_SHUT),
+            Leg(Phase.RETREAT, rising, JAW_SHUT),
+        ]
+    )
+    if target_position_world is not None:
+        safe_height = max(target_position_world[2], safe_height_world)
+        border_retreat = State(
+            position=(target_position_world[0], belt_border_y, safe_height),
+            velocity=(0.0, -cross_speed, 0.0),
+            acceleration=(0.0, 0.0, 0.0),
+        )
+        chute_target = State(
+            position=target_position_world,
+            velocity=(0.0, 0.0, 0.0),
+            acceleration=(0.0, 0.0, 0.0),
+        )
+        seg_to_border = _fit_segment(
+            rising.end, border_retreat, max_speed, max_acceleration, min_duration=0.50
+        )
+        seg_to_chute = _fit_segment(
+            border_retreat,
+            chute_target,
+            max_speed,
+            max_acceleration,
+            min_duration=MINIMUM_DELIVERY_SECONDS,
+        )
+        legs.append(Leg(Phase.DELIVER, seg_to_border, JAW_SHUT))
+        legs.append(Leg(Phase.DELIVER, seg_to_chute, JAW_SHUT))
+    entry_duration = entry_segment.duration if entry_segment is not None else 0.0
     return Plan(
         track_id=track_id,
         legs=tuple(legs),
         started_at=at_seconds,
-        pick_at=at_seconds + reaching.duration + dropping.duration,
+        pick_at=at_seconds + entry_duration + reaching.duration + dropping.duration,
     )
 
 
@@ -489,7 +708,7 @@ def _carry(start: State, seconds: float, belt_velocity: Point) -> Segment:
 def _rise(
     start: State, z_offset: float, approach_speed: float, belt_velocity: Point
 ) -> Segment:
-    """Return the arc that lifts the object clear of the belt.
+    """Return the arc that lifts the object vertically clear of the belt.
 
     Args:
         start: Where the hold ended, moving with the belt.
@@ -499,8 +718,9 @@ def _rise(
         belt_velocity: How the belt is moving.
 
     Returns:
-        The arc, ending at rest above the belt so the delivery that follows
-        starts from a standstill and is unconstrained by interception.
+        The arc, lifting vertically in z without lateral motion and ending at
+        rest above the belt so the delivery that follows starts from a
+        standstill.
     """
     seconds = descent_seconds(z_offset, approach_speed)
     return Segment(
@@ -508,7 +728,7 @@ def _rise(
         end=State(
             position=(
                 start.position[0] + belt_velocity[0] * seconds,
-                start.position[1] + belt_velocity[1] * seconds,
+                start.position[1],
                 start.position[2] + z_offset,
             ),
             velocity=(0.0, 0.0, 0.0),
