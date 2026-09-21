@@ -131,6 +131,15 @@ def train(config: TrainingConfig, window_exit: float) -> TrainingRun:
     examples = training_examples(config.dataset)
 
     start_epoch = _resume(config, model, optimizer)
+    for param_group in optimizer.param_groups:
+        param_group.setdefault("initial_lr", config.learning_rate)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer,
+        T_max=max(config.epochs, 1),
+        eta_min=config.learning_rate * 0.01,
+        last_epoch=start_epoch - 1,
+    )
+
     for epoch in range(start_epoch, config.epochs):
         model.train()
         began = time.perf_counter()
@@ -141,6 +150,7 @@ def train(config: TrainingConfig, window_exit: float) -> TrainingRun:
             config.batch_size,
             window_exit,
             config.act_chunk_size,
+            augment=True,
         ):
             optimizer.zero_grad()
             loss = objective(model, batch)
@@ -148,6 +158,7 @@ def train(config: TrainingConfig, window_exit: float) -> TrainingRun:
             optimizer.step()
             total += float(loss.detach())
             batches += 1
+        scheduler.step()
         run.epochs.append(
             EpochRecord(
                 index=epoch,
