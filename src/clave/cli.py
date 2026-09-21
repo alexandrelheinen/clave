@@ -613,15 +613,8 @@ def _checkpoint_pull(
     return 0
 
 
-def main(argv: list[str] | None = None) -> int:
-    """Run a CLAVE command.
-
-    Args:
-        argv: Arguments, defaulting to the process arguments.
-
-    Returns:
-        A process exit code.
-    """
+def _build_parser() -> argparse.ArgumentParser:
+    """Build the command-line argument parser."""
     parser = argparse.ArgumentParser(prog="clave", description=__doc__)
     parser.add_argument("--root", type=Path, default=Path.cwd())
     parser.add_argument(
@@ -764,6 +757,15 @@ def main(argv: list[str] | None = None) -> int:
         help="which view in configs/debug/tracker.yml to film from",
     )
     sim.add_argument(
+        "--ground-truth-tracker",
+        action="store_true",
+        default=None,
+        help=(
+            "feed downstream selection and planning from ground-truth MuJoCo "
+            "physics state instead of tracker estimates"
+        ),
+    )
+    sim.add_argument(
         "--still",
         nargs="?",
         const="thumbnail",
@@ -781,6 +783,19 @@ def main(argv: list[str] | None = None) -> int:
         help="output directory for stills (used with --still)",
     )
 
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Run a CLAVE command.
+
+    Args:
+        argv: Arguments, defaulting to the process arguments.
+
+    Returns:
+        A process exit code.
+    """
+    parser = _build_parser()
     args = parser.parse_args(argv)
     _configure_logging(getattr(args, "command_log_level", None) or args.log_level)
     LOGGER.debug(
@@ -851,7 +866,7 @@ def _debug_tracker(root: Path, args: Any) -> int:
     LOGGER.debug(
         "sim parameters: seconds=%.3f (use sim --seconds to override), seed=%d, "
         "out=%s, video=%s, telemetry=%s, telemetry_rate=%.3f, "
-        "trajectory_seconds=%.3f, window=%s, view=%s",
+        "trajectory_seconds=%.3f, window=%s, view=%s, ground_truth_tracker=%s",
         args.seconds,
         args.seed,
         args.out,
@@ -861,6 +876,7 @@ def _debug_tracker(root: Path, args: Any) -> int:
         args.trajectory_seconds,
         not args.no_window,
         args.view,
+        args.ground_truth_tracker,
     )
     telemetry_path = None
     if args.telemetry:
@@ -879,7 +895,10 @@ def _debug_tracker(root: Path, args: Any) -> int:
         telemetry_path=telemetry_path,
         telemetry_rate=args.telemetry_rate,
         trajectory_seconds=args.trajectory_seconds,
+        ground_truth_tracker=args.ground_truth_tracker,
     )
+    if report.ground_truth:
+        _log_output("  targets         ground truth (MuJoCo physics)")
     _log_output(f"  captures        {report.captures}")
     _log_output(f"  tracks open     {report.tracks}")
     _log_output(f"  markers on last {report.drawn}, as {report.geoms} geoms")

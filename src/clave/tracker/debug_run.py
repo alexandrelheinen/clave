@@ -66,7 +66,12 @@ from clave.tracker.evidence import Evidence, GroundTruth, Role
 from clave.tracker.fusion import FusionSettings
 from clave.tracker.intake import Deployment, Intake
 from clave.tracker.listing import described_fields
-from clave.tracker.markers import draw, draw_park, markers_for
+from clave.tracker.markers import (
+    draw,
+    draw_park,
+    ground_truth_markers,
+    markers_for,
+)
 from clave.tracker.sensors import load_sensors, of_role, require_role
 from clave.tracker.track import Tracker
 from clave.world import arm as armmod
@@ -202,6 +207,7 @@ class DebugRunReport:
     telemetry_path: Path | None
     windowed: bool
     reason: str | None = None
+    ground_truth: bool = False
 
 
 class _TelemetryWriter:
@@ -301,6 +307,7 @@ def run(
     telemetry_path: Path | None = None,
     telemetry_rate: float = 100.0,
     trajectory_seconds: float = 2.0,
+    ground_truth_tracker: bool | None = None,
 ) -> DebugRunReport:
     """Drive the tracker over one rollout, annotating every capture.
 
@@ -322,6 +329,9 @@ def run(
         telemetry_path: CSV output path, or None to disable telemetry.
         telemetry_rate: Telemetry samples per simulated second.
         trajectory_seconds: Future portion of the active plan to draw.
+        ground_truth_tracker: Feed downstream selection and planning from
+            MuJoCo ground-truth physics instead of tracker estimates, or None
+            to read the debug configuration.
 
     Returns:
         The report.
@@ -383,6 +393,11 @@ def run(
     control = ControlSettings.load(config.load(control_path))
     debug = config.load(debug_path)
     view = _view(debug, view_name)
+    use_ground_truth = (
+        ground_truth_tracker
+        if ground_truth_tracker is not None
+        else bool(debug.get("ground_truth_tracker", False))
+    )
 
     model, data, plan = scene.build(raw, np.random.default_rng(seed), root)
     spawn = config.require(raw, "spawn")
@@ -861,7 +876,20 @@ def run(
                 )
 
             records = tracker.settle(at_nanos=now)
-            standing = markers_for(records, effector, surface)
+            if use_ground_truth:
+                standing = ground_truth_markers(
+                    model,
+                    data,
+                    conveyor.active,
+                    plan,
+                    effector,
+                    surface,
+                    now,
+                    tracker.window_exit,
+                    feeding.speed,
+                )
+            else:
+                standing = markers_for(records, effector, surface)
 
             flange = _flange(indices, data)
             queue = selector.update(standing, flange, feeding.speed, now)
@@ -978,6 +1006,7 @@ def run(
         telemetry_path=telemetry_path,
         windowed=opened,
         reason=reason,
+        ground_truth=use_ground_truth,
     )
 
 

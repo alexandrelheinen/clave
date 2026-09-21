@@ -309,6 +309,161 @@ def markers_for(
     return tuple(marker_for(record, effector, surface) for record in records)
 
 
+def ground_truth_markers(
+    model: Any,
+    data: Any,
+    active_objects: list[Any],
+    plan: Any,
+    effector: Effector,
+    belt_surface_height_world: float,
+    at_nanos: int,
+    window_exit: float,
+    belt_speed: float,
+) -> tuple[GraspMarker, ...]:
+    """Compute grasp markers directly from MuJoCo ground-truth physics.
+
+    One marker per active object on the belt, derived directly from the
+    simulator body position, orientation quaternion, and geom extents rather
+    than from camera segmentation and tracker estimation.
+
+    Args:
+        model: Compiled MuJoCo model.
+        data: Current MuJoCo simulation state.
+        active_objects: Objects currently managed by the conveyor.
+        plan: Resolved scene layout carrying belt geometry.
+        effector: Effector parameters sizing pads, fingers, and grasp height.
+        belt_surface_height_world: Surface height of the belt in world frame.
+        at_nanos: Current simulated timestamp in nanoseconds.
+        window_exit: X-coordinate in belt frame where reachability closes.
+        belt_speed: Conveyor belt speed in meters per second.
+
+    Returns:
+        One marker per active object resting on the belt within the reachable
+        window, in pool slot order.
+    """
+    import mujoco
+
+    surface = belt_surface_height_world
+    pad_z = surface + effector.grasp_height
+    flange_z = pad_z + effector.finger_length
+
+    markers: list[GraspMarker] = []
+    for item in active_objects:
+        body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, item.name)
+        if body < 0:
+            continue
+
+        pos = data.xpos[body]
+        x, y, z = float(pos[0]), float(pos[1]), float(pos[2])
+
+        # Exclude objects not resting on the driven belt region.
+        # Height tolerance of 0.15 m accommodates packaging resting on the belt
+        # while excluding dropped objects or items lifted by the gripper.
+        on_belt = (
+            abs(x) <= plan.belt.length / 2.0
+            and abs(y) <= plan.belt.width / 2.0
+            and surface - 0.05 < z <= surface + 0.15
+        )
+        if not on_belt or x > window_exit:
+            continue
+
+        # Body orientation quaternion: data.xquat[body] is [w, x, y, z]
+        quat = data.xquat[body]
+        w, qx, qy, qz = float(quat[0]), float(quat[1]), float(quat[2]), float(quat[3])
+        yaw = math.atan2(2.0 * (w * qz + qx * qy), 1.0 - 2.0 * (qy * qy + qz * qz))
+
+        geom_id = model.body_geomadr[body]
+        geom_type = model.geom_type[geom_id] if geom_id >= 0 else None
+
+        oriented = True
+        closing_axis: float | None = yaw
+
+        if geom_type == mujoco.mjtGeom.mjGEOM_CYLINDER:
+            r = float(model.geom_size[geom_id][0])
+            opening = 2.0 * r
+            extent = 2.0 * r
+            oriented = False
+            closing_axis = None
+        elif geom_type == mujoco.mjtGeom.mjGEOM_BOX:
+            sx = float(model.geom_size[geom_id][0])
+            sy = float(model.geom_size[geom_id][1])
+            dim_x, dim_y = 2.0 * sx, 2.0 * sy
+            if dim_x <= dim_y:
+                opening = dim_x
+                extent = dim_y
+                closing_axis = yaw
+            else:
+                opening = dim_y
+                extent = dim_x
+                closing_axis = yaw + math.pi / 2.0
+        elif geom_type == mujoco.mjtGeom.mjGEOM_MESH:
+            mesh_id = model.geom_dataid[geom_id]
+            if mesh_id >= 0:
+                start = model.mesh_vertadr[mesh_id]
+                count = model.mesh_vertnum[mesh_id]
+                verts = model.mesh_vert[start : start + count]
+                dim_x = float(verts[:, 0].max() - verts[:, 0].min())
+                dim_y = float(verts[:, 1].max() - verts[:, 1].min())
+                if dim_x <= dim_y:
+                    opening = dim_x
+                    extent = dim_y
+                    closing_axis = yaw
+                else:
+                    opening = dim_y
+                    extent = dim_x
+                    closing_axis = yaw + math.pi / 2.0
+            else:
+                opening = effector.opening * 0.5
+                extent = opening
+        else:
+            opening = effector.opening * 0.5
+            extent = opening
+
+        if closing_axis is not None:
+            closing_axis = (closing_axis + math.pi) % (2.0 * math.pi) - math.pi
+
+        pads: tuple[Point, ...] = ()
+        if oriented and closing_axis is not None:
+            reach = opening / 2.0 + effector.pad_thickness / 2.0
+            step_x = math.cos(closing_axis) * reach
+            step_y = math.sin(closing_axis) * reach
+            pads = (
+                (x - step_x, y - step_y, pad_z),
+                (x + step_x, y + step_y, pad_z),
+            )
+
+        remaining = max(0.0, window_exit - x)
+        expires = (
+            at_nanos + int(remaining / belt_speed * 1_000_000_000)
+            if belt_speed > 0.0
+            else at_nanos
+        )
+
+        markers.append(
+            GraspMarker(
+                track_id=item.index,
+                valid_until_nanos=expires,
+                pinch_position_belt=(x, y, pad_z),
+                flange_position_world=(x, y, flange_z),
+                pad_positions_belt=pads,
+                pad_size=(
+                    effector.pad_thickness / 2.0,
+                    effector.pad_depth / 2.0,
+                    effector.pad_height / 2.0,
+                ),
+                closing_yaw_belt=closing_axis,
+                opening=opening,
+                oriented=oriented,
+                reachable=opening <= effector.opening,
+                channel=item.channel,
+                extent=extent,
+                color=color_for(item.index),
+            )
+        )
+
+    return tuple(markers)
+
+
 def draw(scene: Any, markers: tuple[GraspMarker, ...]) -> int:
     """Add every marker to a scene, and report how many geoms that took.
 
