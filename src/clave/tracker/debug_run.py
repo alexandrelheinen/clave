@@ -39,7 +39,7 @@ import logging
 import math
 import os
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -308,6 +308,7 @@ def run(
     telemetry_rate: float = 100.0,
     trajectory_seconds: float = 2.0,
     ground_truth_tracker: bool | None = None,
+    belt_speed: float | None = None,
 ) -> DebugRunReport:
     """Drive the tracker over one rollout, annotating every capture.
 
@@ -332,6 +333,8 @@ def run(
         ground_truth_tracker: Feed downstream selection and planning from
             MuJoCo ground-truth physics instead of tracker estimates, or None
             to read the debug configuration.
+        belt_speed: Override belt speed in meters per second, or None to use
+            the speed sampled by the scene layout.
 
     Returns:
         The report.
@@ -401,6 +404,8 @@ def run(
     )
 
     model, data, plan = scene.build(raw, np.random.default_rng(seed), root)
+    if belt_speed is not None:
+        plan = replace(plan, belt=replace(plan.belt, speed=belt_speed))
     spawn = config.require(raw, "spawn")
     conveyor = belt.Conveyor(
         plan,
@@ -417,8 +422,8 @@ def run(
     )
     feeding = RateController(
         settings=FeedSettings.load(raw),
-        lowest=drive.low,
-        highest=drive.high,
+        lowest=min(drive.low, plan.belt.speed),
+        highest=max(drive.high, plan.belt.speed),
         speed=plan.belt.speed,
     )
 

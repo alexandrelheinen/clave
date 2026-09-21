@@ -185,8 +185,10 @@ class Plan:
             return self.target_yaw
         tau = min(1.0, max(0.0, elapsed / track_duration))
         s = tau * tau * tau * (10.0 + tau * (-15.0 + 6.0 * tau))
+        diff = (
+            self.target_yaw - self.initial_yaw + math.pi / 2.0
+        ) % math.pi - math.pi / 2.0
         two_pi = 2.0 * math.pi
-        diff = (self.target_yaw - self.initial_yaw + math.pi) % two_pi - math.pi
         return (self.initial_yaw + s * diff + math.pi) % two_pi - math.pi
 
     def at(self, at_seconds: float) -> tuple[Phase, State, float] | None:

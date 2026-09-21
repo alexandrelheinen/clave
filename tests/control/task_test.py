@@ -552,3 +552,38 @@ def test_reaim_refreshes_plan_yaw_in_flight() -> None:
     later_flight = arm.flight(0.20, PARK)
     assert later_flight is not None
     assert later_flight.yaw is not None
+
+
+def test_reaim_ignores_calls_outside_track_phase() -> None:
+    """_reaim does not modify the plan or target yaw outside Phase.TRACK."""
+    arm = machine(profile=Profile.FULL_VISIT)
+    cand = Candidate(
+        track_id=1,
+        anchor=(0.30, 0.0, 0.945),
+        flange=(0.30, 0.0, 1.035),
+        closing_axis=0.20,
+        distance_before_leaving=1.5,
+    )
+    arm.step(queue_of(cand), PARK, 0.0)
+    assert arm._plan_yaw == pytest.approx(0.20)
+
+    # Force phase to Phase.DESCEND
+    arm._phase = Phase.DESCEND
+    changed = Candidate(
+        track_id=1,
+        anchor=(0.30, 0.0, 0.945),
+        flange=(0.30, 0.0, 1.035),
+        closing_axis=0.80,
+        distance_before_leaving=1.5,
+    )
+    arm._reaim(queue_of(changed), at_seconds=0.50)
+    # Plan yaw remains untouched because phase was not Phase.TRACK
+    assert arm._plan_yaw == pytest.approx(0.20)
+
+
+def test_rest_preserves_last_commanded_yaw() -> None:
+    """_rest sets target_yaw_world to last known yaw rather than None."""
+    arm = machine(profile=Profile.FULL_VISIT)
+    arm._last_yaw = 0.75
+    goal = arm._rest(PARK, at_nanos=1_000_000)
+    assert goal.target_yaw_world == pytest.approx(0.75)

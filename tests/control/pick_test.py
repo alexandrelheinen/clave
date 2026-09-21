@@ -431,7 +431,7 @@ def test_parameters_govern_border_clearance_and_cross_speed() -> None:
 
 
 def test_plan_smooths_and_updates_yaw_through_quintic_interpolation() -> None:
-    """Plan interpolates and updates tool yaw smoothly across approach."""
+    """Plan interpolates yaw smoothly across approach with parallel-jaw symmetry."""
     plan = a_plan()
     assert plan is not None
     oriented_plan = plan.with_yaw(target_yaw=1.20, initial_yaw=0.20)
@@ -455,7 +455,8 @@ def test_plan_smooths_and_updates_yaw_through_quintic_interpolation() -> None:
     assert mid_yaw is not None
     assert 0.20 < mid_yaw < 1.20
 
-    # Real-time re-aiming update preserves initial yaw while changing target
-    retargeted = oriented_plan.with_yaw(target_yaw=1.45)
-    assert retargeted.target_yaw == pytest.approx(1.45)
-    assert retargeted.initial_yaw == pytest.approx(0.20)
+    # Parallel jaw 180-degree symmetry: target at yaw + pi resolves with zero spin
+    sym_plan = plan.with_yaw(target_yaw=0.20 + math.pi, initial_yaw=0.20)
+    sym_mid = sym_plan.yaw_at(mid_t)
+    assert sym_mid is not None
+    assert sym_mid == pytest.approx(0.20)

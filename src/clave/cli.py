@@ -769,6 +769,12 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     sim.add_argument(
+        "--belt-speed",
+        type=float,
+        default=None,
+        help="override belt speed in meters per second (default: config value)",
+    )
+    sim.add_argument(
         "--still",
         nargs="?",
         const="thumbnail",
@@ -899,6 +905,7 @@ def _debug_tracker(root: Path, args: Any) -> int:
         telemetry_rate=args.telemetry_rate,
         trajectory_seconds=args.trajectory_seconds,
         ground_truth_tracker=args.ground_truth_tracker,
+        belt_speed=args.belt_speed,
     )
     if report.ground_truth:
         _log_output("  targets         ground truth (MuJoCo physics)")

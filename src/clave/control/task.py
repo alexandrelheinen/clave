@@ -466,6 +466,8 @@ class TaskMachine:
             queue: The order selection produced, for the track being served.
             at_seconds: Simulated time.
         """
+        if self._phase is not Phase.TRACK:
+            return
         assert self._plan is not None
         assert self._guidance is not None
         head = next(
@@ -767,7 +769,7 @@ class TaskMachine:
         return Goal(
             phase=Phase.STANDBY if arrived else Phase.PARK,
             target_position_world=park,
-            target_yaw_world=None,
+            target_yaw_world=self._last_yaw,
             track_id=None,
             observed_at_nanos=at_nanos,
         )
