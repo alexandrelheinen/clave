@@ -342,12 +342,13 @@ def run(
     os.environ.setdefault("MUJOCO_GL", "osmesa")
     LOGGER.debug(
         "initializing tracker debug run: root=%s out=%s seconds=%.3f seed=%d "
-        "capture_interval=%.3f",
+        "capture_interval=%.3f ground_truth_tracker=%s",
         root,
         out,
         seconds,
         seed,
         capture_interval,
+        ground_truth_tracker,
     )
     import cv2
     import mujoco
@@ -436,13 +437,14 @@ def run(
 
     LOGGER.debug(
         "resolved simulation parameters: belt_speed=%.3f m/s surface=%.3f m "
-        "jaw_opening=%.3f m render=%dx%d view=%s",
+        "jaw_opening=%.3f m render=%dx%d view=%s ground_truth_tracker=%s",
         plan.belt.speed,
         surface,
         grasp,
         render[0],
         render[1],
         view_name or "default",
+        use_ground_truth,
     )
 
     width, height = render
@@ -891,8 +893,26 @@ def run(
             else:
                 standing = markers_for(records, effector, surface)
 
+            LOGGER.debug(
+                "capture %d at %.3f s: settled %d tracker records, "
+                "feed=%s (%d standing markers)",
+                captures,
+                data.time,
+                len(records),
+                "ground_truth" if use_ground_truth else "tracker_estimates",
+                len(standing),
+            )
+
             flange = _flange(indices, data)
             queue = selector.update(standing, flange, feeding.speed, now)
+            LOGGER.debug(
+                "capture %d queue state: %d candidate(s), head=%s, recomputed=%s",
+                captures,
+                len(queue.order),
+                queue.head.track_id if queue.head else None,
+                queue.recomputed,
+            )
+
             routes.update({item.index: item.channel for item in conveyor.active})
             for name, channel in _placed(
                 mujoco,
@@ -911,6 +931,18 @@ def run(
                 belongs = routes.get(slot)
                 if belongs is not None and belongs != channel:
                     misrouted += 1
+                    LOGGER.warning(
+                        "misroute detected: object %s (channel %s) placed in chute %s",
+                        name,
+                        belongs,
+                        channel,
+                    )
+                else:
+                    LOGGER.debug(
+                        "object %s placed in chute %s",
+                        name,
+                        channel,
+                    )
 
             for trigger in queue.reasons:
                 reorders[trigger] += 1
@@ -921,6 +953,13 @@ def run(
                 and any(item.track_id == previous_head for item in queue.order)
             ):
                 head_churn += 1
+            if head_id != previous_head:
+                LOGGER.debug(
+                    "selection target head changed: %s -> %s (head_churn=%d)",
+                    previous_head,
+                    head_id,
+                    head_churn,
+                )
             previous_head = head_id
             goal = task.step(queue, flange, data.time, refusal, moving)
             refusal = None

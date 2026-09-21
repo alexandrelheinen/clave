@@ -36,6 +36,7 @@ will not take is a pose the rest of the sequence was built on.
 
 from __future__ import annotations
 
+import logging
 import math
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -52,6 +53,8 @@ from clave.control.settings import (
 )
 from clave.control.trajectory import State
 from clave.errors import ClaveError
+
+LOGGER = logging.getLogger(__name__)
 
 NANOS_PER_SECOND = 1_000_000_000
 """Nanoseconds in a second, for the instant a goal records."""
@@ -582,12 +585,24 @@ class TaskMachine:
         if plan is None:
             self._missed.append(head.track_id)
             self._serving = None
+            LOGGER.debug(
+                "pick planning failed for candidate %d (leaving=%.3f s); marked missed",
+                head.track_id,
+                leaving,
+            )
             return self._rest(flange, at_nanos)
         self._plan = plan
         self._plan_yaw = head.closing_yaw_belt
         self._serving = head.track_id
         self._pick_error = None
         self._phase = Phase.TRACK
+        LOGGER.debug(
+            "committed pick plan for candidate %d: duration=%.3f s, legs=%d, chute=%s",
+            head.track_id,
+            plan.duration,
+            len(plan.legs),
+            head.channel,
+        )
         return Goal(
             phase=Phase.TRACK,
             rides_belt=True,
@@ -636,12 +651,18 @@ class TaskMachine:
         """
         assert self._plan is not None
         last = self._plan.legs[-1].segment.end.position
-        self._arrivals.append(
+        error = (
             self._pick_error
             if self._pick_error is not None
             else math.dist(flange, last)
         )
+        self._arrivals.append(error)
         self._served.append(self._plan.track_id)
+        LOGGER.debug(
+            "completed pick visit for candidate %d: pick_error=%.4f m",
+            self._plan.track_id,
+            error,
+        )
         self._plan = None
         self._plan_yaw = None
         self._pick_error = None
@@ -744,6 +765,11 @@ class TaskMachine:
         if faulted is None:
             head = self._next(queue)
             faulted = None if head is None else head.track_id
+        LOGGER.warning(
+            "task machine faulted: refusal=%s (candidate=%s)",
+            refusal,
+            faulted,
+        )
         already = {track_id for track_id, _ in self._faults}
         if faulted is None or faulted not in already:
             self._faults.append((faulted, refusal))
