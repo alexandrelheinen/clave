@@ -400,3 +400,31 @@ def test_delivery_exits_via_border_with_horizontal_perpendicular_speed() -> None
     assert border_leg.segment.end.velocity[0] == pytest.approx(0.0)
     assert border_leg.segment.end.velocity[1] < 0.0
     assert border_leg.segment.end.velocity[2] == pytest.approx(0.0)
+
+
+def test_parameters_govern_border_clearance_and_cross_speed() -> None:
+    """AC-DROP-06: belt geometry, safe clearance and cross speed govern arcs."""
+    mouth = (0.60, -0.50, 0.85)
+    plan = a_plan(
+        over=mouth,
+        belt_width=0.80,
+        belt_center_y=0.10,
+        safe_height_world=1.35,
+        cross_speed=0.40,
+    )
+    assert plan is not None
+    # Border y: 0.10 - 0.80 / 2.0 = -0.30
+    entry_leg = plan.legs[0]
+    assert entry_leg.phase is Phase.TRACK
+    assert entry_leg.segment.end.position[0] == pytest.approx(0.60)
+    assert entry_leg.segment.end.position[1] == pytest.approx(-0.30)
+    assert entry_leg.segment.end.position[2] >= 1.35
+    assert entry_leg.segment.end.velocity[1] == pytest.approx(0.40)
+
+    deliver_legs = [leg for leg in plan.legs if leg.phase is Phase.DELIVER]
+    assert len(deliver_legs) == 2
+    border_retreat_leg = deliver_legs[0]
+    assert border_retreat_leg.segment.end.position[0] == pytest.approx(0.60)
+    assert border_retreat_leg.segment.end.position[1] == pytest.approx(-0.30)
+    assert border_retreat_leg.segment.end.position[2] >= 1.35
+    assert border_retreat_leg.segment.end.velocity[1] == pytest.approx(-0.40)

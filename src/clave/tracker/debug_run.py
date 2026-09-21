@@ -521,6 +521,7 @@ def run(
         guidance=control.guidance,
         admits=admits,
         chutes=plan.chutes,
+        belt_width=plan.belt.width,
     )
     goal = None
     refusal: str | None = None

@@ -42,6 +42,10 @@ task:
   # side barrier with finger length 0.1558 m.
   approach_height_meters: 0.300
 
+  # Flange clearance above the belt surface when crossing the belt barrier,
+  # in meters. If omitted, defaults to approach_height_meters.
+  safe_clearance_meters: 0.300
+
   # How close the flange has to be to the pose a phase asked for before it
   # counts as arrived.
   #

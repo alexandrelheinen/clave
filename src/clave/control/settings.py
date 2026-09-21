@@ -121,6 +121,8 @@ class TaskSettings:
         park_position_world: Where the arm rests with nothing to serve.
         park_marker_color: What the park pose is drawn in, as red, green and
             blue in the unit range.
+        safe_clearance: Flange clearance above the belt surface for crossing
+            the belt border, in meters. If None, defaults to approach_height.
     """
 
     profile: Profile
@@ -133,6 +135,7 @@ class TaskSettings:
     interception_margin: float
     park_position_world: Point
     park_marker_color: Point
+    safe_clearance: float = 0.300
 
     def __init__(
         self,
@@ -146,6 +149,7 @@ class TaskSettings:
         interception_margin: float,
         park_position_world: Point | None = None,
         park_marker_color: Point = (0.0, 0.0, 0.0),
+        safe_clearance: float | None = None,
         *,
         park_position: Point | None = None,
     ) -> None:
@@ -164,6 +168,11 @@ class TaskSettings:
         object.__setattr__(self, "interception_margin", interception_margin)
         object.__setattr__(self, "park_position_world", pos)
         object.__setattr__(self, "park_marker_color", park_marker_color)
+        object.__setattr__(
+            self,
+            "safe_clearance",
+            safe_clearance if safe_clearance is not None else approach_height,
+        )
 
     @property
     def park_position(self) -> Point:
@@ -272,6 +281,11 @@ class ControlSettings:
                 interception_margin=_positive(task, "interception_margin", "task"),
                 park_position_world=_point(task, "park_position_meters", "task"),
                 park_marker_color=_point(task, "park_marker_color", "task"),
+                safe_clearance=(
+                    _positive(task, "safe_clearance_meters", "task")
+                    if "safe_clearance_meters" in task
+                    else None
+                ),
             ),
             guidance=GuidanceSettings(
                 max_speed=_positive(
