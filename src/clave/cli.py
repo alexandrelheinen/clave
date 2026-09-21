@@ -757,7 +757,10 @@ def _build_parser() -> argparse.ArgumentParser:
         help="which view in configs/debug/tracker.yml to film from",
     )
     sim.add_argument(
+        "--gt",
+        "--gt-tracker",
         "--ground-truth-tracker",
+        dest="ground_truth_tracker",
         action="store_true",
         default=None,
         help=(

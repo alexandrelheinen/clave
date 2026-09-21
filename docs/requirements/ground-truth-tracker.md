@@ -48,8 +48,8 @@ logs.
 ## Acceptance criteria
 
 `AC-GT-01`: The system shall expose a `ground_truth_tracker` boolean in
-configuration and a `--ground-truth-tracker` flag on `clave sim`, defaulting
-to false.
+configuration and a `--ground-truth-tracker` flag (with `--gt` and
+`--gt-tracker` aliases) on `clave sim`, defaulting to false.
 
 `AC-GT-02`: When `ground_truth_tracker` is enabled, the system shall compute
 `GraspMarker` targets directly from MuJoCo bodies and geoms for all active

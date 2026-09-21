@@ -95,9 +95,15 @@ def test_ground_truth_tracker_config_and_cli_ac_gt_01() -> None:
     args_default = parser.parse_args(["sim"])
     assert args_default.ground_truth_tracker is None
 
-    # Check CLI with flag sets it to True
+    # Check CLI with flag sets it to True (including aliases --gt and --gt-tracker)
     args_flag = parser.parse_args(["sim", "--ground-truth-tracker"])
     assert args_flag.ground_truth_tracker is True
+
+    args_gt = parser.parse_args(["sim", "--gt"])
+    assert args_gt.ground_truth_tracker is True
+
+    args_gtt = parser.parse_args(["sim", "--gt-tracker"])
+    assert args_gtt.ground_truth_tracker is True
 
 
 def test_ground_truth_markers_derivation_ac_gt_02() -> None:
