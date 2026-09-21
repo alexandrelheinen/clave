@@ -364,7 +364,7 @@ def test_approach_enters_via_border_with_horizontal_perpendicular_speed() -> Non
     assert plan is not None
     entry_leg = plan.legs[0]
     assert entry_leg.phase is Phase.TRACK
-    assert entry_leg.segment.end.position[0] == pytest.approx(0.58)
+    assert entry_leg.segment.end.position[0] == pytest.approx(OBJECT[0])
     assert entry_leg.segment.end.position[1] == pytest.approx(-0.25)
     assert entry_leg.segment.end.position[2] >= 1.20
     assert entry_leg.segment.end.velocity[0] == pytest.approx(0.0)
@@ -416,7 +416,7 @@ def test_parameters_govern_border_clearance_and_cross_speed() -> None:
     # Border y: 0.10 - 0.80 / 2.0 = -0.30
     entry_leg = plan.legs[0]
     assert entry_leg.phase is Phase.TRACK
-    assert entry_leg.segment.end.position[0] == pytest.approx(0.60)
+    assert entry_leg.segment.end.position[0] == pytest.approx(OBJECT[0])
     assert entry_leg.segment.end.position[1] == pytest.approx(-0.30)
     assert entry_leg.segment.end.position[2] >= 1.35
     assert entry_leg.segment.end.velocity[1] == pytest.approx(0.40)
