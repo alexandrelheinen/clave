@@ -101,6 +101,7 @@ class Candidate:
     closing_yaw_belt: float | None
     distance_before_leaving: float
     channel: str = ""
+    velocity_world: Point | None = None
 
     def __init__(
         self,
@@ -110,6 +111,7 @@ class Candidate:
         closing_yaw_belt: float | None = None,
         distance_before_leaving: float = 0.0,
         channel: str = "",
+        velocity_world: Point | None = None,
         *,
         anchor: Point | None = None,
         flange: Point | None = None,
@@ -129,6 +131,7 @@ class Candidate:
         object.__setattr__(self, "closing_yaw_belt", axis)
         object.__setattr__(self, "distance_before_leaving", distance_before_leaving)
         object.__setattr__(self, "channel", channel)
+        object.__setattr__(self, "velocity_world", velocity_world)
 
     @property
     def anchor(self) -> Point:
@@ -283,16 +286,22 @@ class Selector:
                 list(self._order),
             )
 
+        def candidate_for(track_id: int) -> Candidate:
+            marker = live[track_id]
+            speed = (
+                max(0.0, marker.velocity_world[0])
+                if marker.velocity_world is not None
+                else belt_speed
+            )
+            return _candidate(
+                marker,
+                self._carried(track_id, speed, at_nanos),
+                belt_speed,
+                at_nanos,
+            )
+
         return Queue(
-            order=tuple(
-                _candidate(
-                    live[track_id],
-                    self._carried(track_id, belt_speed, at_nanos),
-                    belt_speed,
-                    at_nanos,
-                )
-                for track_id in self._order
-            ),
+            order=tuple(candidate_for(track_id) for track_id in self._order),
             recomputed=bool(reasons),
             reasons=frozenset(reasons),
         )
@@ -318,25 +327,30 @@ class Selector:
             if held is None:
                 self._anchors[track_id] = _Anchor(marker.grasp, at_nanos)
                 continue
-            carried = carry(held.position, belt_speed, held.at_nanos, at_nanos)
+            speed = (
+                max(0.0, marker.velocity_world[0])
+                if marker.velocity_world is not None
+                else belt_speed
+            )
+            carried = carry(held.position, speed, held.at_nanos, at_nanos)
             if math.dist(marker.grasp, carried) > self._settings.anchor_radius:
                 self._anchors[track_id] = _Anchor(marker.grasp, at_nanos)
                 moved = True
         return moved
 
-    def _carried(self, track_id: int, belt_speed: float, at_nanos: int) -> Point:
+    def _carried(self, track_id: int, speed: float, at_nanos: int) -> Point:
         """Return a track's anchor, carried to now.
 
         Args:
             track_id: Whose anchor.
-            belt_speed: How fast the belt runs, in meters per second.
+            speed: Effective travel speed, in meters per second.
             at_nanos: The instant to carry it to.
 
         Returns:
             The anchor, where the belt has taken it since it was set.
         """
         held = self._anchors[track_id]
-        return carry(held.position, belt_speed, held.at_nanos, at_nanos)
+        return carry(held.position, speed, held.at_nanos, at_nanos)
 
     def _sorted(
         self,
@@ -359,7 +373,13 @@ class Selector:
         remaining = [
             _candidate(
                 marker,
-                self._carried(track_id, belt_speed, at_nanos),
+                self._carried(
+                    track_id,
+                    max(0.0, marker.velocity_world[0])
+                    if marker.velocity_world is not None
+                    else belt_speed,
+                    at_nanos,
+                ),
                 belt_speed,
                 at_nanos,
             )
@@ -461,12 +481,18 @@ def _candidate(
         on the marker, because it depends on a speed and an instant that the
         marker knows nothing about.
     """
+    speed = (
+        marker.velocity_world[0]
+        if marker.velocity_world is not None and marker.velocity_world[0] > 0.01
+        else belt_speed
+    )
     seconds = (marker.valid_until_nanos - at_nanos) / NANOS_PER_SECOND
     return Candidate(
         track_id=marker.track_id,
         anchor_position_belt=anchor_position_belt,
         flange_position_world=marker.flange_position_world,
         closing_yaw_belt=marker.closing_yaw_belt,
-        distance_before_leaving=max(0.0, seconds * belt_speed),
+        distance_before_leaving=max(0.0, seconds * speed),
         channel=marker.channel,
+        velocity_world=marker.velocity_world,
     )

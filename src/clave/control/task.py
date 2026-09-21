@@ -481,10 +481,16 @@ class TaskMachine:
         )
         chute = self._chutes.get(head.channel)
         over = (chute[0], chute[1], transit_height_world) if chute is not None else None
+        obj_vel = (
+            head.velocity_world
+            if head.velocity_world is not None
+            else (self._belt_speed, 0.0, 0.0)
+        )
+        clamped_vel = (max(0.0, obj_vel[0]), obj_vel[1], obj_vel[2])
         refreshed = refine(
             plan=self._plan,
             object_position=target,
-            belt_velocity=(self._belt_speed, 0.0, 0.0),
+            belt_velocity=clamped_vel,
             z_offset=self._settings.grasp_clearance,
             approach_speed=self._settings.approach_speed,
             dwell_seconds=self._settings.dwell_seconds,
@@ -564,7 +570,14 @@ class TaskMachine:
         over = (chute[0], chute[1], transit_height_world) if chute is not None else None
         # An interception is worth planning only inside what the object has
         # left on the belt, whichever of the two limits binds first.
-        leaving = head.distance_before_leaving / self._belt_speed
+        obj_vel = (
+            head.velocity_world
+            if head.velocity_world is not None
+            else (self._belt_speed, 0.0, 0.0)
+        )
+        speed_x = max(0.01, obj_vel[0])
+        clamped_vel = (max(0.0, obj_vel[0]), obj_vel[1], obj_vel[2])
+        leaving = head.distance_before_leaving / speed_x
         # The margin buys room to re-aim and it buys it by intercepting
         # further downstream, which can put the pick past the edge of the
         # annulus. Where it does, the soonest interception is taken instead:
@@ -577,7 +590,7 @@ class TaskMachine:
                 ),
                 track_id=head.track_id,
                 object_position=target,
-                belt_velocity=(self._belt_speed, 0.0, 0.0),
+                belt_velocity=clamped_vel,
                 z_offset=self._settings.grasp_clearance,
                 approach_speed=self._settings.approach_speed,
                 dwell_seconds=self._settings.dwell_seconds,

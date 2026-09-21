@@ -270,3 +270,35 @@ def test_ground_truth_markers_dynamic_grasp_height() -> None:
     assert math.isclose(
         markers[0].flange_position_world[2], 0.96 + eff.finger_length, abs_tol=1e-4
     )
+
+
+def test_ground_truth_markers_tracks_object_velocity() -> None:
+    """Ground truth markers capture instantaneous object velocity from simulation."""
+    model, data = build_test_mujoco()
+    # Set velocity on object_0 (free joint dof is 0..5)
+    data.qvel[0] = 0.15  # moving at 0.15 m/s along x (e.g. slipping relative to belt)
+    import mujoco
+
+    mujoco.mj_forward(model, data)
+
+    plan = minimal_plan()
+    eff = effector()
+    active = [
+        SpawnedObject(
+            index=0, name="object_0", material_class="M-01", channel="chute_a"
+        )
+    ]
+    markers = ground_truth_markers(
+        model=model,
+        data=data,
+        active_objects=active,
+        plan=plan,
+        effector=eff,
+        belt_surface_height_world=0.90,
+        at_nanos=1_000_000_000,
+        window_exit=1.0,
+        belt_speed=0.31,
+    )
+    assert len(markers) == 1
+    assert markers[0].velocity_world is not None
+    assert math.isclose(markers[0].velocity_world[0], 0.15, abs_tol=1e-3)

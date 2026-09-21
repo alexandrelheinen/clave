@@ -115,6 +115,7 @@ class GraspMarker:
     extent: float
     color: tuple[float, float, float]
     channel: str = REJECT_CHANNEL
+    velocity_world: Point | None = None
 
     def __init__(
         self,
@@ -131,6 +132,7 @@ class GraspMarker:
         extent: float = 0.0,
         color: tuple[float, float, float] = (0.0, 0.0, 0.0),
         channel: str = REJECT_CHANNEL,
+        velocity_world: Point | None = None,
         *,
         grasp: Point | None = None,
         flange: Point | None = None,
@@ -163,6 +165,7 @@ class GraspMarker:
         object.__setattr__(self, "extent", extent)
         object.__setattr__(self, "color", color)
         object.__setattr__(self, "channel", channel)
+        object.__setattr__(self, "velocity_world", velocity_world)
 
     @property
     def grasp(self) -> Point:
@@ -441,10 +444,23 @@ def ground_truth_markers(
                 (x + step_x, y + step_y, pad_z),
             )
 
+        obj_velocity: Point | None = None
+        if hasattr(data, "cvel") and data.cvel is not None and len(data.cvel) > body:
+            obj_velocity = (
+                float(data.cvel[body][3]),
+                float(data.cvel[body][4]),
+                float(data.cvel[body][5]),
+            )
+
         remaining = max(0.0, window_exit - x)
+        effective_speed = (
+            obj_velocity[0]
+            if obj_velocity is not None and obj_velocity[0] > 0.01
+            else belt_speed
+        )
         expires = (
-            at_nanos + int(remaining / belt_speed * 1_000_000_000)
-            if belt_speed > 0.0
+            at_nanos + int(remaining / effective_speed * 1_000_000_000)
+            if effective_speed > 0.0
             else at_nanos
         )
 
@@ -467,6 +483,7 @@ def ground_truth_markers(
                 channel=item.channel,
                 extent=extent,
                 color=color_for(item.index),
+                velocity_world=obj_velocity,
             )
         )
 
