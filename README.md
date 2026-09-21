@@ -1,22 +1,20 @@
 # CLAVE
 
-<img src="docs/images/clave.svg" alt="CLAVE Logo" width="120" align="left">
-
-**CLAVE** = **C**oleta de **L**ixo **A**través de **V**isão **E**mbarcada
+<img src="docs/images/recycling_50dp_5084C1_FILL0_wght400_GRAD0_opsz48.svg" alt="CLAVE Logo" width="120" align="left">
 
 CLAVE sorts recyclable waste traveling on a conveyor belt through a learned
 perception-action policy. A neural architecture fuses visual perception,
 object tracking, and pick timing into an end-to-end system trained via
-imitation and reinforcement learning. The policy runs against the clock with
+imitation and reinforcement learning.
+
+The policy runs against the clock with
 hard safety guarantees: a Rust core handles interlocks and workspace limits,
 while neural inference provides perception and decision-making. Models train
 in Python against MuJoCo simulation supplied by FRET. Everything through the
 v1.x line runs in simulation.
 
-<br clear="left">
-
-*Clave* is Portuguese for the musical clef, which places the project in the
-same family as **arco**, **fret**, **luthier**, and **bossa**.
+*CLAVE*, which stands for _Coleta de Lixo Auxiliada por Visão Embarcada_, is also Portuguese for the musical clef, which places the project in the
+same family as **arco**, **bossa**, **fret**, and **luthier**.
 
 ## What this project is about
 
@@ -73,37 +71,10 @@ By default it runs the sorting-line simulation and annotates the rollout with
 everything the tracker believes: markers, beliefs, queue decisions, arrival
 errors and grasp lifts. A window opens when a display is available.
 
-### `sim` options
-
-| Flag | Default | What it does |
-| --- | --- | --- |
-| `--video` | off | Write a playable `.mp4` beside the frame PNGs |
-| `--no-window` | off | Suppress the live viewer (headless rendering) |
-| `--seconds N` | `14.0` | Simulated seconds to run |
-| `--seed N` | `0` | RNG seed for belt speed, placement and spawn timing |
-| `--fps N` | from config | Playback rate of the recorded video |
-| `--view NAME` | from config | Which camera view in `configs/debug/tracker.yml` to film from |
-| `--out DIR` | `runs/debug/tracker` | Where frame PNGs, records and the video go |
-| `--still [SCENARIO]` | — | Capture still frames instead of running the simulation. Names a scenario under `configs/stills/` (default: `thumbnail`) |
-| `--still-out DIR` | `runs/stills` | Output directory for stills |
-
-### Examples
+For example, to run a 30 seconds simulation, using ground truth perception, debug logging, without UI, but dumping the rendering video and telemetry to the folder `runs/debug/sample`: 
 
 ```bash
-# Run headlessly and record a video
-clave sim --video --no-window
-
-# Longer run with a different seed
-clave sim --video --no-window --seconds 60 --seed 42
-
-# Film from the wide "line" view
-clave sim --video --no-window --view line
-
-# Capture publication-quality still frames
-clave sim --still
-
-# Capture stills from a named scenario
-clave sim --still thumbnail --still-out renders/
+clave sim --seconds 30 --gt --log-level DEBUG --no-window --video --telemetry --out runs/debug/sample
 ```
 
 ### Other commands
