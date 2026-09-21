@@ -344,8 +344,6 @@ def ground_truth_markers(
     import mujoco
 
     surface = belt_surface_height_world
-    pad_z = surface + effector.grasp_height
-    flange_z = pad_z + effector.finger_length
 
     markers: list[GraspMarker] = []
     for item in active_objects:
@@ -378,12 +376,15 @@ def ground_truth_markers(
         oriented = True
         closing_axis: float | None = yaw
 
+        pad_z = surface + effector.grasp_height
         if geom_type == mujoco.mjtGeom.mjGEOM_CYLINDER:
             r = float(model.geom_size[geom_id][0])
             opening = 2.0 * r
             extent = 2.0 * r
             oriented = False
             closing_axis = None
+            center_z = float(data.geom_xpos[geom_id][2])
+            pad_z = min(max(center_z, surface + 0.012), surface + 0.150)
         elif geom_type == mujoco.mjtGeom.mjGEOM_BOX:
             sx = float(model.geom_size[geom_id][0])
             sy = float(model.geom_size[geom_id][1])
@@ -396,6 +397,8 @@ def ground_truth_markers(
                 opening = dim_y
                 extent = dim_x
                 closing_axis = yaw + math.pi / 2.0
+            center_z = float(data.geom_xpos[geom_id][2])
+            pad_z = min(max(center_z, surface + 0.012), surface + 0.150)
         elif geom_type == mujoco.mjtGeom.mjGEOM_MESH:
             mesh_id = model.geom_dataid[geom_id]
             if mesh_id >= 0:
@@ -412,12 +415,18 @@ def ground_truth_markers(
                     opening = dim_y
                     extent = dim_x
                     closing_axis = yaw + math.pi / 2.0
+                R = data.geom_xmat[geom_id].reshape(3, 3)
+                world_z = (R[2, :] @ verts.T) + float(data.geom_xpos[geom_id][2])
+                center_z = float((world_z.min() + world_z.max()) / 2.0)
+                pad_z = min(max(center_z, surface + 0.012), surface + 0.150)
             else:
                 opening = effector.opening * 0.5
                 extent = opening
         else:
             opening = effector.opening * 0.5
             extent = opening
+
+        flange_z = pad_z + effector.finger_length
 
         if closing_axis is not None:
             closing_axis = (closing_axis + math.pi) % (2.0 * math.pi) - math.pi

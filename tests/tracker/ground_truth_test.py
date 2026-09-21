@@ -226,3 +226,47 @@ def test_ground_truth_simulation_run_ac_gt_03_and_05(tmp_path: Path) -> None:
 
     # AC-GT-05: Scene visualization reflects markers
     assert report.drawn >= 0
+
+
+def test_ground_truth_markers_dynamic_grasp_height() -> None:
+    """Dynamic grasp height derives pad_z from object geometry in world frame."""
+    import mujoco
+
+    xml = """
+    <mujoco>
+      <worldbody>
+        <body name="tall_box" pos="0.10 0.05 0.96">
+          <freejoint/>
+          <geom type="box" size="0.02 0.03 0.06"/>
+        </body>
+      </worldbody>
+    </mujoco>
+    """
+    model = mujoco.MjModel.from_xml_string(xml)
+    data = mujoco.MjData(model)
+    mujoco.mj_forward(model, data)
+
+    plan = minimal_plan()
+    eff = effector()
+    active = [
+        SpawnedObject(
+            index=0, name="tall_box", material_class="M-01", channel="chute_a"
+        )
+    ]
+    markers = ground_truth_markers(
+        model=model,
+        data=data,
+        active_objects=active,
+        plan=plan,
+        effector=eff,
+        belt_surface_height_world=0.90,
+        at_nanos=1_000_000_000,
+        window_exit=1.0,
+        belt_speed=0.31,
+    )
+    assert len(markers) == 1
+    # Center is at z=0.96 (data.geom_xpos[0][2]), not fixed at surface + 0.02 = 0.92
+    assert math.isclose(markers[0].pinch_position_belt[2], 0.96, abs_tol=1e-4)
+    assert math.isclose(
+        markers[0].flange_position_world[2], 0.96 + eff.finger_length, abs_tol=1e-4
+    )
