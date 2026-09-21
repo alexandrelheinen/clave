@@ -570,8 +570,16 @@ def _descend(
         mujoco.mj_jacSite(model, scratch, jacp, jacr, arm.tool_site)
         stacked = np.vstack([jacp[:, columns], jacr[:, columns]])
         error = np.concatenate([position_error, rotation_error])
-        square = stacked @ stacked.T + (_DAMPING**2) * np.eye(6)
+        wrist_2_angle = float(scratch.qpos[model.jnt_qposadr[arm.joint_ids[4]]])
+        sin_w2 = abs(math.sin(wrist_2_angle))
+        if sin_w2 < 0.20:
+            scale = (1.0 - sin_w2 / 0.20) ** 2
+            damping_sq = _DAMPING**2 + (0.35**2) * scale
+        else:
+            damping_sq = _DAMPING**2
+        square = stacked @ stacked.T + damping_sq * np.eye(6)
         delta = stacked.T @ np.linalg.solve(square, error)
+        delta = np.clip(delta, -0.20, 0.20)
         here = np.array(
             [float(scratch.qpos[model.jnt_qposadr[j]]) for j in arm.joint_ids]
         )
