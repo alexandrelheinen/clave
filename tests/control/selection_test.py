@@ -483,3 +483,47 @@ def test_the_reasons_say_which_trigger_fired() -> None:
 
     gone = one.update((), (0.0, 0.0, 1.035), BELT_SPEED, 0)
     assert gone.reasons == frozenset({"retired"})
+
+
+def test_selector_carries_candidate_with_instantaneous_velocity() -> None:
+    """Selector carries candidate with its own instantaneous velocity when present."""
+    base = marker(1, x=0.20)
+    slow = GraspMarker(
+        track_id=base.track_id,
+        valid_until_nanos=base.valid_until_nanos,
+        grasp=base.grasp,
+        flange=base.flange,
+        pads=base.pads,
+        pad_size=base.pad_size,
+        closing_axis=base.closing_axis,
+        opening=base.opening,
+        oriented=base.oriented,
+        reachable=base.reachable,
+        extent=base.extent,
+        color=base.color,
+        channel=base.channel,
+        velocity_world=(0.10, 0.0, 0.0),
+    )
+    one = selector()
+    first = one.update((slow,), (0.0, 0.0, 1.035), BELT_SPEED, at_nanos=0)
+    assert first.head is not None
+    assert first.head.flange_position_world[0] == pytest.approx(0.20)
+
+    # If the object physically moves at 0.10 m/s (from 0.20 to 0.30 m along x in 1s):
+    base_advanced = marker(1, x=0.30)
+    import dataclasses
+
+    moved_slow = dataclasses.replace(
+        base_advanced,
+        velocity_world=(0.10, 0.0, 0.0),
+    )
+    later = one.update(
+        (moved_slow,),
+        (0.0, 0.0, 1.035),
+        BELT_SPEED,
+        at_nanos=1_000_000_000,
+    )
+    # The anchor correctly followed the 0.10 m/s velocity, so no reanchor occurred!
+    assert "anchor" not in later.reasons
+    assert later.head is not None
+    assert later.head.anchor_position_belt[0] == pytest.approx(0.30)

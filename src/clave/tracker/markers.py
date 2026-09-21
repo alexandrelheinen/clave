@@ -445,7 +445,15 @@ def ground_truth_markers(
             )
 
         obj_velocity: Point | None = None
-        if hasattr(data, "cvel") and data.cvel is not None and len(data.cvel) > body:
+        jnt_id = model.body_jntadr[body] if body < len(model.body_jntadr) else -1
+        if jnt_id >= 0 and model.jnt_type[jnt_id] == mujoco.mjtJoint.mjJNT_FREE:
+            dof_adr = model.jnt_dofadr[jnt_id]
+            obj_velocity = (
+                float(data.qvel[dof_adr]),
+                float(data.qvel[dof_adr + 1]),
+                float(data.qvel[dof_adr + 2]),
+            )
+        elif hasattr(data, "cvel") and data.cvel is not None and len(data.cvel) > body:
             obj_velocity = (
                 float(data.cvel[body][3]),
                 float(data.cvel[body][4]),
