@@ -217,6 +217,7 @@ class TaskMachine:
         self._arrivals: list[float] = []
         self._plan: Plan | None = None
         self._plan_yaw: float | None = None
+        self._last_yaw: float | None = None
         self._pick_error: float | None = None
         self._missed: list[int] = []
 
@@ -423,11 +424,15 @@ class TaskMachine:
             # the arm rides the belt rather than how well it arrived.
             self._pick_error = math.dist(flange_pos, state.position)
         self._phase = phase
+        yaw = self._plan.yaw_at(at_seconds)
+        if yaw is None:
+            yaw = self._plan_yaw
+        self._last_yaw = yaw
         return Flight(
             phase=phase,
             position=state.position,
             velocity=state.velocity,
-            yaw=self._plan_yaw,
+            yaw=yaw,
             grip=grip,
         )
 
@@ -492,12 +497,24 @@ class TaskMachine:
             safe_height_world=transit_height_world,
             cross_speed=self._settings.approach_speed,
         )
+        initial_yaw: float | None = (
+            self._last_yaw if self._last_yaw is not None else head.closing_yaw_belt
+        )
+        if head.closing_yaw_belt is not None:
+            self._plan_yaw = head.closing_yaw_belt
+            self._plan = self._plan.with_yaw(
+                target_yaw=head.closing_yaw_belt,
+                initial_yaw=initial_yaw,
+            )
         if refreshed is not None:
             descent_leg = next(
                 leg for leg in refreshed.legs if leg.phase is Phase.DESCEND
             )
             if self._admits(descent_leg.segment.end.position):
-                self._plan = refreshed
+                self._plan = refreshed.with_yaw(
+                    target_yaw=head.closing_yaw_belt,
+                    initial_yaw=initial_yaw,
+                )
 
     def _commit(
         self,
@@ -591,8 +608,10 @@ class TaskMachine:
                 leaving,
             )
             return self._rest(flange, at_nanos)
-        self._plan = plan
-        self._plan_yaw = head.closing_yaw_belt
+        target_yaw = head.closing_yaw_belt
+        initial_yaw = self._last_yaw if self._last_yaw is not None else target_yaw
+        self._plan = plan.with_yaw(target_yaw=target_yaw, initial_yaw=initial_yaw)
+        self._plan_yaw = target_yaw
         self._serving = head.track_id
         self._pick_error = None
         self._phase = Phase.TRACK

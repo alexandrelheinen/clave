@@ -524,3 +524,31 @@ def test_task_machine_accepts_custom_belt_parameters() -> None:
     )
     # Expected border: 0.05 - 0.70 / 2.0 = -0.30
     assert arm._belt_border_y == pytest.approx(-0.30)
+
+
+def test_reaim_refreshes_plan_yaw_in_flight() -> None:
+    """AC-MOVE-40: re-aiming an approach updates target yaw and flight commands."""
+    arm = machine(profile=Profile.FULL_VISIT)
+    first = Candidate(
+        track_id=1,
+        anchor=(0.30, 0.0, 0.945),
+        flange=(0.30, 0.0, 1.035),
+        closing_axis=0.0,
+        distance_before_leaving=1.5,
+    )
+    arm.step(queue_of(first), PARK, 0.0)
+    initial_flight = arm.flight(0.01, PARK)
+    assert initial_flight is not None
+
+    rotated = Candidate(
+        track_id=1,
+        anchor=(0.30, 0.0, 0.945),
+        flange=(0.30, 0.0, 1.035),
+        closing_axis=math.pi / 4.0,
+        distance_before_leaving=1.5,
+    )
+    arm.step(queue_of(rotated), PARK, 0.20)
+    assert arm._plan_yaw == pytest.approx(math.pi / 4.0)
+    later_flight = arm.flight(0.20, PARK)
+    assert later_flight is not None
+    assert later_flight.yaw is not None

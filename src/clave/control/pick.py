@@ -142,17 +142,52 @@ class Plan:
         started_at: Simulated time the first arc begins, in seconds.
         pick_at: When the jaw reaches the object, in seconds. Reported
             because it is the figure the interception exists to produce.
+        target_yaw: Orientation about the belt normal at the pick, or None.
+        initial_yaw: Orientation about the belt normal at the approach start, or None.
     """
 
     track_id: int
     legs: tuple[Leg, ...]
     started_at: float
     pick_at: float
+    target_yaw: float | None = None
+    initial_yaw: float | None = None
 
     @property
     def duration(self) -> float:
         """How long the whole visit takes, in seconds."""
         return self._boundaries()[-1]
+
+    def with_yaw(
+        self,
+        target_yaw: float | None = None,
+        initial_yaw: float | None = None,
+    ) -> Plan:
+        """Return a copy of the plan with updated target and initial yaw."""
+        return Plan(
+            track_id=self.track_id,
+            legs=self.legs,
+            started_at=self.started_at,
+            pick_at=self.pick_at,
+            target_yaw=target_yaw if target_yaw is not None else self.target_yaw,
+            initial_yaw=initial_yaw if initial_yaw is not None else self.initial_yaw,
+        )
+
+    def yaw_at(self, at_seconds: float) -> float | None:
+        """Return the commanded tool yaw at a simulated instant, or None."""
+        if self.target_yaw is None:
+            return None
+        if self.initial_yaw is None:
+            return self.target_yaw
+        track_duration = max(1e-6, self.pick_at - self.started_at)
+        elapsed = at_seconds - self.started_at
+        if elapsed >= track_duration:
+            return self.target_yaw
+        tau = min(1.0, max(0.0, elapsed / track_duration))
+        s = tau * tau * tau * (10.0 + tau * (-15.0 + 6.0 * tau))
+        two_pi = 2.0 * math.pi
+        diff = (self.target_yaw - self.initial_yaw + math.pi) % two_pi - math.pi
+        return (self.initial_yaw + s * diff + math.pi) % two_pi - math.pi
 
     def at(self, at_seconds: float) -> tuple[Phase, State, float] | None:
         """Return where the visit is, or None once it is over.
