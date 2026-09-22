@@ -114,13 +114,25 @@ def test_ground_truth_markers_derivation_ac_gt_02() -> None:
 
     active = [
         SpawnedObject(
-            index=0, name="object_0", material_class="M-01", channel="chute_a"
+            index=0,
+            name="object_0",
+            material_class="M-01",
+            channel="chute_a",
+            serial=7,
         ),
         SpawnedObject(
-            index=1, name="object_1", material_class="M-02", channel="chute_b"
+            index=1,
+            name="object_1",
+            material_class="M-02",
+            channel="chute_b",
+            serial=8,
         ),
         SpawnedObject(
-            index=2, name="object_2", material_class="M-01", channel="chute_a"
+            index=2,
+            name="object_2",
+            material_class="M-01",
+            channel="chute_a",
+            serial=9,
         ),
     ]
 
@@ -143,9 +155,12 @@ def test_ground_truth_markers_derivation_ac_gt_02() -> None:
     # object_2 is at x=1.5 > window_exit=1.0, so it must be excluded
     assert len(markers) == 2
 
-    # Check object_0 (cylinder)
+    # Check object_0 (cylinder). Its identity is the spawn serial rather than
+    # the pool slot, because a slot is reused as soon as the object in it
+    # leaves the belt and a consumer that keyed on the slot would refuse to
+    # serve the second object to ride in it.
     m0 = markers[0]
-    assert m0.track_id == 0
+    assert m0.track_id == 7
     assert m0.channel == "chute_a"
     assert math.isclose(m0.pinch_position_belt[0], 0.10, abs_tol=1e-5)
     assert math.isclose(m0.pinch_position_belt[1], 0.05, abs_tol=1e-5)
@@ -158,7 +173,7 @@ def test_ground_truth_markers_derivation_ac_gt_02() -> None:
 
     # Check object_1 (box rotated pi/2)
     m1 = markers[1]
-    assert m1.track_id == 1
+    assert m1.track_id == 8
     assert m1.channel == "chute_b"
     assert math.isclose(m1.pinch_position_belt[0], -0.20, abs_tol=1e-5)
     assert math.isclose(m1.pinch_position_belt[1], -0.05, abs_tol=1e-5)

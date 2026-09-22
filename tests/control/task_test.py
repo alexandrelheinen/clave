@@ -36,12 +36,23 @@ EFFECTOR = Effector(
     pad_thickness=0.008,
     pad_depth=0.022,
     pad_height=0.0375,
-    grasp_height=0.030,
+    grasp_height=0.045,
     lowest_below_flange=0.1735,
-    jaw_clearance=0.010,
+    jaw_clearance=0.025,
     opening=0.085,
 )
 """The shipped jaw, so a full visit has the geometry it plans against."""
+
+PICK_Z = BELT_SURFACE + EFFECTOR.flange_floor
+"""The lowest flange pose the jaw may take, which is where a marker sits.
+
+Written as arithmetic rather than as a number because it moved when the
+clearance grew to cover the load the jaw picks up, and a fixture pinned to the
+old millimetre silently stopped planning anything at all.
+"""
+
+PINCH_Z = PICK_Z - EFFECTOR.finger_length
+"""Where the pads close for that pose, which is what a marker's anchor holds."""
 
 
 def task_settings(**overrides: object) -> TaskSettings:
@@ -88,8 +99,8 @@ def candidate(track_id: int = 1, x: float = 0.30, y: float = 0.0) -> Candidate:
     """One candidate the arm could serve."""
     return Candidate(
         track_id=track_id,
-        anchor=(x, y, 0.945),
-        flange=(x, y, 1.09),
+        anchor=(x, y, PINCH_Z),
+        flange=(x, y, PICK_Z),
         closing_axis=math.pi / 2.0,
         distance_before_leaving=1.5,
     )
@@ -152,8 +163,8 @@ def test_an_unoriented_candidate_asks_for_no_rotation() -> None:
     """AC-MOVE-08: an unoriented candidate asks for no rotation."""
     round_one = Candidate(
         track_id=1,
-        anchor=(0.3, 0.0, 0.945),
-        flange=(0.3, 0.0, 1.09),
+        anchor=(0.3, 0.0, PINCH_Z),
+        flange=(0.3, 0.0, PICK_Z),
         closing_axis=None,
         distance_before_leaving=1.0,
     )
@@ -335,8 +346,8 @@ def test_an_object_with_no_interception_is_missed_rather_than_chased() -> None:
     arm = machine(profile=Profile.FULL_VISIT)
     leaving = Candidate(
         track_id=7,
-        anchor=(0.30, 0.0, 0.945),
-        flange=(0.30, 0.0, 1.09),
+        anchor=(0.30, 0.0, PINCH_Z),
+        flange=(0.30, 0.0, PICK_Z),
         closing_axis=0.0,
         distance_before_leaving=0.01,
     )
@@ -437,8 +448,8 @@ def test_a_settling_candidate_is_served_at_the_marker_pose() -> None:
     arm = machine(profile=Profile.FULL_VISIT)
     settling = Candidate(
         track_id=1,
-        anchor=(0.30, 0.0, 0.945),
-        flange=(0.30, 0.0, 1.09),
+        anchor=(0.30, 0.0, PINCH_Z),
+        flange=(0.30, 0.0, PICK_Z),
         closing_axis=math.pi / 2.0,
         distance_before_leaving=1.5,
         velocity_world=(BELT_SPEED, 0.0, -0.40),
@@ -494,7 +505,7 @@ def test_a_grasp_pose_below_the_jaw_clearance_is_refused() -> None:
     arm = machine(profile=Profile.FULL_VISIT)
     under = Candidate(
         track_id=9,
-        anchor=(0.30, 0.0, 0.945),
+        anchor=(0.30, 0.0, PINCH_Z),
         flange=(0.30, 0.0, BELT_SURFACE + 0.010),
         closing_axis=math.pi / 2.0,
         distance_before_leaving=1.5,
@@ -515,7 +526,7 @@ def test_a_grasp_pose_at_the_jaw_clearance_is_taken() -> None:
     floor = BELT_SURFACE + EFFECTOR.flange_floor
     shortest = Candidate(
         track_id=3,
-        anchor=(0.30, 0.0, 0.945),
+        anchor=(0.30, 0.0, PINCH_Z),
         flange=(0.30, 0.0, floor),
         closing_axis=math.pi / 2.0,
         distance_before_leaving=1.5,
@@ -550,8 +561,8 @@ def test_a_plan_is_re_aimed_while_the_arm_is_still_approaching() -> None:
     before = arm.step(queue_of(first), PARK, 0.01)
     drifted = Candidate(
         track_id=1,
-        anchor=(0.34, 0.05, 0.945),
-        flange=(0.34, 0.05, 1.09),
+        anchor=(0.34, 0.05, PINCH_Z),
+        flange=(0.34, 0.05, PICK_Z),
         closing_axis=math.pi / 2.0,
         distance_before_leaving=1.5,
     )
@@ -631,8 +642,8 @@ def test_reaim_refreshes_plan_yaw_in_flight() -> None:
     arm = machine(profile=Profile.FULL_VISIT)
     first = Candidate(
         track_id=1,
-        anchor=(0.30, 0.0, 0.945),
-        flange=(0.30, 0.0, 1.09),
+        anchor=(0.30, 0.0, PINCH_Z),
+        flange=(0.30, 0.0, PICK_Z),
         closing_axis=0.0,
         distance_before_leaving=1.5,
     )
@@ -642,8 +653,8 @@ def test_reaim_refreshes_plan_yaw_in_flight() -> None:
 
     rotated = Candidate(
         track_id=1,
-        anchor=(0.30, 0.0, 0.945),
-        flange=(0.30, 0.0, 1.09),
+        anchor=(0.30, 0.0, PINCH_Z),
+        flange=(0.30, 0.0, PICK_Z),
         closing_axis=math.pi / 4.0,
         distance_before_leaving=1.5,
     )
@@ -654,13 +665,145 @@ def test_reaim_refreshes_plan_yaw_in_flight() -> None:
     assert later_flight.yaw is not None
 
 
+def test_a_plan_is_never_flowed_onto_an_object_that_has_moved_away() -> None:
+    """AC-MOVE-56: a re-aim that cannot follow the object is answered.
+
+    The regression this exists for: a plan committed to intercepting a moving
+    object, and an object that then fails to arrive there -- one dragging on
+    the belt, or one that has stopped drifting across it. The refinement is
+    refused in that case, because the arm is already committed further
+    downstream than the object will reach and no arc takes it back up the
+    belt. The machine used to hold the stale plan and fly it, and the arm
+    descended onto bare belt while reporting a millimetre arrival error
+    against its own commands.
+
+    Whatever it does instead has to leave the plan aimed at the object: either
+    a plan in flight whose aim is within the tolerance of the freshest
+    estimate, or no plan at all with the visit recorded as given up.
+    """
+    arm = machine(profile=Profile.FULL_VISIT)
+    riding = Candidate(
+        track_id=1,
+        anchor=(0.10, 0.0, PINCH_Z),
+        flange=(0.10, 0.0, PICK_Z),
+        closing_axis=math.pi / 2.0,
+        distance_before_leaving=1.5,
+        velocity_world=(BELT_SPEED, 0.0, 0.0),
+    )
+    arm.step(queue_of(riding), PARK, 0.0)
+    assert arm.flying is True
+    # Two and a half seconds later the object is barely past where it was,
+    # against a plan that aimed it a belt's travel further downstream.
+    dragging = Candidate(
+        track_id=1,
+        anchor=(0.16, 0.0, PINCH_Z),
+        flange=(0.16, 0.0, PICK_Z),
+        closing_axis=math.pi / 2.0,
+        distance_before_leaving=1.5,
+        velocity_world=(0.02, 0.0, 0.0),
+    )
+    arm.step(queue_of(dragging), PARK, 2.50)
+    assert max(refresh.drift or 0.0 for refresh in arm.refreshes) > 0.030, (
+        "the object did not drift far enough from the aim to test anything"
+    )
+    if arm.flying:
+        plan = arm.plan
+        assert plan is not None
+        fresh = arm._fresh_aim(dragging, dragging.flange, 2.50)
+        aim = next(
+            leg.segment.end.position for leg in plan.legs if leg.phase is Phase.DESCEND
+        )
+        assert math.dist(fresh, aim) <= arm._settings.aim_tolerance
+    else:
+        given_up = [track for track, _ in arm.abandoned]
+        assert given_up == [1]
+        assert "mm out" in arm.abandoned[0][1]
+        assert 1 in arm.missed
+        assert arm.plan is None
+
+
+def test_a_served_object_that_leaves_the_queue_abandons_the_visit() -> None:
+    """AC-MOVE-57: a visit to an object that is no longer a candidate is given up.
+
+    A track that retired, left the window, or was replaced in its slot has no
+    pose left to aim at, and a plan flying at the last pose it saw is a plan
+    descending onto belt. The arrival time cannot be kept either: there is
+    nothing scheduled against it any more.
+    """
+    arm = machine(profile=Profile.FULL_VISIT)
+    arm.step(queue_of(candidate(1, x=0.30)), PARK, 0.0)
+    assert arm.flying is True
+    arm.step(queue_of(), PARK, 0.50)
+    assert arm.flying is False
+    assert arm.served == ()
+    assert arm.abandoned == ((1, "the object is no longer a candidate"),)
+    assert arm.missed == (1,)
+    # And the arm is handed something to do rather than left flying a plan
+    # nobody is aiming any more.
+    goal = arm.step(queue_of(), PARK, 0.51)
+    assert goal.phase in (Phase.STANDBY, Phase.PARK)
+
+
+def test_the_tool_is_turned_to_where_the_object_will_be_facing() -> None:
+    """AC-MOVE-62: the tool is turned to the yaw the object will hold at the pick.
+
+    A grasp pose is a yaw claim made once per capture, and the jaws close when
+    the plan says they will. Objects on this belt turn while that time passes --
+    up to 5.4 radians per second, measured -- so commanding the claimed yaw
+    sends the tool to where the object was facing: 22 to 40 degrees off its own
+    axis at the instant the jaws shut, over nine grabs.
+    """
+    arm = machine(profile=Profile.FULL_VISIT)
+    turning = Candidate(
+        track_id=1,
+        anchor=(0.30, 0.0, PINCH_Z),
+        flange=(0.30, 0.0, PICK_Z),
+        closing_axis=0.20,
+        distance_before_leaving=1.5,
+        yaw_rate_belt=0.10,
+    )
+    arm.step(queue_of(turning), PARK, 0.0)
+    plan = arm.plan
+    assert plan is not None
+    assert arm._plan_yaw == pytest.approx(
+        (0.20 + 0.10 * plan.pick_at + math.pi) % (2 * math.pi) - math.pi, abs=1e-9
+    )
+    # Past the 45 degrees a jaw's symmetry leaves useful, the claim is
+    # commanded instead: a spin carried over a four second plan is not an
+    # estimate of where the object will be facing, and the arm that acted on
+    # one put its jaw 106.6 mm inside the belt over 67 ticks.
+    spinning = Candidate(
+        track_id=3,
+        anchor=(0.30, 0.0, PINCH_Z),
+        flange=(0.30, 0.0, PICK_Z),
+        closing_axis=0.20,
+        distance_before_leaving=1.5,
+        yaw_rate_belt=5.40,
+    )
+    fast = machine(profile=Profile.FULL_VISIT)
+    fast.step(queue_of(spinning), PARK, 0.0)
+    assert fast._plan_yaw == pytest.approx(0.20)
+    # And a marker claiming no rate is turned where it claimed, exactly as it
+    # was before: the claim is all there is to go on.
+    still = Candidate(
+        track_id=2,
+        anchor=(0.30, 0.0, PINCH_Z),
+        flange=(0.30, 0.0, PICK_Z),
+        closing_axis=0.20,
+        distance_before_leaving=1.5,
+    )
+    other = machine(profile=Profile.FULL_VISIT)
+    other.step(queue_of(still), PARK, 0.0)
+    assert other._plan_yaw == pytest.approx(0.20)
+
+
 def test_reaim_ignores_calls_outside_track_phase() -> None:
     """_reaim does not modify the plan or target yaw outside Phase.TRACK."""
     arm = machine(profile=Profile.FULL_VISIT)
     cand = Candidate(
         track_id=1,
-        anchor=(0.30, 0.0, 0.945),
-        flange=(0.30, 0.0, 1.09),
+        anchor=(0.30, 0.0, PINCH_Z),
+        flange=(0.30, 0.0, PICK_Z),
         closing_axis=0.20,
         distance_before_leaving=1.5,
     )
@@ -671,12 +814,12 @@ def test_reaim_ignores_calls_outside_track_phase() -> None:
     arm._phase = Phase.DESCEND
     changed = Candidate(
         track_id=1,
-        anchor=(0.30, 0.0, 0.945),
-        flange=(0.30, 0.0, 1.09),
+        anchor=(0.30, 0.0, PINCH_Z),
+        flange=(0.30, 0.0, PICK_Z),
         closing_axis=0.80,
         distance_before_leaving=1.5,
     )
-    arm._reaim(queue_of(changed), at_seconds=0.50)
+    arm._reaim(queue_of(changed), PARK, (0.0, 0.0, 0.0), 0.50)
     # Plan yaw remains untouched because phase was not Phase.TRACK
     assert arm._plan_yaw == pytest.approx(0.20)
 

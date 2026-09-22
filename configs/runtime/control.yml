@@ -131,6 +131,28 @@ task:
   # capture of the approach. It costs about 0.35 s per visit.
   interception_margin: 1.15
 
+  # How far the freshest estimate of an object's grasp pose may stand from the
+  # pose a plan in flight is aiming at before the machine acts on the
+  # difference.
+  #
+  # MEASURED, and the number that exposed the reason this exists. On the
+  # shipped line the refinement above is *refused* whenever the object has
+  # fallen behind the prediction it was made from -- an object dragging on the
+  # belt, or one whose drift across it has stopped -- because the arm is
+  # already committed to arriving further downstream and no arc can take it
+  # back up the belt. Refused, the machine used to hold what it had and fly it,
+  # and the run that prompted this descended onto bare belt 338 mm downstream
+  # of a dragging object and 231 mm across the belt from a settling one, while
+  # reporting a 2.0 mm arrival error against its own commands.
+  #
+  # Thirty millimetres is twice the largest aim error a visit that did close on
+  # an object showed (23 mm at seed 0, 21.5 mm in the run that gripped), and
+  # nine times the 3.4 mm the tracker's own jitter contributes. It is a
+  # threshold on the *prediction*, not on the grasp: past it the difference is
+  # larger than the object's own offset from the aim, so the jaw would close on
+  # an edge or on nothing.
+  aim_tolerance_meters: 0.030
+
   # Where the arm rests when it has nothing to serve.
   #
   # The four bin mouths run from x = 0.30 m to x = 1.14 m at y = -0.42 m.
