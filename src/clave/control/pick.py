@@ -30,9 +30,8 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from clave.control.settings import Phase, Point
+from clave.control.settings import DRIFT_HORIZON, Phase, Point
 from clave.control.trajectory import (
-    DRIFT_HORIZON,
     Segment,
     State,
     approach,

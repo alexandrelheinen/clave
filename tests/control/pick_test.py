@@ -174,7 +174,7 @@ def test_a_lateral_velocity_carries_the_object_only_while_it_lasts() -> None:
     four seconds a visit commits ahead that is 900 mm, and the run that did it
     aimed two visits in nine at a pose 208 and 346 mm from any object.
     """
-    from clave.control.trajectory import DRIFT_HORIZON
+    from clave.control.settings import DRIFT_HORIZON
 
     drifting = a_plan(belt_velocity=(BELT[0], 0.05, 0.0))
     assert drifting is not None

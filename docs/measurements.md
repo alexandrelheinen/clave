@@ -872,3 +872,69 @@ The run with the fixes served eight, six of them onto an object. What the fixes
 did to the lurch is remove part of its cause: the energy in that spike was the
 squeeze on a ten gram parcel, and the squeeze is seventeen times smaller than it
 was. A run that grips nothing reports a low lurch for the wrong reason.
+
+### What the prediction was actually doing, measured three ways
+
+The first pass of this work blamed the *tracker* for the aiming errors and the
+second blamed the *force* and the *yaw*. Both were wrong about the largest term.
+Decomposing every visit into three numbers -- the pose the plan was aiming at,
+the linear prediction of the object from the freshest capture, and where the
+object actually was when the jaws shut -- says where the error lives, and it is
+in the model of the *second* horizontal axis.
+
+| Axis | Autocorrelation after 0.2 s | After 0.8 s | Speed |
+| --- | --- | --- | --- |
+| Along the belt | +0.85 at 0.01 s, driven by the belt | held | median 0.25 m/s |
+| **Across the belt** | **+0.04** | **−0.02** | median 0.025, p90 **0.261 m/s** |
+| Rotation about the belt normal | **−0.03 at 0.04 s** | −0.00 | median 0.265, p90 **17.0 rad/s** |
+
+The object is driven along the belt and nothing drives it across: the drift is
+a fraction of a second long and the *turn* is over in tens of milliseconds.
+Both were being carried over the whole visit, which commits up to four seconds
+ahead, so the p90 drift became **900 mm of aim error across the belt** and the
+turn became a number drawn from a circle that had wrapped several times.
+
+Measured before and after bounding the drift to the 0.30 s it lasts for:
+
+| | Before | After |
+| --- | --- | --- |
+| Aim against the object's own lane at the grip | 208 and 346 mm on two visits of nine | **9 to 33 mm** on every visit |
+| Jaw to the nearest object when it shut | 73, 34, 42, 59, **185**, **167**, 79, 23, 13 mm | 22, 29, 94, 36, 26, 20, **99** mm |
+| Arm behind its own command while the jaws close | 50 to 80 mm, with the command outside the trusted region | inside the region, and the plan is refused when a leg leaves it |
+
+That is the defect behind "the arm goes where there is nothing": not the
+tracker, not the capture rate, but a velocity from the wrong axis multiplied by
+the wrong horizon. It is also why the earlier attempts in this branch, which
+aimed at the force and the yaw, did not move it.
+
+### What is still not fixed, and what it would take
+
+**The jaw closes near the top of a parcel and shoves it.** With the aim inside
+30 mm, the jaw still holds one object in seven. The pads are 37.5 mm tall and
+their lowest geometry is kept 10 mm above the belt, so the lowest pinch plane
+the jaw may take is 27.7 mm above the surface, and the marker places its plane
+at the object's own mid-height clamped up to that. A parcel lying 18 mm thick
+therefore gets about **9 mm of pad overlap**: closing drives it down and out
+rather than clamping it, and the lift is zero. The two repairs are a jaw whose
+pads reach lower (a gripper change) or a grasp plane that is allowed lower for
+flat objects while the pads still clear the belt (a world change, and the
+clearance that made it legal is what the pads are sized against).
+
+**The rotation of a parcel on this belt is not physical, and that is the root
+of the yaw problem.** The p90 turn rate is **17.0 rad/s** and the worst is
+299 rad/s: a parcel whose centre velocity the belt drives *as a constraint*
+while its contact patch is free to spin is not a parcel riding a belt, and the
+friction between the two winds it up. No control-side fix reaches that, which
+is why bounding the yaw prediction at 45 degrees is the honest answer rather
+than a shim. What it needs is the belt modelled as a *surface* moving under the
+object, with friction between them, rather than a velocity imposed on the
+body's centre.
+
+**One pad contact of −98 mm appears in the report and not in the telemetry.**
+The report's clearance is the minimum over every physics tick; the telemetry
+series is sampled at 100 Hz. On the run above the report carries a single tick
+at −98 mm while the sampled series shows 3 ticks at −0.6 mm, so the deep figure
+is a sub-20 ms event that the series does not catch. It is recorded rather than
+explained: nothing has been done to show whether it is a solver artefact at a
+contact or a real excursion.
+
