@@ -227,7 +227,11 @@ last two were found while reading the code ahead of the tracker work.
   tool axis **48° off the belt normal while holding**. The control side was
   measuring its own success against the pose it asked for, which the plan had
   already placed under the belt. Closed by `AC-MOVE-46`, `AC-MOVE-47`,
-  `AC-MOVE-50`, `AC-MARK-15`, `AC-MARK-16`, `AC-GRIP-12` and `AC-GRIP-13`. See
+  `AC-MOVE-50`, `AC-MARK-15`, `AC-MARK-16`, `AC-GRIP-12` and `AC-GRIP-13`. What
+  is left of it after those fixes is one tick of one retreat at −1.4 mm, from
+  the lift breaking the jaw free of the object it has just closed on, recorded
+  in [measurements.md](measurements.md#what-the-jaws-clearance-above-the-belt-was)
+  with its cause and the two candidate repairs. See also
   [measurements.md](measurements.md#what-the-jaws-clearance-above-the-belt-was).
 
 - **A run's numbers cannot be traced to the tree that produced them.** The debug

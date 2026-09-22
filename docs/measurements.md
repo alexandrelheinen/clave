@@ -398,6 +398,27 @@ figure above is a statement about the state the run reached, which is
 independent of which code commanded it; the phase durations are not, which is
 what `AC-MOVE-52` exists for.
 
+**What the three control fixes changed, measured the same way.** A 24 second
+run of the same line (`clave sim --seconds 24 --telemetry --gt`), whose own
+metadata file records the revision and the configuration digests it flew under:
+
+| | Before | After |
+| --- | --- | --- |
+| Smallest jaw clearance above the belt | −0.7 mm | **−1.4 mm, for 1 tick of 2400** |
+| Ticks with a pad-to-belt contact | 343 of 6001 | **1 of 2400** |
+| Tool axis off the belt normal, worst | 57.8° | **32.7°** |
+| Flange to the pose the plan asked for | 2.7 mm | 2.7 mm, unchanged |
+
+**The residual is one tick of one retreat, and its cause is in the same
+telemetry rather than guessed.** At that instant the commanded flange is rising
+at 0.13 m/s while the achieved flange falls 15 mm below the plane it had been
+holding: the lift is breaking the jaw free of an object it has just closed on,
+and the geometry is carried down with it. Two repairs are visible and neither is
+taken here, because choosing between them needs this transient measured over
+more than one visit: lift more slowly until the break-free transient is inside
+the clearance, or take the clearance with a margin sized to the transient. Both
+are now measurable figures rather than arguments.
+
 ### Why the jaw still holds nothing
 
 Measured on the 1.00 m belt fed by elapsed time. Narrowing the belt and

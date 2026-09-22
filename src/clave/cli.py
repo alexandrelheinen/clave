@@ -956,11 +956,22 @@ def _debug_tracker(root: Path, args: Any) -> int:
         _log_output(f"  to commanded    {report.closest_approach * 1000:.0f} mm")
     if report.closest_live is not None:
         _log_output(f"  to the object   {report.closest_live * 1000:.0f} mm")
+    if report.min_jaw_clearance is not None:
+        _log_output(
+            f"  jaw clearance   {report.min_jaw_clearance * 1000:.1f} mm above the "
+            f"belt, {report.belt_contacts} ticks in contact"
+        )
+    if report.worst_tool_tilt_degrees is not None:
+        _log_output(
+            f"  tool tilt       {report.worst_tool_tilt_degrees:.1f} deg off the "
+            f"belt normal at worst"
+        )
     _log_output(f"  frames written  {report.frames_written} to {report.output}")
     if report.video_path is not None:
         _log_output(f"  video           {report.video_path}")
     if report.telemetry_path is not None:
         _log_output(f"  telemetry       {report.telemetry_path}")
+    _log_output(f"  metadata        {report.metadata_path}")
     if report.windowed:
         _log_output("  window          shown live")
     else:

@@ -35,9 +35,11 @@ it is needed most.
 from __future__ import annotations
 
 import csv
+import json
 import logging
 import math
 import os
+import subprocess
 import time
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -176,6 +178,16 @@ class DebugRunReport:
             encoder was found.
         telemetry_path: The CSV telemetry file, or None when telemetry was not
             requested.
+        metadata_path: Where the revision and the configuration digests were
+            recorded, so a number in this report can be traced to the tree and
+            the configuration it came from.
+        min_jaw_clearance: The smallest distance any of the jaw's collision
+            geometry came to the belt surface, in meters. Negative means the
+            geometry was inside the belt.
+        belt_contacts: How many ticks had a contact between the jaw and the
+            belt.
+        worst_tool_tilt_degrees: The largest departure of the tool's axis from
+            the belt normal, in degrees.
         windowed: Whether a live window was opened.
         reason: Why no window was opened, when none was.
     """
@@ -205,9 +217,152 @@ class DebugRunReport:
     output: Path
     video_path: Path | None
     telemetry_path: Path | None
+    metadata_path: Path
+    min_jaw_clearance: float | None
+    belt_contacts: int
+    worst_tool_tilt_degrees: float | None
     windowed: bool
     reason: str | None = None
     ground_truth: bool = False
+
+
+@dataclass(frozen=True)
+class JawState:
+    """Where the gripper's own geometry stands relative to the belt.
+
+    Attributes:
+        lowest_z: The lowest world height of any collision geometry bolted to
+            the flange, in meters. This is the jaw rather than the pose: the
+            pose is the flange, and the jaw hangs below it.
+        clearance: That height less the belt surface, in meters. Negative means
+            the geometry is inside the belt.
+        contact: Whether any of that geometry is touching the belt.
+        tilt_degrees: How far the tool's own axis stands from the belt normal,
+            in degrees.
+    """
+
+    lowest_z: float
+    clearance: float
+    contact: bool
+    tilt_degrees: float
+
+
+def _jaw_collision_geoms(model: Any, arm: Any) -> tuple[int, ...]:
+    """Return every collision geom bolted to the flange.
+
+    Found by walking down the body tree from the body the pinch site stands on
+    rather than by matching names, so a vendored gripper that renames its parts
+    still reports the geometry that would hit the belt.
+
+    Args:
+        model: The compiled model.
+        arm: The arm indices.
+
+    Returns:
+        The geom ids, in model order.
+    """
+    base = int(model.site_bodyid[arm.pinch_site])
+    children: dict[int, list[int]] = {}
+    for body in range(model.nbody):
+        children.setdefault(int(model.body_parentid[body]), []).append(body)
+    subtree: set[int] = set()
+    stack = [base]
+    while stack:
+        body = stack.pop()
+        subtree.add(body)
+        stack.extend(children.get(body, ()))
+    return tuple(
+        geom
+        for geom in range(model.ngeom)
+        if int(model.geom_bodyid[geom]) in subtree and model.geom_contype[geom] != 0
+    )
+
+
+def _lowest_world_z(model: Any, data: Any, geom: int) -> float:
+    """Return the lowest height of one collision geom's own volume.
+
+    Exact rather than bounded for the shapes a gripper is made of, because the
+    figure this feeds is compared against a clearance of millimetres and a
+    bounding sphere would answer a different question.
+
+    Args:
+        model: The compiled model.
+        data: Its state, with forward kinematics current.
+        geom: The geom to measure.
+
+    Returns:
+        The lowest world height of that geom, in meters.
+    """
+    import mujoco
+    import numpy as np
+
+    rotation = data.geom_xmat[geom].reshape(3, 3)
+    centre = float(data.geom_xpos[geom][2])
+    size = model.geom_size[geom]
+    kind = model.geom_type[geom]
+    if kind == mujoco.mjtGeom.mjGEOM_BOX:
+        return centre - float(np.abs(rotation[2, :]) @ np.asarray(size))
+    if kind == mujoco.mjtGeom.mjGEOM_SPHERE:
+        return centre - float(size[0])
+    if kind in (mujoco.mjtGeom.mjGEOM_CYLINDER, mujoco.mjtGeom.mjGEOM_CAPSULE):
+        return centre - float(np.abs(rotation[2, 2])) * float(size[1]) - float(size[0])
+    mesh = int(model.geom_dataid[geom])
+    if kind == mujoco.mjtGeom.mjGEOM_MESH and mesh >= 0:
+        start = int(model.mesh_vertadr[mesh])
+        count = int(model.mesh_vertnum[mesh])
+        verts = np.asarray(model.mesh_vert[start : start + count])
+        return float(
+            (verts @ rotation.T + np.asarray(data.geom_xpos[geom]))[:, 2].min()
+        )
+    return centre - float(max(size))
+
+
+def _jaw_state(
+    mujoco: Any,
+    model: Any,
+    data: Any,
+    arm: Any,
+    jaw_geoms: tuple[int, ...],
+    belt_geom: int,
+    surface: float,
+) -> JawState:
+    """Read the jaw's clearance, its contact with the belt and its tilt.
+
+    Args:
+        mujoco: The imported MuJoCo module.
+        model: The compiled model.
+        data: Its state, with forward kinematics current.
+        arm: The arm indices.
+        jaw_geoms: The collision geoms bolted to the flange.
+        belt_geom: The belt's geom id, or -1 when the world names none.
+        surface: Belt surface height, in world frame meters.
+
+    Returns:
+        The state.
+    """
+
+    lowest = min(
+        (_lowest_world_z(model, data, geom) for geom in jaw_geoms),
+        default=float("inf"),
+    )
+    jaw = set(jaw_geoms)
+    touching = False
+    for index in range(data.ncon):
+        pair = {int(data.contact[index].geom1), int(data.contact[index].geom2)}
+        # Either order: MuJoCo reports the pair in whichever order its broad
+        # phase produced, and a test that assumed the jaw came first missed
+        # every contact the run was making.
+        if belt_geom in pair and pair & jaw:
+            touching = True
+            break
+    axis = data.site_xmat[arm.tool_site].reshape(3, 3)[:, 2]
+    tilt = math.degrees(math.acos(max(-1.0, min(1.0, -float(axis[2])))))
+    return JawState(
+        lowest_z=lowest,
+        clearance=lowest - surface,
+        contact=touching,
+        tilt_degrees=tilt,
+    )
 
 
 class _TelemetryWriter:
@@ -231,6 +386,14 @@ class _TelemetryWriter:
             "pinch_z",
             "phase_code",
             "task_flying",
+            "commanded_x",
+            "commanded_y",
+            "commanded_z",
+            "commanded_yaw",
+            "jaw_lowest_z",
+            "jaw_clearance",
+            "belt_contact",
+            "tool_tilt_degrees",
         ]
         self._headers.extend(f"qpos_{index}" for index in range(model.nq))
         self._headers.extend(f"qvel_{index}" for index in range(model.nv))
@@ -250,12 +413,26 @@ class _TelemetryWriter:
         belt_speed: float,
         phase: Phase,
         flying: bool,
+        jaw: JawState,
+        command: Any = None,
     ) -> None:
-        """Write the current state when the requested sample period is due."""
+        """Write the current state when the requested sample period is due.
+
+        Written after the tick's command has been decided rather than before it,
+        so the phase and the commanded pose in a row are the ones that tick was
+        flown on. Written before, the row carried the previous tick's phase,
+        which is a millisecond of nothing on a 500 Hz tick and a whole leg on a
+        coarse one: a run whose `DESCEND` column spanned 0.79 s against a
+        0.40 s leg is what that looks like from outside.
+        """
         if float(data.time) + 1e-12 < self.next_sample:
             return
         flange = _flange(indices, data)
         pinch = _pinch(indices, data)
+        if command is None:
+            commanded: list[object] = ["", "", "", ""]
+        else:
+            commanded = [*command.position, "" if command.yaw is None else command.yaw]
         row: list[object] = [
             float(data.time),
             belt_speed,
@@ -264,6 +441,11 @@ class _TelemetryWriter:
             *pinch,
             list(Phase).index(phase),
             int(flying),
+            *commanded,
+            jaw.lowest_z,
+            jaw.clearance,
+            int(jaw.contact),
+            jaw.tilt_degrees,
             *[float(value) for value in data.qpos],
             *[float(value) for value in data.qvel],
             *[float(value) for value in data.ctrl],
@@ -473,6 +655,8 @@ def run(
     start_wall = time.perf_counter()
 
     indices = armmod.locate(model)
+    jaw_geoms = _jaw_collision_geoms(model, indices)
+    belt_geom = int(mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "belt"))
     telemetry = None
     if telemetry_path is not None:
         if telemetry_rate <= 0.0:
@@ -491,6 +675,26 @@ def run(
         )
     else:
         LOGGER.info("telemetry disabled")
+
+    metadata_path = out / "metadata.json"
+    metadata_path.write_text(
+        json.dumps(
+            _run_metadata(
+                root,
+                {
+                    "world": world_path,
+                    "control": control_path,
+                    "debug": debug_path,
+                    "fusion": fusion_path,
+                    "packaging": packaging_path,
+                },
+            ),
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n"
+    )
+    LOGGER.info("run metadata written: %s", metadata_path)
 
     if trajectory_seconds < 0.0:
         raise DebugRunError(
@@ -558,6 +762,11 @@ def run(
     head_churn = 0
     previous_head: int | None = None
     closest = float("inf")
+    clearance = float("inf")
+    contacts = 0
+    tilt = 0.0
+    # The jaw's own figures, over every tick rather than every capture: a
+    # contact with the belt lasts milliseconds and the capture cadence is 0.5 s.
     # How far each visit raised the object it went for, against where that
     # object was resting when the plan was made. A flight can be perfect and
     # this still read zero, which is the whole point of measuring it apart.
@@ -657,17 +866,6 @@ def run(
                 counted += 1
             conveyor.speed = feeding.update(data.time, plan.timestep)
 
-            if telemetry is not None:
-                telemetry.write(
-                    model,
-                    data,
-                    indices,
-                    conveyor,
-                    feeding.speed,
-                    telemetry_phase,
-                    task.flying,
-                )
-
             # The deciders run at the capture cadence and the servo runs at
             # the physics rate, because a goal half a second old is still the
             # right goal while a joint command half a second old is a lurch.
@@ -747,6 +945,30 @@ def run(
                     goal is not None and goal.phase in _VISITING
                 ):
                     closest = min(closest, math.dist(place, command.position))
+
+            # Written here rather than before the decisions, so a row's phase and
+            # commanded pose are the ones that tick flew on, and the jaw's own
+            # clearance with them: the figure that says whether the pads were
+            # anywhere near the belt, which no pose in this file can answer
+            # because a pose is the flange and the jaw hangs below it.
+            jaw = _jaw_state(
+                mujoco, model, data, indices, jaw_geoms, belt_geom, surface
+            )
+            clearance = min(clearance, jaw.clearance)
+            contacts += int(jaw.contact)
+            tilt = max(tilt, jaw.tilt_degrees)
+            if telemetry is not None:
+                telemetry.write(
+                    model,
+                    data,
+                    indices,
+                    conveyor,
+                    feeding.speed,
+                    telemetry_phase,
+                    task.flying,
+                    jaw,
+                    command,
+                )
 
             # The video and live window render on their own cadence. The
             # capture cadence is what the tracker decides at, and watching
@@ -1052,7 +1274,68 @@ def run(
         windowed=opened,
         reason=reason,
         ground_truth=use_ground_truth,
+        min_jaw_clearance=None if clearance == float("inf") else clearance,
+        belt_contacts=contacts,
+        worst_tool_tilt_degrees=tilt,
+        metadata_path=metadata_path,
     )
+
+
+def _git(root: Path, *args: str) -> str | None:
+    """Return what git says about the tree, or None when it cannot be asked.
+
+    A debug run has to work in a checkout without git and in a copy of the
+    source with no repository at all, so an unanswerable question is recorded
+    as unanswerable rather than raised.
+
+    Args:
+        root: The repository root.
+        args: The arguments after `git`.
+
+    Returns:
+        The stripped standard output, or None.
+    """
+    completed = subprocess.run(
+        ("git", *args),
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        return None
+    return completed.stdout.strip()
+
+
+def _run_metadata(root: Path, paths: dict[str, Path]) -> dict[str, Any]:
+    """Return what a reader needs to trace this run's numbers to their inputs.
+
+    AC-MOVE-52. A revision alone is not enough: a dirty tree has no revision
+    that describes it, so that is recorded beside it, and a digest per
+    configuration is what lets a number be compared against a tree that has
+    since moved on. This exists because a run's artifacts could not be
+    attributed to a tree, and the phase durations in its telemetry did not
+    reproduce from the configuration the tree carried.
+
+    Args:
+        root: The repository root.
+        paths: Where each configuration lives, by name.
+
+    Returns:
+        The record, in the shape the rest of the repository records a run's
+        inputs: a digest per configuration, and where it came from.
+    """
+    from clave.experiment.run import config_digest
+
+    status = _git(root, "status", "--porcelain")
+    return {
+        "revision": _git(root, "rev-parse", "HEAD"),
+        "dirty": None if status is None else bool(status),
+        "config_digests": {
+            name: config_digest(config.load(path)) for name, path in paths.items()
+        },
+        "config_paths": {name: str(path) for name, path in paths.items()},
+    }
 
 
 def _open_window(cv2: Any, wanted: bool) -> tuple[bool, str | None]:
