@@ -131,6 +131,32 @@ def test_the_flange_stands_a_finger_length_above_the_pads() -> None:
     assert marker.flange[:2] == pytest.approx((0.2, 0.1))
 
 
+def test_the_pads_are_the_shape_of_the_effector_the_marker_was_given() -> None:
+    """AC-MARK-15: the pads are the shape of the effector it was given.
+
+    The marker carried 12 x 40 x 50 mm pads while the effector was hypothetical:
+    a quarter turn from the jaw the model closes and a different size in every
+    direction. They come from the effector the caller passes now, and
+    `tests/world/gripper_test.py` is what pins that effector to the compiled
+    model.
+    """
+    tool = Effector(
+        finger_length=0.1558,
+        pad_thickness=0.011,
+        pad_depth=0.033,
+        pad_height=0.044,
+        grasp_height=0.030,
+        lowest_below_flange=0.1735,
+        jaw_clearance=0.010,
+        opening=0.085,
+    )
+    marker = marker_for(record(minor=0.03), tool, BELT_SURFACE)
+    assert marker.pad_size == pytest.approx((0.0055, 0.0165, 0.022))
+    left, right = marker.pad_positions_belt
+    reach = marker.opening / 2.0 + tool.pad_thickness / 2.0
+    assert math.dist(left[:2], right[:2]) == pytest.approx(2.0 * reach)
+
+
 def test_an_object_wider_than_the_jaw_is_marked_unreachable() -> None:
     """AC-MARK-07: an object wider than the jaw is marked unreachable."""
     tool = effector()
