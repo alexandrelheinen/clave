@@ -25,6 +25,44 @@ def test_the_shipped_configuration_describes_an_effector() -> None:
     assert effector.jaw_clearance > 0.0
 
 
+def test_the_jaw_closes_with_the_force_the_world_asks_for() -> None:
+    """AC-EFF-01: the compiled model carries the closing force the world asks for.
+
+    The vendored 2F-85 ships ±5 N·m, which is around a hundred newtons at the
+    pads against objects that weigh ten to twenty grams. Left at that, closing
+    on one presses it 27 mm through the belt surface and rides down with it,
+    which is measured in the world configuration beside the number that
+    replaced it. The limit is applied to the spec by the scene, so this reads
+    it back out of the compiled model rather than out of the file that asked
+    for it.
+    """
+    numpy = pytest.importorskip("numpy")
+    pytest.importorskip("mujoco")
+
+    from clave.world import arm as armmod
+    from clave.world import scene
+
+    raw = load(CONFIG)
+    compiled, _data, _plan = scene.build(raw, numpy.random.default_rng(0), ROOT)
+    index = armmod.locate(compiled).gripper_actuator
+    wanted = float(raw["effector"]["closing_torque_newton_meters"])
+    assert compiled.actuator_forcerange[index][1] == pytest.approx(wanted)
+    assert compiled.actuator_forcerange[index][0] == pytest.approx(-wanted)
+
+
+def test_a_jaw_that_may_not_close_is_refused() -> None:
+    """AC-EFF-01: a closing force of nothing is refused, not silently applied."""
+    numpy = pytest.importorskip("numpy")
+    pytest.importorskip("mujoco")
+
+    from clave.world import scene
+
+    raw = load(CONFIG)
+    raw["effector"]["closing_torque_newton_meters"] = 0.0
+    with pytest.raises(ClaveError, match="closing_torque_newton_meters"):
+        scene.build(raw, numpy.random.default_rng(0), ROOT)
+
+
 def test_the_opening_comes_from_the_arm_rather_than_a_second_number() -> None:
     """The opening comes from the arm rather than a second number.
 

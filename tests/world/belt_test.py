@@ -144,7 +144,15 @@ def test_a_lifted_object_is_not_driven_by_the_belt() -> None:
 
 
 def test_an_unpicked_object_is_not_removed() -> None:
-    """A real line does not stop for a missed pick."""
+    """A real line does not stop for a missed pick.
+
+    The object leaves the belt when the belt carries it off the end, and for
+    no other reason. Counting what is on the belt is not enough to say that:
+    the feed doses by distance, so an object can reach the end and retire in
+    the same window in which nothing new is due, and the count dips for a
+    reason that has nothing to do with the line removing anything. This reads
+    where each object was when it went instead.
+    """
     pytest.importorskip("mujoco")
     import mujoco
 
@@ -160,14 +168,27 @@ def test_an_unpicked_object_is_not_removed() -> None:
         config.require_range(spawn, "drop_height_meters", "spawn"),
         entry_margin=float(spawn["entry_margin_meters"]),
     )
-    for _ in range(10000):
+    seen: dict[str, float] = {}
+    left_from: dict[str, float] = {}
+    end = plan.belt.length / 2.0
+    for _ in range(13000):
         mujoco.mj_step(model, data)
         conveyor.step(model, data)
-    before = len(conveyor.active)
-    for _ in range(3000):
-        mujoco.mj_step(model, data)
-        conveyor.step(model, data)
-    assert len(conveyor.active) >= before
+        riding = {item.index for item in conveyor.active}
+        assert not (riding & set(conveyor._free)), (
+            "a pool slot with an object on the belt was handed back as free"
+        )
+        for item in conveyor.active:
+            body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, item.name)
+            address = model.jnt_qposadr[model.body_jntadr[body]]
+            seen[item.name] = float(data.qpos[address])
+        for gone in set(seen) - {item.name for item in conveyor.active}:
+            left_from[gone] = seen[gone]
+    assert left_from, "no object ever left the belt, so nothing was tested"
+    for name, where in left_from.items():
+        assert abs(where) > end - 0.05, (
+            f"{name} left the belt from x={where:.3f}, in the middle of it"
+        )
 
 
 def test_the_window_covers_both_halves_of_the_belt() -> None:
@@ -217,6 +238,78 @@ def test_the_feed_is_by_distance_rather_than_by_elapsed_time() -> None:
         released[speed] = len(conveyor.arrivals)
     assert released[0.30] >= 6, "too few objects for the ratio to mean anything"
     assert released[0.15] == pytest.approx(released[0.30] / 2, abs=1)
+
+
+def test_a_recycled_slot_is_a_new_identity_ac_gt_06() -> None:
+    """AC-GT-06: a respawned object is a new identity, not the slot it reuses.
+
+    The regression this exists for: ground-truth markers were identified by
+    pool slot, and a slot is reused as soon as the object in it leaves the
+    belt. The task machine remembers which identities it has already served,
+    so on the shipped line it served each of the pool's slots once and then
+    sat idle for the rest of the run -- four visits in sixty seconds, with the
+    remaining forty seconds spent parked while objects went past.
+    """
+    pytest.importorskip("mujoco")
+    import mujoco
+
+    raw = config.load(CONFIG)
+    raw["spawn"]["pool_size"] = 2
+    rng = np.random.default_rng(0)
+    model, data, plan = scene.build(raw, rng, ROOT)
+    conveyor = conveyor_for(raw, rng, plan)
+    conveyor.speed = 0.35
+    seen: dict[int, set[int]] = {}
+    for _ in range(int(40.0 / plan.timestep)):
+        mujoco.mj_step(model, data)
+        conveyor.step(model, data)
+        for item in conveyor.active:
+            seen.setdefault(item.index, set()).add(item.serial)
+    assert len(conveyor.arrivals) > plan.pool_size, "the pool was never spent"
+    reused = {slot: serials for slot, serials in seen.items() if len(serials) > 1}
+    assert reused, "no slot was ever reused, so nothing was tested"
+    for slot, serials in reused.items():
+        assert len(serials) > 1, f"slot {slot} reported one identity twice"
+
+
+def test_an_object_on_the_belt_keeps_turning_ac_rate_11() -> None:
+    """AC-RATE-11: the belt carries an object without pinning its rotation.
+
+    The spin about the belt normal is left to physics and damped rather than
+    pinned, and this exists because both halves were measured. Objects here
+    turn at up to 5.4 radians per second on their way down the belt, which
+    makes a grasp yaw claimed half a second earlier wrong by up to 40 degrees
+    at the instant the jaws close -- and pinning is worse than the problem:
+    with the spin set to zero every tick the contact becomes a reaction that
+    tips the parcel over, and over the same 60 second run the pad-to-belt
+    contact moved from −0.6 mm over 4 ticks to −2.8 mm over 54, the worst
+    vertical lurch from 99 to 934 m/s², and the grasps held from one of seven
+    to none. So the rotation is damped over a configured time constant, and a
+    test that found it *stopped* dead within half a second would be describing
+    the thing that was removed.
+    """
+    pytest.importorskip("mujoco")
+    import mujoco
+
+    raw, rng, model, data, plan = built(0)
+    conveyor = conveyor_for(raw, rng, plan)
+    conveyor.speed = 0.35
+    for _ in range(int(12.0 / plan.timestep)):
+        mujoco.mj_step(model, data)
+        conveyor.step(model, data)
+    assert conveyor.active, "nothing was on the belt to test"
+    item = conveyor.active[0]
+    body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, item.name)
+    dof = model.jnt_dofadr[model.body_jntadr[body]]
+    data.qvel[dof + 5] = 5.0
+    for _ in range(int(0.5 / plan.timestep)):
+        mujoco.mj_step(model, data)
+        conveyor.step(model, data)
+    spin = abs(float(data.qvel[dof + 5]))
+    assert 0.05 < spin < 5.0, (
+        f"the parcel was turning at {spin:.2f} rad/s half a second after 5.0: "
+        f"zero means the belt is pinning it, five means nothing damps it"
+    )
 
 
 def test_a_slot_returns_to_the_pool_once_its_object_leaves() -> None:
