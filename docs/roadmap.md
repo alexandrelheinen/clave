@@ -313,6 +313,49 @@ sixth was found by the branch that closed the first four.
   upstream test in `_recycle`, with the invariant asserted from the test that
   reads it.
 
+- **The prediction across the belt was carried over the whole visit, and that
+  was the largest aiming error in the line.** RESOLVED by `AC-MOVE-46` as
+  amended: an object on a belt is driven *along* it and nothing drives it
+  *across* it, the drift across is a transient whose autocorrelation is +0.04
+  after 0.2 s, and the p90 lateral speed of 0.261 m/s carried over the four
+  seconds a visit commits ahead is **900 mm of aim error**. Measured, two visits
+  in nine aimed at a pose 208 and 346 mm from any object, outside the region the
+  arm is trusted over, with the arm falling 50 to 80 mm behind its own command
+  while the jaws closed on nothing. Bounded to the 0.30 s it lasts for, the aim
+  lands 9 to 33 mm from the object on every visit and the jaw is 20 to 36 mm
+  from the nearest object when it shuts, against 185 and 167 mm. The plan's
+  whole path is now checked against the trusted region as well, sampled along
+  every leg. See
+  [measurements.md](measurements.md#what-the-prediction-was-actually-doing-measured-three-ways).
+
+- **A parcel on this belt turns faster than any grasp can follow, and the belt
+  model is why.** Measured: the turn about the belt normal has an autocorrelation
+  of −0.03 after **0.04 s** -- it is not predictable at the 2 Hz capture rate at
+  all -- and the p90 turn rate is **17.0 rad/s** with a worst of 299 rad/s. A
+  parcel whose centre velocity the belt *imposes as a constraint* while its
+  contact patch is free to spin is not a parcel riding a belt, and the friction
+  between the two winds it up. The control side can only bound what it commands
+  (`AC-MOVE-62`), because predicting a turn that lasts 40 ms from a claim that is
+  500 ms old is arithmetic on noise. Every world-side repair was measured and
+  rejected: pinning the spin tips the parcels over (pad-to-belt contact −0.6 mm
+  over 4 ticks became −2.8 mm over 54, the lurch 99 to 934 m/s², grasps one of
+  seven to none) and damping it leaves them flat under the jaw (−18.6 mm over 17
+  ticks). What it needs is the belt modelled as a *surface moving under the
+  object*, with friction between the two, rather than a velocity imposed on the
+  body's centre. That is a world change that moves every measurement in this
+  document, so it is recorded here for a decision rather than made quietly.
+
+- **The jaw closes near the top of a parcel and shoves it.** With the aim inside
+  30 mm the jaw still holds **one object in seven**. The pads are 37.5 mm tall,
+  their lowest geometry is kept 10 mm above the belt, and the marker places its
+  plane at the object's own mid-height clamped up to that floor: 27.7 mm above
+  the surface at its lowest. A parcel lying 18 mm thick therefore gets about
+  **9 mm of pad overlap**, so closing drives it down and out instead of clamping
+  it and the lift is zero. Raising the plane for every object was tried and made
+  the belt contact worse (the clearance entry above); the repairs that remain are
+  a jaw whose pads reach lower, or a grasp plane allowed lower for flat parcels
+  while the pads still clear the belt.
+
 ## What CLAVE reuses from the family
 
 | Source | What CLAVE takes | Where it lives |
