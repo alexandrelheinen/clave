@@ -100,6 +100,14 @@ class GraspMarker:
             class. Carried here because the arm has to know which chute to
             release over, and the alternative is the task layer resolving a
             taxonomy identifier it has no other reason to hold.
+        velocity_world: How the belt is carrying it, or None when nothing
+            measured it. `AC-MOVE-46` predicts travel and drift with it.
+        yaw_rate_belt: How fast it is turning about the belt normal, in radians
+            per second, or None when nothing measured it. A grasp pose is a yaw
+            claim made once per capture and the jaws close up to half a second
+            later, so a tool sent to the claimed yaw arrives wherever the
+            object has turned to since: the caller turns the tool to where the
+            object *will* be, the same way it aims at where the object will be.
     """
 
     track_id: int
@@ -116,6 +124,7 @@ class GraspMarker:
     color: tuple[float, float, float]
     channel: str = REJECT_CHANNEL
     velocity_world: Point | None = None
+    yaw_rate_belt: float | None = None
 
     def __init__(
         self,
@@ -133,6 +142,7 @@ class GraspMarker:
         color: tuple[float, float, float] = (0.0, 0.0, 0.0),
         channel: str = REJECT_CHANNEL,
         velocity_world: Point | None = None,
+        yaw_rate_belt: float | None = None,
         *,
         grasp: Point | None = None,
         flange: Point | None = None,
@@ -166,6 +176,7 @@ class GraspMarker:
         object.__setattr__(self, "color", color)
         object.__setattr__(self, "channel", channel)
         object.__setattr__(self, "velocity_world", velocity_world)
+        object.__setattr__(self, "yaw_rate_belt", yaw_rate_belt)
 
     @property
     def grasp(self) -> Point:
@@ -377,7 +388,11 @@ def ground_truth_markers(
 
     Returns:
         One marker per active object resting on the belt within the reachable
-        window, in pool slot order.
+        window, in pool slot order. A marker's identity is the object's spawn
+        serial rather than its pool slot, because a slot is reused as soon as
+        the object in it leaves the belt: a consumer that remembered the slot
+        would be remembering a place, and would refuse to serve the second
+        object to occupy it.
     """
     import mujoco
 
@@ -410,6 +425,11 @@ def ground_truth_markers(
 
         geom_id = model.body_geomadr[body]
         geom_type = model.geom_type[geom_id] if geom_id >= 0 else None
+        # The geom's own rotation, which for these bodies is the body's: used
+        # for the mesh extents, for the height a mesh spans, and for the one
+        # projection that turns a body-frame angular velocity into a rate about
+        # the belt normal. One matrix, so the three cannot disagree.
+        rotation = data.geom_xmat[geom_id].reshape(3, 3)
 
         oriented = True
         closing_axis: float | None = yaw
@@ -453,7 +473,7 @@ def ground_truth_markers(
                     opening = dim_y
                     extent = dim_x
                     closing_axis = yaw + math.pi / 2.0
-                R = data.geom_xmat[geom_id].reshape(3, 3)
+                R = rotation
                 world_z = (R[2, :] @ verts.T) + float(data.geom_xpos[geom_id][2])
                 center_z = float((world_z.min() + world_z.max()) / 2.0)
                 pad_z = grasp_plane(surface, effector, center_z)
@@ -480,6 +500,7 @@ def ground_truth_markers(
             )
 
         obj_velocity: Point | None = None
+        yaw_rate: float | None = None
         jnt_id = model.body_jntadr[body] if body < len(model.body_jntadr) else -1
         if jnt_id >= 0 and model.jnt_type[jnt_id] == mujoco.mjtJoint.mjJNT_FREE:
             dof_adr = model.jnt_dofadr[jnt_id]
@@ -487,6 +508,18 @@ def ground_truth_markers(
                 float(data.qvel[dof_adr]),
                 float(data.qvel[dof_adr + 1]),
                 float(data.qvel[dof_adr + 2]),
+            )
+            # A free joint carries its angular velocity in the *body* frame, so
+            # the rate about the belt normal is that vector projected onto the
+            # world's vertical axis. Read off the compiled model rather than
+            # assumed: a body tilted 30 degrees about y with 1.0 rad/s in its
+            # own z turned at 0.87 rad/s about the world's, which is the
+            # projection and not the component.
+            spin = data.qvel[dof_adr + 3 : dof_adr + 6]
+            yaw_rate = float(
+                rotation[2, 0] * float(spin[0])
+                + rotation[2, 1] * float(spin[1])
+                + rotation[2, 2] * float(spin[2])
             )
         elif hasattr(data, "cvel") and data.cvel is not None and len(data.cvel) > body:
             obj_velocity = (
@@ -509,7 +542,7 @@ def ground_truth_markers(
 
         markers.append(
             GraspMarker(
-                track_id=item.index,
+                track_id=item.serial,
                 valid_until_nanos=expires,
                 pinch_position_belt=(x, y, pad_z),
                 flange_position_world=(x, y, flange_z),
@@ -525,8 +558,9 @@ def ground_truth_markers(
                 reachable=opening <= effector.opening,
                 channel=item.channel,
                 extent=extent,
-                color=color_for(item.index),
+                color=color_for(item.serial),
                 velocity_world=obj_velocity,
+                yaw_rate_belt=yaw_rate,
             )
         )
 

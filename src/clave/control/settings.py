@@ -123,6 +123,10 @@ class TaskSettings:
             blue in the unit range.
         safe_clearance: Flange clearance above the belt surface for crossing
             the belt border, in meters. If None, defaults to approach_height.
+        aim_tolerance: How far the freshest estimate of the object's grasp
+            pose may stand from the pose a plan in flight is aiming at before
+            the visit is re-solved, in meters. Past it, a plan that cannot be
+            corrected is abandoned rather than flown.
     """
 
     profile: Profile
@@ -136,6 +140,7 @@ class TaskSettings:
     park_position_world: Point
     park_marker_color: Point
     safe_clearance: float = 0.300
+    aim_tolerance: float = 0.030
 
     def __init__(
         self,
@@ -150,6 +155,7 @@ class TaskSettings:
         park_position_world: Point | None = None,
         park_marker_color: Point = (0.0, 0.0, 0.0),
         safe_clearance: float | None = None,
+        aim_tolerance: float = 0.030,
         *,
         park_position: Point | None = None,
     ) -> None:
@@ -173,6 +179,7 @@ class TaskSettings:
             "safe_clearance",
             safe_clearance if safe_clearance is not None else approach_height,
         )
+        object.__setattr__(self, "aim_tolerance", aim_tolerance)
 
     @property
     def park_position(self) -> Point:
@@ -286,6 +293,7 @@ class ControlSettings:
                     if "safe_clearance_meters" in task
                     else None
                 ),
+                aim_tolerance=_positive(task, "aim_tolerance_meters", "task"),
             ),
             guidance=GuidanceSettings(
                 max_speed=_positive(

@@ -93,6 +93,11 @@ class Candidate:
         distance_before_leaving: How much belt the object has left, in meters.
         channel: Where it routes to, so the visit knows which chute to
             release over without resolving a taxonomy identifier itself.
+        velocity_world: How the belt is carrying it, so the visit can aim at
+            where the object will be rather than where it was.
+        yaw_rate_belt: How fast it is turning about the belt normal, in radians
+            per second, so the visit can turn the tool to where the object will
+            be facing rather than where it was facing.
     """
 
     track_id: int
@@ -102,6 +107,7 @@ class Candidate:
     distance_before_leaving: float
     channel: str = ""
     velocity_world: Point | None = None
+    yaw_rate_belt: float | None = None
 
     def __init__(
         self,
@@ -112,6 +118,7 @@ class Candidate:
         distance_before_leaving: float = 0.0,
         channel: str = "",
         velocity_world: Point | None = None,
+        yaw_rate_belt: float | None = None,
         *,
         anchor: Point | None = None,
         flange: Point | None = None,
@@ -132,6 +139,7 @@ class Candidate:
         object.__setattr__(self, "distance_before_leaving", distance_before_leaving)
         object.__setattr__(self, "channel", channel)
         object.__setattr__(self, "velocity_world", velocity_world)
+        object.__setattr__(self, "yaw_rate_belt", yaw_rate_belt)
 
     @property
     def anchor(self) -> Point:
@@ -495,4 +503,5 @@ def _candidate(
         distance_before_leaving=max(0.0, seconds * speed),
         channel=marker.channel,
         velocity_world=marker.velocity_world,
+        yaw_rate_belt=marker.yaw_rate_belt,
     )

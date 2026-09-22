@@ -30,6 +30,21 @@ until the descent begins, because the belt model predicts the x axis
 exactly and predicts nothing else, and an object that rolls drifts out from
 under a pose solved three seconds ago.
 
+**A refresh that cannot follow the object is answered, not ignored.** An
+approach arc can only be bent so far, and an object that has fallen behind
+its own prediction -- one dragging on the belt, or one that has stopped
+drifting across it -- cannot be met by an arc already committed further
+downstream. The refinement is refused, and a machine that reacts by flying
+the plan it already had descends onto bare belt while reporting a
+millimetre arrival error against its own commands. So the freshest estimate
+is compared with the pose the plan is aiming at: inside the configured
+tolerance the refusal is noise and the plan flies, past it the visit is
+solved again from the freshest estimate and may well choose a later
+interception, and when no interception exists at all the visit is abandoned
+with its reason recorded. Both cases are in the run's report, which is the
+only way to tell a machine that gave up on an object from one that never
+saw it.
+
 A refusal is the one thing that tears a plan up, because a pose the solver
 will not take is a pose the rest of the sequence was built on.
 """
@@ -51,7 +66,7 @@ from clave.control.settings import (
     Profile,
     TaskSettings,
 )
-from clave.control.trajectory import State
+from clave.control.trajectory import State, where
 from clave.errors import ClaveError
 from clave.world.effector import Effector
 
@@ -63,6 +78,55 @@ NANOS_PER_SECOND = 1_000_000_000
 
 class TaskError(ClaveError):
     """The task machine cannot run this configuration."""
+
+
+@dataclass(frozen=True)
+class Reaim:
+    """What one refresh of a plan in flight found, and what was done about it.
+
+    A visit is planned once and re-aimed every capture, and the interesting
+    case is the one where the re-aim does not land: the freshest estimate says
+    the object will not be where the plan is going. Recorded rather than
+    logged and forgotten, because the figure that separates a run that
+    abandoned a visit it could not serve from one that flew a stale plan onto
+    bare belt is this drift, and no arrival error can show it.
+
+    Attributes:
+        at_seconds: When the refresh ran.
+        track_id: Which track the visit was about.
+        drift: How far the freshest estimate of the grasp pose stood from the
+            pose the plan was aiming at, in meters, or None when the object
+            was no longer among the candidates and there was nothing to
+            measure against.
+        refused: Whether the solver produced no corrected arc for the freshest
+            estimate. An arc on a ceiling is refused rather than bent, so a
+            refusal is the ordinary outcome of an object that has fallen
+            behind its own prediction.
+        action: What the machine did about it: "took" the corrected arc, "held"
+            the plan it had, "solved" the visit again from the freshest
+            estimate, or "abandoned" it and went for something else.
+    """
+
+    at_seconds: float
+    track_id: int
+    drift: float | None
+    refused: bool
+    action: str
+
+
+def _aim_of(plan: Plan) -> Point:
+    """Return the pose a plan descends onto, which is the pose it is aiming at.
+
+    Args:
+        plan: The plan.
+
+    Returns:
+        The end of its descent leg, in world frame meters. Everything after
+        that end is hung off it, so this is where the jaws will close.
+    """
+    return next(
+        leg.segment.end.position for leg in plan.legs if leg.phase is Phase.DESCEND
+    )
 
 
 @dataclass(frozen=True)
@@ -239,6 +303,8 @@ class TaskMachine:
         self._last_yaw: float | None = None
         self._pick_error: float | None = None
         self._missed: list[int] = []
+        self._refreshes: list[Reaim] = []
+        self._abandoned: list[tuple[int, str]] = []
 
     @property
     def belt_surface(self) -> float:
@@ -276,6 +342,40 @@ class TaskMachine:
         problem with the timing and is the normal way a line drops work.
         """
         return tuple(self._missed)
+
+    @property
+    def refreshes(self) -> tuple[Reaim, ...]:
+        """Every re-aim of a plan in flight, in order, with what came of it.
+
+        One entry per capture a visit was flying for, so a run of any length
+        reports a bounded list: the figure a reader wants is the largest drift
+        a plan was allowed to keep, and the actions that were taken instead of
+        keeping it.
+        """
+        return tuple(self._refreshes)
+
+    @property
+    def abandoned(self) -> tuple[tuple[int, str], ...]:
+        """Every visit given up before the descent began, and why.
+
+        Distinct from a miss, which is an interception that was never planned:
+        this is a plan that was flying and that the freshest estimate
+        contradicted. Recorded with its reason because that is the difference
+        between an arm that stopped working and an arm that was told to.
+        """
+        return tuple(self._abandoned)
+
+    @property
+    def worst_aim_drift(self) -> float | None:
+        """The largest aim error a visit in flight was found holding, in meters.
+
+        None when no visit was ever refreshed, which is the honest answer for
+        a run that never planned one.
+        """
+        drifts = [
+            refresh.drift for refresh in self._refreshes if refresh.drift is not None
+        ]
+        return max(drifts) if drifts else None
 
     @property
     def belt_speed(self) -> float:
@@ -359,8 +459,15 @@ class TaskMachine:
             return self._fault(queue, flange_pos, refusal, at_nanos)
 
         if self._plan is not None:
-            self._reaim(queue, at_seconds)
-            return self._held(at_nanos)
+            self._reaim(queue, flange_pos, reference_velocity, at_seconds)
+            if self._plan is not None:
+                return self._held(at_nanos)
+            # The visit was abandoned: the freshest estimate contradicted the
+            # aim, so the plan is gone and the object it was about is recorded
+            # as missed. Carrying on here rather than returning means the arm
+            # reaches for the next candidate on this capture instead of
+            # standing still for one, which on a line that keeps moving is the
+            # difference between one visit lost and two.
 
         head = self._next(queue)
         if head is None:
@@ -497,45 +604,236 @@ class TaskMachine:
             head.flange_position_world[2] + offset[2],
         )
 
-    def _reaim(self, queue: Queue, at_seconds: float) -> None:
-        """Point the plan in flight at a fresher estimate of its object.
+    def _reaim(
+        self,
+        queue: Queue,
+        flange: Point,
+        velocity: Point,
+        at_seconds: float,
+    ) -> None:
+        """Point the plan in flight at a fresher estimate of its object, or give it up.
 
         The arrival time does not move, so everything downstream of this is
         still scheduled against the same instant. What moves is where the
-        approach ends, which is what stops a three second old prediction
-        from deciding where a jaw closes.
+        approach ends, which is what stops a three second old prediction from
+        deciding where a jaw closes -- as long as the approach arc can still be
+        bent onto the fresh estimate.
+
+        It cannot always. An object dragging on the belt, or one that has
+        stopped drifting across it, falls *behind* the prediction the plan was
+        built from, and no arc takes the arm back up the belt to meet it: the
+        refinement is refused, and this used to hold the stale plan and fly it.
+        On the run that prompted this that is what happened, twice, and the arm
+        descended onto bare belt 338 mm and 231 mm from the object the visit
+        was supposedly about.
+
+        So a refusal is answered rather than ignored. Within the configured
+        tolerance the plan is still aimed where the object is and the refusal
+        is noise. Past it the visit is solved again from the freshest estimate,
+        which may well choose a later interception at a slower object's
+        position. And if no interception exists at all, the visit is abandoned
+        with its reason recorded and the object recorded as missed.
 
         Args:
             queue: The order selection produced, for the track being served.
+            flange: Where the flange stands.
+            velocity: How fast the reference is moving, so a re-solved visit
+                begins where the motion already is rather than asking for a
+                step in velocity.
             at_seconds: Simulated time.
         """
         if self._phase is not Phase.TRACK:
             return
         assert self._plan is not None
         assert self._guidance is not None
+        track_id = self._plan.track_id
         head = next(
-            (item for item in queue.order if item.track_id == self._plan.track_id),
+            (item for item in queue.order if item.track_id == track_id),
             None,
         )
         if head is None:
+            # Whatever this visit was about is no longer a candidate: it has
+            # left the window, or the slot it rode in now holds something else.
+            # There is no pose left to aim at, and a plan flying at the last one
+            # it saw is a plan descending onto bare belt.
+            self._abandon(
+                track_id,
+                at_seconds,
+                "the object is no longer a candidate",
+                drift=None,
+                refused=True,
+            )
             return
+        aim = _aim_of(self._plan)
         target = self._grasp_pose(head)
+        drift = math.dist(self._fresh_aim(head, target, at_seconds), aim)
+        refreshed = self._refinement(head, target, at_seconds)
+        if refreshed is not None and self._takes(_aim_of(refreshed)):
+            turned = self._yaw_at_pick(head, refreshed, at_seconds)
+            self._refreshes.append(Reaim(at_seconds, track_id, drift, False, "took"))
+            self._plan = refreshed.with_yaw(
+                target_yaw=turned,
+                initial_yaw=self._last_yaw,
+            )
+            self._plan_yaw = turned
+            return
+        if drift <= self._settings.aim_tolerance:
+            # The freshest estimate is close enough to where the arm is already
+            # going that there is nothing to correct, so the refusal costs
+            # nothing and the visit flies as planned.
+            self._refreshes.append(Reaim(at_seconds, track_id, drift, True, "held"))
+            return
+        solved = self._resolve(head, flange, velocity, at_seconds)
+        if solved is None:
+            self._abandon(
+                track_id,
+                at_seconds,
+                f"no interception from an aim {drift * 1000:.0f} mm out",
+                drift=drift,
+                refused=True,
+            )
+            return
+        self._refreshes.append(Reaim(at_seconds, track_id, drift, True, "solved"))
+        turned = self._yaw_at_pick(head, solved, at_seconds)
+        self._plan = solved.with_yaw(
+            target_yaw=turned,
+            initial_yaw=self._last_yaw,
+        )
+        self._plan_yaw = turned
+        LOGGER.debug(
+            "re-solved pick visit for candidate %d: aim was %.0f mm out, new "
+            "plan is %.3f s",
+            track_id,
+            drift * 1000,
+            solved.duration,
+        )
+
+    def _yaw_at_pick(
+        self, head: Candidate, plan: Plan, at_seconds: float
+    ) -> float | None:
+        """Return the tool yaw to command for a grasp the plan will make later.
+
+        The marker's closing yaw is a claim made when the capture was settled,
+        and the jaws close when the plan says they will -- up to half a second
+        later, and longer when the visit was solved further ahead. An object on
+        this belt turns while that time passes, so commanding the claimed yaw
+        sends the tool to where the object was facing rather than where it will
+        be facing. Measured over nine grabs: up to 5.4 radians per second, which
+        is 155 degrees of staleness the tool arrived carrying, and 22 to 40
+        degrees of error against the object's own axis at the instant the jaws
+        shut.
+
+        So the yaw is carried forward the same way the position is, with the one
+        number that differs: this is a sum and not a scalar, so it wraps.
+
+        Args:
+            head: The candidate being served.
+            plan: The plan whose arrival time fixes the instant.
+            at_seconds: Simulated time.
+
+        Returns:
+            The yaw to command, in radians, or None when the marker claimed no
+            axis to turn the tool to.
+        """
+        if head.closing_yaw_belt is None:
+            return None
+        if head.yaw_rate_belt is None:
+            return head.closing_yaw_belt
+        # A prediction is only worth making while it is a prediction. A spin of
+        # 5.4 radians per second carried over a four second plan is twenty
+        # radians, which is not an estimate of where the object will be facing
+        # but a number drawn from a direction that has wrapped many times, and
+        # commanding it swings the wrist across the belt: measured, the run that
+        # did that without a bound put the jaw 106.6 mm inside the belt over 67
+        # ticks. A jaw is symmetric about 90 degrees, so 45 is the furthest a
+        # turn can be worth taking: past it the claim is no better than the
+        # guess, and the claim is what a caller who has no rate at all gets.
+        turn = head.yaw_rate_belt * (plan.pick_at - at_seconds)
+        if abs(turn) > math.pi / 4.0:
+            return head.closing_yaw_belt
+        return (head.closing_yaw_belt + turn + math.pi) % (2.0 * math.pi) - math.pi
+
+    def _object_velocity(self, head: Candidate) -> Point:
+        """Return how the belt is carrying this candidate, with no vertical guess.
+
+        One place, because three callers predict the object forward with it --
+        the initial solve, the re-solve and the fresh aim the drift is measured
+        against -- and a second copy of this clamp is how they come to disagree
+        about which object they are aiming at.
+
+        Args:
+            head: The candidate.
+
+        Returns:
+            Its velocity in world frame, with travel up the belt floored at
+            zero: a jaw cannot be aimed at an object that is behind where the
+            plan already committed to meet it.
+        """
+        obj_vel = (
+            head.velocity_world
+            if head.velocity_world is not None
+            else (self._belt_speed, 0.0, 0.0)
+        )
+        return (max(0.0, obj_vel[0]), obj_vel[1], obj_vel[2])
+
+    def _fresh_aim(self, head: Candidate, target: Point, at_seconds: float) -> Point:
+        """Return where the freshest estimate puts the object at the pick instant.
+
+        The same model the arcs are solved against, evaluated from this
+        capture's estimate instead of the one the plan was committed on, at the
+        arrival time the plan already fixed. The distance between this and what
+        the plan is actually aiming at is the whole question a re-aim answers,
+        and the reason a refused refinement must not be ignored: an object
+        dragging on the belt moves this number by hundreds of millimetres while
+        the plan's own arrival error stays at two.
+
+        Args:
+            head: The candidate being served.
+            target: The fresh grasp pose, in world frame meters.
+            at_seconds: Simulated time.
+
+        Returns:
+            The pose the jaws would meet the object at, in world frame meters.
+        """
+        assert self._plan is not None
+        return where(
+            target,
+            self._object_velocity(head),
+            self._plan.pick_at - at_seconds,
+            0.0,
+        )
+
+    def _refinement(
+        self, head: Candidate, target: Point, at_seconds: float
+    ) -> Plan | None:
+        """Return the plan in flight rebuilt around a fresh aim, or None.
+
+        The same call [clave.control.pick.refine] has always been given, split
+        out so the caller can tell a refinement that came back from one that
+        did not. None is the ordinary answer for an object that has fallen
+        behind the plan, and the caller has to know which it got.
+
+        Args:
+            head: The candidate being served.
+            target: The fresh grasp pose, in world frame meters.
+            at_seconds: Simulated time.
+
+        Returns:
+            The re-aimed plan, or None when there is nothing left to re-aim or
+            the re-aimed arc breaks a ceiling.
+        """
+        assert self._plan is not None
+        assert self._guidance is not None
         transit_height_world = self._safe_height_world
         retreat_lift = max(
             self._settings.grasp_clearance, transit_height_world - target[2]
         )
         chute = self._chutes.get(head.channel)
         over = (chute[0], chute[1], transit_height_world) if chute is not None else None
-        obj_vel = (
-            head.velocity_world
-            if head.velocity_world is not None
-            else (self._belt_speed, 0.0, 0.0)
-        )
-        clamped_vel = (max(0.0, obj_vel[0]), obj_vel[1], obj_vel[2])
-        refreshed = refine(
+        return refine(
             plan=self._plan,
             object_position=target,
-            belt_velocity=clamped_vel,
+            belt_velocity=self._object_velocity(head),
             z_offset=self._settings.grasp_clearance,
             approach_speed=self._settings.approach_speed,
             dwell_seconds=self._settings.dwell_seconds,
@@ -548,24 +846,45 @@ class TaskMachine:
             safe_height_world=transit_height_world,
             cross_speed=self._settings.approach_speed,
         )
-        initial_yaw: float | None = (
-            self._last_yaw if self._last_yaw is not None else head.closing_yaw_belt
+
+    def _abandon(
+        self,
+        track_id: int,
+        at_seconds: float,
+        reason: str,
+        drift: float | None,
+        refused: bool,
+    ) -> None:
+        """Give up a visit whose aim the freshest estimate has contradicted.
+
+        The plan is discarded rather than flown, because the one thing known
+        about it is that it arrives where the object is not. The arm is left
+        where it is with the jaw open -- a caller stops being handed a flight
+        and holds position -- and the object is recorded as missed, so the next
+        capture reaches for something else instead of re-planning the same
+        hopeless visit forever.
+
+        Args:
+            track_id: The track the visit was about.
+            at_seconds: When it was given up.
+            reason: Why, in words, for the report.
+            drift: How far out the aim was, or None when there was nothing left
+                to measure it against.
+            refused: Whether the solver had refused a correction.
+        """
+        LOGGER.warning(
+            "abandoned pick visit for candidate %d at %.3f s: %s",
+            track_id,
+            at_seconds,
+            reason,
         )
-        if head.closing_yaw_belt is not None:
-            self._plan_yaw = head.closing_yaw_belt
-            self._plan = self._plan.with_yaw(
-                target_yaw=head.closing_yaw_belt,
-                initial_yaw=initial_yaw,
-            )
-        if refreshed is not None:
-            descent_leg = next(
-                leg for leg in refreshed.legs if leg.phase is Phase.DESCEND
-            )
-            if self._takes(descent_leg.segment.end.position):
-                self._plan = refreshed.with_yaw(
-                    target_yaw=head.closing_yaw_belt,
-                    initial_yaw=initial_yaw,
-                )
+        self._refreshes.append(Reaim(at_seconds, track_id, drift, refused, "abandoned"))
+        self._abandoned.append((track_id, reason))
+        if track_id not in self._missed:
+            self._missed.append(track_id)
+        self._plan, self._plan_yaw, self._pick_error = None, None, None
+        self._serving, self._arrived_at = None, None
+        self._phase = Phase.STANDBY
 
     def _commit(
         self,
@@ -606,6 +925,65 @@ class TaskMachine:
             # candidate is not recorded as missed: nothing is wrong with it.
             self._serving = None
             return self._rest(flange, at_nanos)
+        plan = self._resolve(head, flange, velocity, at_seconds)
+        if plan is None:
+            self._missed.append(head.track_id)
+            self._serving = None
+            return self._rest(flange, at_nanos)
+        target_yaw = self._yaw_at_pick(head, plan, at_seconds)
+        initial_yaw = self._last_yaw if self._last_yaw is not None else target_yaw
+        self._plan = plan.with_yaw(target_yaw=target_yaw, initial_yaw=initial_yaw)
+        self._plan_yaw = target_yaw
+        self._serving = head.track_id
+        self._pick_error = None
+        self._phase = Phase.TRACK
+        LOGGER.debug(
+            "committed pick plan for candidate %d: duration=%.3f s, legs=%d, chute=%s",
+            head.track_id,
+            plan.duration,
+            len(plan.legs),
+            head.channel,
+        )
+        return Goal(
+            phase=Phase.TRACK,
+            rides_belt=True,
+            target_position_world=plan.legs[0].segment.end.position,
+            target_yaw_world=target_yaw,
+            track_id=head.track_id,
+            observed_at_nanos=at_nanos,
+        )
+
+    def _resolve(
+        self,
+        head: Candidate,
+        flange: Point,
+        velocity: Point,
+        at_seconds: float,
+    ) -> Plan | None:
+        """Solve one whole visit for a candidate, or report that none exists.
+
+        Split out of the commit path because a visit is solved more than once:
+        first when the arm commits to a candidate, and again when the freshest
+        estimate says the object has moved off the pose that first solve was
+        aiming at by more than the tolerance. Both callers want the same answer
+        from the same numbers, and a second copy of this search would be a
+        second place for the never-fly-a-stale-plan rule to be forgotten.
+
+        Args:
+            head: The candidate to serve.
+            flange: Where the flange stands, which is where the first arc of
+                the plan begins.
+            velocity: How fast the reference is moving.
+            at_seconds: Simulated time the plan starts.
+
+        Returns:
+            The whole visit, or None when no interception inside what the
+            object has left on the belt respects both ceilings, or when every
+            one that does asks for a pose the jaw may not take. None is the
+            honest answer for an object the arm cannot reach in the belt it has
+            left.
+        """
+        assert self._guidance is not None
         target = self._grasp_pose(head)
         transit_height_world = self._safe_height_world
         retreat_lift = max(
@@ -615,13 +993,8 @@ class TaskMachine:
         over = (chute[0], chute[1], transit_height_world) if chute is not None else None
         # An interception is worth planning only inside what the object has
         # left on the belt, whichever of the two limits binds first.
-        obj_vel = (
-            head.velocity_world
-            if head.velocity_world is not None
-            else (self._belt_speed, 0.0, 0.0)
-        )
-        speed_x = max(0.01, obj_vel[0])
-        clamped_vel = (max(0.0, obj_vel[0]), obj_vel[1], obj_vel[2])
+        clamped_vel = self._object_velocity(head)
+        speed_x = max(0.01, clamped_vel[0])
         leaving = head.distance_before_leaving / speed_x
         # The margin buys room to re-aim and it buys it by intercepting
         # further downstream, which can put the pick past the edge of the
@@ -661,8 +1034,6 @@ class TaskMachine:
                 if descent_leg.segment.end.position[2] < self._grasp_floor_world:
                     jaw_in_the_belt = descent_leg.segment.end.position[2]
         if plan is None:
-            self._missed.append(head.track_id)
-            self._serving = None
             if jaw_in_the_belt is not None:
                 LOGGER.debug(
                     "pick planning refused candidate %d: its grasp pose leaves "
@@ -680,29 +1051,7 @@ class TaskMachine:
                     head.track_id,
                     leaving,
                 )
-            return self._rest(flange, at_nanos)
-        target_yaw = head.closing_yaw_belt
-        initial_yaw = self._last_yaw if self._last_yaw is not None else target_yaw
-        self._plan = plan.with_yaw(target_yaw=target_yaw, initial_yaw=initial_yaw)
-        self._plan_yaw = target_yaw
-        self._serving = head.track_id
-        self._pick_error = None
-        self._phase = Phase.TRACK
-        LOGGER.debug(
-            "committed pick plan for candidate %d: duration=%.3f s, legs=%d, chute=%s",
-            head.track_id,
-            plan.duration,
-            len(plan.legs),
-            head.channel,
-        )
-        return Goal(
-            phase=Phase.TRACK,
-            rides_belt=True,
-            target_position_world=plan.legs[0].segment.end.position,
-            target_yaw_world=head.closing_yaw_belt,
-            track_id=head.track_id,
-            observed_at_nanos=at_nanos,
-        )
+        return plan
 
     def _held(self, at_nanos: int) -> Goal:
         """Report the visit already in flight, without re-deciding it.
