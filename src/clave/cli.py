@@ -870,7 +870,7 @@ def _debug_tracker(root: Path, args: Any) -> int:
     Returns:
         Zero when the run completed.
     """
-    from clave.tracker.debug_run import GRASPED_METERS, run
+    from clave.tracker.debug_run import report_lines, run
 
     LOGGER.debug(
         "sim parameters: seconds=%.3f (use sim --seconds to override), seed=%d, "
@@ -907,71 +907,8 @@ def _debug_tracker(root: Path, args: Any) -> int:
         ground_truth_tracker=args.ground_truth_tracker,
         belt_speed=args.belt_speed,
     )
-    if report.ground_truth:
-        _log_output("  targets         ground truth (MuJoCo physics)")
-    _log_output(f"  captures        {report.captures}")
-    _log_output(f"  tracks open     {report.tracks}")
-    _log_output(f"  markers on last {report.drawn}, as {report.geoms} geoms")
-    rebuilt = ", ".join(f"{why} {count}" for why, count in report.reorders.items())
-    _log_output(f"  queue rebuilt   {rebuilt}, of {report.captures} captures")
-    _log_output(
-        f"  head swapped    {report.head_churn} times with the old head still there"
-    )
-    _log_output(f"  profile         {report.profile}")
-    _log_output(
-        f"  feed rate       {report.measured_rate:.3f} of "
-        f"{report.feed_rate:.3f} objects/s, belt at {report.belt_speed:.3f} m/s"
-    )
-    _log_output(f"  visits served   {len(report.served)} {list(report.served)}")
-    if report.missed:
-        _log_output(f"  no interception {len(report.missed)} {list(report.missed)}")
-    if report.arrivals:
-        # Median rather than mean, and the count of outliers beside it. The
-        # mean lied: sixteen visits at 2 to 4 mm and one at 688 mm reads as
-        # "43 mm", which describes no visit that happened.
-        ranked = sorted(report.arrivals)
-        middle = ranked[len(ranked) // 2] * 1000
-        stray = sum(1 for gap in ranked if gap > 0.050)
-        _log_output(
-            f"  arrival error   median {middle:.1f} mm, worst "
-            f"{ranked[-1] * 1000:.1f} mm, {stray} over 50 mm"
-        )
-    if report.jaw_gaps:
-        each = ", ".join(f"{gap * 1000:.0f}" for gap in report.jaw_gaps)
-        _log_output(f"  jaw to object   {each} mm when the jaw shut")
-    if report.placed or report.misrouted:
-        total = sum(report.placed.values())
-        each = ", ".join(f"{c}: {n}" for c, n in sorted(report.placed.items()))
-        _log_output(f"  placed          {total} down a chute ({each})")
-        _log_output(f"  misrouted       {report.misrouted} of {total}")
-    if report.lifts:
-        held = sum(1 for lift in report.lifts if lift >= GRASPED_METERS)
-        each = ", ".join(f"{lift * 1000:.0f}" for lift in report.lifts)
-        _log_output(f"  grasps held     {held} of {len(report.lifts)}, lifts {each} mm")
-    _log_output(f"  faults          {len(report.faults)}")
-    for track_id, why in report.faults:
-        _log_output(f"    track {track_id}: {why}")
-    _log_output(f"  ended in        {report.phase}")
-    if report.closest_approach is not None:
-        _log_output(f"  to commanded    {report.closest_approach * 1000:.0f} mm")
-    if report.closest_live is not None:
-        _log_output(f"  to the object   {report.closest_live * 1000:.0f} mm")
-    if report.min_jaw_clearance is not None:
-        _log_output(
-            f"  jaw clearance   {report.min_jaw_clearance * 1000:.1f} mm above the "
-            f"belt, {report.belt_contacts} ticks in contact"
-        )
-    if report.worst_tool_tilt_degrees is not None:
-        _log_output(
-            f"  tool tilt       {report.worst_tool_tilt_degrees:.1f} deg off the "
-            f"belt normal at worst"
-        )
-    _log_output(f"  frames written  {report.frames_written} to {report.output}")
-    if report.video_path is not None:
-        _log_output(f"  video           {report.video_path}")
-    if report.telemetry_path is not None:
-        _log_output(f"  telemetry       {report.telemetry_path}")
-    _log_output(f"  metadata        {report.metadata_path}")
+    for line in report_lines(report):
+        _log_output(line)
     if report.windowed:
         _log_output("  window          shown live")
     else:

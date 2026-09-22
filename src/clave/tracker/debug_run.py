@@ -188,6 +188,29 @@ class DebugRunReport:
             belt.
         worst_tool_tilt_degrees: The largest departure of the tool's axis from
             the belt normal, in degrees.
+        abandoned: Visits given up before the descent began, with the reason
+            each was given up. Distinct from `missed`: an abandoned visit is a
+            plan that was flying and that the freshest estimate contradicted,
+            and this is the only figure that tells that apart from an arm that
+            never saw the object.
+        worst_aim_drift: The largest distance a plan in flight was found
+            aiming away from where the freshest estimate put the object, in
+            meters, or None when no visit was ever re-aimed. This is the figure
+            that catches a plan about to descend onto bare belt, and no arrival
+            error can show it: the arm meets a stale pose perfectly.
+        grasp_yaw_errors: How far the commanded tool yaw stood from the object
+            body's own yaw when the jaw shut, in degrees, folded into the 90
+            degrees a jaw is symmetric about, one per grab that had an object
+            under it. Empty unless the run was driven from ground truth,
+            because a tracker estimate has no body to compare against.
+        lurches: How fast the flange's vertical acceleration peaked over each
+            planned visit, in meters per second squared, one per visit. The
+            figure behind "the arm jumps when it lifts": a grasp that slips
+            unloads the arm mid-lift and that is an acceleration, not a pose.
+        climbs: The fastest the flange rose during each planned visit, in
+            meters per second, one per visit.
+        report_path: Where this report was written beside the run's other
+            artifacts, so the figures survive the terminal that printed them.
         windowed: Whether a live window was opened.
         reason: Why no window was opened, when none was.
     """
@@ -221,7 +244,13 @@ class DebugRunReport:
     min_jaw_clearance: float | None
     belt_contacts: int
     worst_tool_tilt_degrees: float | None
-    windowed: bool
+    abandoned: tuple[tuple[int, str], ...] = ()
+    worst_aim_drift: float | None = None
+    grasp_yaw_errors: tuple[float, ...] = ()
+    lurches: tuple[float, ...] = ()
+    climbs: tuple[float, ...] = ()
+    report_path: Path | None = None
+    windowed: bool = False
     reason: str | None = None
     ground_truth: bool = False
 
@@ -688,6 +717,20 @@ def run(
                     "fusion": fusion_path,
                     "packaging": packaging_path,
                 },
+                {
+                    "seconds": seconds,
+                    "seed": seed,
+                    "capture_interval_seconds": capture_interval,
+                    "render": list(render),
+                    "view": view_name or str(debug.get("default_view", "")),
+                    "video": video,
+                    "fps": fps,
+                    "telemetry_rate": telemetry_rate,
+                    "trajectory_seconds": trajectory_seconds,
+                    "ground_truth_tracker": use_ground_truth,
+                    "belt_speed_override": belt_speed,
+                    "window": window,
+                },
             ),
             indent=2,
             sort_keys=True,
@@ -771,6 +814,18 @@ def run(
     # object was resting when the plan was made. A flight can be perfect and
     # this still read zero, which is the whole point of measuring it apart.
     lifts: list[float] = []
+    # The arm's own vertical motion, integrated at the physics rate rather than
+    # sampled at the capture rate: a grasp that slips unloads the arm mid-lift
+    # and that is an acceleration lasting ticks, where every pose the plan asks
+    # for is smooth. Peaks are per visit, so a run reports a figure per visit.
+    lurches: list[float] = []
+    climbs: list[float] = []
+    lurch, climb = 0.0, 0.0
+    last_flange_z = _flange(indices, data)[2]
+    last_rise = 0.0
+    # And how the tool was turned against the object it closed on, which only a
+    # ground-truth run can measure.
+    yaw_errors: list[float] = []
     counted = 0
     # And how near the jaw came to any object at all when it shut, which is
     # the figure that separates a flight that missed from a grasp that let go.
@@ -874,6 +929,11 @@ def run(
             place = _flange(indices, data)
             was_flying = task.flying
             flown = task.flight(data.time, place)
+            rise = (place[2] - last_flange_z) / plan.timestep
+            if flown is not None or was_flying:
+                lurch = max(lurch, abs(rise - last_rise) / plan.timestep)
+                climb = max(climb, rise)
+            last_flange_z, last_rise = place[2], rise
             command = None
             if flown is not None:
                 telemetry_phase = flown.phase
@@ -893,6 +953,16 @@ def run(
                         mujoco, model, data, conveyor, _pinch(indices, data)
                     )
                     gaps.append(float("inf") if nearest is None else nearest[1])
+                    # And how the jaw is turned against the object it closed
+                    # on, which is ground truth and only available from it: a
+                    # tracker estimate has no body to measure against. Folded
+                    # into the 90 degrees a jaw is symmetric about, because
+                    # closing along an object's other axis is the same grasp.
+                    if use_ground_truth and command.yaw is not None and nearest:
+                        body = _body_yaw(mujoco, model, data, nearest[0])
+                        if body is not None:
+                            turned = math.degrees(command.yaw) - body
+                            yaw_errors.append(abs((turned + 45.0) % 90.0 - 45.0))
                 # Guidance resumes from where the plan left the reference, so
                 # the park move after a visit does not start by jumping back
                 # to wherever the reference had been before the plan.
@@ -911,6 +981,9 @@ def run(
                     else _object_place(mujoco, model, data, nearest[0])[2]
                     - resting[nearest[0]]
                 )
+                lurches.append(lurch)
+                climbs.append(climb)
+                lurch, climb = 0.0, 0.0
                 resting = {}
                 goal = None
                 moving = (0.0, 0.0, 0.0)
@@ -1245,7 +1318,7 @@ def run(
         if opened:
             cv2.destroyAllWindows()
 
-    return DebugRunReport(
+    report = DebugRunReport(
         captures=captures,
         tracks=len(tracker.settle(at_nanos=int(data.time * NANOS_PER_SECOND))),
         reorders=reorders,
@@ -1255,6 +1328,11 @@ def run(
         arrivals=task.arrivals,
         lifts=tuple(lifts),
         jaw_gaps=tuple(gaps),
+        abandoned=task.abandoned,
+        worst_aim_drift=task.worst_aim_drift,
+        grasp_yaw_errors=tuple(yaw_errors),
+        lurches=tuple(lurches),
+        climbs=tuple(climbs),
         placed=dict(placed),
         misrouted=misrouted,
         feed_rate=feeding.settings.rate,
@@ -1279,6 +1357,154 @@ def run(
         worst_tool_tilt_degrees=tilt,
         metadata_path=metadata_path,
     )
+    written_report = out / "report.json"
+    written_report.write_text(
+        json.dumps(_report_document(report), indent=2, sort_keys=True) + "\n"
+    )
+    (out / "report.txt").write_text("\n".join(report_lines(report)) + "\n")
+    LOGGER.info("run report written: %s and %s", written_report, out / "report.txt")
+    return replace(report, report_path=written_report)
+
+
+def _report_document(report: DebugRunReport) -> dict[str, Any]:
+    """Return a report as JSON a reader can diff against another run's.
+
+    AC-MOVE-55. The report used to be printed and nothing else, so a run's
+    figures died with the terminal they were printed on: the run this branch
+    was opened for lost its own grasp distances that way, and reconstructing
+    them from telemetry meant inferring which of thirteen objects each visit
+    had been about. Written beside the artifacts instead, in both a machine
+    form and the text a reader already knows how to scan.
+
+    Args:
+        report: The report.
+
+    Returns:
+        Its fields as JSON-compatible values: paths as strings, tuples as
+        lists at any depth, and everything else as it is.
+    """
+    return {name: _plain(getattr(report, name)) for name in report.__dataclass_fields__}
+
+
+def _plain(value: Any) -> Any:
+    """Return one of a report's values as data JSON can carry.
+
+    Args:
+        value: The value.
+
+    Returns:
+        The same value with paths read as strings and every tuple -- at any
+        depth, because a visit given up is a pair inside a tuple -- read as a
+        list.
+    """
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, dict):
+        return {key: _plain(item) for key, item in value.items()}
+    if isinstance(value, tuple | list):
+        return [_plain(item) for item in value]
+    return value
+
+
+def report_lines(report: DebugRunReport) -> tuple[str, ...]:
+    """Return the run's report as the lines it is printed and filed as.
+
+    One formatter for both, because a report that reads one way on a terminal
+    and another way in the file beside it is two reports, and a reader
+    comparing them has no way to tell which one the numbers came from.
+
+    Args:
+        report: The report.
+
+    Returns:
+        The lines, in the order a reader scans them: what the run was, what the
+        line did, and what the arm did about it.
+    """
+    lines: list[str] = []
+    if report.ground_truth:
+        lines.append("  targets         ground truth (MuJoCo physics)")
+    lines.append(f"  captures        {report.captures}")
+    lines.append(f"  tracks open     {report.tracks}")
+    lines.append(f"  markers on last {report.drawn}, as {report.geoms} geoms")
+    rebuilt = ", ".join(f"{why} {count}" for why, count in report.reorders.items())
+    lines.append(f"  queue rebuilt   {rebuilt}, of {report.captures} captures")
+    lines.append(
+        f"  head swapped    {report.head_churn} times with the old head still there"
+    )
+    lines.append(f"  profile         {report.profile}")
+    lines.append(
+        f"  feed rate       {report.measured_rate:.3f} of "
+        f"{report.feed_rate:.3f} objects/s, belt at {report.belt_speed:.3f} m/s"
+    )
+    lines.append(f"  visits served   {len(report.served)} {list(report.served)}")
+    if report.missed:
+        lines.append(f"  no interception {len(report.missed)} {list(report.missed)}")
+    if report.abandoned:
+        each = "; ".join(f"{track}: {why}" for track, why in report.abandoned)
+        lines.append(f"  visits given up {len(report.abandoned)} ({each})")
+    if report.worst_aim_drift is not None:
+        lines.append(
+            f"  aim checked     worst {report.worst_aim_drift * 1000:.0f} mm between "
+            f"the plan and the freshest estimate"
+        )
+    if report.arrivals:
+        # Median rather than mean, and the count of outliers beside it. The
+        # mean lied: sixteen visits at 2 to 4 mm and one at 688 mm reads as
+        # "43 mm", which describes no visit that happened.
+        ranked = sorted(report.arrivals)
+        middle = ranked[len(ranked) // 2] * 1000
+        stray = sum(1 for gap in ranked if gap > 0.050)
+        lines.append(
+            f"  arrival error   median {middle:.1f} mm, worst "
+            f"{ranked[-1] * 1000:.1f} mm, {stray} over 50 mm"
+        )
+    if report.jaw_gaps:
+        each = ", ".join(f"{gap * 1000:.0f}" for gap in report.jaw_gaps)
+        lines.append(f"  jaw to object   {each} mm when the jaw shut")
+    if report.grasp_yaw_errors:
+        each = ", ".join(f"{error:.1f}" for error in report.grasp_yaw_errors)
+        lines.append(f"  tool turned off {each} deg from the object's own axis")
+    if report.placed or report.misrouted:
+        total = sum(report.placed.values())
+        each = ", ".join(f"{c}: {n}" for c, n in sorted(report.placed.items()))
+        lines.append(f"  placed          {total} down a chute ({each})")
+        lines.append(f"  misrouted       {report.misrouted} of {total}")
+    if report.lifts:
+        held = sum(1 for lift in report.lifts if lift >= GRASPED_METERS)
+        each = ", ".join(f"{lift * 1000:.0f}" for lift in report.lifts)
+        lines.append(
+            f"  grasps held     {held} of {len(report.lifts)}, lifts {each} mm"
+        )
+    if report.lurches:
+        each = ", ".join(f"{value:.1f}" for value in report.lurches)
+        lines.append(f"  vertical lurch  {each} m/s2 at worst per visit")
+    lines.append(f"  faults          {len(report.faults)}")
+    for track_id, why in report.faults:
+        lines.append(f"    track {track_id}: {why}")
+    lines.append(f"  ended in        {report.phase}")
+    if report.closest_approach is not None:
+        lines.append(f"  to commanded    {report.closest_approach * 1000:.0f} mm")
+    if report.closest_live is not None:
+        lines.append(f"  to the object   {report.closest_live * 1000:.0f} mm")
+    if report.min_jaw_clearance is not None:
+        lines.append(
+            f"  jaw clearance   {report.min_jaw_clearance * 1000:.1f} mm above the "
+            f"belt, {report.belt_contacts} ticks in contact"
+        )
+    if report.worst_tool_tilt_degrees is not None:
+        lines.append(
+            f"  tool tilt       {report.worst_tool_tilt_degrees:.1f} deg off the "
+            f"belt normal at worst"
+        )
+    lines.append(f"  frames written  {report.frames_written} to {report.output}")
+    if report.video_path is not None:
+        lines.append(f"  video           {report.video_path}")
+    if report.telemetry_path is not None:
+        lines.append(f"  telemetry       {report.telemetry_path}")
+    lines.append(f"  metadata        {report.metadata_path}")
+    if report.report_path is not None:
+        lines.append(f"  report          {report.report_path}")
+    return tuple(lines)
 
 
 def _git(root: Path, *args: str) -> str | None:
@@ -1307,23 +1533,37 @@ def _git(root: Path, *args: str) -> str | None:
     return completed.stdout.strip()
 
 
-def _run_metadata(root: Path, paths: dict[str, Path]) -> dict[str, Any]:
+def _run_metadata(
+    root: Path,
+    paths: dict[str, Path],
+    parameters: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Return what a reader needs to trace this run's numbers to their inputs.
 
-    AC-MOVE-52. A revision alone is not enough: a dirty tree has no revision
-    that describes it, so that is recorded beside it, and a digest per
-    configuration is what lets a number be compared against a tree that has
-    since moved on. This exists because a run's artifacts could not be
+    AC-MOVE-52, extended by AC-MOVE-54. A revision alone is not enough: a dirty
+    tree has no revision that describes it, so that is recorded beside it, and
+    a digest per configuration is what lets a number be compared against a tree
+    that has since moved on. This exists because a run's artifacts could not be
     attributed to a tree, and the phase durations in its telemetry did not
     reproduce from the configuration the tree carried.
+
+    That much still did not make a run reproducible. The seed, the duration and
+    the view are not configuration: they are the command somebody typed, and a
+    run whose seed is not recorded cannot be run again even by whoever wrote
+    it. A reader trying to reproduce a published run hit exactly that: the
+    re-run at seed 0 produced a different world, and there was nothing in the
+    artifacts to say whether the seed or the world was the difference.
 
     Args:
         root: The repository root.
         paths: Where each configuration lives, by name.
+        parameters: What the run was asked for -- the seed, the duration, the
+            view, the flags -- or None for a caller that has none to record.
 
     Returns:
         The record, in the shape the rest of the repository records a run's
-        inputs: a digest per configuration, and where it came from.
+        inputs: a digest per configuration, where it came from, and what the
+        run was asked to do.
     """
     from clave.experiment.run import config_digest
 
@@ -1335,6 +1575,7 @@ def _run_metadata(root: Path, paths: dict[str, Path]) -> dict[str, Any]:
             name: config_digest(config.load(path)) for name, path in paths.items()
         },
         "config_paths": {name: str(path) for name, path in paths.items()},
+        "parameters": dict(parameters or {}),
     }
 
 
@@ -1535,6 +1776,33 @@ def _in_the_jaw(
         if gap < best:
             nearest, best = (item.name, gap), gap
     return nearest
+
+
+def _body_yaw(mujoco: Any, model: Any, data: Any, name: str) -> float | None:
+    """Return an object's own rotation about the belt normal, in degrees.
+
+    Read from the body's quaternion rather than from anything the tracker
+    published, because the question this answers is whether the jaw closed
+    along the object's own short axis -- and a figure computed from the
+    estimate that asked for the pose would agree with itself however the
+    object was lying.
+
+    Args:
+        mujoco: The imported module.
+        model: The compiled model.
+        data: Its state.
+        name: The body's name in the model.
+
+    Returns:
+        The yaw in degrees, or None when the body carries no free joint to
+        read a rotation from.
+    """
+    body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, name)
+    if body < 0:
+        return None
+    quat = data.xquat[body]
+    w, x, y, z = (float(quat[i]) for i in range(4))
+    return math.degrees(math.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z)))
 
 
 def _recorder(view: dict[str, Any], out: Path, fps: int, interval: float) -> Any:
