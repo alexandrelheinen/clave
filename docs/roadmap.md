@@ -179,12 +179,13 @@ test rather than by a comment.
 
 ## Open defects
 
-Five defects, each recorded rather than fixed quietly because each carries a
+Six defects, each recorded rather than fixed quietly because each carries a
 blast radius wider than the line it sits on. The first blocks the grasp at
 v1.4.0 and was found by measuring a pick that flew correctly and held nothing;
 the next two were found by replaying a run's own state through the compiled
 model, which is what turned "the retreat looks wrong" into a measurement; the
-last two were found while reading the code ahead of the tracker work.
+last three were found while reading the code ahead of the tracker work, and the
+sixth was found by the branch that closed the first four.
 
 - **The jaw closes on where an object was estimated to be, and the estimate is
   the limit.** Measured then: against the nearest object a record could
@@ -231,12 +232,22 @@ last two were found while reading the code ahead of the tracker work.
   tool axis **48° off the belt normal while holding**. The control side was
   measuring its own success against the pose it asked for, which the plan had
   already placed under the belt. Closed by `AC-MOVE-46`, `AC-MOVE-47`,
-  `AC-MOVE-50`, `AC-MARK-15`, `AC-MARK-16`, `AC-GRIP-12` and `AC-GRIP-13`. What
-  is left of it after those fixes is one tick of one retreat at −1.4 mm, from
-  the lift breaking the jaw free of the object it has just closed on, recorded
-  in [measurements.md](measurements.md#what-the-jaws-clearance-above-the-belt-was)
-  with its cause and the two candidate repairs. See also
-  [measurements.md](measurements.md#what-the-jaws-clearance-above-the-belt-was).
+  `AC-MOVE-50`, `AC-MARK-15`, `AC-MARK-16`, `AC-GRIP-12` and `AC-GRIP-13`.
+
+  **The residual is not closed and is now measured to its cause.** After those
+  fixes a pad-to-belt contact lasts one tick of one retreat at −1.4 mm, and the
+  run of 2026-09-22 showed where the geometry goes: the jaw closes on a parcel
+  that weighs ten to twenty grams with the ±5 N·m the vendored gripper ships,
+  which is about a hundred newtons at the pads, and the parcel is driven **27 mm
+  below the belt surface** with the tool following it. The closing torque is now
+  a world parameter sized by the jaw's own stroke (`AC-EFF-01`), which takes the
+  crush to 0.9 mm, and the contact that is left is a boundary the belt sets
+  rather than a penetration the pads press through. What would remove it
+  entirely is either an arm whose position loop is stiff enough that a few
+  newtons do not move the tool ten millimetres, or a gripper that stops closing
+  when it feels the object. Both change the machine rather than the branch, and
+  neither is measured here.
+
 
 - **A run's numbers cannot be traced to the tree that produced them.** The debug
   run writes frames, a video and telemetry and no revision and no configuration
@@ -277,6 +288,30 @@ last two were found while reading the code ahead of the tracker work.
   ones. The real repair is that the radius stops being a global constant and
   becomes the track's own propagated footprint plus a gate, which belongs to
   the tracker rather than to a configuration edit.
+
+- **A grasp yaw is claimed half a second before it is used, and the objects on
+  this belt turn faster than that.** Measured at the instant the jaws shut, over
+  nine grabs: up to **5.4 rad/s**, which is 155 degrees over the capture
+  interval, and 22 to 40 degrees of error between the commanded yaw and the
+  object's own axis, with the object walked tens of millimetres sideways from a
+  pose the arm met to two. `AC-MOVE-62` carries the yaw forward while the turn
+  being predicted is inside the 45 degrees a jaw's symmetry leaves useful, and
+  commands the claim beyond it. Three world-side repairs are measured and
+  rejected: pinning the spin tips the parcels over, damping them leaves them
+  flat under the jaw, and predicting the yaw over a four second plan is twenty
+  radians of guess. What is left is the objects turning past the threshold, and
+  they cannot be aligned with by any control-side change: the repairs are a
+  settling zone on the line, or a gripper that does not need an axis. Measured
+  in [measurements.md](measurements.md#what-the-reported-run-turned-out-to-be).
+
+- **RESOLVED for both directions of travel by this branch.** The conveyor freed
+  a pool slot for an object that left the belt downstream or fell below it, and
+  not for one that left it *upstream*: measured, an object 1.5 m upstream of the
+  entrance stayed on the active list for **668 ticks** while its slot went back
+  to the pool and was spawned into, which put two objects in one pool slot and
+  handed the arm a marker for a body 1.5 m behind the belt. Closed by the
+  upstream test in `_recycle`, with the invariant asserted from the test that
+  reads it.
 
 ## What CLAVE reuses from the family
 

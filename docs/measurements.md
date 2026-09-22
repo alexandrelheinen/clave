@@ -769,3 +769,106 @@ which is timing — and the arm served 2 to 3 visits in 24 s against a feed of
 0.125 objects per second. That last pair is the figure to watch, because the arm
 is serving the line's rate with no margin rather than comfortably above it.
 
+## What the reported run turned out to be
+
+`runs/debug/deepseek` was reported with four symptoms: the arm descending onto
+empty belt, the tool not turned to the specified orientation, sudden upward
+movements, and objects left to pass. Everything below is measured on that run
+(`20b2765`, `clave sim --video --no-window --seconds 60 --view belt --gt
+--telemetry`) or on the same command re-run at the head of the branch that
+carries these fixes. **Each figure is one run at seed 0**, and the objects'
+trajectories are chaotic, so the runs are comparable in mechanism and not to
+within a visit; where two changes were compared they were compared on the same
+run.
+
+The first reading of this run did not account for `--gt`. Downstream selection
+and planning consume markers built from MuJoCo bodies rather than the tracker's
+beliefs, so a story built out of `records.txt` described a machine that was not
+steering anything. What made that mistake possible was itself a defect: the run
+printed its report and kept nothing, which is `AC-MOVE-55`.
+
+| Figure | `20b2765` | With the fixes |
+| --- | --- | --- |
+| Visits served in 60 s | 4 | **8** |
+| Time parked | 35.97 s of 60 s | none after the eighth visit |
+| Visits that shut the jaws on empty belt | 2 of 4, at 267 and 246 mm | 2 of 8, at 185 and 167 mm |
+| Visits given up for a stale aim | not measured, not possible | 2, each with its distance recorded |
+| Arrival error against the commanded pose | median 2.8 mm, worst 113.8 mm | median 2.7 mm, worst 163.1 mm |
+| Jaw to the nearest object when it shut | 57, 22, 267, 246 mm | 73, 34, 42, 59, 185, 167, 79, 23, 13 mm |
+| Tool yaw off the object's own axis | 8.8, 7.3, 0.1, 19.1 deg | 6.1, 5.3, 45.0, 29.7, 13.3, 37.8, 1.8, 38.8, 23.4 deg |
+| Worst vertical lurch over a visit | 52.9 m/s², on the one visit that gripped | 150.2 m/s², on a visit that gripped |
+| Smallest jaw clearance above the belt | −1.4 mm, 1 tick in contact | −0.9 mm, 12 ticks in contact |
+| The object pushed below the belt by the closing jaws | 27 mm | 0.9 mm |
+| Tool axis off the belt normal, worst | 32.7 deg | 34.0 deg |
+
+Four mechanisms were found; two of them are closed.
+
+**A marker's identity was a pool slot, so each slot was served once.** The
+ground-truth markers were identified by `item.index`, and the conveyor hands a
+slot back the moment its object leaves the belt, so after one pass over the four
+slots the task machine had served every identity the world could produce: **4
+visits in 60 s and 35.97 s of it parked**, against a feed setpoint of 7.5 visits
+in that time. A marker's identity is now the object's spawn serial, and the arm
+serves 8.
+
+**The plan flew a stale aim when the refinement was refused, which is the
+ordinary outcome for an object that falls behind its own prediction.** No arc
+takes the arm back up the belt, `refine` returns None, and the machine used to
+hold the plan it had and fly it. Measured at the instant the jaws shut: the plan
+was aiming at (−0.422, +0.053) with the nearest object **338 mm upstream** of
+that, and at (+0.319, −0.404) with the nearest object **231 mm across the belt**
+from it, in both cases while reporting an arrival error of 2.0 and 2.4 mm. The
+freshest estimate is now compared with the pose the plan is aiming at: inside
+the tolerance the plan flies, past it the visit is solved again from the
+freshest estimate, and where no interception exists it is abandoned with its
+reason and the object recorded as missed. The visits a later run gave up were
+given up with their distances -- 36 and 148 mm out -- which is the figure no
+arrival error can show.
+
+**The jaw closed with ±5 N·m on parcels that weigh ten to twenty grams.** The
+objects weigh 9 to 20 g, read from the compiled model, and the vendored 2F-85
+ships ±5 N·m: roughly a hundred newtons at the pads. Closing drove the object
+the jaw was holding **27 mm below the belt surface**, took the jaw's own
+collision geometry 1.4 mm inside the belt, tilted the tool 3.7 degrees off the
+belt normal and released a 52.9 m/s² lurch when the parcel escaped. The torque
+is now a world parameter, applied to the vendored spec by the scene and sized by
+the jaw's own stroke against the torque it is allowed: below 0.30 N·m the
+linkage's friction and the tendon's preload hold the fingers and the jaw loses
+part of its 83 mm stroke (0.05 N·m reaches 29 mm of 98, 0.20 reaches 80.5 of
+98.4, 0.30 reaches all of it). The crush is 0.9 mm instead of 27.
+
+**The objects turn on the belt, and a grasp yaw is claimed half a second before
+it is used.** Measured at the instant the jaws shut, over nine grabs: up to
+**5.4 rad/s**, which is 155 degrees over the capture interval, and 22 to 40
+degrees of error between the commanded yaw and the object's own axis. Three
+repairs were tried and every one cost more than it bought:
+
+| Repair | Pad-to-belt contact | Worst vertical lurch | Grasps held |
+| --- | --- | --- | --- |
+| none | −0.6 mm, 4 ticks | 99 m/s² | 1 of 7 |
+| the spin pinned to zero each tick | **−2.8 mm, 54 ticks** | **934 m/s²** | none of 7 |
+| the spin damped, 0.3 s constant | **−18.6 mm, 17 ticks** | 170 m/s² | none of 8 |
+| the yaw predicted over the whole plan | **−106.6 mm, 67 ticks** | 361 m/s² | none of 8 |
+
+Pinning a body's rotation while the belt drags it turns the contact into a
+reaction that tips the parcel over. Damping leaves the parcels flat, presenting
+their narrow edge to a jaw that closes on it and pulls itself down. And 5.4
+rad/s carried over a four second plan is twenty radians, which is not a
+prediction but a direction drawn from a circle that has wrapped several times.
+So the repair that survived is the bounded one: the marker carries the rate, and
+the machine turns the tool to the yaw the object will hold *while the turn being
+predicted is inside the 45 degrees a jaw's symmetry leaves useful*, commanding
+the claim beyond it. What remains is the objects whose turn is past that
+threshold, and no control-side answer exists for them: a parcel spinning that
+fast cannot be aligned with. The honest repairs are a settling zone on the line,
+or a gripper that does not need an axis.
+
+### Why the lurch figure is not better than the run it started from
+
+52.9 m/s² became 150.2, and the comparison is not like for like. The run at
+`20b2765` served four visits, two of which shut the jaws on empty belt and never
+touched anything, so its worst lurch is drawn from the one visit that gripped.
+The run with the fixes served eight, six of them onto an object. What the fixes
+did to the lurch is remove part of its cause: the energy in that spike was the
+squeeze on a ten gram parcel, and the squeeze is seventeen times smaller than it
+was. A run that grips nothing reports a low lurch for the wrong reason.

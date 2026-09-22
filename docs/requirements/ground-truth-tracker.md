@@ -65,6 +65,12 @@ shall plan and execute picks using the ground-truth markers.
 `AC-GT-05`: When `ground_truth_tracker` is enabled, scene visualization markers
 shall display the ground-truth grasp poses passed to the selector.
 
+`AC-GT-06`: A ground-truth marker's identity shall be the spawn serial of the
+object it describes rather than the pool slot that object rides in, because a
+slot is reused as soon as the object in it leaves the belt: a consumer that
+remembers what it has already served would otherwise be remembering a place,
+and would refuse to serve the second object to occupy it.
+
 ## Traceability
 
 Ids begin at `AC-GT-01` and are append-only. Tests guarding these requirements

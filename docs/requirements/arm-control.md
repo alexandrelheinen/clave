@@ -430,6 +430,52 @@ of the configuration it ran under, beside its artifacts.
 collision geometry and the belt surface over the run, and how many ticks had a
 contact between them.
 
+`AC-MOVE-54`: The run shall record, beside the revision and the configuration
+digests, what the run was asked for -- the seed, the simulated duration, the
+capture interval, the view, the flags -- so a run can be repeated from its own
+artifacts rather than from whoever remembers typing it.
+
+`AC-MOVE-55`: The run shall write its report beside its artifacts, in a form a
+machine can diff and in the text a reader already scans, so the figures it
+measured outlive the terminal they were printed on.
+
+`AC-MOVE-56`: When a plan in flight cannot be re-aimed onto the freshest
+estimate of its object and that estimate stands further than the configured
+tolerance from the pose the plan is aiming at, the system shall solve the visit
+again from the freshest estimate; and when no interception exists for it, the
+system shall abandon the visit, record the reason, record the object as missed
+and stop flying the plan, rather than fly a pose the object is not going to be
+at.
+
+`AC-MOVE-57`: When the object a visit is about is no longer among the
+candidates, the system shall abandon the visit and record why, rather than
+descend onto the pose last seen.
+
+`AC-MOVE-58`: The system shall report the largest distance a plan in flight was
+found aiming away from the freshest estimate of its object, and every visit
+given up before its descent with the reason it was given up.
+
+`AC-MOVE-59`: In a run driven from ground truth, the system shall report for
+every grab that had an object under the jaw the angle between the commanded
+tool yaw and that object's own rotation about the belt normal, folded into the
+90 degrees a jaw is symmetric about, because whether the jaw closed along the
+object's own axis is a measurement and not an impression.
+
+`AC-MOVE-60`: The system shall report the largest vertical acceleration the
+flange reached over each planned visit, because a grasp that slips unloads the
+arm mid-lift and every pose the plan asks for is smooth.
+
+`AC-MOVE-61`: The clearance the jaw's lowest geometry keeps above the belt
+shall cover the deflection a load adds when the jaw shuts on an object, over
+the whole visit including the transition out of the hold, rather than only the
+arrival error of the descent onto it.
+
+`AC-MOVE-62`: When an object's rotation about the belt normal is being
+measured, the system shall turn the tool to the yaw that object will hold at
+the instant the jaws close rather than the yaw it held when the claim was
+made, because the claim is made once per capture and the jaws close up to half
+a second later.
+
 ## The guidance formulation
 
 The mathematics has its own document,
