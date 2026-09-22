@@ -14,7 +14,7 @@ import pytest
 
 from clave.control.pick import JAW_OPEN, JAW_SHUT, Plan, plan_pick, refine
 from clave.control.settings import Phase
-from clave.control.trajectory import State, descent_seconds
+from clave.control.trajectory import State
 
 BELT = (0.314, 0.0, 0.0)
 CLEARANCE = 0.050
@@ -118,19 +118,31 @@ def test_the_pick_instant_is_when_the_hold_begins() -> None:
     assert grip == JAW_SHUT
 
 
-def test_the_retreat_lifts_the_clearance_and_ends_at_rest() -> None:
-    """AC-MOVE-40: the retreat lifts the clearance and ends at rest.
+def test_the_retreat_is_the_descent_reversed() -> None:
+    """AC-MOVE-48: the retreat is the descent reversed.
 
-    At rest because the delivery that follows is unconstrained by any
-    interception, so it may as well start from a standstill rather than
-    inherit a velocity it has no reason to carry.
+    Same clearance, and therefore the same duration, entering at the object's
+    own velocity and leaving at that velocity plus the approach speed along the
+    belt normal. A retreat that ends at rest is not a neutral choice: the
+    object's frame carries the belt and the flange does not, so the whole lift
+    slides backwards relative to the object it is holding.
     """
     plan = a_plan()
     assert plan is not None
-    hold, retreat = plan.legs[2].segment, plan.legs[3].segment
-    assert retreat.end.position[2] - hold.end.position[2] == pytest.approx(CLEARANCE)
-    assert retreat.end.velocity == pytest.approx((0.0, 0.0, 0.0))
-    assert retreat.duration == pytest.approx(descent_seconds(CLEARANCE, APPROACH_SPEED))
+    descend = next(leg for leg in plan.legs if leg.phase is Phase.DESCEND).segment
+    retreat = next(leg for leg in plan.legs if leg.phase is Phase.RETREAT).segment
+    assert retreat.duration == pytest.approx(descend.duration)
+    assert retreat.end.position[2] - descend.end.position[2] == pytest.approx(CLEARANCE)
+    assert retreat.start.velocity == pytest.approx(descend.end.velocity)
+    assert retreat.end.velocity == pytest.approx(
+        (BELT[0], BELT[1], BELT[2] + APPROACH_SPEED)
+    )
+    # Vertical in the frame the object lives in: the belt carries the travel
+    # and the belt's normal carries the lift, and nothing else moves.
+    assert retreat.end.position[1] == pytest.approx(retreat.start.position[1])
+    assert retreat.end.position[0] - retreat.start.position[0] == pytest.approx(
+        BELT[0] * retreat.duration
+    )
 
 
 def test_a_vertical_velocity_does_not_move_the_grasp_plane() -> None:
@@ -402,18 +414,49 @@ def test_approach_enters_via_border_with_horizontal_perpendicular_speed() -> Non
     assert entry_leg.segment.end.velocity[2] == pytest.approx(0.0)
 
 
-def test_retreat_lifts_vertically_without_lateral_motion_to_safe_height() -> None:
-    """AC-DROP-06: retreat lifts vertically without lateral velocity to clear rail."""
+def test_the_barrier_is_cleared_by_an_arc_of_its_own() -> None:
+    """AC-MOVE-49 and AC-DROP-06: the barrier is cleared by an arc of its own.
+
+    The retreat leaves the object; the arc after it lifts to the height the
+    delivery crosses the belt's side barrier at. Folding the two together is
+    what made the retreat's shape depend on where the next chute stands.
+    """
     mouth = (0.58, -0.42, 0.90)
     plan = a_plan(over=mouth)
     assert plan is not None
-    retreat_leg = next(leg for leg in plan.legs if leg.phase is Phase.RETREAT)
-    retreat = retreat_leg.segment
-    assert retreat.end.position[2] >= 1.20
+    lifts = [leg.segment for leg in plan.legs if leg.phase is Phase.RETREAT]
+    assert len(lifts) == 2
+    retreat, climb = lifts
+    assert retreat.end.position[2] - retreat.start.position[2] == pytest.approx(
+        CLEARANCE
+    )
+    assert climb.end.position[2] >= 1.20
     for step in range(11):
-        state = retreat.at(retreat.duration * step / 10.0)
-        assert state.position[1] == pytest.approx(retreat.start.position[1])
+        state = climb.at(climb.duration * step / 10.0)
+        assert state.position[1] == pytest.approx(climb.start.position[1])
         assert state.velocity[1] == pytest.approx(0.0)
+
+
+def test_the_retreat_does_not_depend_on_where_the_delivery_goes() -> None:
+    """AC-MOVE-49: the retreat does not depend on where the delivery goes.
+
+    Two visits to the same object with a barrier at two heights fly the same
+    retreat, or the shape of the pick is decided by the belt's furniture.
+    """
+    mouth = (0.58, -0.42, 0.90)
+    low = a_plan(over=mouth, safe_height_world=1.20)
+    high = a_plan(over=mouth, safe_height_world=1.45)
+    assert low is not None and high is not None
+    first = next(leg for leg in low.legs if leg.phase is Phase.RETREAT).segment
+    second = next(leg for leg in high.legs if leg.phase is Phase.RETREAT).segment
+    assert first.duration == pytest.approx(second.duration)
+    assert first.end.velocity == pytest.approx(second.end.velocity)
+    # Its own shape, which is what the barrier must not decide. Where the arm
+    # came from is allowed to differ: a higher entry arc is a different arc.
+    for axis in range(3):
+        assert first.end.position[axis] - first.start.position[axis] == pytest.approx(
+            second.end.position[axis] - second.start.position[axis]
+        )
 
 
 def test_delivery_exits_via_border_with_horizontal_perpendicular_speed() -> None:

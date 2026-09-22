@@ -715,18 +715,9 @@ def _assemble(
         approach_speed,
     )
     holding = _carry(dropping.end, dwell_seconds, belt_velocity_world)
-    if target_position_world is not None:
-        if safe_height_world is not None:
-            safe_height = max(target_position_world[2], safe_height_world)
-        else:
-            safe_height = max(target_position_world[2], reaching.start.position[2])
-        lift = max(
-            approach_clearance_z if retreat_lift is None else retreat_lift,
-            safe_height - holding.end.position[2],
-        )
-    else:
-        lift = approach_clearance_z if retreat_lift is None else retreat_lift
-    rising = _rise(holding.end, lift, approach_speed, belt_velocity_world)
+    rising = _retreat(
+        holding.end, approach_clearance_z, approach_speed, belt_velocity_world
+    )
     legs = []
     if entry_segment is not None:
         legs.append(Leg(Phase.TRACK, entry_segment, JAW_OPEN))
@@ -743,6 +734,15 @@ def _assemble(
             safe_height = max(target_position_world[2], safe_height_world)
         else:
             safe_height = max(target_position_world[2], reaching.start.position[2])
+        reach_up = approach_clearance_z if retreat_lift is None else retreat_lift
+        climbing = _climb(
+            rising.end,
+            max(safe_height, holding.end.position[2] + reach_up),
+            belt_velocity_world,
+            max_speed,
+            max_acceleration,
+        )
+        legs.append(Leg(Phase.RETREAT, climbing, JAW_SHUT))
         border_retreat = State(
             position=(target_position_world[0], belt_border_y, safe_height),
             velocity=(0.0, -cross_v, 0.0),
@@ -754,7 +754,7 @@ def _assemble(
             acceleration=(0.0, 0.0, 0.0),
         )
         seg_to_border = _fit_segment(
-            rising.end, border_retreat, max_speed, max_acceleration, min_duration=0.50
+            climbing.end, border_retreat, max_speed, max_acceleration, min_duration=0.50
         )
         seg_to_chute = _fit_segment(
             border_retreat,
@@ -802,22 +802,32 @@ def _carry(start: State, seconds: float, belt_velocity: Point) -> Segment:
     )
 
 
-def _rise(
+def _retreat(
     start: State, z_offset: float, approach_speed: float, belt_velocity: Point
 ) -> Segment:
-    """Return the arc that lifts the object vertically clear of the belt.
+    """Return the descent read backwards: the arc that leaves the object.
+
+    The descent arrives at the object moving with it, so the retreat leaves the
+    object moving with it and arrives at the clearance still rising at the
+    speed the descent came down at. Sharing the clearance means sharing the
+    duration, and it means the two arcs are one arc read in opposite
+    directions.
+
+    Ending at rest is not a neutral alternative. The object's frame carries the
+    belt and the flange does not, so a retreat that ends at rest slides
+    backwards through the whole lift relative to the object it is holding: on
+    the shipped line that is 0.26 m/s of relative motion for as long as the
+    lift lasts.
 
     Args:
         start: Where the hold ended, moving with the belt.
-        z_offset: How far to lift, in meters.
-        approach_speed: The speed the descent came down at, used again so
-            the retreat takes the same time.
+        z_offset: The clearance the descent came down through, in meters.
+        approach_speed: The speed the descent came down at, which the retreat
+            leaves at.
         belt_velocity: How the belt is moving.
 
     Returns:
-        The arc, lifting vertically in z without lateral motion and ending at
-        rest above the belt so the delivery that follows starts from a
-        standstill.
+        The arc, vertical in the belt's own frame and ending at the clearance.
     """
     seconds = descent_seconds(z_offset, approach_speed)
     return Segment(
@@ -825,11 +835,68 @@ def _rise(
         end=State(
             position=(
                 start.position[0] + belt_velocity[0] * seconds,
-                start.position[1],
+                start.position[1] + belt_velocity[1] * seconds,
                 start.position[2] + z_offset,
             ),
-            velocity=(0.0, 0.0, 0.0),
+            velocity=(
+                belt_velocity[0],
+                belt_velocity[1],
+                belt_velocity[2] + approach_speed,
+            ),
             acceleration=(0.0, 0.0, 0.0),
         ),
         duration=seconds,
     )
+
+
+def _climb(
+    start: State,
+    target_z: float,
+    belt_velocity: Point,
+    max_speed: float,
+    max_acceleration: float,
+) -> Segment:
+    """Return the arc that lifts the object to the height the delivery crosses at.
+
+    An arc of its own rather than part of the retreat, because it exists to
+    clear the belt's side barrier and not to leave the object: folding the two
+    together is what made the retreat's shape depend on where the next chute
+    happens to stand.
+
+    It ends moving with the belt and level, so the crossing that follows starts
+    from a state the belt keeps rather than from whatever vertical speed the
+    lift happened to finish on.
+
+    Args:
+        start: Where the retreat ended, moving with the belt and rising.
+        target_z: The height to climb to, in world frame meters.
+        belt_velocity: How the belt is moving.
+        max_speed: Speed ceiling, in meters per second.
+        max_acceleration: Acceleration ceiling, in meters per second squared.
+
+    Returns:
+        The arc. Its duration is searched upward until it fits both ceilings,
+        because the distance it has to cover grows with the duration: the belt
+        keeps carrying the object while the flange climbs.
+    """
+    ceiling = max(max_speed, 1e-6)
+    span = math.dist(start.position, (start.position[0], start.position[1], target_z))
+    duration = max(PEAK_OVER_MEAN * span / ceiling, MINIMUM_DELIVERY_SECONDS)
+    while duration < 30.0:
+        candidate = Segment(
+            start=start,
+            end=State(
+                position=(
+                    start.position[0] + belt_velocity[0] * duration,
+                    start.position[1] + belt_velocity[1] * duration,
+                    target_z,
+                ),
+                velocity=belt_velocity,
+                acceleration=(0.0, 0.0, 0.0),
+            ),
+            duration=duration,
+        )
+        if candidate.fits(max_speed, max_acceleration):
+            return candidate
+        duration += 0.05
+    return candidate
