@@ -178,10 +178,12 @@ test rather than by a comment.
 
 ## Open defects
 
-Three defects, each recorded rather than fixed quietly because each carries a
+Five defects, each recorded rather than fixed quietly because each carries a
 blast radius wider than the line it sits on. The first blocks the grasp at
 v1.4.0 and was found by measuring a pick that flew correctly and held nothing;
-the other two were found while reading the code ahead of the tracker work.
+the next two were found by replaying a run's own state through the compiled
+model, which is what turned "the retreat looks wrong" into a measurement; the
+last two were found while reading the code ahead of the tracker work.
 
 - **A pose is only trustworthy inside the sensing gate, and the arm works
   outside it.** Measured against the nearest object a record could describe,
@@ -209,6 +211,32 @@ the other two were found while reading the code ahead of the tracker work.
   that lets its observations reach the track they belong to, and the second of
   those is [learned-tracker](requirements/learned-tracker.md) at v1.2.0. See
   [measurements.md](measurements.md#why-the-jaw-still-holds-nothing).
+
+- **The plan asked the jaws to descend below the belt.** The velocity the plan
+  predicts the object with was the object's own measured three-axis velocity,
+  and gravity settles an object on the belt, so the vertical component was
+  extrapolated forward over a two second interception. The median vertical
+  velocity on the belt is 0.027 m/s and the p90 pair with lateral drift is
+  0.11 m/s, which asks for a grasp plane **31 mm to 116 mm below** the object and
+  below every floor the marker and the world enforce; the marker's own clearance
+  is quoted at the pinch point, which in the compiled gripper sits **12.8 mm
+  below the lowest pad collision box**. Replaying a recorded run's state through
+  the compiled model found the jaws at 0.8993 m against a belt surface at
+  0.900 m, 343 of 6001 samples with a pad-to-belt contact, and the tool axis
+  **48° off the belt normal while holding**. The control side was measuring its
+  own success against the pose it asked for, which the plan had already placed
+  under the belt. Closed by `AC-MOVE-46`, `AC-MOVE-47`, `AC-MOVE-50`,
+  `AC-MARK-15`, `AC-MARK-16`, `AC-GRIP-12` and `AC-GRIP-13`. See
+  [measurements.md](measurements.md#what-the-jaws-clearance-above-the-belt-was).
+
+- **A run's numbers cannot be traced to the tree that produced them.** The debug
+  run writes frames, a video and telemetry and no revision and no configuration
+  digest, and the artifacts from 2026-09-21 do not reproduce: the plan's
+  `DESCEND` leg is 0.40 s from the configuration and from a plan rebuilt at the
+  run's own recorded state, while the telemetry's `DESCEND` column spans 0.79 s
+  in every visit. Every number in the measurement above that is a property of the
+  state the run reached survives that, and the figures that are properties of the
+  control path do not. Closed by `AC-MOVE-51`, `AC-MOVE-52` and `AC-MOVE-53`.
 
 - **RESOLVED by narrowing the belt to 0.50 m.** The sensing gate does not
   cover the belt it stands over. Measured by

@@ -396,6 +396,40 @@ the plan built on it rather than fly the rest of the sequence.
 modular pickability rules, rejecting any marker whose grasp point lies
 outside the conveyor footprint before it enters the pick queue.
 
+`AC-MOVE-46`: The system shall predict an object's travel along the belt and
+its drift across the belt, and shall not predict its height, because the belt
+drives one axis and gravity settles the object on the other two.
+
+`AC-MOVE-47`: The system shall plan a grasp pose for the height the marker
+asks for, whatever vertical component the object's estimated velocity carries,
+because an object settling on the belt carries one and a plan that follows it
+descends below the belt.
+
+`AC-MOVE-48`: The system shall plan the retreat as the descent reversed: the
+same clearance, the same duration derived from the same approach speed, and a
+terminal velocity of the object's own motion plus the approach speed along the
+belt normal, because a retreat that ends at rest slides backwards through the
+whole lift in the frame the object lives in.
+
+`AC-MOVE-49`: When a visit has to clear the belt side barrier, the system
+shall reach the barrier in an arc of its own, so the retreat's shape does not
+depend on where the delivery goes.
+
+`AC-MOVE-50`: The system shall refuse a grasp pose whose lowest gripper
+collision geometry would sit closer to the belt surface than the configured
+clearance, and shall record the refusal as it records any other refusal.
+
+`AC-MOVE-51`: The system shall report the largest departure of the tool axis
+from the belt normal over a visit, so a tilt that breaks the jaw's orientation
+is a number rather than an impression.
+
+`AC-MOVE-52`: The debug run shall record the revision it ran at and the digests
+of the configuration it ran under, beside its artifacts.
+
+`AC-MOVE-53`: The run shall report the smallest distance between any gripper
+collision geometry and the belt surface over the run, and how many ticks had a
+contact between them.
+
 ## The guidance formulation
 
 The mathematics has its own document,

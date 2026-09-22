@@ -130,6 +130,15 @@ normally runs are faster.
 `AC-GRIP-11`: The system shall record the vendored model's provenance and
 licence beside it, as the arm's is recorded.
 
+`AC-GRIP-12`: The system shall read every pad dimension and the jaw's lowest
+collision geometry out of the compiled effector, and a configuration that
+disagrees with the model by more than a millimetre shall fail a test that reads
+both.
+
+`AC-GRIP-13`: The system shall report the offset from the pinch point to the
+lowest collision geometry of the jaw, because the grasp plane's clearance is
+measured to the second of those and the first is what an arm is commanded to.
+
 ## Design notes
 
 **Why the grasp phases already exist.** The task machine's phases are

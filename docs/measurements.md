@@ -336,6 +336,63 @@ also pushes the interception further downstream, which can put the grasp
 pose outside the annulus, so the plan falls back to the soonest
 interception where it does.
 
+### What the jaw's clearance above the belt was
+
+Measured by replaying a recorded run's own state through the compiled model:
+6001 samples at 100 Hz from a 60 second ground-truth run on 2026-09-21, every
+sample's `qpos`, `qvel` and `ctrl` restored and `mj_forward` called, then the
+gripper's collision geoms, the tool axis and the belt contacts read out of the
+result.
+
+**The transport model was extrapolating the wrong axis.** The plan is given a
+velocity to predict the object with, and it was being given the object's
+measured three-axis velocity. On the belt those components are:
+
+| Component | Median \|v\| | p90 \|v\| | Worst \|v\| |
+| --- | --- | --- | --- |
+| Along the belt (x) | 0.250 m/s | 0.267 m/s | 0.754 m/s |
+| Across the belt (y) | 0.022 m/s | 0.250 m/s | 2.127 m/s |
+| Vertical (z) | 0.027 m/s | 0.111 m/s | 1.782 m/s |
+
+over 17209 samples of objects resting on the belt, whose x velocity matches the
+belt because the belt drives it. Predicted forward over an interception, the
+vertical component moves the commanded grasp plane by:
+
+| Transport velocity given to the plan | Grasp plane asked for | Error |
+| --- | --- | --- |
+| The belt's own, `(0.260, 0, 0)` | 1.0758 m | — |
+| `(0.260, 0, −0.027)`, the median vertical | 1.0449 m | **−30.9 mm** |
+| `(0.260, −0.250, −0.110)`, the p90 pair | 0.9596 m | **−116 mm** |
+
+The belt surface is at 0.900 m and the marker's own floor puts the grasp plane
+at 1.0678 m at its lowest, so the median case asks the jaws to descend 31 mm
+below every floor the world and the marker enforce.
+
+**The jaws reached the belt.** In the same run the lowest gripper collision
+geometry fell to **0.8993 m**, a 0.7 mm penetration of a surface at 0.900 m, the
+pinch point fell to **0.8839 m**, and **343 of 6001 samples** had a contact
+between a pad and the belt. The tool axis left the belt normal by up to 23.6°
+while descending, **48.1° while holding** and **57.8° while retreating**, and
+during the hold the flange travelled along the belt at 0.05 to 0.07 m/s where
+the belt was moving at 0.26 m/s: the pads were pinned by friction to the belt
+the position actuators were pushing them into.
+
+**The jaw's geometry was misdescribed.** In the compiled model the pinch site,
+which is the pose every marker and every commanded flange pose is expressed
+against, sits **12.8 mm below the lowest pad collision box**, and one pad box
+measures 22 × 8 × 37.5 mm against the 12 × 40 × 50 mm the effector configuration
+claimed. So the clearance the marker granted was measured to a point below the
+jaw, and the assumed pad was a quarter turn from the real one.
+
+**What cannot be attributed, and why that is recorded here.** This run was made
+at 23:17 on 2026-09-21 and the tree it ran at is not written beside it. The phase
+timeline does not reproduce: the plan's `DESCEND` leg is **0.40 s** from the
+configuration and from a plan rebuilt at the run's own recorded state, while the
+telemetry's `DESCEND` column spans 0.79 to 0.80 s in all four visits. Every
+figure above is a statement about the state the run reached, which is
+independent of which code commanded it; the phase durations are not, which is
+what `AC-MOVE-52` exists for.
+
 ### Why the jaw still holds nothing
 
 Measured on the 1.00 m belt fed by elapsed time. Narrowing the belt and

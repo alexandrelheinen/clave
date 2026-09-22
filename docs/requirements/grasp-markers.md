@@ -115,7 +115,24 @@ renderer has produced it.
 has rebuilt, so markers cannot accumulate across frames and a run that stops
 drawing them stops showing them.
 
+`AC-MARK-15`: The system shall place a marker's pads from the compiled
+gripper's own collision geometry, so a pad drawn or assumed is the pad the
+model closes.
+
+`AC-MARK-16`: The system shall define the grasp plane's clearance from the belt
+surface to the lowest gripper collision geometry, not to the pinch point, which
+sits below the pads and would grant a clearance the jaw does not have.
+
 ## Design notes
+
+**Why the clearance is measured to the pads and not to the pinch point.** The
+pinch site is where the jaw closes, which is the pose an arm is commanded to,
+and in the compiled gripper it sits **12.8 mm below the lowest pad collision
+box**. A clearance quoted at the pinch point is therefore 12.8 mm more
+generous than the jaw's own, and the jaws reach the belt while the number says
+they are clear of it. The marker keeps standing at the pinch point and derives
+the plane it may descend to from the effector's geometry, so the pose a caller
+reads and the clearance the world enforces cannot disagree.
 
 **Why the pose is only partly derived.** The record supplies the horizontal
 grasp point, the closing axis and the opening, and all three come from the

@@ -81,6 +81,27 @@ state, so the flange never stops between them.
 where $\mathbf{z} = (0, 0, Z)$ is the clearance and $V_a$ the approach
 speed. Arc 1 begins at the last drop point, at rest.
 
+**The sequence mirrors itself about the pick.** Arcs 2 and 4 are one arc read
+in opposite directions: the descent leaves the clearance at the approach speed
+and reaches the object at the object's own velocity, and the retreat leaves the
+object at that velocity and reaches the clearance at the object's velocity plus
+the approach speed along the normal. They share $Z$, so they share the duration
+$2Z/V_a$ as well. An arc that ends at rest destroys the mirror and, worse,
+slides the flange backwards through the whole lift in the frame the object
+lives in, because the object's frame carries the belt and the flange does not.
+
+The arc that climbs from the clearance to the height the delivery crosses the
+belt's side barrier at is **not** part of that mirror. It exists so the retreat
+does not, and its shape is therefore allowed to depend on the barrier rather
+than on the pick.
+
+**Only the belt's axis is transported.** $\mathbf{v}_o = (v_b, 0, 0)$ above is
+the model every prediction is made against, and an object's measured vertical
+velocity is the belt settling it rather than transport. Feeding that component
+back into the prediction is not a refinement of the model: over a two second
+interception it asks for a grasp tens of millimetres below the object and, on
+this line, below the belt.
+
 ## The interception time
 
 Arc 1 has to end above where the object **will be** once arc 2 has also
