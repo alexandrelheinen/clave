@@ -32,12 +32,13 @@ from dataclasses import dataclass
 
 from clave.control.settings import Phase, Point
 from clave.control.trajectory import (
+    DRIFT_HORIZON,
     Segment,
     State,
     approach,
     descend,
     descent_seconds,
-    where,
+    where_carried,
 )
 
 JAW_OPEN = 0.0
@@ -272,6 +273,7 @@ def plan_pick(
     latest: float = 0.0,
     at_seconds: float = 0.0,
     margin: float = 1.0,
+    drift_horizon: float = DRIFT_HORIZON,
     target_position_world: Point | None = None,
     retreat_lift: float | None = None,
     *,
@@ -380,6 +382,7 @@ def plan_pick(
             max_accel,
             remaining_latest,
             margin,
+            drift_horizon,
         )
     else:
         reaching = approach(
@@ -392,6 +395,7 @@ def plan_pick(
             max_accel,
             latest,
             margin,
+            drift_horizon,
         )
 
     if reaching is None:
@@ -414,6 +418,7 @@ def plan_pick(
         safe_height_world=safe_height_world,
         cross_speed=cross_v,
         max_acceleration=max_accel,
+        drift_horizon=drift_horizon,
     )
 
 
@@ -427,6 +432,7 @@ def refine(
     max_speed: float = 0.0,
     max_acceleration: float = 0.0,
     at_seconds: float = 0.0,
+    drift_horizon: float = DRIFT_HORIZON,
     target_position_world: Point | None = None,
     retreat_lift: float | None = None,
     *,
@@ -519,11 +525,12 @@ def refine(
             new_track_arc = Segment(
                 start=entry_leg.end,
                 end=State(
-                    position=where(
+                    position=where_carried(
                         obj_pos_at_border,
                         belt_vel,
                         track_leg.duration + dt,
                         clearance,
+                        drift_horizon,
                     ),
                     velocity=(
                         belt_vel[0],
@@ -553,6 +560,7 @@ def refine(
                 safe_height_world=safe_height_world,
                 cross_speed=cross_v,
                 max_acceleration=max_accel,
+                drift_horizon=drift_horizon,
             )
         if elapsed < entry_leg.duration + track_leg.duration:
             rem_track = (entry_leg.duration + track_leg.duration) - elapsed
@@ -561,11 +569,12 @@ def refine(
             new_track_arc = Segment(
                 start=current_state,
                 end=State(
-                    position=where(
+                    position=where_carried(
                         obj_pos,
                         belt_vel,
                         rem_track + dt,
                         clearance,
+                        drift_horizon,
                     ),
                     velocity=(
                         belt_vel[0],
@@ -594,6 +603,7 @@ def refine(
                 safe_height_world=safe_height_world,
                 cross_speed=cross_v,
                 max_acceleration=max_accel,
+                drift_horizon=drift_horizon,
             )
         return None
 
@@ -604,11 +614,12 @@ def refine(
     arc = Segment(
         start=reaching.at(elapsed),
         end=State(
-            position=where(
+            position=where_carried(
                 obj_pos,
                 belt_vel,
                 remaining + dt,
                 clearance,
+                drift_horizon,
             ),
             velocity=(
                 belt_vel[0],
@@ -637,6 +648,7 @@ def refine(
         safe_height_world=safe_height_world,
         cross_speed=cross_v,
         max_acceleration=max_accel,
+        drift_horizon=drift_horizon,
     )
 
 
@@ -676,6 +688,7 @@ def _assemble(
     target_position_world: Point | None = None,
     max_speed: float = 1.0,
     retreat_lift: float | None = None,
+    drift_horizon: float = DRIFT_HORIZON,
     *,
     entry_segment: Segment | None = None,
     belt_border_y: float = -0.25,
@@ -713,6 +726,7 @@ def _assemble(
         belt_velocity_world,
         approach_clearance_z,
         approach_speed,
+        drift_horizon,
     )
     holding = _carry(dropping.end, dwell_seconds, belt_velocity_world)
     rising = _retreat(
