@@ -196,15 +196,21 @@ def test_the_configured_pad_dimensions_are_the_compiled_ones(world: Any) -> None
     The configuration is what a marker draws and what sizes the clearance it
     grants. It read 12 x 40 x 50 mm while the effector was hypothetical: a
     quarter turn from the real pad and a different size in every direction.
+
+    Measured with the jaw open. Each pad is two collision boxes, one above the
+    other on the same finger, and the linkage turns them relative to each other
+    as the jaw shuts: the span of the pair grows by up to a millimetre with
+    where the stop holds them, which is a property of the linkage and not a pad
+    dimension. The open state is the one where the two are in line, so it is
+    the one this reads.
     """
     from clave.world.effector import Effector
 
     jaw = Effector.load(load(WORLD))
-    for grip in (0.0, 1.0):
-        (thickness, depth, height), _ = _pad_geometry(world, grip)
-        assert thickness == pytest.approx(jaw.pad_thickness, abs=0.001)
-        assert depth == pytest.approx(jaw.pad_depth, abs=0.001)
-        assert height == pytest.approx(jaw.pad_height, abs=0.001)
+    (thickness, depth, height), _ = _pad_geometry(world, 0.0)
+    assert thickness == pytest.approx(jaw.pad_thickness, abs=0.001)
+    assert depth == pytest.approx(jaw.pad_depth, abs=0.001)
+    assert height == pytest.approx(jaw.pad_height, abs=0.001)
 
 
 def test_the_configured_lowest_geometry_is_the_compiled_worst_case(world: Any) -> None:

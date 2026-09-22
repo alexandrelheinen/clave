@@ -35,6 +35,13 @@ effector does not move the workspace.
 """
 
 GRIPPER_MODEL = Path("third_party") / "mujoco_menagerie_robotiq_2f85" / "2f85.xml"
+GRIPPER_ACTUATOR_NAME = "fingers_actuator"
+"""The gripper's own actuator, before the arm's prefix is applied to it.
+
+Named here rather than read from `clave.world.arm`, which knows the actuator
+under the prefix this scene attaches it with: the limit has to be set on the
+vendored spec, which is the one place the unprefixed name exists.
+"""
 """A Robotiq 2F-85 parallel jaw, from the same Menagerie commit as the arm.
 
 Adopted against what a municipal packaging line would install, which is
@@ -164,11 +171,21 @@ def _arm_spec(root: Path) -> Any:
     return mujoco.MjSpec.from_file(str(path))
 
 
-def _gripper_spec(root: Path) -> Any:
-    """Load the gripper model.
+def _gripper_spec(root: Path, closing_torque: float) -> Any:
+    """Load the gripper model, with the force its fingers may apply.
+
+    The vendored model ships ±5 N·m on its actuator, which is around a hundred
+    newtons at the pads and four orders of magnitude more than the ten gram
+    parcels this world carries. Left as it ships, closing on one pushes it
+    through the belt surface and takes the jaw down with it: measured, 27 mm of
+    the object below the belt and the jaw's own collision geometry 1.4 mm
+    inside it. The vendored file is a pinned submodule and is not edited, so
+    the limit is applied here, to the spec, by the value the world
+    configuration asks for.
 
     Args:
         root: Repository root.
+        closing_torque: The torque the fingers may apply, in newton meters.
 
     Returns:
         The parsed spec.
@@ -184,10 +201,14 @@ def _gripper_spec(root: Path) -> Any:
             f"{GRIPPER_MODEL} is missing. It is committed to this repository "
             f"rather than generated, so a checkout that lacks it is broken."
         )
-    return mujoco.MjSpec.from_file(str(path))
+    spec = mujoco.MjSpec.from_file(str(path))
+    for actuator in spec.actuators:
+        if actuator.name == GRIPPER_ACTUATOR_NAME:
+            actuator.forcerange[:] = (-closing_torque, closing_torque)
+    return spec
 
 
-def _armed(root: Path) -> Any:
+def _armed(root: Path, closing_torque: float) -> Any:
     """Return the arm with the gripper bolted to its flange.
 
     The gripper goes onto the arm before the arm goes into the world, so the
@@ -198,6 +219,8 @@ def _armed(root: Path) -> Any:
 
     Args:
         root: Repository root.
+        closing_torque: The torque the gripper's fingers may apply, in newton
+            meters, which the reach sweep does not depend on.
 
     Returns:
         The combined spec.
@@ -208,7 +231,11 @@ def _armed(root: Path) -> Any:
         # already settled both, so the conflict notice carries no
         # information.
         warnings.simplefilter("ignore")
-        arm.attach(_gripper_spec(root), prefix="grip_", site=arm.site(FLANGE_SITE))
+        arm.attach(
+            _gripper_spec(root, closing_torque),
+            prefix="grip_",
+            site=arm.site(FLANGE_SITE),
+        )
     return arm
 
 
@@ -1175,7 +1202,26 @@ def build(
     chutes_cfg = require(raw, "chutes")
     spawn_cfg = require(raw, "spawn")
     camera_cfg = require(raw, "cameras")
-
+    # The force the jaw closes with is a world parameter rather than a control
+    # one: it is a property of the effector, and the model has to carry it for
+    # a command to respect it. Read here and applied to the vendored gripper
+    # spec, which is why the number is not in the control configuration.
+    closing_torque = float(
+        require(require(raw, "effector"), "closing_torque_newton_meters", "effector")
+    )
+    if not closing_torque > 0.0:
+        raise WorldConfigError(
+            f"effector.closing_torque_newton_meters is {closing_torque}, and a jaw "
+            f"that may not close holds nothing"
+        )
+    closing_torque = float(
+        require(require(raw, "effector"), "closing_torque_newton_meters", "effector")
+    )
+    if not closing_torque > 0.0:
+        raise WorldConfigError(
+            f"effector.closing_torque_newton_meters is {closing_torque}, and a jaw "
+            f"that may not close holds nothing"
+        )
     mujoco_spec = mujoco.MjSpec()
     LOGGER.debug(
         "initializing MuJoCo world: timestep %.6f s, pool size %d, channels %s",
@@ -1352,7 +1398,7 @@ def build(
         # scene adopted all three above, so the conflict notice carries no
         # information.
         warnings.simplefilter("ignore")
-        mujoco_spec.attach(_armed(root), prefix="arm_", frame=frame)
+        mujoco_spec.attach(_armed(root, closing_torque), prefix="arm_", frame=frame)
 
     model = mujoco_spec.compile()
     _stiffen_arm_actuators(mujoco, model)

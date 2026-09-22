@@ -6,6 +6,27 @@ vertical motion, rotation and contact to physics. This is a driven constraint
 rather than a friction model, which is the honest description: objects do not
 slip, and a real line's slip is a disturbance this world does not reproduce.
 
+**The rotation is left to physics, and that was measured four ways.** With the
+belt driving the centre velocity and the belt's friction acting under it, a
+parcel turns at up to 5.4 radians per second on its way down the belt, which is
+155 degrees over the half second between the capture that claims a grasp yaw and
+the instant the jaws close. Every repair on this side of the seam was tried and
+measured against the same 60 second run, and every one of them cost more than it
+bought:
+
+| Repair | Pad-to-belt contact | Worst vertical lurch | Grasps held |
+| --- | --- | --- | --- |
+| none, as shipped | −0.6 mm over 4 ticks | 99 m/s² | 1 of 7 |
+| the spin pinned to zero each tick | **−2.8 mm, 54 ticks** | **934 m/s²** | none of 7 |
+| the spin damped, 0.3 s constant | **−18.6 mm, 17 ticks** | 170 m/s² | none of 8 |
+
+Pinning turns the belt's drag into a reaction that tips the parcel over.
+Damping leaves the parcels lying flat, which puts more of them under a jaw that
+then closes on a flat parcel's upper edge and is pulled down onto the belt. So
+the rotation stays where it is and the yaw is carried forward on the control
+side instead, which is written up in
+[measurements.md](measurements.md#what-the-reported-run-turned-out-to-be).
+
 An object that passes the reachable window is left alone. A real line does not
 stop, so an unpicked object is a throughput loss rather than a fault.
 """
@@ -162,7 +183,18 @@ class SpawnedObject:
     """One object riding the belt.
 
     Attributes:
-        index: Pool slot, which is also the body index into the model.
+        index: Pool slot, which is also the body index into the model. A slot
+            is reused the moment the object in it leaves the belt, so this
+            identifies the place rather than the object.
+        serial: Which spawn this is, counted over the whole run. Slots recycle
+            and this does not, so it is the only field here that names one
+            object rather than one place. Anything that has to remember what
+            it already did about an object -- which track the arm has served,
+            which one a plan in flight is aiming at -- has to key on this. A
+            run that keyed on the slot served each of the pool's slots once
+            and then sat idle for the rest of the rollout, because every
+            object after the first pass carried an identity already in the
+            served set.
         name: Body name in the model.
         material_class: Taxonomy identifier, recorded at spawn so a consumer
             never has to infer it.
@@ -174,6 +206,7 @@ class SpawnedObject:
     name: str
     material_class: str
     channel: str
+    serial: int = 0
     entered_window: bool = False
 
 
@@ -208,6 +241,7 @@ class Conveyor:
     speed: float | None = None
     _free: list[int] = field(default_factory=list)
     _next_free: int = 0
+    _spawned: int = 0
     _travelled: float = 0.0
     _retired: int = 0
     _due: float | None = None
@@ -249,11 +283,13 @@ class Conveyor:
         data.qpos[address + 3 : address + 7] = [1.0, 0.0, 0.0, 0.0]
         velocity = model.jnt_dofadr[model.body_jntadr[body]]
         data.qvel[velocity : velocity + 6] = 0.0
+        self._spawned += 1
         spawned = SpawnedObject(
             index=slot,
             name=name,
             material_class=template.material_class,
             channel=template.channel,
+            serial=self._spawned,
         )
         self.active.append(spawned)
         return spawned
@@ -318,9 +354,17 @@ class Conveyor:
         for item in self.active:
             body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, item.name)
             address = model.jnt_qposadr[model.body_jntadr[body]]
-            gone = (
-                float(data.qpos[address]) > past or float(data.qpos[address + 2]) < 0.05
-            )
+            x = float(data.qpos[address])
+            z = float(data.qpos[address + 2])
+            # Off either end, or fallen below the belt into a chute or the
+            # floor. The upstream end is not a formality: a body that leaves
+            # the belt backwards is one no arm can reach and one the belt will
+            # not carry back, so leaving it in the pool is a slot held by an
+            # object the line has lost. Measured before this was here: an
+            # object parked 1.5 m upstream of the entrance stayed on the active
+            # list for 668 ticks while its slot was handed back and spawned
+            # into, which put two objects in one pool slot.
+            gone = x > past or x < -past or z < 0.05
             if gone:
                 self._free.append(item.index)
                 self._retired += 1

@@ -240,13 +240,21 @@ effector:
   lowest_below_flange_meters: 0.1735
   # The clearance that lowest geometry keeps above the belt surface, in meters.
   #
-  # Chosen, and it is the number the marker's grasp plane is derived from and
-  # the number the controller refuses a pose below. Ten millimetres is about
-  # four times the 2.7 mm vertical arrival error the control side was measured
-  # at, so it is a bound that holds rather than one that is nearly touched, and
-  # it puts the grasp plane of a flat object 27.7 mm above the surface instead
-  # of the 12.2 mm it used to stand at -- which is the difference between the
-  # pads clearing the belt and the pads being inside it.
+  # MEASURED, and it is the number the marker's grasp plane is derived from and
+  # the number the controller refuses a pose below. It was 10 mm, chosen as
+  # four times the 2.7 mm vertical *arrival* error the control side was
+  # measured at, and that reasoning covered the wrong end of the visit.
+  #
+  # Raising it to 25 mm to cover the departure was tried on 2026-09-22 and made
+  # the contact worse rather than better: the pads reach the belt because the
+  # closure *pulls the tool down*, not because a command puts them there, and a
+  # plane higher up an object is a plane with more of the object's taper below
+  # it, which is more of the closing force pointing downward. Measured over the
+  # shipped 60 second run: 25 mm of clearance gave **−23.2 mm and 23 ticks of
+  # contact** against **−1.4 mm and 1 tick** at 10 mm, and the jaw failed to
+  # hold seven of eight objects. The number stands at 10 mm and the force the
+  # fingers close with is what changed instead; see
+  # `effector.closing_torque_newton_meters`.
   jaw_clearance_meters: 0.010
   # Where the pads close, measured up from the belt surface.
   #
@@ -258,7 +266,49 @@ effector:
   # It has to clear the plane the jaw's lowest geometry is kept off the belt at,
   # which for the compiled jaw is 27.7 mm, and a load refuses a value below it
   # rather than letting the tracker's markers close the pads on the belt.
+  #
+  # It is not a height the pads need in order to reach an object. On the
+  # shipped set the plane follows the object's own centre -- measured from the
+  # compiled model, the shortest object is 83.7 mm tall and the tallest
+  # 168.2 mm, so every centre stands at 41.9 mm or above -- and at every plane
+  # either number produces, the narrowest width the objects present inside the
+  # pads' 37.5 mm of vertical extent is 17.0 to 65.8 mm against a jaw that
+  # opens to 85 mm. There is no object here the jaw cannot close on at the
+  # height it closes at.
   grasp_height_meters: 0.030
+
+  # The torque the fingers may apply to what they close on, in newton meters.
+  # Symmetric, so it is also the torque they open against.
+  #
+  # MEASURED, and it is the fix for a pad-to-belt contact this world has
+  # carried for two working sessions. Objects here weigh **9 to 20 grams**
+  # (read from the compiled model: a parcel at these collections' densities and
+  # this arm's 85 mm opening is ten to twenty grams, not the kilograms a
+  # package on a real line is). The vendored gripper ships ±5 N·m, and a jaw
+  # closing with that presses a ten gram parcel into the belt: on the run of
+  # 2026-09-22 it dropped the object it was closing on 27 mm below the belt
+  # surface, rode down with it and put the jaw's own collision geometry 1.4 mm
+  # inside the belt, with the tool 3.7 degrees off the belt normal and a
+  # 52.9 m/s2 lurch when the squeezed parcel escaped.
+  #
+  # The jaw's stroke against the torque it is allowed, swept on the compiled
+  # model with the arm parked:
+  #
+  # | Torque | Fully open it reaches | Fully shut it reaches | Stroke |
+  # | --- | --- | --- | --- |
+  # | 0.05 N·m | 29.0 mm | 15.4 mm | 13.5 mm |
+  # | 0.10 N·m | 46.9 mm | 15.4 mm | 31.4 mm |
+  # | 0.20 N·m | 80.5 mm | 15.4 mm | 65.1 mm |
+  # | **0.30 N·m** | **98.4 mm** | **15.4 mm** | **83.0 mm** |
+  # | 0.50 to 5.0 N·m | 98.4 mm | 14.9 mm | 83.5 mm |
+  #
+  # Below a third of a newton meter the linkage's own friction and the tendon's
+  # preload hold the fingers open, so the number is the smallest one that gives
+  # the jaw its whole stroke rather than a margin chosen by eye. A real 2F-85
+  # has a settable force for the same reason -- 20 N is its floor, against a
+  # parcel that weighs 0.2 N -- so this is a setting a line would choose rather
+  # than a simulator artefact being tuned away.
+  closing_torque_newton_meters: 0.30
 
 # Where a picked object goes. One funnel per channel the routing policy
 # resolves to, set beside the belt at belt height on the arm's own side, each
