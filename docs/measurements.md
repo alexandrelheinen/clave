@@ -685,3 +685,87 @@ geometry, not the layer being strict.
 The trained models saw 240 frames. That supports a claim about cost and about
 whether the mechanism runs. It supports no claim about accuracy, and none is
 made anywhere in this repository.
+
+## The three questions the belt-clearance work left open
+
+Each of these was measured on the tree that carries the fixes, with the run's
+own metadata recording the revision and the configuration digests it flew
+under. Two of them turn out to be stale numbers in the documents rather than
+defects in the machine, and the third is a defect with a named owner.
+
+### What the arm aims at, with the tracker in the loop
+
+Three picks, 24 second run, tracker-driven rather than ground truth
+(`clave sim --seconds 24 --telemetry`), measured as the distance from the pinch
+site to the nearest object at the instant the jaw shut:
+
+| Pick at | Pinch x | Distance to the nearest object | Camera imaging that x |
+| --- | --- | --- | --- |
+| 8.51 s | −0.112 m | 123 mm | `pick_wide` |
+| 14.72 s | +0.493 m | **35 mm** | `pick_wide` |
+| 20.46 s | −0.394 m | **415 mm** | `gate_wide` |
+
+The same run reaches the pose the plan asks for to 1.8 mm median and 2.7 mm
+worst, so the control side is not the limit: the *aim* is. Every one of the
+three picks was inside a detection camera's footprint, which is what makes this
+a different statement from the one
+[roadmap.md](roadmap.md#open-defects) carries. The world has **two** detection
+cameras, not one: `gate_wide` at x = −1.00 m images −1.72 m to −0.28 m and
+`pick_wide` at x = +0.38 m images −0.345 m to +1.105 m, which together cover the
+whole reachable window of −1.036 m to +1.036 m. The floor's comment that
+`gate_wide` "detects it out to x = −0.275 m and no further, so 1.31 m of the
+zone the arm actually works in was never observed" describes the world before
+`pick_wide` was added, and the repository still repeats its consequences.
+
+What is left is the estimate and the identity behind it: an observation carries
+no identity, and it joins the nearest track inside a gate scaled to that track's
+footprint, so a track tens of millimetres out can fail to be corrected by a
+fresh observation and no run reports the failure as a failure. The fix is the
+association and retirement rule already specified as
+[learned-tracker](requirements/learned-tracker.md) at v1.2.0, and the figures to
+aim at are the 35 to 415 mm above rather than the 94 to 644 mm the roadmap
+carries.
+
+### What the actuator lag costs now
+
+Swept against a target walking at constant speed along the belt, on the
+compiled world, with and without the shipped lead:
+
+| Lead | 0.15 m/s | 0.31 m/s | 0.60 m/s | 1.00 m/s |
+| --- | --- | --- | --- | --- |
+| None, steady-state lag | 5.75 mm | 10.66 mm | 19.94 mm | 32.67 mm |
+| None, lag ÷ speed | 38.3 ms | 34.4 ms | 33.2 ms | 32.7 ms |
+| `lead_seconds: 0.033` | **1.25 mm** | **1.08 mm** | **0.99 mm** | **1.21 mm** |
+
+The lag is a time constant, as `servo.lead_seconds` says it is, and the lead
+cancels 96 to 99 percent of it at every speed. So the lag is not an open defect:
+it is a solved one whose solution the *other* number never heard about.
+`task.arrival_tolerance_meters` is 0.070 m and its comment rests on "the settled
+error at 24.3 mm over most of the width and 60.9 mm at the far edge", measured
+before the servo carried a feedforward term — the comment even names the fix
+that has since been made. At 1.0 to 1.25 mm of settled error the tolerance is
+56 to 70 times the error it gates, and a stepped visit therefore counts as
+arrived a long way before it has. Lowering it is a behaviour change that needs
+its own run rather than a quiet edit, so it is recorded here and not taken.
+
+### What the annulus costs
+
+| | Meters |
+| --- | --- |
+| Belt length | 3.00 |
+| Reachable stretch on the belt centreline | −1.036 to +1.036, **2.07** |
+| Belt outside the annulus | 0.46 at each end, 31 percent of the length |
+| Inner hole (0.25 m about the base) | never reaches the belt: the base stands 0.45 to 0.95 m from it |
+| Trusted annulus against the measured reachable | 0.25 to 1.25 against 0.200 and 1.266 to 1.309 |
+
+Two things follow. The trusted region is strictly inside the region the arm can
+actually reach, which is the direction an interlock should err in, and the inner
+hole never bites the belt, so the projection that keeps a path out of the hole
+costs nothing on a pick and only shapes the swing near the base. And the belt is
+longer than the arm can serve, which is why the line meters objects into the
+window instead of feeding them blind: nothing in either run of this work was
+refused for reach — the tracker-driven run's one refusal is `no interception`,
+which is timing — and the arm served 2 to 3 visits in 24 s against a feed of
+0.125 objects per second. That last pair is the figure to watch, because the arm
+is serving the line's rate with no margin rather than comfortably above it.
+

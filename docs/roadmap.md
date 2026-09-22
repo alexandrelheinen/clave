@@ -134,7 +134,8 @@ is a simulator argument rather than a process one.
 
 This is the criterion the first open defect below blocks, and it blocks it
 from the perception side rather than the arm side. The arm reaches the pose
-it is sent to within 2.2 mm; the pose is 94 mm to 644 mm from any object.
+it is sent to within 1.8 mm; the pose is 35 to 415 mm from the nearest object
+on the three picks last measured.
 v1.2.0 therefore has to land before v1.4.0 can be claimed, whatever order the
 work happens to be done in.
 
@@ -185,32 +186,35 @@ the next two were found by replaying a run's own state through the compiled
 model, which is what turned "the retreat looks wrong" into a measurement; the
 last two were found while reading the code ahead of the tracker work.
 
-- **A pose is only trustworthy inside the sensing gate, and the arm works
-  outside it.** Measured against the nearest object a record could describe,
-  the tracker's grasp point has a median error of 11.7 mm while the object is
-  inside the gate, 182 mm through the near half of the arm's reach, and 644 mm
-  beyond it. The gate camera stands at x = -1.00 m and images 0.92 m of travel;
-  the annulus runs from about -0.9 m to +1.1 m, so no sensor sees an object
-  again after it leaves the gate and every pick is made on two to five seconds
-  of dead reckoning. The belt model carries travel along the belt exactly and
-  carries drift across it not at all, and an object rolling or settling drifts
-  sideways by a mean of 41 mm over 2.5 seconds against a jaw whose narrowest
+- **The jaw closes on where an object was estimated to be, and the estimate is
+  the limit.** Measured then: against the nearest object a record could
+  describe, the tracker's grasp point had a median error of 11.7 mm inside the
+  sensing gate, 182 mm through the near half of the arm's reach and 644 mm
+  beyond it, and the gate camera stood at x = −1.00 m imaging 0.92 m of travel
+  while the annulus runs to about +1.1 m, so every pick downstream was made on
+  two to five seconds of dead reckoning. An object rolling or settling drifts
+  sideways by a mean of 41 mm over 2.5 seconds, against a jaw whose narrowest
   side clearance is 8.7 mm.
 
-  The control side is no longer the limit: the flange reaches the pose the plan
-  asks for to 2.2 mm at the instant the jaw shuts, and the nearest object is
-  94 mm to 644 mm away.
+  **The sensor half of this is done and the document above still read as though
+  it were not.** `pick_wide` now stands at x = +0.38 m, images −0.345 m to
+  +1.105 m, and together with `gate_wide` covers the whole reachable window of
+  −1.036 m to +1.036 m; the world's own camera comment records the sweep that
+  sized it. Measured on the tree that carries the belt-clearance work, three
+  picks in 24 seconds closed 35, 123 and 415 mm from the nearest object, every
+  one of them inside a detection camera's footprint, with the flange reaching
+  the pose the plan asked for to 1.8 mm median. So the control side is not the
+  limit and neither is coverage: what is left is the **estimate and the identity
+  behind it**.
 
-  Adding cameras over the pick zone does not fix it on its own, which was
-  measured rather than assumed. A detection carries no identity and joins the
-  nearest track inside a gate scaled to that track's footprint, so a track
-  already 180 mm out falls outside its own gate and the fresh observation opens
-  a duplicate instead of correcting the stale one; open tracks ran to 28 and 51
-  against about a dozen objects. The repair is two changes rather than one, a
-  sensor that sees where the arm works and an association and retirement rule
-  that lets its observations reach the track they belong to, and the second of
-  those is [learned-tracker](requirements/learned-tracker.md) at v1.2.0. See
-  [measurements.md](measurements.md#why-the-jaw-still-holds-nothing).
+  A detection carries no identity and joins the nearest track inside a gate
+  scaled to that track's footprint, so a track tens of millimetres out can fail
+  to be corrected by a fresh observation and no run reports that failure as a
+  failure. The repair is the association and retirement rule specified as
+  [learned-tracker](requirements/learned-tracker.md) at v1.2.0, and the figure
+  to aim at is the 35 to 415 mm measured now rather than the 94 to 644 mm this
+  bullet was written with. See
+  [measurements.md](measurements.md#what-the-arm-aims-at-with-the-tracker-in-the-loop).
 
 - **The plan asked the jaws to descend below the belt.** The velocity the plan
   predicts the object with was the object's own measured three-axis velocity,
