@@ -133,6 +133,36 @@ def test_the_retreat_lifts_the_clearance_and_ends_at_rest() -> None:
     assert retreat.duration == pytest.approx(descent_seconds(CLEARANCE, APPROACH_SPEED))
 
 
+def test_a_vertical_velocity_does_not_move_the_grasp_plane() -> None:
+    """AC-MOVE-46: a vertical velocity does not move the grasp plane.
+
+    An object settling on the belt carries a downward velocity that gravity
+    gives it and the belt does not. Predicting that component forward over an
+    interception asks for a grasp below the object, and on this line below the
+    belt itself, which is what the replay of a recorded run found.
+    """
+    still = a_plan()
+    settling = a_plan(belt_velocity=(BELT[0], BELT[1], -0.40))
+    assert still is not None and settling is not None
+    quiet = next(leg for leg in still.legs if leg.phase is Phase.DESCEND).segment
+    sinking = next(leg for leg in settling.legs if leg.phase is Phase.DESCEND).segment
+    assert sinking.end.position[2] == pytest.approx(quiet.end.position[2])
+    assert sinking.end.position[2] == pytest.approx(OBJECT[2])
+
+
+def test_a_lateral_velocity_still_carries_the_object_across_the_belt() -> None:
+    """AC-MOVE-46: drift across the belt is still predicted.
+
+    Only the height is not a transport axis. An object rolling sideways reaches
+    the jaw somewhere else, and refusing to predict that would trade this
+    mistake for another one.
+    """
+    drifting = a_plan(belt_velocity=(BELT[0], 0.05, 0.0))
+    assert drifting is not None
+    across = next(leg for leg in drifting.legs if leg.phase is Phase.DESCEND).segment
+    assert across.end.position[1] > OBJECT[1] + 0.05
+
+
 def test_a_plan_runs_out_rather_than_extrapolating() -> None:
     """AC-MOVE-42: a plan runs out rather than extrapolating.
 

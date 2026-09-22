@@ -413,6 +413,29 @@ def test_a_completed_visit_records_how_near_the_arm_got() -> None:
     assert arm.arrivals[0] == pytest.approx(0.0, abs=1e-9)
 
 
+def test_a_settling_candidate_is_served_at_the_marker_pose() -> None:
+    """AC-MOVE-47: a settling candidate is served at the marker pose.
+
+    The candidate carries the object's own velocity, and an object settling on
+    the belt has a downward component in it. The plan predicts the belt's axes
+    and not that one, so the pose it descends to is the pose the marker asked
+    for rather than wherever gravity was taking the object.
+    """
+    arm = machine(profile=Profile.FULL_VISIT)
+    settling = Candidate(
+        track_id=1,
+        anchor=(0.30, 0.0, 0.945),
+        flange=(0.30, 0.0, 1.035),
+        closing_axis=math.pi / 2.0,
+        distance_before_leaving=1.5,
+        velocity_world=(BELT_SPEED, 0.0, -0.40),
+    )
+    arm.step(queue_of(settling), PARK, 0.0)
+    assert arm.plan is not None
+    descend = next(leg for leg in arm.plan.legs if leg.phase is Phase.DESCEND)
+    assert descend.segment.end.position[2] == pytest.approx(settling.flange[2])
+
+
 def test_the_shipped_configuration_builds_a_machine() -> None:
     """The shipped configuration builds a machine."""
     from clave.world.config import load

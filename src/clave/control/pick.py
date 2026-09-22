@@ -65,6 +65,28 @@ cannot be handed a zero.
 """
 
 
+def _transport(velocity: Point) -> Point:
+    """Return the velocity the belt carries, which is not the object's own.
+
+    The belt drives one axis and gravity settles the object on the other two,
+    so an object's measured velocity has a vertical component that is the belt
+    letting it down rather than carrying it anywhere. Predicting that component
+    forward over an interception of seconds asks for a grasp plane tens of
+    millimetres below the object, and on the shipped line below the belt: a
+    recorded run replayed through the compiled model put the pads 0.7 mm inside
+    the belt surface on 343 of 6001 samples. Travel along the belt and drift
+    across it are both predicted, because an object really does reach the jaw
+    somewhere other than where it is.
+
+    Args:
+        velocity: The velocity a caller measured for the object.
+
+    Returns:
+        The same velocity with no component along the belt normal.
+    """
+    return (velocity[0], velocity[1], 0.0)
+
+
 def _fit_segment(
     start: State,
     end: State,
@@ -307,9 +329,10 @@ def plan_pick(
     obj_pos = object_position if object_position is not None else object_position_belt
     if obj_pos is None:
         raise TypeError("plan_pick requires object_position_belt or object_position")
-    belt_vel = belt_velocity if belt_velocity is not None else belt_velocity_world
-    if belt_vel is None:
+    measured = belt_velocity if belt_velocity is not None else belt_velocity_world
+    if measured is None:
         raise TypeError("plan_pick requires belt_velocity_world or belt_velocity")
+    belt_vel = _transport(measured)
     clearance = z_offset if z_offset is not None else approach_clearance_z
     if clearance is None:
         raise TypeError("plan_pick requires approach_clearance_z or z_offset")
@@ -456,9 +479,10 @@ def refine(
     obj_pos = object_position if object_position is not None else object_position_belt
     if obj_pos is None:
         raise TypeError("refine requires object_position_belt or object_position")
-    belt_vel = belt_velocity if belt_velocity is not None else belt_velocity_world
-    if belt_vel is None:
+    measured = belt_velocity if belt_velocity is not None else belt_velocity_world
+    if measured is None:
         raise TypeError("refine requires belt_velocity_world or belt_velocity")
+    belt_vel = _transport(measured)
     clearance = z_offset if z_offset is not None else approach_clearance_z
     if clearance is None:
         raise TypeError("refine requires approach_clearance_z or z_offset")
