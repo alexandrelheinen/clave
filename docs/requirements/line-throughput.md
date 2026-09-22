@@ -128,6 +128,12 @@ its rate from one that saturated.
 and a test shall prove the counter reads the simulator rather than the
 tracker.
 
+`AC-RATE-11`: The system shall leave an object's rotation to physics while it
+rides the belt, and a test shall prove the driven constraint does not pin it:
+taking the spin about the belt normal out was measured and made the line worse,
+because pinning a body's rotation while the belt drags it turns the contact
+into a reaction that tips the parcel over.
+
 ## Design notes
 
 **Why proportional-integral and not proportional alone.** A proportional
