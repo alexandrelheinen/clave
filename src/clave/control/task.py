@@ -53,6 +53,7 @@ from clave.control.settings import (
 )
 from clave.control.trajectory import State
 from clave.errors import ClaveError
+from clave.world.effector import Effector
 
 LOGGER = logging.getLogger(__name__)
 
@@ -145,6 +146,7 @@ class TaskMachine:
         belt_border_y: float | None = None,
         *,
         belt_surface: float | None = None,
+        effector: Effector | None = None,
     ) -> None:
         """Hold the settings and the belt the approach height is measured from.
 
@@ -191,11 +193,17 @@ class TaskMachine:
                     f"the full-visit profile intercepts a moving object, and a "
                     f"belt at {belt_speed} m/s carries nothing to intercept"
                 )
+            if effector is None:
+                raise TaskError(
+                    "the full-visit profile descends onto a belt and needs the "
+                    "jaw's geometry to know how close it may come to one"
+                )
         self._settings = settings
         self._calibration = calibration
         self._belt_surface_height_world = surface
         self._belt_speed = belt_speed
         self._guidance = guidance
+        self._effector = effector
         self._admits = admits if admits is not None else _anywhere
         self._chutes = chutes or {}
         self._belt_border_y = (
@@ -209,6 +217,17 @@ class TaskMachine:
             else settings.approach_height
         )
         self._safe_height_world = self._belt_surface_height_world + safe_clearance
+        # The flange height below which the jaw's lowest geometry is inside the
+        # clearance it keeps above the belt. Zero when no effector was given,
+        # which only happens under motion-only, where the flange never descends.
+        self._grasp_floor_world = (
+            0.0
+            if effector is None
+            else self._belt_surface_height_world + effector.flange_floor
+        )
+        self._jaw_below_flange_world = (
+            0.0 if effector is None else effector.lowest_below_flange
+        )
         self._serving: int | None = None
         self._arrived_at: float | None = None
         self._phase = Phase.STANDBY
@@ -436,6 +455,30 @@ class TaskMachine:
             grip=grip,
         )
 
+    def _takes(self, pose: Point) -> bool:
+        """Whether the arm may be commanded to a pose at all.
+
+        Two questions, and both have to pass. The first is whether the arm is
+        trusted over the pose, which is the safety layer's question and is
+        answered by the region the caller enforces. The second is whether the
+        jaw would come closer to the belt than the clearance it keeps, which is
+        the one thing about a grasp pose a region cannot see: the pose is the
+        flange, and the jaw hangs below it.
+
+        A marker never asks for a pose that fails the second question, because
+        the marker's own plane is clamped by the same clearance. This catches a
+        plan that has drifted -- an aim re-solved against a moving estimate, or
+        a configuration whose numbers no longer describe the jaw the model
+        carries -- and it catches it before the servo pushes the pads into the
+        belt.
+        Args:
+            pose: The flange pose in world frame meters.
+
+        Returns:
+            Whether it is inside the region and above the belt clearance.
+        """
+        return self._admits(pose) and pose[2] >= self._grasp_floor_world - 1e-9
+
     def _grasp_pose(self, head: Candidate) -> Point:
         """Return where the flange has to sit to grasp a candidate.
 
@@ -518,7 +561,7 @@ class TaskMachine:
             descent_leg = next(
                 leg for leg in refreshed.legs if leg.phase is Phase.DESCEND
             )
-            if self._admits(descent_leg.segment.end.position):
+            if self._takes(descent_leg.segment.end.position):
                 self._plan = refreshed.with_yaw(
                     target_yaw=head.closing_yaw_belt,
                     initial_yaw=initial_yaw,
@@ -585,6 +628,7 @@ class TaskMachine:
         # annulus. Where it does, the soonest interception is taken instead:
         # an arc that cannot be corrected still beats one the arm cannot fly.
         plan = None
+        jaw_in_the_belt: float | None = None
         for margin in (self._settings.interception_margin, 1.0):
             attempt = plan_pick(
                 flange=State(
@@ -611,17 +655,31 @@ class TaskMachine:
                 descent_leg = next(
                     leg for leg in attempt.legs if leg.phase is Phase.DESCEND
                 )
-                if self._admits(descent_leg.segment.end.position):
+                if self._takes(descent_leg.segment.end.position):
                     plan = attempt
                     break
+                if descent_leg.segment.end.position[2] < self._grasp_floor_world:
+                    jaw_in_the_belt = descent_leg.segment.end.position[2]
         if plan is None:
             self._missed.append(head.track_id)
             self._serving = None
-            LOGGER.debug(
-                "pick planning failed for candidate %d (leaving=%.3f s); marked missed",
-                head.track_id,
-                leaving,
-            )
+            if jaw_in_the_belt is not None:
+                LOGGER.debug(
+                    "pick planning refused candidate %d: its grasp pose leaves "
+                    "the jaw's lowest geometry inside the %.3f m the jaw keeps "
+                    "above the belt at z=%.4f m (floor %.4f m)",
+                    head.track_id,
+                    self._grasp_floor_world - self._jaw_below_flange_world,
+                    jaw_in_the_belt,
+                    self._grasp_floor_world,
+                )
+            else:
+                LOGGER.debug(
+                    "pick planning failed for candidate %d (leaving=%.3f s); "
+                    "marked missed",
+                    head.track_id,
+                    leaving,
+                )
             return self._rest(flange, at_nanos)
         target_yaw = head.closing_yaw_belt
         initial_yaw = self._last_yaw if self._last_yaw is not None else target_yaw

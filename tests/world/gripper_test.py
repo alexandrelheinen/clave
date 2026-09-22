@@ -127,3 +127,99 @@ def test_no_object_in_the_set_is_wider_than_the_jaw() -> None:
     assert not [
         entry for entry in raw["objects"] if entry.get("name") == "master_chef_can"
     ], "an object the jaw cannot close on is back in the set"
+
+
+def _pad_geometry(world: Any, grip: float) -> tuple[tuple[float, float, float], float]:
+    """Return one pad's extents in the tool frame and its lowest depth below it.
+
+    Measured from the compiled model rather than read from the configuration,
+    because the configuration is what is under test. A finger's collision shape
+    is two boxes, so the extents are taken over both, and they are taken in the
+    tool's own frame: the jaw closes along the tool's x, its depth is y, its
+    height is z, and the flange is the origin.
+
+    The linkage moves, so the answer depends on where it stands: this settles
+    the jaw at the commanded grip for long enough to be shut or open rather than
+    asking `mj_forward`, which computes positions and never moves a finger.
+
+    Args:
+        world: The compiled model, its data and the arm indices.
+        grip: What to command the jaw, from zero open to one shut.
+
+    Returns:
+        The extents along `(x, y, z)` of the tool frame, and how far the lowest
+        corner of the pad reaches below the flange. Both in meters.
+    """
+    numpy = pytest.importorskip("numpy")
+    import mujoco
+
+    from clave.world import arm as armmod
+
+    model, data, _, arm = world
+    for slot, actuator in enumerate(arm.actuator_ids):
+        data.ctrl[actuator] = armmod.joint_positions(model, data, arm)[slot]
+    armmod.hold(data, arm, closed=grip)
+    for _ in range(2000):
+        mujoco.mj_step(model, data)
+    axes = data.site_xmat[arm.tool_site].reshape(3, 3)
+    origin = data.site_xpos[arm.tool_site]
+    corners = []
+    for geom in range(model.ngeom):
+        name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, geom) or ""
+        if not name.startswith("arm_grip_") or "pad" not in name:
+            continue
+        if model.geom_contype[geom] == 0:
+            continue
+        body = mujoco.mj_id2name(
+            model, mujoco.mjtObj.mjOBJ_BODY, int(model.geom_bodyid[geom])
+        )
+        if body != "arm_grip_right_pad":
+            continue
+        rotation = data.geom_xmat[geom].reshape(3, 3)
+        size = numpy.asarray(model.geom_size[geom])
+        centre = data.geom_xpos[geom]
+        for sx in (-1, 1):
+            for sy in (-1, 1):
+                for sz in (-1, 1):
+                    offset = rotation @ numpy.array(
+                        [sx * size[0], sy * size[1], sz * size[2]]
+                    )
+                    corners.append(axes.T @ (centre + offset - origin))
+    box = numpy.asarray(corners)
+    span = box.max(axis=0) - box.min(axis=0)
+    return (float(span[0]), float(span[1]), float(span[2])), float(box[:, 2].max())
+
+
+def test_the_configured_pad_dimensions_are_the_compiled_ones(world: Any) -> None:
+    """AC-GRIP-12: the configured pad dimensions are the compiled ones.
+
+    The configuration is what a marker draws and what sizes the clearance it
+    grants. It read 12 x 40 x 50 mm while the effector was hypothetical: a
+    quarter turn from the real pad and a different size in every direction.
+    """
+    from clave.world.effector import Effector
+
+    jaw = Effector.load(load(WORLD))
+    for grip in (0.0, 1.0):
+        (thickness, depth, height), _ = _pad_geometry(world, grip)
+        assert thickness == pytest.approx(jaw.pad_thickness, abs=0.001)
+        assert depth == pytest.approx(jaw.pad_depth, abs=0.001)
+        assert height == pytest.approx(jaw.pad_height, abs=0.001)
+
+
+def test_the_configured_lowest_geometry_is_the_compiled_worst_case(world: Any) -> None:
+    """AC-GRIP-13: the configured lowest geometry is the compiled worst case.
+
+    The pads hang below the pinch point the arm is commanded to, and how far
+    depends on where the linkage stands, so the number the configuration
+    carries has to be the worst of the two states: the shut one, which is what
+    the jaw is in when it is holding something.
+    """
+    from clave.world.effector import Effector
+
+    jaw = Effector.load(load(WORLD))
+    _, open_depth = _pad_geometry(world, 0.0)
+    _, shut_depth = _pad_geometry(world, 1.0)
+    assert shut_depth == pytest.approx(jaw.lowest_below_flange, abs=0.001)
+    assert open_depth < shut_depth, "the shut jaw is not the lowest it gets"
+    assert shut_depth > jaw.finger_length, "the pads are above the pinch point"

@@ -21,6 +21,8 @@ def test_the_shipped_configuration_describes_an_effector() -> None:
     assert effector.pad_thickness > 0.0
     assert effector.pad_depth > 0.0
     assert effector.grasp_height > 0.0
+    assert effector.lowest_below_flange > 0.0
+    assert effector.jaw_clearance > 0.0
 
 
 def test_the_opening_comes_from_the_arm_rather_than_a_second_number() -> None:
@@ -69,4 +71,27 @@ def test_the_grasp_height_stays_above_the_belt() -> None:
     raw = load(CONFIG)
     raw["effector"]["grasp_height_meters"] = -0.01
     with pytest.raises(ClaveError, match="grasp_height_meters"):
+        Effector.load(raw)
+
+
+def test_a_grasp_plane_inside_the_jaw_clearance_is_refused() -> None:
+    """AC-GRIP-13: a grasp plane inside the jaw clearance is refused.
+
+    The jaw's lowest geometry hangs below the pinch point, so the plane the
+    pinch point may stand at is the clearance plus that overhang. A configured
+    grasp height below it is a run that closes the pads on the belt, and it is
+    refused where the numbers are rather than where the contact is.
+    """
+    raw = load(CONFIG)
+    jaw = Effector.load(raw)
+    raw["effector"]["grasp_height_meters"] = jaw.pinch_floor - 0.001
+    with pytest.raises(ClaveError, match="pads would close"):
+        Effector.load(raw)
+
+
+def test_an_absent_clearance_key_fails_at_load_naming_itself() -> None:
+    """AC-GRIP-13: an absent clearance key fails at load naming itself."""
+    raw = load(CONFIG)
+    del raw["effector"]["jaw_clearance_meters"]
+    with pytest.raises(ClaveError, match="jaw_clearance_meters"):
         Effector.load(raw)

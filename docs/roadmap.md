@@ -219,14 +219,15 @@ last two were found while reading the code ahead of the tracker work.
   velocity on the belt is 0.027 m/s and the p90 pair with lateral drift is
   0.11 m/s, which asks for a grasp plane **31 mm to 116 mm below** the object and
   below every floor the marker and the world enforce; the marker's own clearance
-  is quoted at the pinch point, which in the compiled gripper sits **12.8 mm
-  below the lowest pad collision box**. Replaying a recorded run's state through
-  the compiled model found the jaws at 0.8993 m against a belt surface at
-  0.900 m, 343 of 6001 samples with a pad-to-belt contact, and the tool axis
-  **48° off the belt normal while holding**. The control side was measuring its
-  own success against the pose it asked for, which the plan had already placed
-  under the belt. Closed by `AC-MOVE-46`, `AC-MOVE-47`, `AC-MOVE-50`,
-  `AC-MARK-15`, `AC-MARK-16`, `AC-GRIP-12` and `AC-GRIP-13`. See
+  was quoted at the pinch point, which in the compiled gripper is **not the
+  lowest part of the jaw** -- the pads hang 4.5 to 17.7 mm below it, so the
+  marker's floor put them 5.5 mm inside the belt. Replaying a recorded run's
+  state through the compiled model found the jaws at 0.8993 m against a belt
+  surface at 0.900 m, 343 of 6001 samples with a pad-to-belt contact, and the
+  tool axis **48° off the belt normal while holding**. The control side was
+  measuring its own success against the pose it asked for, which the plan had
+  already placed under the belt. Closed by `AC-MOVE-46`, `AC-MOVE-47`,
+  `AC-MOVE-50`, `AC-MARK-15`, `AC-MARK-16`, `AC-GRIP-12` and `AC-GRIP-13`. See
   [measurements.md](measurements.md#what-the-jaws-clearance-above-the-belt-was).
 
 - **A run's numbers cannot be traced to the tree that produced them.** The debug

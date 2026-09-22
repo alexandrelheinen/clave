@@ -547,6 +547,7 @@ def run(
         admits=admits,
         chutes=plan.chutes,
         belt_width=plan.belt.width,
+        effector=effector,
     )
     goal = None
     refusal: str | None = None

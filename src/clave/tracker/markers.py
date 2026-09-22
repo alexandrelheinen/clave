@@ -221,6 +221,41 @@ def color_for(track_id: int) -> tuple[float, float, float]:
     return colorsys.hsv_to_rgb(hue, 0.85, 1.0)
 
 
+MAX_GRASP_ABOVE_SURFACE_METERS = 0.150
+"""How high above the belt surface a grasp plane is still taken at face value.
+
+An object the world laid on the belt rests within this of the surface, and the
+same bound is what decides a body is on the belt at all. Past it the record is
+about something else -- an object that fell, or one the arm is already carrying
+-- and the plane is clamped rather than followed.
+"""
+
+
+def grasp_plane(surface: float, effector: Effector, centre_z: float) -> float:
+    """Return the pinch plane a marker may stand at for an object's centre.
+
+    The clamp's floor is the clearance the jaw keeps plus how far its lowest
+    collision geometry hangs below the pinch point, so the number the marker
+    grants is a clearance the pads have rather than one the point they close at
+    has. Quoting it at the pinch point instead is 4.5 to 17.7 mm more generous
+    than the jaw, depending on where its linkage stands, which is how the pads
+    came to rest on the belt while the marker's own plane said they were clear
+    of it.
+
+    Args:
+        surface: Belt surface height, in world frame meters.
+        effector: The jaw whose clearance this is.
+        centre_z: The object's centre height, in world frame meters.
+
+    Returns:
+        The pinch plane, in world frame meters.
+    """
+    return min(
+        max(centre_z, surface + effector.pinch_floor),
+        surface + MAX_GRASP_ABOVE_SURFACE_METERS,
+    )
+
+
 def marker_for(
     record: WasteObject,
     effector: Effector,
@@ -387,7 +422,7 @@ def ground_truth_markers(
             oriented = False
             closing_axis = None
             center_z = float(data.geom_xpos[geom_id][2])
-            pad_z = min(max(center_z, surface + 0.012), surface + 0.150)
+            pad_z = grasp_plane(surface, effector, center_z)
         elif geom_type == mujoco.mjtGeom.mjGEOM_BOX:
             sx = float(model.geom_size[geom_id][0])
             sy = float(model.geom_size[geom_id][1])
@@ -401,7 +436,7 @@ def ground_truth_markers(
                 extent = dim_x
                 closing_axis = yaw + math.pi / 2.0
             center_z = float(data.geom_xpos[geom_id][2])
-            pad_z = min(max(center_z, surface + 0.012), surface + 0.150)
+            pad_z = grasp_plane(surface, effector, center_z)
         elif geom_type == mujoco.mjtGeom.mjGEOM_MESH:
             mesh_id = model.geom_dataid[geom_id]
             if mesh_id >= 0:
@@ -421,7 +456,7 @@ def ground_truth_markers(
                 R = data.geom_xmat[geom_id].reshape(3, 3)
                 world_z = (R[2, :] @ verts.T) + float(data.geom_xpos[geom_id][2])
                 center_z = float((world_z.min() + world_z.max()) / 2.0)
-                pad_z = min(max(center_z, surface + 0.012), surface + 0.150)
+                pad_z = grasp_plane(surface, effector, center_z)
             else:
                 opening = effector.opening * 0.5
                 extent = opening

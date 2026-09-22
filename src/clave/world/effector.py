@@ -36,6 +36,13 @@ class Effector:
         grasp_height: Where the pads close, measured up from the belt surface,
             in meters. A configured plane rather than a reading, because no
             sensor on this line estimates an object's height.
+        lowest_below_flange: How far the jaw's lowest collision geometry reaches
+            below the flange, in meters, at its lowest over the jaw's own
+            travel. Measured, and larger than `finger_length` on the shipped
+            jaw: the pads hang below the point the jaw closes at, so a clearance
+            quoted at that point is not a clearance the jaw has.
+        jaw_clearance: The clearance the jaw's lowest geometry keeps above the
+            belt surface, in meters.
         opening: The widest the jaw goes, in meters, read from the arm.
     """
 
@@ -44,7 +51,31 @@ class Effector:
     pad_depth: float
     pad_height: float
     grasp_height: float
+    lowest_below_flange: float
+    jaw_clearance: float
     opening: float
+
+    @property
+    def pinch_floor(self) -> float:
+        """The lowest pinch plane that keeps the whole jaw clear of the belt.
+
+        Measured from the belt surface, so a caller adds its own surface to it.
+        The marker clamps its grasp plane to this, which is what makes the
+        clearance it grants one the pads have: the pads hang below the pinch
+        point, so the plane the pinch point may stand at is the clearance plus
+        that overhang.
+        """
+        return self.jaw_clearance + self.lowest_below_flange - self.finger_length
+
+    @property
+    def flange_floor(self) -> float:
+        """The lowest flange height that keeps the jaw clear of the belt.
+
+        Measured from the belt surface. The controller refuses a pose below it,
+        which is the same constraint as `pinch_floor` expressed against the pose
+        an arm is commanded to rather than the point the jaw closes at.
+        """
+        return self.jaw_clearance + self.lowest_below_flange
 
     @classmethod
     def load(cls, raw: dict[str, Any]) -> Effector:
@@ -60,7 +91,10 @@ class Effector:
             WorldConfigError: If the block, or any key in it, is absent, or if
                 a dimension is not positive. A pad of no thickness
                 describes nothing, and a pad plane at or below the belt
-                describes a jaw closing through it.
+                describes a jaw closing through it. A grasp plane inside the
+                clearance the jaw's geometry keeps is refused for the same
+                reason: the numbers would describe a configuration that closes
+                the pads on the belt.
         """
         block = require(raw, "effector")
         arm = require(raw, "arm")
@@ -70,9 +104,20 @@ class Effector:
             "pad_depth": _positive(block, "pad_depth_meters"),
             "pad_height": _positive(block, "pad_height_meters"),
             "grasp_height": _positive(block, "grasp_height_meters"),
+            "lowest_below_flange": _positive(block, "lowest_below_flange_meters"),
+            "jaw_clearance": _positive(block, "jaw_clearance_meters"),
         }
         opening = float(require(arm, "max_grasp_width_meters", "arm"))
-        return cls(opening=opening, **values)
+        effector = cls(opening=opening, **values)
+        if effector.grasp_height < effector.pinch_floor:
+            raise WorldConfigError(
+                f"effector.grasp_height_meters is {effector.grasp_height} and the "
+                f"jaw's lowest geometry reaches {effector.lowest_below_flange} "
+                f"below the flange while keeping {effector.jaw_clearance} above "
+                f"the belt, so the pads would close at {effector.pinch_floor} or "
+                f"below"
+            )
+        return effector
 
 
 def _positive(block: dict[str, Any], key: str) -> float:

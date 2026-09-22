@@ -149,9 +149,9 @@ def test_ground_truth_markers_derivation_ac_gt_02() -> None:
     assert m0.channel == "chute_a"
     assert math.isclose(m0.pinch_position_belt[0], 0.10, abs_tol=1e-5)
     assert math.isclose(m0.pinch_position_belt[1], 0.05, abs_tol=1e-5)
-    assert math.isclose(
-        m0.pinch_position_belt[2], 0.90 + eff.grasp_height, abs_tol=1e-5
-    )
+    # The object's own centre is 20 mm up, which is inside the clearance the
+    # jaw's lowest geometry keeps, so the plane stands at the floor instead.
+    assert math.isclose(m0.pinch_position_belt[2], 0.90 + eff.pinch_floor, abs_tol=1e-5)
     assert math.isclose(m0.opening, 0.06, abs_tol=1e-5)
     assert m0.oriented is False
     assert m0.closing_yaw_belt is None
@@ -302,3 +302,42 @@ def test_ground_truth_markers_tracks_object_velocity() -> None:
     assert len(markers) == 1
     assert markers[0].velocity_world is not None
     assert math.isclose(markers[0].velocity_world[0], 0.15, abs_tol=1e-3)
+
+
+def test_ground_truth_markers_keep_the_jaw_clear_of_the_belt() -> None:
+    """AC-MARK-16: a ground truth marker keeps the jaw clear of the belt.
+
+    The pads hang below the pinch point on this jaw and the pinch point is what
+    a marker stands at, so the clearance the marker grants has to be measured to
+    the pads. It used to be measured to the pinch point and clamped 12.2 mm
+    above the surface, which put the pads 5.5 mm inside the belt with the
+    marker's own plane saying they were clear.
+    """
+    model, data = build_test_mujoco()
+    plan = minimal_plan()
+    eff = effector()
+    surface = plan.belt.surface_height
+    markers = ground_truth_markers(
+        model=model,
+        data=data,
+        active_objects=[
+            SpawnedObject(
+                index=0, name="object_0", material_class="M-01", channel="chute_a"
+            )
+        ],
+        plan=plan,
+        effector=eff,
+        belt_surface_height_world=surface,
+        at_nanos=0,
+        window_exit=1.0,
+        belt_speed=0.31,
+    )
+    assert len(markers) == 1
+    marker = markers[0]
+    # The object's centre is 20 mm up and the jaw needs 27.7 mm, so the floor
+    # is what the plane stands at rather than the object's own centre.
+    assert math.isclose(
+        marker.pinch_position_belt[2], surface + eff.pinch_floor, abs_tol=1e-9
+    )
+    lowest = marker.flange[2] - eff.lowest_below_flange
+    assert math.isclose(lowest, surface + eff.jaw_clearance, abs_tol=1e-9)

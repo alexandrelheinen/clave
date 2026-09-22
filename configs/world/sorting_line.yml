@@ -217,19 +217,48 @@ effector:
   # to close, depth across that horizontally, and height vertically. A pad is
   # drawn to scale, so a marker that looks like it would collide probably
   # would.
-  pad_thickness_meters: 0.012
-  pad_depth_meters: 0.040
-  pad_height_meters: 0.050
+  #
+  # MEASURED from the compiled model's own collision geoms, which are two boxes
+  # per finger, read in the tool's own frame: 8.0 mm along the closing
+  # direction, 22.0 mm across it and 37.5 mm tall. They read 12 x 40 x 50 mm
+  # while the effector was hypothetical, which put the assumed pad a quarter
+  # turn from the real one and the wrong size in every direction. A test reads
+  # the geoms out of the compiled model and fails if these drift from them.
+  pad_thickness_meters: 0.008
+  pad_depth_meters: 0.022
+  pad_height_meters: 0.0375
+  # How far the jaw's lowest collision geometry reaches below the flange, in
+  # meters, at its lowest over the jaw's own travel.
+  #
+  # MEASURED from the compiled model: 160.3 mm with the jaw open and 173.5 mm
+  # with it shut, so the worst of the two is the state the jaw is in when it is
+  # holding something. The pinch point, which is the pose every marker and every
+  # commanded flange pose is expressed against, sits 155.8 mm below the flange,
+  # so it is not the lowest part of the jaw at all: the pads hang 4.5 to 17.7 mm
+  # below it, and a clearance quoted at the pinch point is that much more
+  # generous than the clearance the jaw has.
+  lowest_below_flange_meters: 0.1735
+  # The clearance that lowest geometry keeps above the belt surface, in meters.
+  #
+  # Chosen, and it is the number the marker's grasp plane is derived from and
+  # the number the controller refuses a pose below. Ten millimetres is about
+  # four times the 2.7 mm vertical arrival error the control side was measured
+  # at, so it is a bound that holds rather than one that is nearly touched, and
+  # it puts the grasp plane of a flat object 27.7 mm above the surface instead
+  # of the 12.2 mm it used to stand at -- which is the difference between the
+  # pads clearing the belt and the pads being inside it.
+  jaw_clearance_meters: 0.010
   # Where the pads close, measured up from the belt surface.
   #
   # This stands in for a height nobody measures. The gate looks straight down
   # and estimates no depth, the `Height` role is refused at intake, and a
   # `WasteObject` on this line therefore carries no height at all. A depth
   # sensor would replace this constant with a reading and change nothing else.
-  # Pick offset from the pad closing plane to the conveyor belt surface. Keep
-  # this in YAML because it depends on the installed end effector and the
-  # desired approach clearance, not on the tracker or arm controller.
-  grasp_height_meters: 0.020
+  #
+  # It has to clear the plane the jaw's lowest geometry is kept off the belt at,
+  # which for the compiled jaw is 27.7 mm, and a load refuses a value below it
+  # rather than letting the tracker's markers close the pads on the belt.
+  grasp_height_meters: 0.030
 
 # Where a picked object goes. One funnel per channel the routing policy
 # resolves to, set beside the belt at belt height on the arm's own side, each

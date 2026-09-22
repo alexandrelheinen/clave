@@ -127,12 +127,15 @@ sits below the pads and would grant a clearance the jaw does not have.
 
 **Why the clearance is measured to the pads and not to the pinch point.** The
 pinch site is where the jaw closes, which is the pose an arm is commanded to,
-and in the compiled gripper it sits **12.8 mm below the lowest pad collision
-box**. A clearance quoted at the pinch point is therefore 12.8 mm more
-generous than the jaw's own, and the jaws reach the belt while the number says
-they are clear of it. The marker keeps standing at the pinch point and derives
-the plane it may descend to from the effector's geometry, so the pose a caller
-reads and the clearance the world enforces cannot disagree.
+and on the compiled gripper it is **not the lowest part of the jaw**: the pads
+hang **4.5 mm below it with the jaw open and 17.7 mm below it with the jaw
+shut**, measured from the model at both ends of the linkage's travel. A
+clearance quoted at the pinch point is therefore 4.5 to 17.7 mm more generous
+than the jaw's own, and the marker's old floor of 12.2 mm put the pads **5.5 mm
+inside the belt** while its own plane said they were clear of the surface. The
+marker keeps standing at the pinch point and derives the plane it may descend to
+from the effector's geometry, so the pose a caller reads and the clearance the
+world enforces cannot disagree.
 
 **Why the pose is only partly derived.** The record supplies the horizontal
 grasp point, the closing axis and the opening, and all three come from the

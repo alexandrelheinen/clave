@@ -377,12 +377,17 @@ during the hold the flange travelled along the belt at 0.05 to 0.07 m/s where
 the belt was moving at 0.26 m/s: the pads were pinned by friction to the belt
 the position actuators were pushing them into.
 
-**The jaw's geometry was misdescribed.** In the compiled model the pinch site,
-which is the pose every marker and every commanded flange pose is expressed
-against, sits **12.8 mm below the lowest pad collision box**, and one pad box
-measures 22 × 8 × 37.5 mm against the 12 × 40 × 50 mm the effector configuration
-claimed. So the clearance the marker granted was measured to a point below the
-jaw, and the assumed pad was a quarter turn from the real one.
+**The jaw's geometry was misdescribed.** Read in the tool's own frame, one pad
+box measures 8.0 mm along the closing direction, 22.0 mm across it and 37.5 mm
+tall, against the 12 × 40 × 50 mm the effector configuration claimed: a quarter
+turn from the real pad and a different size in every direction. And the pinch
+site, which is the pose every marker and every commanded flange pose is
+expressed against, is not the lowest part of the jaw at all: the pads reach
+**160.3 mm below the flange with the jaw open and 173.5 mm with it shut**,
+against the 155.8 mm of the pinch point, so a clearance quoted there is 4.5 to
+17.7 mm more generous than the jaw's own. The marker's floor of 12.2 mm above
+the surface therefore put the pads **5.5 mm inside the belt** while the marker's
+own plane said they were clear.
 
 **What cannot be attributed, and why that is recorded here.** This run was made
 at 23:17 on 2026-09-21 and the tree it ran at is not written beside it. The phase

@@ -24,12 +24,24 @@ from clave.control.settings import (
     TaskSettings,
 )
 from clave.control.task import TaskError, TaskMachine
+from clave.world.effector import Effector
 
 ROOT = Path(__file__).resolve().parents[2]
 BELT_SURFACE = 0.90
 PARK = (0.45, -1.00, 1.20)
 BELT_SPEED = 0.314
 LIMITS = GuidanceSettings(max_speed=1.00, max_acceleration=2.50)
+EFFECTOR = Effector(
+    finger_length=0.1558,
+    pad_thickness=0.008,
+    pad_depth=0.022,
+    pad_height=0.0375,
+    grasp_height=0.030,
+    lowest_below_flange=0.1735,
+    jaw_clearance=0.010,
+    opening=0.085,
+)
+"""The shipped jaw, so a full visit has the geometry it plans against."""
 
 
 def task_settings(**overrides: object) -> TaskSettings:
@@ -63,6 +75,7 @@ def machine(**overrides: object) -> TaskMachine:
         belt_surface=BELT_SURFACE,
         belt_speed=BELT_SPEED,
         guidance=LIMITS,
+        effector=EFFECTOR,
     )
 
 
@@ -76,7 +89,7 @@ def candidate(track_id: int = 1, x: float = 0.30, y: float = 0.0) -> Candidate:
     return Candidate(
         track_id=track_id,
         anchor=(x, y, 0.945),
-        flange=(x, y, 1.035),
+        flange=(x, y, 1.09),
         closing_axis=math.pi / 2.0,
         distance_before_leaving=1.5,
     )
@@ -140,7 +153,7 @@ def test_an_unoriented_candidate_asks_for_no_rotation() -> None:
     round_one = Candidate(
         track_id=1,
         anchor=(0.3, 0.0, 0.945),
-        flange=(0.3, 0.0, 1.035),
+        flange=(0.3, 0.0, 1.09),
         closing_axis=None,
         distance_before_leaving=1.0,
     )
@@ -323,7 +336,7 @@ def test_an_object_with_no_interception_is_missed_rather_than_chased() -> None:
     leaving = Candidate(
         track_id=7,
         anchor=(0.30, 0.0, 0.945),
-        flange=(0.30, 0.0, 1.035),
+        flange=(0.30, 0.0, 1.09),
         closing_axis=0.0,
         distance_before_leaving=0.01,
     )
@@ -425,7 +438,7 @@ def test_a_settling_candidate_is_served_at_the_marker_pose() -> None:
     settling = Candidate(
         track_id=1,
         anchor=(0.30, 0.0, 0.945),
-        flange=(0.30, 0.0, 1.035),
+        flange=(0.30, 0.0, 1.09),
         closing_axis=math.pi / 2.0,
         distance_before_leaving=1.5,
         velocity_world=(BELT_SPEED, 0.0, -0.40),
@@ -441,14 +454,75 @@ def test_the_shipped_configuration_builds_a_machine() -> None:
     from clave.world.config import load
 
     settings = ControlSettings.load(load(ROOT / "configs" / "runtime" / "control.yml"))
+    world = ROOT / "configs" / "world" / "sorting_line.yml"
     arm = TaskMachine(
         settings.task,
         settings.calibration,
         belt_surface=BELT_SURFACE,
         belt_speed=BELT_SPEED,
         guidance=settings.guidance,
+        effector=Effector.load(load(world)),
     )
     assert arm.step(queue_of(), PARK, 0.0).phase in {Phase.PARK, Phase.STANDBY}
+
+
+def test_the_full_visit_profile_needs_the_jaw_geometry() -> None:
+    """AC-MOVE-50: the full-visit profile needs the jaw's geometry.
+
+    It descends onto a belt, and the pose it descends to is the flange rather
+    than the jaw, so without the jaw's own dimensions the machine cannot know
+    how close the pads come to the surface. Refusing at construction is the
+    same answer the profile gives for missing ceilings.
+    """
+    with pytest.raises(TaskError, match="jaw's geometry"):
+        TaskMachine(
+            task_settings(profile=Profile.FULL_VISIT),
+            CalibrationSettings(flange_offset=(0.0, 0.0, 0.0)),
+            belt_surface=BELT_SURFACE,
+            belt_speed=BELT_SPEED,
+            guidance=LIMITS,
+        )
+
+
+def test_a_grasp_pose_below_the_jaw_clearance_is_refused() -> None:
+    """AC-MOVE-50: a grasp pose below the jaw clearance is refused.
+
+    The candidate's pose puts the pads 20 mm under the belt surface, which no
+    marker would grant and which a plan that drifted can still ask for. It is
+    recorded against the candidate and no plan is built from it.
+    """
+    arm = machine(profile=Profile.FULL_VISIT)
+    under = Candidate(
+        track_id=9,
+        anchor=(0.30, 0.0, 0.945),
+        flange=(0.30, 0.0, BELT_SURFACE + 0.010),
+        closing_axis=math.pi / 2.0,
+        distance_before_leaving=1.5,
+    )
+    goal = arm.step(queue_of(under), PARK, 0.0)
+    assert arm.flying is False
+    assert arm.missed == (9,)
+    assert goal.position == PARK
+
+
+def test_a_grasp_pose_at_the_jaw_clearance_is_taken() -> None:
+    """AC-MOVE-50: a grasp pose exactly at the clearance is taken.
+
+    The marker clamps its plane to this height, so a guard that refused the
+    boundary would refuse every marker for the shortest object in the set.
+    """
+    arm = machine(profile=Profile.FULL_VISIT)
+    floor = BELT_SURFACE + EFFECTOR.flange_floor
+    shortest = Candidate(
+        track_id=3,
+        anchor=(0.30, 0.0, 0.945),
+        flange=(0.30, 0.0, floor),
+        closing_axis=math.pi / 2.0,
+        distance_before_leaving=1.5,
+    )
+    arm.step(queue_of(shortest), PARK, 0.0)
+    assert arm.flying is True
+    assert arm.missed == ()
 
 
 def test_a_refusal_with_nothing_queued_is_still_recorded() -> None:
@@ -477,7 +551,7 @@ def test_a_plan_is_re_aimed_while_the_arm_is_still_approaching() -> None:
     drifted = Candidate(
         track_id=1,
         anchor=(0.34, 0.05, 0.945),
-        flange=(0.34, 0.05, 1.035),
+        flange=(0.34, 0.05, 1.09),
         closing_axis=math.pi / 2.0,
         distance_before_leaving=1.5,
     )
@@ -501,6 +575,7 @@ def test_a_pick_outside_the_trusted_region_is_never_planned() -> None:
         belt_surface=BELT_SURFACE,
         belt_speed=BELT_SPEED,
         guidance=LIMITS,
+        effector=EFFECTOR,
         admits=lambda pose: pose == PARK,
     )
     only = candidate(1, x=0.30)
@@ -525,6 +600,7 @@ def test_no_plan_is_built_from_a_pose_the_arm_should_not_be_in() -> None:
         belt_surface=BELT_SURFACE,
         belt_speed=BELT_SPEED,
         guidance=LIMITS,
+        effector=EFFECTOR,
         admits=lambda pose: pose != outside,
     )
     goal = arm.step(queue_of(candidate(1, x=0.30)), outside, 0.0)
@@ -542,6 +618,7 @@ def test_task_machine_accepts_custom_belt_parameters() -> None:
         belt_surface=BELT_SURFACE,
         belt_speed=BELT_SPEED,
         guidance=LIMITS,
+        effector=EFFECTOR,
         belt_width=0.70,
         belt_center_y=0.05,
     )
@@ -555,7 +632,7 @@ def test_reaim_refreshes_plan_yaw_in_flight() -> None:
     first = Candidate(
         track_id=1,
         anchor=(0.30, 0.0, 0.945),
-        flange=(0.30, 0.0, 1.035),
+        flange=(0.30, 0.0, 1.09),
         closing_axis=0.0,
         distance_before_leaving=1.5,
     )
@@ -566,7 +643,7 @@ def test_reaim_refreshes_plan_yaw_in_flight() -> None:
     rotated = Candidate(
         track_id=1,
         anchor=(0.30, 0.0, 0.945),
-        flange=(0.30, 0.0, 1.035),
+        flange=(0.30, 0.0, 1.09),
         closing_axis=math.pi / 4.0,
         distance_before_leaving=1.5,
     )
@@ -583,7 +660,7 @@ def test_reaim_ignores_calls_outside_track_phase() -> None:
     cand = Candidate(
         track_id=1,
         anchor=(0.30, 0.0, 0.945),
-        flange=(0.30, 0.0, 1.035),
+        flange=(0.30, 0.0, 1.09),
         closing_axis=0.20,
         distance_before_leaving=1.5,
     )
@@ -595,7 +672,7 @@ def test_reaim_ignores_calls_outside_track_phase() -> None:
     changed = Candidate(
         track_id=1,
         anchor=(0.30, 0.0, 0.945),
-        flange=(0.30, 0.0, 1.035),
+        flange=(0.30, 0.0, 1.09),
         closing_axis=0.80,
         distance_before_leaving=1.5,
     )
