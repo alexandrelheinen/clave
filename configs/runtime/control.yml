@@ -65,6 +65,16 @@ task:
   # The lag is a lag and not a limit. A controller given the belt velocity as
   # a feedforward term would cancel most of it, which is a change to the
   # servo rather than to this number.
+  #
+  # THAT CHANGE HAS SINCE BEEN MADE AND THIS NUMBER DID NOT HEAR ABOUT IT.
+  # `servo.lead_seconds` cancels 96 to 99 percent of the lag at every speed,
+  # leaving 1.0 to 1.25 mm of settled error against a pose moving at up to the
+  # ceiling, measured on the tree that carries the belt-clearance work (see
+  # docs/measurements.md, "What the actuator lag costs now"). Seventy
+  # millimetres is therefore 56 to 70 times the error it gates, so a stepped
+  # visit counts as arrived a long way before it has. Lowering it is a
+  # behaviour change that needs its own run, so the number stands and the
+  # discrepancy is recorded here rather than quietly applied.
   arrival_tolerance_meters: 0.070
 
   # How long the flange holds station before the visit counts as served, and
