@@ -153,6 +153,30 @@ task:
   # an edge or on nothing.
   aim_tolerance_meters: 0.030
 
+  # How long an object's drift across the belt is carried forward, in seconds.
+  #
+  # MEASURED, and it is the fix for the worst of the aiming errors. An object
+  # on a belt is driven along it and not across it: the component along the
+  # belt is the belt's velocity and holds for as long as the belt does, and the
+  # component across it comes from a parcel turning or being nudged and decays
+  # within a fraction of a second. Measured over the shipped run, the
+  # autocorrelation of the cross-belt velocity is +0.04 after 0.2 s and -0.02
+  # after 0.8 s, and the p90 lateral speed is 0.261 m/s.
+  #
+  # Extrapolated over the four seconds a visit commits ahead, that is nine
+  # hundred millimetres of aim error -- and the run that did it shows exactly
+  # that: two visits in nine commanded a pose 208 mm and 346 mm from any
+  # object, outside the region the arm is trusted over, with the arm falling 50
+  # to 80 mm behind its own command while the jaws closed on nothing. Those are
+  # the misses that look like the arm refusing to pick.
+  #
+  # A third of a second is one and a half times the measured decorrelation
+  # time: long enough to keep the part of the drift that is still moving the
+  # object, short enough that the rest is not invented. The data point to
+  # something in the 0.2 to 0.5 s range and the exact value is not measured to
+  # better than that.
+  drift_horizon_seconds: 0.30
+
   # Where the arm rests when it has nothing to serve.
   #
   # The four bin mouths run from x = 0.30 m to x = 1.14 m at y = -0.42 m.

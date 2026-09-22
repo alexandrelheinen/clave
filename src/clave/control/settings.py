@@ -19,6 +19,21 @@ from typing import Any
 
 from clave.world.config import WorldConfigError, require
 
+DRIFT_HORIZON = 0.30
+"""How long an object's drift across the belt is carried, in seconds.
+
+An object is driven along the belt and not across it. The drift comes from a
+parcel turning or being nudged, and measured on the shipped line the
+autocorrelation of the cross-belt velocity is +0.04 after 0.2 s and -0.02
+after 0.8 s: it decays within a fraction of a second, so carrying it over a
+four second visit is not a prediction. The p90 lateral speed on this belt is
+0.261 m/s, which over four seconds is 900 mm of aim error -- and measured, two
+visits in nine commanded a pose 208 and 346 mm from any object, outside the
+region the arm is trusted over, with the arm falling 50 to 80 mm behind the
+command while the jaws closed on nothing. 0.30 s is one and a half times the
+measured decorrelation time. Configured as `task.drift_horizon_seconds`.
+"""
+
 Point = tuple[float, float, float]
 """A position in belt frame meters, which is MuJoCo world."""
 
@@ -127,6 +142,10 @@ class TaskSettings:
             pose may stand from the pose a plan in flight is aiming at before
             the visit is re-solved, in meters. Past it, a plan that cannot be
             corrected is abandoned rather than flown.
+        drift_horizon: How long an object's drift across the belt is carried
+            forward, in seconds. The travel along the belt is carried for the
+            whole interception; the drift across it decays within a fraction
+            of a second and is carried for this long.
     """
 
     profile: Profile
@@ -141,6 +160,7 @@ class TaskSettings:
     park_marker_color: Point
     safe_clearance: float = 0.300
     aim_tolerance: float = 0.030
+    drift_horizon: float = DRIFT_HORIZON
 
     def __init__(
         self,
@@ -156,6 +176,7 @@ class TaskSettings:
         park_marker_color: Point = (0.0, 0.0, 0.0),
         safe_clearance: float | None = None,
         aim_tolerance: float = 0.030,
+        drift_horizon: float = DRIFT_HORIZON,
         *,
         park_position: Point | None = None,
     ) -> None:
@@ -180,6 +201,7 @@ class TaskSettings:
             safe_clearance if safe_clearance is not None else approach_height,
         )
         object.__setattr__(self, "aim_tolerance", aim_tolerance)
+        object.__setattr__(self, "drift_horizon", drift_horizon)
 
     @property
     def park_position(self) -> Point:
@@ -294,6 +316,7 @@ class ControlSettings:
                     else None
                 ),
                 aim_tolerance=_positive(task, "aim_tolerance_meters", "task"),
+                drift_horizon=_positive(task, "drift_horizon_seconds", "task"),
             ),
             guidance=GuidanceSettings(
                 max_speed=_positive(

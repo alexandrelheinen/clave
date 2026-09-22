@@ -162,17 +162,28 @@ def test_a_vertical_velocity_does_not_move_the_grasp_plane() -> None:
     assert sinking.end.position[2] == pytest.approx(OBJECT[2])
 
 
-def test_a_lateral_velocity_still_carries_the_object_across_the_belt() -> None:
-    """AC-MOVE-46: drift across the belt is still predicted.
+def test_a_lateral_velocity_carries_the_object_only_while_it_lasts() -> None:
+    """AC-MOVE-46: drift across the belt is predicted for as long as it lasts.
 
-    Only the height is not a transport axis. An object rolling sideways reaches
-    the jaw somewhere else, and refusing to predict that would trade this
-    mistake for another one.
+    Only the height is not a transport axis. But the two horizontal axes are
+    not one process either: along the belt the object is driven and its velocity
+    holds for as long as the belt does, and across the belt nothing drives it
+    and the drift decays within a fraction of a second. Measured on the shipped
+    line the autocorrelation of the cross-belt velocity is +0.04 after 0.2 s and
+    −0.02 after 0.8 s, and the p90 lateral speed is 0.261 m/s; carried over the
+    four seconds a visit commits ahead that is 900 mm, and the run that did it
+    aimed two visits in nine at a pose 208 and 346 mm from any object.
     """
+    from clave.control.trajectory import DRIFT_HORIZON
+
     drifting = a_plan(belt_velocity=(BELT[0], 0.05, 0.0))
     assert drifting is not None
     across = next(leg for leg in drifting.legs if leg.phase is Phase.DESCEND).segment
-    assert across.end.position[1] > OBJECT[1] + 0.05
+    carried = across.end.position[1] - OBJECT[1]
+    assert carried > 0.0, "the drift across the belt is not predicted at all"
+    assert carried <= 0.05 * DRIFT_HORIZON + 1e-9, (
+        "the drift is carried past the horizon it lasts for"
+    )
 
 
 def test_a_plan_runs_out_rather_than_extrapolating() -> None:

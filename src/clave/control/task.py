@@ -66,7 +66,7 @@ from clave.control.settings import (
     Profile,
     TaskSettings,
 )
-from clave.control.trajectory import State, where
+from clave.control.trajectory import State, where_carried
 from clave.errors import ClaveError
 from clave.world.effector import Effector
 
@@ -668,7 +668,11 @@ class TaskMachine:
         target = self._grasp_pose(head)
         drift = math.dist(self._fresh_aim(head, target, at_seconds), aim)
         refreshed = self._refinement(head, target, at_seconds)
-        if refreshed is not None and self._takes(_aim_of(refreshed)):
+        if (
+            refreshed is not None
+            and self._takes(_aim_of(refreshed))
+            and self._within_reach(refreshed)
+        ):
             turned = self._yaw_at_pick(head, refreshed, at_seconds)
             self._refreshes.append(Reaim(at_seconds, track_id, drift, False, "took"))
             self._plan = refreshed.with_yaw(
@@ -753,6 +757,37 @@ class TaskMachine:
             return head.closing_yaw_belt
         return (head.closing_yaw_belt + turn + math.pi) % (2.0 * math.pi) - math.pi
 
+    def _within_reach(self, plan: Plan) -> bool:
+        """Whether every pose along a plan's path is one the arm is trusted over.
+
+        The descent's endpoint was checked and the path to it was not, and the
+        path is where the failure lived: the carry rides with the object for the
+        whole hold, and an object drifting across the belt takes the command
+        with it. Measured on the run that prompted this, two visits in nine
+        commanded poses 208 and 346 mm from any object and outside the region
+        the arm is trusted over, the servo projected them back on the way to the
+        joints, and the arm fell **50 to 80 mm behind its own command while the
+        jaws closed on nothing**.
+
+        Sampled rather than solved: the region is an annulus and a path between
+        two admissible poses can cross the hole, so the question is what the
+        worst point on each leg says. Five points per leg costs a handful of
+        comparisons per capture and cannot miss a leg that leaves by more than
+        the sample spacing.
+
+        Args:
+            plan: The plan to check.
+
+        Returns:
+            Whether every sampled pose is inside the region.
+        """
+        for leg in plan.legs:
+            for step in range(5):
+                at = leg.segment.duration * step / 4.0
+                if not self._admits(leg.segment.at(at).position):
+                    return False
+        return True
+
     def _object_velocity(self, head: Candidate) -> Point:
         """Return how the belt is carrying this candidate, with no vertical guess.
 
@@ -796,11 +831,12 @@ class TaskMachine:
             The pose the jaws would meet the object at, in world frame meters.
         """
         assert self._plan is not None
-        return where(
+        return where_carried(
             target,
             self._object_velocity(head),
             self._plan.pick_at - at_seconds,
             0.0,
+            self._settings.drift_horizon,
         )
 
     def _refinement(
@@ -845,6 +881,7 @@ class TaskMachine:
             belt_border_y=self._belt_border_y,
             safe_height_world=transit_height_world,
             cross_speed=self._settings.approach_speed,
+            drift_horizon=self._settings.drift_horizon,
         )
 
     def _abandon(
@@ -1023,12 +1060,15 @@ class TaskMachine:
                 belt_border_y=self._belt_border_y,
                 safe_height_world=transit_height_world,
                 cross_speed=self._settings.approach_speed,
+                drift_horizon=self._settings.drift_horizon,
             )
             if attempt is not None:
                 descent_leg = next(
                     leg for leg in attempt.legs if leg.phase is Phase.DESCEND
                 )
-                if self._takes(descent_leg.segment.end.position):
+                if self._takes(descent_leg.segment.end.position) and self._within_reach(
+                    attempt
+                ):
                     plan = attempt
                     break
                 if descent_leg.segment.end.position[2] < self._grasp_floor_world:
