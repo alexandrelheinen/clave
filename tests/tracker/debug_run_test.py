@@ -58,6 +58,97 @@ def test_the_run_records_the_revision_and_the_configuration_digests() -> None:
     assert digests["world"] != digests["control"], "two configs hashed as one"
 
 
+def test_the_run_records_what_it_was_asked_for_ac_move_54() -> None:
+    """AC-MOVE-54: a run records the command line that produced it.
+
+    The regression this exists for: the seed, the duration and the view are
+    not configuration, so a run's artifacts could not be run again even by
+    whoever wrote them. Reproducing a published run at the seed recorded
+    nowhere produced a different world, and nothing in the artifacts could say
+    whether the seed or the world was the difference.
+    """
+    ask = {
+        "seconds": 60.0,
+        "seed": 4,
+        "capture_interval_seconds": 0.5,
+        "view": "belt",
+        "ground_truth_tracker": True,
+    }
+    record = _run_metadata(ROOT, {"world": WORLD}, ask)
+    assert record["parameters"] == ask
+    for name in ("revision", "dirty", "config_digests", "config_paths"):
+        assert name in record, f"the parameters replaced {name}"
+
+
+def test_the_report_survives_the_terminal_it_printed_on_ac_move_55() -> None:
+    """AC-MOVE-55: a run files its report beside its artifacts.
+
+    The figures used to be printed and nothing else, so the run this work
+    started from lost its own grasp distances when its terminal closed, and
+    reading them back from telemetry meant inferring which of thirteen objects
+    each visit had been about.
+    """
+    from clave.tracker.debug_run import (
+        DebugRunReport,
+        _report_document,
+        report_lines,
+    )
+
+    report = DebugRunReport(
+        captures=120,
+        tracks=4,
+        reorders={"appeared": 7, "retired": 3, "anchor": 2},
+        head_churn=1,
+        served=(1, 2, 3),
+        missed=(4,),
+        arrivals=(0.002,),
+        lifts=(0.012,),
+        jaw_gaps=(0.021,),
+        abandoned=((5, "no interception from an aim 338 mm out"),),
+        worst_aim_drift=0.338,
+        grasp_yaw_errors=(7.3,),
+        lurches=(52.9,),
+        climbs=(1.21,),
+        placed={"CH-HDPE": 2},
+        misrouted=0,
+        feed_rate=0.125,
+        measured_rate=0.100,
+        belt_speed=0.255,
+        profile="full_visit",
+        closest_approach=0.010,
+        closest_live=0.020,
+        faults=(),
+        phase="standby",
+        drawn=3,
+        geoms=11,
+        frames_written=120,
+        output=Path("runs/debug/example"),
+        video_path=None,
+        telemetry_path=None,
+        metadata_path=Path("runs/debug/example/metadata.json"),
+        min_jaw_clearance=0.0071,
+        belt_contacts=0,
+        worst_tool_tilt_degrees=3.7,
+        ground_truth=True,
+    )
+    text = "\n".join(report_lines(report))
+    for figure in (
+        "visits served   3 [1, 2, 3]",
+        "visits given up 1",
+        "338 mm out",
+        "jaw to object   21 mm",
+        "tool turned off 7.3 deg",
+        "vertical lurch  52.9 m/s2",
+        "jaw clearance   7.1 mm above the belt, 0 ticks in contact",
+    ):
+        assert figure in text, f"{figure!r} is not in the report"
+    document = _report_document(report)
+    assert document["abandoned"] == [[5, "no interception from an aim 338 mm out"]]
+    assert document["served"] == [1, 2, 3]
+    assert document["metadata_path"] == "runs/debug/example/metadata.json"
+    assert document["worst_aim_drift"] == 0.338
+
+
 def test_a_telemetry_row_carries_the_command_and_the_jaw(
     world: Any, tmp_path: Path
 ) -> None:
