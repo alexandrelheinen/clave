@@ -40,12 +40,14 @@ rather than estimated, so all of this is arithmetic and introduces no state.
 
 from __future__ import annotations
 
-import math
 from collections.abc import Callable
 from dataclasses import dataclass
 
+import numpy as np
+
 from clave.control.settings import GuidanceSettings, Point
 from clave.control.task import Goal
+from clave.control.trajectory import clip, distance
 from clave.tracker.belt_frame import carry
 
 NANOS_PER_SECOND = 1_000_000_000
@@ -141,7 +143,7 @@ def toward(
     inside = keep_inside if keep_inside is not None else _unchanged
     aim = _intercept(motion.position, goal, limits.max_speed, belt_speed, at_nanos)
 
-    remaining = math.dist(motion.position, aim)
+    remaining = distance(motion.position, aim)
     speed = _speed(motion.speed, remaining, timestep, limits)
     reach = speed * timestep
     if remaining <= reach or remaining == 0.0:
@@ -196,7 +198,7 @@ def _intercept(
         return goal.position
     aim = carry(goal.position, belt_speed, goal.observed_at_nanos, at_nanos)
     for _ in range(INTERCEPT_PASSES):
-        seconds = math.dist(reference, aim) / max_speed
+        seconds = distance(reference, aim) / max_speed
         aim = carry(
             goal.position,
             belt_speed,
@@ -231,8 +233,8 @@ def _speed(
     # and the profile then enters the braking leg with a drop of 0.0072 m/s
     # against a bound of 0.0050. Looking ahead cuts that to 1.8e-6 m/s.
     ahead = max(0.0, remaining - speed * timestep)
-    stoppable = math.sqrt(max(0.0, 2.0 * limits.max_acceleration * ahead))
-    wanted = max(0.0, min(limits.max_speed, speed + step, stoppable))
+    stoppable = float(np.sqrt(max(0.0, 2.0 * limits.max_acceleration * ahead)))
+    wanted = clip(speed + step, min(limits.max_speed, stoppable))
     # What is left of that residual is clamped away. On its own this floor is
     # harmful: without the look-ahead it holds the speed above the stopping
     # curve, the error compounds over the braking leg, and the profile arrives

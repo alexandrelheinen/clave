@@ -56,6 +56,8 @@ import math
 from collections.abc import Callable
 from dataclasses import dataclass
 
+import numpy as np
+
 from clave.control.pick import Flight, Plan, plan_pick, refine
 from clave.control.selection import Candidate, Queue
 from clave.control.settings import (
@@ -66,7 +68,7 @@ from clave.control.settings import (
     Profile,
     TaskSettings,
 )
-from clave.control.trajectory import State, where_carried
+from clave.control.trajectory import State, as_point, as_vector, distance, where_carried
 from clave.errors import ClaveError
 from clave.world.effector import Effector
 
@@ -74,6 +76,15 @@ LOGGER = logging.getLogger(__name__)
 
 NANOS_PER_SECOND = 1_000_000_000
 """Nanoseconds in a second, for the instant a goal records."""
+
+LEG_SAMPLES = 5
+"""Poses per plan leg in the trusted-region test, counting both endpoints.
+
+Five is the resolution the feasibility claim is made at: what the check can
+miss is a leg that leaves the annulus and returns within a quarter of its own
+length. Raising it costs a call into the world geometry per pose per leg, so
+the reason to raise it is a refusal that a finer sampling would have caught.
+"""
 
 
 class TaskError(ClaveError):
@@ -484,7 +495,7 @@ class TaskMachine:
             self._phase = Phase.TRACK
 
         goal = self._track(head, at_nanos, self._phase)
-        gap = math.dist(flange_pos, goal.position)
+        gap = distance(flange_pos, goal.position)
         if gap > self._settings.arrival_tolerance:
             # Not there yet, so the dwell has not started. A visit that
             # completes because time passed rather than because the arm
@@ -548,7 +559,7 @@ class TaskMachine:
             # the first tick of it is the one a pick is decided on. Later
             # ticks are the carry, and measuring there would report how well
             # the arm rides the belt rather than how well it arrived.
-            self._pick_error = math.dist(flange_pos, state.position)
+            self._pick_error = distance(flange_pos, state.position)
         self._phase = phase
         yaw = self._plan.yaw_at(at_seconds)
         if yaw is None:
@@ -597,11 +608,9 @@ class TaskMachine:
             which is the pose a plan aims at and the pose a stepped visit
             descends to. One place, so the two cannot disagree.
         """
-        offset = self._calibration.flange_offset
-        return (
-            head.flange_position_world[0] + offset[0],
-            head.flange_position_world[1] + offset[1],
-            head.flange_position_world[2] + offset[2],
+        return as_point(
+            as_vector(head.flange_position_world)
+            + as_vector(self._calibration.flange_offset)
         )
 
     def _reaim(
@@ -666,7 +675,7 @@ class TaskMachine:
             return
         aim = _aim_of(self._plan)
         target = self._grasp_pose(head)
-        drift = math.dist(self._fresh_aim(head, target, at_seconds), aim)
+        drift = distance(self._fresh_aim(head, target, at_seconds), aim)
         refreshed = self._refinement(head, target, at_seconds)
         if (
             refreshed is not None
@@ -781,9 +790,15 @@ class TaskMachine:
         Returns:
             Whether every sampled pose is inside the region.
         """
+        # Five poses per leg, because the region test is a call into the world
+        # geometry and not an arithmetic expression: what this can miss is a leg
+        # that leaves the annulus and returns within one spacing, and that is
+        # the resolution the claim is made at. `np.linspace` rather than a
+        # literal step so the count and the fractions cannot drift apart.
+        fractions = np.linspace(0.0, 1.0, LEG_SAMPLES)
         for leg in plan.legs:
-            for step in range(5):
-                at = leg.segment.duration * step / 4.0
+            for fraction in fractions:
+                at = leg.segment.duration * float(fraction)
                 if not self._admits(leg.segment.at(at).position):
                     return False
         return True
@@ -809,6 +824,8 @@ class TaskMachine:
             if head.velocity_world is not None
             else (self._belt_speed, 0.0, 0.0)
         )
+        # A floor on one component only: `max` names that, and `np.clip` over a
+        # per-component bound would hide which axis carries it.
         return (max(0.0, obj_vel[0]), obj_vel[1], obj_vel[2])
 
     def _fresh_aim(self, head: Candidate, target: Point, at_seconds: float) -> Point:
@@ -1133,9 +1150,7 @@ class TaskMachine:
         assert self._plan is not None
         last = self._plan.legs[-1].segment.end.position
         error = (
-            self._pick_error
-            if self._pick_error is not None
-            else math.dist(flange, last)
+            self._pick_error if self._pick_error is not None else distance(flange, last)
         )
         self._arrivals.append(error)
         self._served.append(self._plan.track_id)
@@ -1190,10 +1205,15 @@ class TaskMachine:
         return Goal(
             phase=phase,
             rides_belt=True,
-            target_position_world=(
-                head.flange_position_world[0] + offset[0],
-                head.flange_position_world[1] + offset[1],
-                self._belt_surface_height_world + above + offset[2],
+            target_position_world=as_point(
+                np.asarray(
+                    [
+                        head.flange_position_world[0],
+                        head.flange_position_world[1],
+                        self._belt_surface_height_world + above,
+                    ]
+                )
+                + as_vector(offset)
             ),
             target_yaw_world=head.closing_yaw_belt,
             track_id=head.track_id,
@@ -1212,7 +1232,7 @@ class TaskMachine:
             travelling to it.
         """
         park = self._settings.park_position_world
-        arrived = math.dist(flange, park) <= self._settings.arrival_tolerance
+        arrived = distance(flange, park) <= self._settings.arrival_tolerance
         return Goal(
             phase=Phase.STANDBY if arrived else Phase.PARK,
             target_position_world=park,

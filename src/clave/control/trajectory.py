@@ -54,19 +54,176 @@ factor of about five, with the slip at the jaw going from 0.314 m/s to zero.
 
 from __future__ import annotations
 
-import math
+import logging
+from collections.abc import Callable
 from dataclasses import dataclass
+
+import numpy as np
+from numpy.typing import NDArray
 
 from clave.control.settings import DRIFT_HORIZON, Point
 
+LOGGER = logging.getLogger(__name__)
+
+Vector = NDArray[np.float64]
+"""A three-component vector in belt frame meters.
+
+The arithmetic in this module is numpy's. A position crossing a public seam is
+the plain three-tuple `Point`; between the seam and the result it is an array,
+so a norm is `np.linalg.norm` and a clamp is `np.clip` rather than a square root
+written out longhand and a pair of nested `min` and `max` calls.
+"""
+
+
+def as_vector(vector: Point) -> Vector:
+    """Return a tuple of three numbers as the array the arithmetic uses.
+
+    Args:
+        vector: The position, velocity or acceleration.
+
+    Returns:
+        A three-element float array.
+    """
+    return np.asarray(vector, dtype=np.float64)
+
+
+def as_point(vector: Vector) -> Point:
+    """Return an array as the three-tuple the dataclasses carry.
+
+    Args:
+        vector: The array.
+
+    Returns:
+        The tuple, with Python floats rather than numpy scalars, so a value
+        crossing the seam compares and serialises like any other number.
+    """
+    return (float(vector[0]), float(vector[1]), float(vector[2]))
+
+
+def norm(vector: Point) -> float:
+    """Return the length of a vector.
+
+    Args:
+        vector: The vector.
+
+    Returns:
+        Its Euclidean norm, as a Python float.
+    """
+    return float(np.linalg.norm(as_vector(vector)))
+
+
+def distance(one: Point, other: Point) -> float:
+    """Return the distance between two positions.
+
+    Args:
+        one: A position.
+        other: Another.
+
+    Returns:
+        The Euclidean distance between them, as a Python float.
+    """
+    return float(np.linalg.norm(as_vector(one) - as_vector(other)))
+
+
+def clip(value: float, ceiling: float) -> float:
+    """Return a value held between zero and a ceiling.
+
+    Args:
+        value: The value.
+        ceiling: The most it may be.
+
+    Returns:
+        `value` with a floor at zero and that ceiling, which is what every
+        speed, torque and width in this package is held to.
+    """
+    return float(np.clip(value, 0.0, ceiling))
+
+
 BISECTION_PASSES = 40
-"""How many halvings the interception search takes.
+"""How many halvings a monotone feasibility search takes.
 
 Forty passes take any bracket to about a picosecond, which is far below the
 two millisecond tick and costs nothing: each pass is a handful of polynomial
 evaluations. A tolerance would be a number to defend; a fixed count that is
 obviously enough is not.
 """
+
+
+def bisect_feasible(
+    feasible: Callable[[float], bool],
+    low: float,
+    high: float,
+    passes: int = BISECTION_PASSES,
+) -> float:
+    """Return the smallest value in a bracket whose predicate holds.
+
+    A predicate asking whether a duration respects a set of ceilings is
+    monotone -- peak speed and peak acceleration of a quintic both fall as its
+    duration grows, so every longer duration fits at least as well -- which is
+    why the answer is a bisection and not a general root find. It is also why
+    scipy is not used here: `scipy.optimize.bisect` and `brentq` solve
+    `f(x) == 0` for a continuous `f`, and what is being searched here is a
+    boolean, for which bisection on monotonicity is exact and simpler than
+    anything a solver would do with it.
+
+    Args:
+        feasible: Whether a duration satisfies the ceilings. Monotone: false
+            below the answer and true at or above it.
+        low: A duration known to be infeasible.
+        high: A duration known to be feasible.
+        passes: How many halvings to take.
+
+    Returns:
+        The smallest feasible duration the bracket resolves to, which is `high`
+        itself when the bracket is already tight.
+    """
+    for _ in range(passes):
+        middle = 0.5 * (low + high)
+        if middle <= low:
+            break
+        if feasible(middle):
+            high = middle
+        else:
+            low = middle
+    return high
+
+
+def soonest_feasible(
+    feasible: Callable[[float], bool],
+    low: float,
+) -> float:
+    """Return the smallest duration at or above `low` whose predicate holds.
+
+    `bisect_feasible` solves a bracket once a caller has both ends. A duration
+    search that starts from a lower bound has only the failing end, so this
+    grows the passing end by doubling until the predicate holds, then bisects
+    between the two. Doubling rather than a fixed step because the feasible
+    duration has no natural ceiling here the way a belt window bounds an
+    interception: it could be any size, and doubling reaches it in a
+    logarithmic number of steps.
+
+    Args:
+        feasible: Whether a duration satisfies the ceilings. Monotone: false
+            below the answer and true at or above it.
+        low: A lower bound at or below the answer. Must be positive, because
+            the bracket grows from it by multiplication.
+
+    Returns:
+        The smallest feasible duration at or above `low`, which is `low`
+        itself when `low` already fits.
+
+    Raises:
+        ValueError: If `low` is not positive.
+    """
+    if low <= 0.0:
+        raise ValueError(f"a duration lower bound of {low} is not positive")
+    if feasible(low):
+        return low
+    high = low
+    while not feasible(high):
+        high *= 2.0
+    return bisect_feasible(feasible, low, high)
+
 
 SAMPLES = 64
 """How many points a segment is sampled at to bound its speed and acceleration.
@@ -133,45 +290,75 @@ class Segment:
         Returns:
             The state.
         """
-        span = max(self.duration, 1e-12)
-        s = min(max(elapsed / span, 0.0), 1.0)
-        position, velocity, acceleration = [], [], []
-        for axis in range(3):
-            terms = (
-                self.start.position[axis],
-                self.start.velocity[axis] * span,
-                self.start.acceleration[axis] * span * span,
-                self.end.acceleration[axis] * span * span,
-                self.end.velocity[axis] * span,
-                self.end.position[axis],
-            )
-            position.append(sum(w * h for w, h in zip(terms, _basis(s), strict=True)))
-            velocity.append(
-                sum(w * h for w, h in zip(terms, _first(s), strict=True)) / span
-            )
-            acceleration.append(
-                sum(w * h for w, h in zip(terms, _second(s), strict=True))
-                / (span * span)
-            )
+        position, velocity, acceleration = self.sample(np.asarray([elapsed]))
         return State(
-            position=(position[0], position[1], position[2]),
-            velocity=(velocity[0], velocity[1], velocity[2]),
-            acceleration=(acceleration[0], acceleration[1], acceleration[2]),
+            position=as_point(position[0]),
+            velocity=as_point(velocity[0]),
+            acceleration=as_point(acceleration[0]),
+        )
+
+    def sample(self, elapsed: Vector) -> tuple[Vector, Vector, Vector]:
+        """Return the state at each of many instants, in one pass.
+
+        The five boundary conditions of a quintic Hermite arc are six terms per
+        axis, and the basis weights depend only on normalized time. Writing the
+        terms as a `(6, 3)` array -- position, velocity and acceleration at each
+        end, each carrying its power of the span -- turns the whole evaluation
+        into one matrix product per quantity, over as many instants as the
+        caller likes. The alternative, which this replaced, was a loop over
+        three axes with six terms summed element-wise inside it, run once per
+        sampled instant.
+
+        Args:
+            elapsed: Seconds since the segment began, per instant. Clamped to
+                the segment, so asking past the end returns the end rather
+                than extrapolating a quintic, which diverges fast.
+
+        Returns:
+            The position, velocity and acceleration at each instant, each of
+            shape `(len(elapsed), 3)`.
+        """
+        span = max(self.duration, 1e-12)
+        s = np.clip(np.asarray(elapsed, dtype=np.float64) / span, 0.0, 1.0)
+        terms = np.stack(
+            [
+                as_vector(self.start.position),
+                as_vector(self.start.velocity) * span,
+                as_vector(self.start.acceleration) * span * span,
+                as_vector(self.end.acceleration) * span * span,
+                as_vector(self.end.velocity) * span,
+                as_vector(self.end.position),
+            ]
+        )
+        return (
+            _basis(s) @ terms,
+            (_first(s) @ terms) / span,
+            (_second(s) @ terms) / (span * span),
+        )
+
+    def peaks(self) -> tuple[float, float]:
+        """Return the largest speed and acceleration anywhere on the segment.
+
+        Returns:
+            The peak speed in meters per second and the peak acceleration in
+            meters per second squared, both as the largest Euclidean norm over
+            a sampling of the segment.
+        """
+        _, velocity, acceleration = self.sample(
+            np.linspace(0.0, self.duration, SAMPLES + 1, dtype=np.float64)
+        )
+        return (
+            float(np.linalg.norm(velocity, axis=1).max()),
+            float(np.linalg.norm(acceleration, axis=1).max()),
         )
 
     def peak_speed(self) -> float:
         """Return the largest speed anywhere on the segment, in meters per second."""
-        return max(
-            _norm(self.at(self.duration * i / SAMPLES).velocity)
-            for i in range(SAMPLES + 1)
-        )
+        return self.peaks()[0]
 
     def peak_acceleration(self) -> float:
         """Return the largest acceleration anywhere, in meters per second squared."""
-        return max(
-            _norm(self.at(self.duration * i / SAMPLES).acceleration)
-            for i in range(SAMPLES + 1)
-        )
+        return self.peaks()[1]
 
     def fits(self, max_speed: float, max_acceleration: float) -> bool:
         """Report whether the segment stays inside both ceilings.
@@ -184,10 +371,8 @@ class Segment:
         Returns:
             Whether both hold everywhere on the segment.
         """
-        return (
-            self.peak_speed() <= max_speed
-            and self.peak_acceleration() <= max_acceleration
-        )
+        peak_speed, peak_acceleration = self.peaks()
+        return peak_speed <= max_speed and peak_acceleration <= max_acceleration
 
 
 def descent_seconds(z_offset: float, approach_speed: float) -> float:
@@ -315,21 +500,15 @@ def approach(
             duration=seconds,
         )
 
-    # Peak speed and peak acceleration both fall as the duration grows, so
-    # the predicate is monotone and the soonest feasible interception is a
-    # bisection rather than a search.
+    # Peak speed and peak acceleration both fall as the duration grows, so the
+    # predicate is monotone and the soonest feasible interception is the
+    # smallest feasible duration in the bracket.
     if not arc(latest).fits(max_speed, max_acceleration):
         return None
-    low, high = 0.0, latest
-    for _ in range(BISECTION_PASSES):
-        middle = 0.5 * (low + high)
-        if middle <= 0.0:
-            break
-        if arc(middle).fits(max_speed, max_acceleration):
-            high = middle
-        else:
-            low = middle
-    return arc(min(high * margin, latest))
+    seconds = bisect_feasible(
+        lambda middle: arc(middle).fits(max_speed, max_acceleration), 0.0, latest
+    )
+    return arc(min(seconds * margin, latest))
 
 
 def descend(
@@ -404,10 +583,10 @@ def where(position: Point, velocity: Point, seconds: float, lift: float) -> Poin
     Returns:
         The predicted position.
     """
-    return (
-        position[0] + velocity[0] * seconds,
-        position[1] + velocity[1] * seconds,
-        position[2] + velocity[2] * seconds + lift,
+    return as_point(
+        as_vector(position)
+        + as_vector(velocity) * seconds
+        + np.asarray([0.0, 0.0, lift])
     )
 
 
@@ -449,82 +628,93 @@ def where_carried(
     Returns:
         The predicted position.
     """
-    return (
-        position[0] + velocity[0] * seconds,
-        position[1] + velocity[1] * min(seconds, drift_horizon),
-        position[2] + velocity[2] * seconds + lift,
+    # The rule is a duration per axis: the belt's own axis is carried for the
+    # whole interval, the axis across it only for as long as the drift is
+    # remembered, and the vertical axis is not carried at all.
+    carried = np.asarray([seconds, min(seconds, drift_horizon), 0.0])
+    return as_point(
+        as_vector(position)
+        + as_vector(velocity) * carried
+        + np.asarray([0.0, 0.0, lift])
     )
 
 
-def _norm(vector: Point) -> float:
-    """Return a vector's length.
+def _weights(terms: list[Vector]) -> NDArray[np.float64]:
+    """Return a stack of basis weights, one row per normalized time.
 
     Args:
-        vector: The vector.
+        terms: The six weights at each time, in the order the coefficient
+            vector is written.
 
     Returns:
-        Its Euclidean norm.
+        An array of shape `(len(times), 6)`.
     """
-    return math.sqrt(vector[0] ** 2 + vector[1] ** 2 + vector[2] ** 2)
+    return np.stack(terms, axis=-1)
 
 
-def _basis(s: float) -> tuple[float, ...]:
-    """Return the quintic Hermite basis at a normalized time.
+def _basis(s: Vector) -> NDArray[np.float64]:
+    """Return the quintic Hermite basis at each normalized time.
 
     Args:
-        s: Normalized time, from zero to one.
+        s: Normalized time, from zero to one, as an array.
 
     Returns:
-        The six weights, ordered to match the coefficient vector: start
-        position, start velocity, start acceleration, end acceleration, end
-        velocity, end position.
+        The six weights at each time, shape `(len(s), 6)`, ordered to match
+        the coefficient vector: start position, start velocity, start
+        acceleration, end acceleration, end velocity, end position.
     """
     s2, s3, s4, s5 = s * s, s**3, s**4, s**5
-    return (
-        1 - 10 * s3 + 15 * s4 - 6 * s5,
-        s - 6 * s3 + 8 * s4 - 3 * s5,
-        0.5 * s2 - 1.5 * s3 + 1.5 * s4 - 0.5 * s5,
-        0.5 * s3 - s4 + 0.5 * s5,
-        -4 * s3 + 7 * s4 - 3 * s5,
-        10 * s3 - 15 * s4 + 6 * s5,
+    return _weights(
+        [
+            1 - 10 * s3 + 15 * s4 - 6 * s5,
+            s - 6 * s3 + 8 * s4 - 3 * s5,
+            0.5 * s2 - 1.5 * s3 + 1.5 * s4 - 0.5 * s5,
+            0.5 * s3 - s4 + 0.5 * s5,
+            -4 * s3 + 7 * s4 - 3 * s5,
+            10 * s3 - 15 * s4 + 6 * s5,
+        ]
     )
 
 
-def _first(s: float) -> tuple[float, ...]:
+def _first(s: Vector) -> NDArray[np.float64]:
     """Return the basis differentiated once with respect to normalized time.
 
     Args:
-        s: Normalized time.
+        s: Normalized time, as an array.
 
     Returns:
-        The six weights.
+        The six weights at each time, shape `(len(s), 6)`.
     """
     s2, s3, s4 = s * s, s**3, s**4
-    return (
-        -30 * s2 + 60 * s3 - 30 * s4,
-        1 - 18 * s2 + 32 * s3 - 15 * s4,
-        s - 4.5 * s2 + 6 * s3 - 2.5 * s4,
-        1.5 * s2 - 4 * s3 + 2.5 * s4,
-        -12 * s2 + 28 * s3 - 15 * s4,
-        30 * s2 - 60 * s3 + 30 * s4,
+    return _weights(
+        [
+            -30 * s2 + 60 * s3 - 30 * s4,
+            1 - 18 * s2 + 32 * s3 - 15 * s4,
+            s - 4.5 * s2 + 6 * s3 - 2.5 * s4,
+            1.5 * s2 - 4 * s3 + 2.5 * s4,
+            -12 * s2 + 28 * s3 - 15 * s4,
+            30 * s2 - 60 * s3 + 30 * s4,
+        ]
     )
 
 
-def _second(s: float) -> tuple[float, ...]:
+def _second(s: Vector) -> NDArray[np.float64]:
     """Return the basis differentiated twice with respect to normalized time.
 
     Args:
-        s: Normalized time.
+        s: Normalized time, as an array.
 
     Returns:
-        The six weights.
+        The six weights at each time, shape `(len(s), 6)`.
     """
     s2, s3 = s * s, s**3
-    return (
-        -60 * s + 180 * s2 - 120 * s3,
-        -36 * s + 96 * s2 - 60 * s3,
-        1 - 9 * s + 18 * s2 - 10 * s3,
-        3 * s - 12 * s2 + 10 * s3,
-        -24 * s + 84 * s2 - 60 * s3,
-        60 * s - 180 * s2 + 120 * s3,
+    return _weights(
+        [
+            -60 * s + 180 * s2 - 120 * s3,
+            -36 * s + 96 * s2 - 60 * s3,
+            1 - 9 * s + 18 * s2 - 10 * s3,
+            3 * s - 12 * s2 + 10 * s3,
+            -24 * s + 84 * s2 - 60 * s3,
+            60 * s - 180 * s2 + 120 * s3,
+        ]
     )

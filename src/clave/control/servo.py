@@ -38,6 +38,7 @@ from numpy.typing import NDArray
 
 from clave.control.guidance import Command
 from clave.control.settings import Point
+from clave.control.trajectory import as_point, as_vector
 from clave.world import arm as armmod
 
 
@@ -88,14 +89,12 @@ def follow(
         The step. A refused pose writes no actuator command, so the arm holds
         whatever it was last told.
     """
-    led_position_world: Point = (
-        command.position[0] + command.velocity[0] * lead_seconds,
-        command.position[1] + command.velocity[1] * lead_seconds,
-        command.position[2] + command.velocity[2] * lead_seconds,
+    led_position_world = as_point(
+        as_vector(command.position) + as_vector(command.velocity) * lead_seconds
     )
     if keep_inside is not None:
         led_position_world = keep_inside(led_position_world)
-    target_position_world = np.array(led_position_world, dtype=np.float64)
+    target_position_world = np.asarray(led_position_world, dtype=np.float64)
     if not armmod.reachable(arm, target_position_world):
         # Hold, rather than write nothing. An uncommanded arm sags under
         # gravity, the sag puts the flange outside the trusted band, and from
@@ -136,11 +135,11 @@ def _why(arm: armmod.ArmIndices, target_position_world: NDArray[np.float64]) -> 
         A sentence naming which bound it broke, so a fault says something a
         reader can act on rather than that something went wrong.
     """
-    import math
-
-    radius = math.hypot(
-        float(target_position_world[0]) - float(arm.base_position[0]),
-        float(target_position_world[1]) - float(arm.base_position[1]),
+    radius = float(
+        np.linalg.norm(
+            np.asarray(target_position_world, dtype=np.float64)[:2]
+            - np.asarray(arm.base_position, dtype=np.float64)[:2]
+        )
     )
     if not armmod.REACH_MIN_METERS <= radius <= armmod.REACH_MAX_METERS:
         return (
