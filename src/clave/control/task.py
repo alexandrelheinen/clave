@@ -323,6 +323,7 @@ class TaskMachine:
         self._abandoned: list[tuple[int, str]] = []
         self._story = story if story is not None else StoryLog()
         self._plan_refusal = ""
+        self._told_reaim: tuple[int, str] | None = None
 
     @property
     def belt_surface(self) -> float:
@@ -693,6 +694,39 @@ class TaskMachine:
             + as_vector(self._calibration.flange_offset)
         )
 
+    def _narrate_reaim(
+        self,
+        at_seconds: float,
+        track_id: int,
+        action: str,
+        because: str,
+        doing: str,
+    ) -> None:
+        """Narrate a re-aim when the decision changed.
+
+        ``_reaim`` runs once a capture. A capture that repeats the same
+        action on the same object is the visit continuing, and the report
+        already keeps every refresh. The narrative keeps the change.
+
+        Args:
+            at_seconds: Simulated time.
+            track_id: The object the visit is about.
+            action: ``took``, ``held``, or ``solved``.
+            because: The cause, without a leading "because".
+            doing: What the arm will do, without a leading "I will".
+        """
+        decision = (track_id, action)
+        if decision == self._told_reaim:
+            return
+        self._told_reaim = decision
+        self._story.tell(
+            at_seconds,
+            because,
+            doing,
+            "pending",
+            channel=self._story.channel_of(track_id),
+        )
+
     def _reaim(
         self,
         queue: Queue,
@@ -764,13 +798,13 @@ class TaskMachine:
         ):
             turned = self._yaw_at_pick(head, refreshed, at_seconds)
             self._refreshes.append(Reaim(at_seconds, track_id, drift, False, "took"))
-            self._story.tell(
+            self._narrate_reaim(
                 at_seconds,
+                track_id,
+                "took",
                 f"the fresh estimate stands {drift * 1000:.0f} mm from the aim "
                 "and the approach arc still fits",
                 f"bend the approach and keep fetching {self._story.refer(track_id)}",
-                "pending",
-                channel=self._story.channel_of(track_id),
             )
             self._plan = refreshed.with_yaw(
                 target_yaw=turned,
@@ -783,13 +817,13 @@ class TaskMachine:
             # going that there is nothing to correct, so the refusal costs
             # nothing and the visit flies as planned.
             self._refreshes.append(Reaim(at_seconds, track_id, drift, True, "held"))
-            self._story.tell(
+            self._narrate_reaim(
                 at_seconds,
+                track_id,
+                "held",
                 f"the fresh estimate is {drift * 1000:.0f} mm from the aim, "
                 "inside the tolerance",
                 f"keep the plan I already have for {self._story.refer(track_id)}",
-                "pending",
-                channel=self._story.channel_of(track_id),
             )
             return
         solved = self._resolve(head, flange, velocity, at_seconds)
@@ -803,14 +837,14 @@ class TaskMachine:
             )
             return
         self._refreshes.append(Reaim(at_seconds, track_id, drift, True, "solved"))
-        self._story.tell(
+        self._narrate_reaim(
             at_seconds,
+            track_id,
+            "solved",
             f"the fresh estimate is {drift * 1000:.0f} mm from the aim and the "
             "arc I had was refused",
             f"solve the visit again ({solved.duration:.3f} s) and keep fetching "
             f"{self._story.refer(track_id)}",
-            "pending",
-            channel=self._story.channel_of(track_id),
         )
         turned = self._yaw_at_pick(head, solved, at_seconds)
         self._plan = solved.with_yaw(
@@ -1050,6 +1084,7 @@ class TaskMachine:
             self._missed.append(track_id)
         self._plan, self._plan_yaw, self._pick_error = None, None, None
         self._serving, self._arrived_at = None, None
+        self._told_reaim = None
         self._phase = Phase.STANDBY
 
     def _commit(
@@ -1119,6 +1154,7 @@ class TaskMachine:
         self._plan_yaw = target_yaw
         self._serving = head.track_id
         self._pick_error = None
+        self._told_reaim = None
         self._phase = Phase.TRACK
         self._story.note(head.track_id, "", head.channel)
         self._story.tell(
@@ -1325,6 +1361,7 @@ class TaskMachine:
         self._pick_error = None
         self._serving = None
         self._arrived_at = None
+        self._told_reaim = None
         self._phase = Phase.STANDBY
 
     def _next(self, queue: Queue) -> Candidate | None:

@@ -82,7 +82,9 @@ terminal, and a bar that redraws a line erases the story of what the arm is
 doing. The story itself is the debug log: why an object was chosen, how the
 visit will be flown, whether the jaw closed, which chute it was released
 into, and any collision, acceleration spike, or loss of control along the
-way. It is specified in
+way. A line is an event: a decision that changed, or a watch episode that
+began. The physics loop and the capture loop do not each get a line. It is
+specified in
 [docs/requirements/simulation-narrative.md](docs/requirements/simulation-narrative.md).
 
 ### Other commands
