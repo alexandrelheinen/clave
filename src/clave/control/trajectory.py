@@ -290,11 +290,26 @@ class Segment:
         Returns:
             The state.
         """
-        position, velocity, acceleration = self.sample(np.asarray([elapsed]))
+        # One instant, evaluated in closed form. `sample` is the same polynomial
+        # over a whole grid and is what a peak search wants; sending the physics
+        # tick through it builds a basis matrix for a single row, and that tick
+        # is two milliseconds. The two agree to a floating-point rounding, which
+        # `test_one_instant_matches_the_sampled_polynomial` guards.
+        span = max(self.duration, 1e-12)
+        s = min(max(elapsed / span, 0.0), 1.0)
+        weights = _basis_at(s)
+        d_weights = _first_at(s)
+        dd_weights = _second_at(s)
+        position, velocity, acceleration = [], [], []
+        for axis in range(3):
+            terms = _axis_terms(self, axis, span)
+            position.append(_dot(weights, terms))
+            velocity.append(_dot(d_weights, terms) / span)
+            acceleration.append(_dot(dd_weights, terms) / (span * span))
         return State(
-            position=as_point(position[0]),
-            velocity=as_point(velocity[0]),
-            acceleration=as_point(acceleration[0]),
+            position=(position[0], position[1], position[2]),
+            velocity=(velocity[0], velocity[1], velocity[2]),
+            acceleration=(acceleration[0], acceleration[1], acceleration[2]),
         )
 
     def sample(self, elapsed: Vector) -> tuple[Vector, Vector, Vector]:
@@ -636,6 +651,105 @@ def where_carried(
         as_vector(position)
         + as_vector(velocity) * carried
         + np.asarray([0.0, 0.0, lift])
+    )
+
+
+def _dot(weights: tuple[float, ...], terms: tuple[float, ...]) -> float:
+    """Return the dot product of a basis row and one axis of coefficients.
+
+    Args:
+        weights: The six basis weights at one instant.
+        terms: The six coefficients of one axis.
+
+    Returns:
+        The polynomial, or its derivative, on that axis.
+    """
+    return sum(weight * term for weight, term in zip(weights, terms, strict=True))
+
+
+def _axis_terms(segment: Segment, axis: int, span: float) -> tuple[float, ...]:
+    """Return one axis of a segment's Hermite coefficients.
+
+    Args:
+        segment: The arc.
+        axis: Which component, 0, 1 or 2.
+        span: The duration the velocity and acceleration terms are scaled by.
+
+    Returns:
+        The six coefficients, in the same order as `_basis_at`.
+    """
+    span2 = span * span
+    return (
+        segment.start.position[axis],
+        segment.start.velocity[axis] * span,
+        segment.start.acceleration[axis] * span2,
+        segment.end.acceleration[axis] * span2,
+        segment.end.velocity[axis] * span,
+        segment.end.position[axis],
+    )
+
+
+def _basis_at(s: float) -> tuple[float, ...]:
+    """Return the quintic Hermite basis at one normalized time.
+
+    The same polynomial as `_basis`, written for one instant. A physics tick
+    asks for one row, and building the `(n, 6)` stack `_basis` returns costs
+    more than the arithmetic.
+
+    Args:
+        s: Normalized time, from zero to one.
+
+    Returns:
+        The six weights, ordered to match the coefficient vector.
+    """
+    s2, s3, s4, s5 = s * s, s**3, s**4, s**5
+    return (
+        1 - 10 * s3 + 15 * s4 - 6 * s5,
+        s - 6 * s3 + 8 * s4 - 3 * s5,
+        0.5 * s2 - 1.5 * s3 + 1.5 * s4 - 0.5 * s5,
+        0.5 * s3 - s4 + 0.5 * s5,
+        -4 * s3 + 7 * s4 - 3 * s5,
+        10 * s3 - 15 * s4 + 6 * s5,
+    )
+
+
+def _first_at(s: float) -> tuple[float, ...]:
+    """Return the basis differentiated once, at one normalized time.
+
+    Args:
+        s: Normalized time, from zero to one.
+
+    Returns:
+        The six weights.
+    """
+    s2, s3, s4 = s * s, s**3, s**4
+    return (
+        -30 * s2 + 60 * s3 - 30 * s4,
+        1 - 18 * s2 + 32 * s3 - 15 * s4,
+        s - 4.5 * s2 + 6 * s3 - 2.5 * s4,
+        1.5 * s2 - 4 * s3 + 2.5 * s4,
+        -12 * s2 + 28 * s3 - 15 * s4,
+        30 * s2 - 60 * s3 + 30 * s4,
+    )
+
+
+def _second_at(s: float) -> tuple[float, ...]:
+    """Return the basis differentiated twice, at one normalized time.
+
+    Args:
+        s: Normalized time, from zero to one.
+
+    Returns:
+        The six weights.
+    """
+    s2, s3 = s * s, s**3
+    return (
+        -60 * s + 180 * s2 - 120 * s3,
+        -36 * s + 96 * s2 - 60 * s3,
+        1 - 9 * s + 18 * s2 - 10 * s3,
+        3 * s - 12 * s2 + 10 * s3,
+        -24 * s + 84 * s2 - 60 * s3,
+        60 * s - 180 * s2 + 120 * s3,
     )
 
 

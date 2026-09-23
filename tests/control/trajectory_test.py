@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 
+import numpy as np
 import pytest
 
 from clave.control.trajectory import (
@@ -57,6 +58,35 @@ def test_a_segment_meets_every_boundary_condition_it_was_given() -> None:
         assert finishes.position[axis] == pytest.approx(end.position[axis])
         assert finishes.velocity[axis] == pytest.approx(end.velocity[axis])
         assert finishes.acceleration[axis] == pytest.approx(end.acceleration[axis])
+
+
+def test_one_instant_matches_the_sampled_polynomial() -> None:
+    """One instant matches the sampled polynomial.
+
+    The physics tick evaluates the closed form directly, and a peak search
+    evaluates the same polynomial on a grid. The two are one polynomial, so
+    a point read either way is the same point.
+    """
+    arc = Segment(
+        start=State(
+            position=(0.1, 0.2, 1.0),
+            velocity=(0.3, -0.1, 0.0),
+            acceleration=(0.5, 0.0, -0.2),
+        ),
+        end=State(
+            position=(0.6, 0.0, 0.9),
+            velocity=(0.0, 0.2, -0.25),
+            acceleration=(0.0, 0.0, 0.0),
+        ),
+        duration=0.8,
+    )
+    for fraction in (0.0, 0.17, 0.5, 0.83, 1.0):
+        elapsed = arc.duration * fraction
+        direct = arc.at(elapsed)
+        position, velocity, acceleration = arc.sample(np.asarray([elapsed]))
+        assert direct.position == pytest.approx(tuple(position[0]), abs=1e-12)
+        assert direct.velocity == pytest.approx(tuple(velocity[0]), abs=1e-12)
+        assert direct.acceleration == pytest.approx(tuple(acceleration[0]), abs=1e-12)
 
 
 def test_asking_past_the_end_returns_the_end() -> None:

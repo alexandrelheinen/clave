@@ -178,10 +178,14 @@ def test_ground_truth_markers_derivation_ac_gt_02() -> None:
     assert math.isclose(m1.pinch_position_belt[0], -0.20, abs_tol=1e-5)
     assert math.isclose(m1.pinch_position_belt[1], -0.05, abs_tol=1e-5)
     assert m1.oriented is True
-    # Box sx=0.02, sy=0.04 -> opening=0.04 across body local x.
-    # Rotated pi/2 -> closing axis in world is pi/2
+    # Box half-extents 0.02 by 0.04, turned a quarter turn about the belt
+    # normal. The jaw closes along the short horizontal axis. That axis has no
+    # sign, so pi/2 and -pi/2 are the same grasp.
     assert m1.closing_yaw_belt is not None
-    assert math.isclose(m1.closing_yaw_belt, math.pi / 2.0, abs_tol=1e-4)
+    folded = (m1.closing_yaw_belt - math.pi / 2.0 + math.pi / 2.0) % math.pi - (
+        math.pi / 2.0
+    )
+    assert abs(folded) < 1e-4
 
 
 def test_ground_truth_selector_and_task_planning_ac_gt_04() -> None:
@@ -285,6 +289,51 @@ def test_ground_truth_markers_dynamic_grasp_height() -> None:
     assert math.isclose(
         markers[0].flange_position_world[2], 0.96 + eff.finger_length, abs_tol=1e-4
     )
+
+
+def test_a_marker_stands_on_the_mass_not_the_scan_origin() -> None:
+    """A marker stands on the mass, not on the scan origin.
+
+    Measured on the shipped meshes, the scan origin sits 30 to 80 mm from the
+    centre of mass. A marker built on the origin, carried by the origin's
+    velocity, sends the jaw to a point that orbits the parcel. The mass does
+    not orbit itself, and the jaw has to meet the mass.
+    """
+    import mujoco
+
+    xml = """
+    <mujoco>
+      <worldbody>
+        <body name="offset" pos="0.10 0.05 0.96">
+          <freejoint/>
+          <geom type="box" pos="0.04 -0.02 0.0" size="0.02 0.03 0.04"/>
+        </body>
+      </worldbody>
+    </mujoco>
+    """
+    model = mujoco.MjModel.from_xml_string(xml)
+    data = mujoco.MjData(model)
+    mujoco.mj_forward(model, data)
+    markers = ground_truth_markers(
+        model=model,
+        data=data,
+        active_objects=[
+            SpawnedObject(
+                index=0, name="offset", material_class="M-01", channel="chute_a"
+            )
+        ],
+        plan=minimal_plan(),
+        effector=effector(),
+        belt_surface_height_world=0.90,
+        at_nanos=1_000_000_000,
+        window_exit=1.0,
+        belt_speed=0.31,
+    )
+    assert len(markers) == 1
+    com = data.xipos[1]
+    assert math.isclose(markers[0].pinch_position_belt[0], float(com[0]), abs_tol=1e-5)
+    assert math.isclose(markers[0].pinch_position_belt[1], float(com[1]), abs_tol=1e-5)
+    assert not math.isclose(float(com[0]), 0.10, abs_tol=1e-3)
 
 
 def test_ground_truth_markers_tracks_object_velocity() -> None:
