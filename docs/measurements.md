@@ -1051,7 +1051,13 @@ the miss grows to 108 mm. The joint step during that growth is 0.0002 to
 jaw is the same grip at yaw and at yaw plus half a turn, and that is the
 grip with travel left. The other minimum of the same pose is 9.14 rad away
 in joint space. At 2.09 rad/s that slew is about 4.4 s, and about 1.4 s
-remains before the jaw closes, so a descent does not switch to it.
+remains before the jaw closes, so a descent does not switch to it. The
+half-turn grip is closer, about 0.75 rad of roll, and it is tool-down. It is
+not taken either. The warm start leaves the arm, and the command can only
+close that at the joint-speed cap. Taking it tilted the tool 34 degrees and
+put the jaw 27 mm into the belt, with nothing held. What is kept is a descent
+step that does not increase the distance. The roll still has no travel, so a
+command that moves while it is stopped is still missed.
 
 **The open jaw and the shut jaw are not the same hang.** Commanded shut from
 the open hang of 160.34 mm, at the 0.30 N·m this line closes with, the hang
@@ -1060,7 +1066,9 @@ it is at the shut hang of 173.5 mm by 0.30 s. The dwell is 0.40 s. A
 rest-to-rest quintic of that 13.32 mm rise lags the hang by 0.16 mm over
 0.20 s, by 0.66 mm over 0.25 s, by 1.73 mm over 0.30 s and by 4.13 mm over
 0.40 s. The descent therefore stops a millimetre above the open hang, and
-the hold climbs the difference in the first 0.20 s. Object_1's centre was
+the hold climbs only the shortfall below the shut jaw's own clearance, in
+the first 0.20 s. A grasp the shut jaw can already clear does not rise.
+Object_1's centre was
 14.4 mm above the belt. The shut floor is 27.7 mm, so the plane clamped the
 pinch 13 mm above the centre. The open floor is 15.5 mm, which is under that
 centre.
@@ -1073,6 +1081,36 @@ arc was refused. The same refusal, on the approach, is the visit given up at
 44 mm and the one given up at 31 mm. The largest fraction of the blend from
 the end already in hand to the end the estimate asks for, whose quintic stays
 inside the ceiling, is the arc that flies. A fraction of zero is not a
-correction. A parcel at 5 rad/s is not a tolerance to widen: the pose was
-exact, and the arm was not allowed to dive after it.
+correction. A fraction that does not land inside the aim tolerance is the
+refusal the approach already has, so a nibble does not keep a visit that
+should be solved again. A parcel at 5 rad/s is not a tolerance to widen: the
+pose was exact, and the arm was not allowed to dive after it.
+
+Same machine, same seed, same 36 seconds, after those three rules. Grasps
+held: **1 of 4**, the same count. The one that held is the same closure, and
+it was placed in the HDPE chute. Its lift is 85 mm against 118 mm.
+
+| Closure | Command vs mass | Flange vs command | Yaw vs short axis | Pinch vs mass | What it was |
+| --- | --- | --- | --- | --- | --- |
+| 8.520 s, object_0 | (+2, −1) mm | 3.1 mm | 1.9° | (+1, −1, −13) mm | Held. Lift 85 mm, placed in the HDPE chute |
+| 17.844 s, object_2 | (0, 0) mm | **90.3 mm** | 0.0° | (+79, −38, −5) mm | Command on the mass. Roll on its stop |
+| 26.716 s, object_1 | (+22, −19) mm | 2.3 mm | 10.2° | (+21, −19, −3) mm | Flange on the command. Lift −1 mm |
+| 33.008 s, object_0 | (+3, +4) mm | 0.8 mm | 0.3° | (+3, +3, +3) mm | On the mass. Lift −7 mm. Spin 2.84 rad/s, rising at 0.34 m/s |
+
+Jaw to the object when it shut: 13, 88, 28, 5 mm, against 3, 103, 13, 67 mm.
+Arrival median 3.1 mm, worst 90.3 mm, against 2.9 mm and 108.3 mm. Tool yaw
+against the object's own axis: 0.3, 0.4, 3.4, 4.5 degrees. Two visits were
+given up during the approach, at 124 mm and 31 mm, against 44 mm and 31 mm.
+The jaw's lowest geometry stayed 8.3 mm above the belt, with no tick in
+contact.
+
+The 69 mm stale command at 32.560 s is the closure at 33.008 s. The command
+is 4 mm from the mass and the flange is 0.8 mm from the command. The jaw did
+not hold: the object was tumbling, not sitting where a ceiling had refused to
+go. The 108 mm miss is the closure at 17.844 s, and it is 90 mm. The roll is
+on its stop and the command has moved. Discarding the worsening step is what
+keeps the solver from walking further off, and it is not travel the joint
+does not have. The closure that was centred and 13 mm above the mass is the
+one at 26.716 s. The pinch is 3 mm below the mass, the flange is 2.3 mm from
+its command, and the command is 29 mm from the mass. The lift is about zero.
 

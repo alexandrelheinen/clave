@@ -302,6 +302,7 @@ def plan_pick(
     safe_height_world: float | None = None,
     cross_speed: float | None = None,
     jaw_rise: float = 0.0,
+    clearance_flange_z: float | None = None,
 ) -> Plan | None:
     """Plan a whole visit, or report that there is no time for one.
 
@@ -340,6 +341,11 @@ def plan_pick(
             to match approach_speed.
         jaw_rise: How far the flange climbs while the jaw shuts, in meters.
             Zero leaves the hold as a carry at the height the descent arrived at.
+            Ignored when `clearance_flange_z` is set.
+        clearance_flange_z: The flange height at which the shut jaw is already
+            clear of the belt, in world meters. The hold then rises only by
+            how far the descent ended below it. None leaves `jaw_rise` in
+            force, which is how a test asks for a climb directly.
 
     Returns:
         The plan, or None when no interception inside `latest` respects both
@@ -440,6 +446,7 @@ def plan_pick(
         max_acceleration=max_accel,
         drift_horizon=drift_horizon,
         jaw_rise=jaw_rise,
+        clearance_flange_z=clearance_flange_z,
     )
 
 
@@ -467,6 +474,7 @@ def refine(
     safe_height_world: float | None = None,
     cross_speed: float | None = None,
     jaw_rise: float = 0.0,
+    clearance_flange_z: float | None = None,
 ) -> Plan | None:
     """Correct a plan in flight against a fresher estimate of the object.
 
@@ -499,6 +507,9 @@ def refine(
         safe_height_world: Safe clearance height above the belt side barrier.
         cross_speed: Speed across the belt border, in meters per second.
         jaw_rise: How far the flange climbs while the jaw shuts, in meters.
+            Ignored when `clearance_flange_z` is set.
+        clearance_flange_z: The flange height at which the shut jaw is already
+            clear of the belt. See [plan_pick].
 
     Returns:
         The re-aimed plan, or None when there is nothing left to re-aim or
@@ -596,6 +607,7 @@ def refine(
                 max_acceleration=max_accel,
                 drift_horizon=drift_horizon,
                 jaw_rise=jaw_rise,
+                clearance_flange_z=clearance_flange_z,
             )
         if elapsed < entry_leg.duration + track_leg.duration:
             rem_track = (entry_leg.duration + track_leg.duration) - elapsed
@@ -650,6 +662,7 @@ def refine(
                 max_acceleration=max_accel,
                 drift_horizon=drift_horizon,
                 jaw_rise=jaw_rise,
+                clearance_flange_z=clearance_flange_z,
             )
         return None
 
@@ -702,6 +715,7 @@ def refine(
         max_acceleration=max_accel,
         drift_horizon=drift_horizon,
         jaw_rise=jaw_rise,
+        clearance_flange_z=clearance_flange_z,
     )
 
 
@@ -722,6 +736,7 @@ def retarget_descent(
     safe_height_world: float | None = None,
     cross_speed: float | None = None,
     jaw_rise: float = 0.0,
+    clearance_flange_z: float | None = None,
 ) -> Plan | None:
     """Point the descent already in progress at where the object is now.
 
@@ -750,6 +765,9 @@ def retarget_descent(
         safe_height_world: The height the delivery clears the barrier at.
         cross_speed: How fast the delivery crosses that edge.
         jaw_rise: How far the flange climbs while the jaw shuts, in meters.
+            Ignored when `clearance_flange_z` is set.
+        clearance_flange_z: The flange height at which the shut jaw is already
+            clear of the belt. See [plan_pick].
 
     Returns:
         The visit from this instant on, or None when this instant is not
@@ -806,7 +824,8 @@ def retarget_descent(
     if dropping is None:
         return None
     ceiling = max_acceleration if max_acceleration > 0.0 else 2.50
-    held = _hold(dropping.end, dwell_seconds, belt, jaw_rise)
+    rise = _closing_rise(dropping.end.position[2], jaw_rise, clearance_flange_z)
+    held = _hold(dropping.end, dwell_seconds, belt, rise)
     rising = _retreat(held[-1].segment.end, approach_clearance_z, approach_speed, belt)
     legs = [
         Leg(Phase.DESCEND, dropping, leg.grip),
@@ -911,6 +930,7 @@ def _assemble(
     cross_speed: float | None = None,
     max_acceleration: float = 2.50,
     jaw_rise: float = 0.0,
+    clearance_flange_z: float | None = None,
 ) -> Plan:
     """Hang the descent, the carry, the retreat and delivery off an approach arc.
 
@@ -945,7 +965,8 @@ def _assemble(
         approach_speed,
         drift_horizon,
     )
-    held = _hold(dropping.end, dwell_seconds, belt_velocity_world, jaw_rise)
+    rise = _closing_rise(dropping.end.position[2], jaw_rise, clearance_flange_z)
+    held = _hold(dropping.end, dwell_seconds, belt_velocity_world, rise)
     rising = _retreat(
         held[-1].segment.end, approach_clearance_z, approach_speed, belt_velocity_world
     )
@@ -1149,6 +1170,27 @@ def _rise(start: State, seconds: float, belt_velocity: Point, lift: float) -> Se
         ),
         duration=seconds,
     )
+
+
+def _closing_rise(
+    flange_z: float, jaw_rise: float, clearance_flange_z: float | None
+) -> float:
+    """Return how far the hold climbs from a descent that ended at `flange_z`.
+
+    Args:
+        flange_z: Where the descent ended, in world meters.
+        jaw_rise: The climb a caller asked for directly.
+        clearance_flange_z: The flange height at which the shut jaw is already
+            clear, or None to use `jaw_rise` unchanged.
+
+    Returns:
+        The climb, in meters. Zero when the shut jaw is already clear, so a
+        grasp the pads can drop onto is not lifted off.
+    """
+    if clearance_flange_z is None:
+        return jaw_rise
+    short = clearance_flange_z - flange_z
+    return 0.0 if short <= 1e-6 else short
 
 
 def _hold(
