@@ -881,6 +881,16 @@ def test_the_task_machine_narrates_the_visit() -> None:
     arm.flight(0.05, PARK)
     arm.step(queue_of(carried), PARK, 0.20)
     assert any("fresh estimate" in line for line in lines)
+    # AC-STORY-10: the same capture repeated is another refresh, not another line.
+    for _ in range(4):
+        arm.step(queue_of(carried), PARK, 0.20)
+    decisions: list[tuple[int, str]] = []
+    for refresh in arm.refreshes:
+        decision = (refresh.track_id, refresh.action)
+        if not decisions or decisions[-1] != decision:
+            decisions.append(decision)
+    assert sum("fresh estimate" in line for line in lines) == len(decisions)
+    assert len(arm.refreshes) > len(decisions)
 
     seen: set[Phase] = set()
     at_seconds = 0.20

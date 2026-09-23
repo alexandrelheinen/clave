@@ -19,11 +19,12 @@ turns the bar off so the two do not write over each other.
 ## Scope
 
 **In.** The decisions the task machine already makes: which object, by which
-plan, which phase of that plan, a re-aim, a miss, an abandonment, a fault.
-The queue rebuilds that change who is next. The close, the lift, and the
-place, which are the three moments a visit succeeds or fails. An edge-triggered
-watch for jaw-to-belt contact, vertical acceleration, tracking lag, and a
-servo refusal. The `--no-progress` flag on `clave sim`.
+plan, which phase of that plan, a re-aim whose choice changed, a miss, an
+abandonment, a fault. The queue rebuilds that change who is next. The close,
+the lift, and the place, which are the three moments a visit succeeds or
+fails. A watch that opens one episode for jaw-to-belt contact, vertical
+acceleration, tracking lag, and a servo refusal. The `--no-progress` flag on
+`clave sim`.
 
 **Out.** A second controller. The watch reports; it does not stop the arm,
 change a gain, or refuse a pose. The runtime loop in `clave.runtime.loop`,
@@ -32,11 +33,12 @@ report printed at the end of a run stays the report.
 
 ## What is worth a line
 
-A line exists because the arm's behavior changed, or because a watch condition
-became true. A condition that stays true is not a new event. A physics tick
-that continues the same phase is not a new event. The decision cadence is the
-capture, about twice a second, plus the phase changes of a plan that was
-already committed.
+A line exists because the arm's behavior changed, or because a watch episode
+began. A condition that stays true is not a new event. A physics tick that
+continues the same phase is not a new event. A capture that repeats the same
+re-aim is not a new event. The narrative does not follow either loop. The
+physics step is 2 ms and the capture is half a second; both are faster than
+the decisions a person can read, and a line at either rate is noise.
 
 | Event | Why it changes what the arm does | What the line has to say |
 | --- | --- | --- |
@@ -46,9 +48,9 @@ already committed.
 | Motion-only track begins | The arm follows a marker at approach height | The object, and that this profile does not grasp |
 | Flange outside the trusted region | The arm goes home instead of committing, and the object is not marked missed | That the recovery is the park pose, because a plan that starts outside the region is refused forever |
 | No interception | The object is skipped | How much belt it had left, or that the grasp pose would put the jaw in the belt |
-| Re-aim took | The approach arc is bent onto a fresher estimate. The arrival time stays | The drift, in millimetres |
-| Re-aim held | The plan is kept because the drift is inside the aim tolerance | The drift. Logged per capture, because a drift that grows is the visit going bad |
-| Re-aim solved | The visit is solved again from the fresh estimate | The drift and the new duration |
+| Re-aim took | The approach arc is bent onto a fresher estimate. The arrival time stays | The drift, in millimetres. One line when this becomes the decision |
+| Re-aim held | The plan is kept because the drift is inside the aim tolerance | The drift. One line when this becomes the decision. A later capture that holds again is the same decision |
+| Re-aim solved | The visit is solved again from the fresh estimate | The drift and the new duration. One line when this becomes the decision |
 | Visit abandoned | The plan is discarded and the object is missed | The reason already recorded on the visit |
 | Phase becomes descend | The flange comes down onto the object, moving with the belt | That this is the descent |
 | Phase becomes hold | The jaw is commanded shut | That the grasp instant has been reached |
@@ -64,9 +66,12 @@ already committed.
 | Flange lags the command | The arm is not where this tick told it to be | The lag and the watch |
 | Servo refuses a pose | The command was not written | The refusal text. This is the instant. The fault line above is the task machine's answer on the next capture |
 
-A re-aim of `held` is included on purpose. It does not change the arc, and
-that is the fact a reader needs: the estimate moved, and the machine chose
-to keep flying the plan it had.
+A re-aim is one decision. The first time the machine takes the arc, holds
+the plan, or solves the visit again, the narrative says so, and it says so
+again when that choice changes or the object changes. The capture loop
+repeats the same choice for as long as the approach lasts. The report
+already keeps every one of those refreshes, drift included, so a drift that
+grows is still on the visit. The narrative does not reprint it.
 
 ## The line
 
@@ -104,11 +109,16 @@ Rules:
   The warnings the task machine already emits for an abandonment and a fault
   stay warnings. They are the one-line notice an operator sees without
   asking for the story.
-- **A watch is edge-triggered.** Contact, acceleration, and lag each report
-  on the transition into the condition and stay silent while it holds.
-  Acceleration clears below half its watch, lag below half its watch, so a
-  sample that chatters on the threshold is one line. A refusal reports when
-  its text changes, and clears when the servo accepts again.
+- **A watch is one episode, not one sample.** Contact, acceleration, and lag
+  each report when the episode begins and stay silent while it holds. The
+  episode ends only after the condition has stayed clear for the quiet
+  interval, a tenth of a second. Acceleration and lag count as clear below
+  half their watch. A sample between the watch and that floor does not end
+  the episode and does not open a new one, and one sample under the floor
+  does not end it either: the figure is read every physics step, and a
+  second difference of flange height crosses 25 m/s² on a tenth of a
+  millimetre of jitter. A refusal reports when its text changes. The same
+  text is not repeated until the servo has accepted for the quiet interval.
 - **The first acceleration sample is zero.** The figure is a second
   difference of flange height. Comparing the first rise with a seed of zero
   is not a spike the arm produced.
@@ -123,8 +133,9 @@ Rules:
 | Watch | Value | Why this value |
 | --- | --- | --- |
 | Pinch miss | 0.040 m | The jaw opens 0.085 m, so half of that is 0.0425 m. Forty millimetres is inside the opening and far past the 8.7 mm of side clearance the narrowest object leaves. An object there is not between the pads |
-| Acceleration | 25 m/s², clear below 12.5 | The commanded ceiling is 2.50 m/s². The smallest slip lurch on record is 52.9 m/s² (`docs/measurements.md`). Twenty-five is an order above the command and about half the slip, so a planned move does not trip it and a slip does. The sample is a second difference at the physics step, not the planner's analytic acceleration |
-| Tracking lag | 0.050 m, clear below 0.025 | After the lead term the settled error is 1.0 to 1.25 mm. The visits that lost the command fell 50 to 80 mm behind it. Fifty millimetres is that failure, not the arrival tolerance |
+| Acceleration | 25 m/s², clear below 12.5 | The commanded ceiling is 2.50 m/s². The smallest slip lurch on record is 52.9 m/s² (`docs/measurements.md`). Twenty-five is an order above the command and about half the slip, so a planned move does not trip it and a slip does. The sample is a second difference at the physics step, not the planner's analytic acceleration. Clearing is the quiet interval below 12.5, not one sample |
+| Tracking lag | 0.050 m, clear below 0.025 | After the lead term the settled error is 1.0 to 1.25 mm. The visits that lost the command fell 50 to 80 mm behind it. Fifty millimetres is that failure, not the arrival tolerance. Clearing is the quiet interval below 25 mm |
+| Episode quiet | 0.10 s | The shipped physics step is 2 ms, so this is fifty steps. A belt contact on record has lasted one tick, and the acceleration sample reaches the watch on a tenth of a millimetre of jitter at that step. One quiet sample is that chatter. A tenth of a second is longer than those contacts and shorter than the half-second capture, so a later distinct event is still a line |
 | Collision | jaw geom touching the belt geom | The same pair the report already counts as `belt_contacts`. The line adds the clearance |
 
 The grasp verdict at the end of a visit uses the 10 mm lift already named
@@ -183,6 +194,13 @@ and its id. An absent class shall be named `unknown material`.
 `AC-STORY-09`: A queue rebuild shall narrate why it rebuilt and whether the
 head changed, including a head replaced while it was still waiting and a
 queue that came back empty.
+
+`AC-STORY-10`: The narrative shall not emit a line because a physics tick or
+a capture ran. A re-aim shall be a line only when its action or its object
+differs from the previous re-aim of the visit; the visit shall still record
+every refresh. A watch condition shall be reported again only after it has
+stayed clear for the quiet interval, so a sample that crosses the threshold
+at the physics rate is not a new line.
 
 ## Design notes
 

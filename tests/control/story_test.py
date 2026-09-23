@@ -1,6 +1,6 @@
-"""The debug narrative: one sentence per decision, and a watch that edges.
+"""The debug narrative: one sentence per event, and a watch that opens episodes.
 
-AC-STORY-01 through AC-STORY-09. The sentences are what an operator reads
+AC-STORY-01 through AC-STORY-10. The sentences are what an operator reads
 while a run is going wrong. They are specified in
 docs/requirements/simulation-narrative.md.
 """
@@ -13,7 +13,9 @@ import math
 import pytest
 
 from clave.control.story import (
+    ACCELERATION_CLEAR,
     ACCELERATION_WATCH,
+    EPISODE_QUIET_SECONDS,
     PINCH_MISS_METERS,
     TRACKING_WATCH,
     AnomalyWatch,
@@ -134,8 +136,13 @@ def test_a_place_names_the_chute_and_a_misroute_names_both() -> None:
     assert lines[1].endswith(": fail")
 
 
-def test_the_watch_reports_each_condition_once_until_it_clears() -> None:
-    """AC-STORY-06: contact, acceleration, lag, and a refusal are edge-triggered."""
+def test_the_watch_is_an_episode_not_a_tick() -> None:
+    """AC-STORY-06 and AC-STORY-10: a loop that chatters is one line.
+
+    A second line waits until the condition has stayed clear for the quiet
+    interval. One sample under the floor does not open that line, and neither
+    does a stretch spent in the band between the watch and the floor.
+    """
     story, lines = _lines()
     story.note(2, "M-07", "CH-GLASS")
     watch = AnomalyWatch(story)
@@ -159,38 +166,78 @@ def test_the_watch_reports_each_condition_once_until_it_clears() -> None:
             track_id=2,
         )
 
-    see(0.0)
-    see(0.002, contact=True, clearance=-0.0014)
-    see(0.004, contact=True, clearance=-0.0014)
-    see(0.006)
-    see(0.008, contact=True, clearance=-0.0005)
-    collisions = [line for line in lines if "report a collision" in line]
-    assert len(collisions) == 2
-    assert "clearance -1.4 mm" in collisions[0]
-    assert collisions[0].endswith(": fail")
-    assert "object 2 (Glass, M-07)" in collisions[0]
+    def count(fragment: str) -> int:
+        return sum(fragment in line for line in lines)
 
-    see(0.010, vertical_acceleration=ACCELERATION_WATCH + 1)
-    see(0.012, vertical_acceleration=ACCELERATION_WATCH + 5)
-    see(0.014, vertical_acceleration=ACCELERATION_WATCH / 2 - 1.0)
-    see(0.016, vertical_acceleration=ACCELERATION_WATCH + 1)
-    spikes = [line for line in lines if "acceleration spike" in line]
-    assert len(spikes) == 2
-    assert "m/s^2" in spikes[0]
+    at = 0.0
+    for step in range(10):
+        see(at, contact=step % 2 == 0, clearance=-0.0014 if step % 2 == 0 else 0.020)
+        at += 0.002
+    assert count("report a collision") == 1
+    assert "clearance -1.4 mm" in lines[0]
+    assert lines[0].endswith(": fail")
+    assert "object 2 (Glass, M-07)" in lines[0]
+    see(at, contact=True, clearance=-0.0005)
+    assert count("report a collision") == 1
+    at += 0.002
+    see(at)
+    see(at + EPISODE_QUIET_SECONDS)
+    see(at + EPISODE_QUIET_SECONDS + 0.002, contact=True, clearance=-0.0005)
+    assert count("report a collision") == 2
 
-    see(0.020, tracking_error=TRACKING_WATCH + 0.010)
-    see(0.022, tracking_error=TRACKING_WATCH + 0.020)
-    see(0.024, tracking_error=TRACKING_WATCH / 2 - 0.001)
-    see(0.026, tracking_error=TRACKING_WATCH + 0.010)
-    lags = [line for line in lines if "from the pose it was commanded" in line]
-    assert len(lags) == 2
+    at = 1.0
+    for step in range(20):
+        accel = ACCELERATION_WATCH + 10.0 if step % 2 == 0 else 0.0
+        see(at, vertical_acceleration=accel)
+        at += 0.002
+    assert count("acceleration spike") == 1
+    assert "m/s^2" in next(line for line in lines if "acceleration spike" in line)
+    see(at, vertical_acceleration=ACCELERATION_CLEAR)
+    see(at + EPISODE_QUIET_SECONDS, vertical_acceleration=ACCELERATION_CLEAR)
+    see(
+        at + EPISODE_QUIET_SECONDS + 0.002,
+        vertical_acceleration=ACCELERATION_WATCH + 1,
+    )
+    assert count("acceleration spike") == 1
+    quiet = at + EPISODE_QUIET_SECONDS + 0.004
+    see(quiet, vertical_acceleration=ACCELERATION_CLEAR - 1.0)
+    see(quiet + EPISODE_QUIET_SECONDS, vertical_acceleration=0.0)
+    see(
+        quiet + EPISODE_QUIET_SECONDS + 0.002,
+        vertical_acceleration=ACCELERATION_WATCH + 1,
+    )
+    assert count("acceleration spike") == 2
 
-    see(0.030, refusal="outside the annulus")
-    see(0.032, refusal="outside the annulus")
-    see(0.034)
-    see(0.036, refusal="joint limit")
+    at = 2.0
+    for step in range(10):
+        error = TRACKING_WATCH + 0.010 if step % 2 == 0 else 0.0
+        see(at, tracking_error=error)
+        at += 0.002
+    assert count("from the pose it was commanded") == 1
+    see(at, tracking_error=0.0)
+    see(at + 0.002, tracking_error=TRACKING_WATCH + 0.010)
+    assert count("from the pose it was commanded") == 1
+    see(at + 0.004, tracking_error=0.0)
+    see(at + 0.004 + EPISODE_QUIET_SECONDS, tracking_error=None)
+    see(
+        at + 0.006 + EPISODE_QUIET_SECONDS,
+        tracking_error=TRACKING_WATCH + 0.010,
+    )
+    assert count("from the pose it was commanded") == 2
+
+    see(3.0, refusal="outside the annulus")
+    see(3.002, refusal="outside the annulus")
+    see(3.004)
+    see(3.006, refusal="outside the annulus")
+    assert count("the servo refused") == 1
+    see(3.008, refusal="joint limit")
+    see(3.010)
+    see(3.010 + EPISODE_QUIET_SECONDS)
+    see(3.012 + EPISODE_QUIET_SECONDS, refusal="outside the annulus")
     refusals = [line for line in lines if "the servo refused" in line]
-    assert len(refusals) == 2
+    assert len(refusals) == 3
     assert "outside the annulus" in refusals[0]
     assert "joint limit" in refusals[1]
+    assert "outside the annulus" in refusals[2]
+    lags = [line for line in lines if "from the pose it was commanded" in line]
     assert all("report a loss of control" in line for line in (*lags, *refusals))

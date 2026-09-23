@@ -40,9 +40,10 @@ second difference of flange height, not the planner's analytic acceleration.
 """
 
 ACCELERATION_CLEAR = ACCELERATION_WATCH / 2.0
-"""Below this the acceleration watch may report again.
+"""Below this the acceleration watch may start ending its episode.
 
-Half the watch, so a sample that chatters on the threshold is one line.
+Half the watch. A sample between this and the watch holds the episode. A
+sample below it starts the quiet interval; one such sample does not end it.
 """
 
 TRACKING_WATCH = 0.050
@@ -54,7 +55,18 @@ failure, not the arrival tolerance.
 """
 
 TRACKING_CLEAR = TRACKING_WATCH / 2.0
-"""Below this the lag watch may report again."""
+"""Below this the lag watch may start ending its episode."""
+
+EPISODE_QUIET_SECONDS = 0.10
+"""How long a watch must stay clear before it can be reported again.
+
+The shipped physics step is 2 ms. A belt contact on record has lasted one
+tick, and a tenth of a millimetre of flange jitter at that step is a second
+difference of 25 m/s², which is the acceleration watch itself. One quiet
+sample is that chatter. A tenth of a second is fifty steps: longer than
+those one-tick contacts, and shorter than the half-second capture, so a
+later distinct event in the same visit is still a line and a loop is not.
+"""
 
 
 def material_phrase(class_id: str) -> str:
@@ -331,9 +343,10 @@ class StoryLog:
 class AnomalyWatch:
     """Reports collisions, acceleration spikes, and a loss of control.
 
-    Each condition is edge-triggered. A contact that lasts a hundred ticks
-    is one line, and it is reported again only after it has let go. The
-    watch does not command the arm.
+    Each condition is an episode. A contact that lasts a hundred ticks is
+    one line, and a contact that lets go for a single tick is still that
+    episode. It is reported again only after it has stayed clear for the
+    quiet interval. The watch does not command the arm.
     """
 
     def __init__(self, story: StoryLog) -> None:
@@ -344,9 +357,13 @@ class AnomalyWatch:
         """
         self._story = story
         self._contact = False
+        self._contact_quiet: float | None = None
         self._accelerating = False
+        self._accel_quiet: float | None = None
         self._lagging = False
+        self._lag_quiet: float | None = None
         self._refusal: str | None = None
+        self._refusal_quiet: float | None = None
 
     def observe(
         self,
@@ -360,6 +377,9 @@ class AnomalyWatch:
         track_id: int | None,
     ) -> None:
         """Update the watches from one physics tick.
+
+        Called every tick. A tick that continues an episode emits nothing.
+        The line is the start of the episode.
 
         Args:
             at_seconds: Simulated time.
@@ -375,7 +395,14 @@ class AnomalyWatch:
         """
         who = self._story.refer(track_id)
         channel = self._story.channel_of(track_id)
-        if contact and not self._contact:
+        self._contact, self._contact_quiet, opened = _episode(
+            active=contact,
+            quiet=not contact,
+            latched=self._contact,
+            quiet_since=self._contact_quiet,
+            at_seconds=at_seconds,
+        )
+        if opened:
             self._story.tell(
                 at_seconds,
                 "the jaw's collision geometry touched the belt "
@@ -384,10 +411,15 @@ class AnomalyWatch:
                 "fail",
                 channel=channel,
             )
-        self._contact = contact
 
-        spiked = vertical_acceleration > ACCELERATION_WATCH
-        if spiked and not self._accelerating:
+        self._accelerating, self._accel_quiet, opened = _episode(
+            active=vertical_acceleration > ACCELERATION_WATCH,
+            quiet=vertical_acceleration < ACCELERATION_CLEAR,
+            latched=self._accelerating,
+            quiet_since=self._accel_quiet,
+            at_seconds=at_seconds,
+        )
+        if opened:
             self._story.tell(
                 at_seconds,
                 "the flange's vertical acceleration reached "
@@ -397,12 +429,17 @@ class AnomalyWatch:
                 "fail",
                 channel=channel,
             )
-            self._accelerating = True
-        elif (not spiked) and vertical_acceleration < ACCELERATION_CLEAR:
-            self._accelerating = False
 
         lagging = tracking_error is not None and tracking_error > TRACKING_WATCH
-        if lagging and not self._lagging:
+        settled = tracking_error is None or tracking_error < TRACKING_CLEAR
+        self._lagging, self._lag_quiet, opened = _episode(
+            active=lagging,
+            quiet=settled,
+            latched=self._lagging,
+            quiet_since=self._lag_quiet,
+            at_seconds=at_seconds,
+        )
+        if opened:
             assert tracking_error is not None
             self._story.tell(
                 at_seconds,
@@ -412,13 +449,11 @@ class AnomalyWatch:
                 "fail",
                 channel=channel,
             )
-            self._lagging = True
-        elif tracking_error is None or tracking_error < TRACKING_CLEAR:
-            self._lagging = False
 
-        if refusal != self._refusal:
-            self._refusal = refusal
-            if refusal is not None:
+        if refusal is not None:
+            self._refusal_quiet = None
+            if refusal != self._refusal:
+                self._refusal = refusal
                 self._story.tell(
                     at_seconds,
                     f"the servo refused the pose ({refusal})",
@@ -426,3 +461,47 @@ class AnomalyWatch:
                     "fail",
                     channel=channel,
                 )
+            return
+        if self._refusal is None:
+            return
+        if self._refusal_quiet is None:
+            self._refusal_quiet = at_seconds
+            return
+        if at_seconds - self._refusal_quiet >= EPISODE_QUIET_SECONDS:
+            self._refusal = None
+            self._refusal_quiet = None
+
+
+def _episode(
+    *,
+    active: bool,
+    quiet: bool,
+    latched: bool,
+    quiet_since: float | None,
+    at_seconds: float,
+) -> tuple[bool, float | None, bool]:
+    """Advance one watch episode by a single sample.
+
+    Args:
+        active: Whether this sample is past the watch.
+        quiet: Whether this sample is clear of the band that holds an episode.
+            A sample that is neither active nor quiet sits in that band.
+        latched: Whether an episode is already open.
+        quiet_since: When the clear stretch started, or None.
+        at_seconds: Simulated time of this sample.
+
+    Returns:
+        The latch, when the clear stretch started, and whether this sample
+        opened the episode. Opening is the only sample that earns a line.
+    """
+    if active:
+        return True, None, not latched
+    if not quiet:
+        return latched, None, False
+    if not latched:
+        return False, None, False
+    if quiet_since is None:
+        return True, at_seconds, False
+    if at_seconds - quiet_since >= EPISODE_QUIET_SECONDS:
+        return False, None, False
+    return True, quiet_since, False
