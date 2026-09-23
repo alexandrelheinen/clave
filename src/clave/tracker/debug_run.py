@@ -60,9 +60,11 @@ from clave.control.pick import JAW_OPEN
 from clave.control.selection import Selector, pickable_in_belt
 from clave.control.servo import follow
 from clave.control.settings import ControlSettings, Phase, Point
+from clave.control.story import AnomalyWatch, StoryLog
 from clave.control.task import TaskMachine
 from clave.control.trajectory import distance, norm
 from clave.errors import ClaveError
+from clave.taxonomy import channel_of
 from clave.tracker.adapters.detection import detections_from_masks
 from clave.tracker.adapters.render import segment_masks
 from clave.tracker.association import SimulatorIdentity
@@ -499,6 +501,25 @@ class _TelemetryWriter:
         self._file.close()
 
 
+def _progress(steps: int, enabled: bool) -> Any:
+    """Return the physics-step iterator, with a bar only when one was asked for.
+
+    The bar and a debug log share one stream. ``--no-progress`` is how an
+    operator reads the narrative without the bar redrawing over it.
+
+    Args:
+        steps: How many physics steps the run takes.
+        enabled: Whether to draw the bar.
+
+    Returns:
+        A tqdm bar, or a plain range when the bar is off. A machine with no
+        tqdm installed gets the plain range either way.
+    """
+    if not enabled:
+        return range(steps)
+    return tqdm(range(steps), desc="Simulating", unit="step")
+
+
 def mujoco_body_id(model: Any, name: str) -> int:
     """Return a body id without importing MuJoCo at module import time."""
     import mujoco
@@ -522,6 +543,7 @@ def run(
     trajectory_seconds: float = 2.0,
     ground_truth_tracker: bool | None = None,
     belt_speed: float | None = None,
+    progress: bool = True,
 ) -> DebugRunReport:
     """Drive the tracker over one rollout, annotating every capture.
 
@@ -548,6 +570,8 @@ def run(
             to read the debug configuration.
         belt_speed: Override belt speed in meters per second, or None to use
             the speed sampled by the scene layout.
+        progress: Draw the tqdm bar. Off when the operator wants the debug
+            narrative, which shares the terminal with the bar.
 
     Returns:
         The report.
@@ -731,6 +755,7 @@ def run(
                     "ground_truth_tracker": use_ground_truth,
                     "belt_speed_override": belt_speed,
                     "window": window,
+                    "progress": progress,
                 },
             ),
             indent=2,
@@ -786,6 +811,8 @@ def run(
         admits,
         pickable_in_belt(plan.belt.length, plan.belt.width),
     )
+    story = StoryLog()
+    watch = AnomalyWatch(story)
     task = TaskMachine(
         control.task,
         control.calibration,
@@ -796,6 +823,7 @@ def run(
         chutes=plan.chutes,
         belt_width=plan.belt.width,
         effector=effector,
+        story=story,
     )
     goal = None
     refusal: str | None = None
@@ -884,6 +912,52 @@ def run(
     next_capture = 0.0
     next_frame = 0.0
     telemetry_phase = Phase.STANDBY
+    # The acceleration watch is a second difference. The first sample has no
+    # previous rise, and comparing it with a seed of zero is not a spike.
+    accel_ready = False
+
+    def _record_place(name: str, channel: str) -> None:
+        """Count one object crossing a mouth, and say so in the narrative.
+
+        Both the physics tick and the capture look for the crossing. The first
+        one to see a body records it; the second finds it already seen. The
+        story is emitted here, on that first sighting, because a body can fall
+        through a mouth between captures.
+
+        Args:
+            name: The body name.
+            channel: The chute it crossed.
+        """
+        nonlocal misrouted
+        if name in seen_down:
+            return
+        seen_down[name] = channel
+        placed[channel] = placed.get(channel, 0) + 1
+        slot_text = name.rsplit("_", 1)[-1]
+        slot = int(slot_text) if slot_text.isdecimal() else None
+        belongs = None if slot is None else routes.get(slot)
+        item = next(
+            (active for active in conveyor.active if active.index == slot),
+            None,
+        )
+        material = "" if item is None else item.material_class
+        serial = item.serial if item is not None and use_ground_truth else None
+        if belongs is not None and belongs != channel:
+            misrouted += 1
+            LOGGER.warning(
+                "misroute detected: object %s (channel %s) placed in chute %s",
+                name,
+                belongs,
+                channel,
+            )
+        story.placed(
+            data.time,
+            name,
+            material,
+            channel,
+            belongs,
+            serial=serial,
+        )
 
     def _interruptible(iterable: Any) -> Any:
         try:
@@ -893,8 +967,7 @@ def run(
 
     try:
         steps = int(seconds / plan.timestep)
-        progress = tqdm(range(steps), desc="Simulating", unit="step")
-        for _ in _interruptible(progress):
+        for _ in _interruptible(_progress(steps, progress)):
             mujoco.mj_step(model, data)
             conveyor.step(model, data)
             # Checked every tick, not every capture. An object released
@@ -903,16 +976,13 @@ def run(
             # cadence it goes from above the surface to gone without ever
             # being seen crossing.
             routes.update({i.index: i.channel for i in conveyor.active})
+            if use_ground_truth:
+                for item in conveyor.active:
+                    story.note(item.serial, item.material_class, item.channel)
             for name, channel in _placed(
                 mujoco, model, data, conveyor, plan.chutes, mouth, surface
             ).items():
-                if name in seen_down:
-                    continue
-                seen_down[name] = channel
-                placed[channel] = placed.get(channel, 0) + 1
-                belongs = routes.get(int(name.rsplit("_", 1)[1]))
-                if belongs is not None and belongs != channel:
-                    misrouted += 1
+                _record_place(name, channel)
             # The feed loop runs at the physics rate and reads the simulator's
             # own arrivals, which is ground truth and is why it is named as
             # such: the tracker's estimate is not usable this far down the
@@ -929,11 +999,15 @@ def run(
             # plan was decided once, and it is sampled here every tick.
             place = _flange(indices, data)
             was_flying = task.flying
+            flying_track = None if task.plan is None else task.plan.track_id
             flown = task.flight(data.time, place)
             rise = (place[2] - last_flange_z) / plan.timestep
+            accel_sample = abs(rise - last_rise) / plan.timestep
             if flown is not None or was_flying:
-                lurch = max(lurch, abs(rise - last_rise) / plan.timestep)
+                lurch = max(lurch, accel_sample)
                 climb = max(climb, rise)
+            vertical_acceleration = 0.0 if not accel_ready else accel_sample
+            accel_ready = True
             last_flange_z, last_rise = place[2], rise
             command = None
             if flown is not None:
@@ -954,6 +1028,11 @@ def run(
                         mujoco, model, data, conveyor, _pinch(indices, data)
                     )
                     gaps.append(float("inf") if nearest is None else nearest[1])
+                    story.grasp_reading(
+                        data.time,
+                        None if task.plan is None else task.plan.track_id,
+                        gaps[-1],
+                    )
                     # And how the jaw is turned against the object it closed
                     # on, which is ground truth and only available from it: a
                     # tracker estimate has no body to measure against. Folded
@@ -976,11 +1055,18 @@ def run(
                 nearest = _in_the_jaw(
                     mujoco, model, data, conveyor, _pinch(indices, data)
                 )
-                lifts.append(
+                lift = (
                     0.0
                     if nearest is None or nearest[0] not in resting
                     else _object_place(mujoco, model, data, nearest[0])[2]
                     - resting[nearest[0]]
+                )
+                lifts.append(lift)
+                story.visit_ended(
+                    data.time,
+                    flying_track,
+                    lift,
+                    held=lift >= GRASPED_METERS,
                 )
                 lurches.append(lurch)
                 climbs.append(climb)
@@ -1001,6 +1087,7 @@ def run(
                 )
                 motion = Motion(position=command.position, speed=command.speed)
 
+            tick_refusal: str | None = None
             if command is not None:
                 moving = command.velocity
                 stepped = follow(
@@ -1015,6 +1102,7 @@ def run(
                 )
                 if stepped.refusal is not None:
                     refusal = stepped.refusal
+                    tick_refusal = stepped.refusal
                 elif flown is not None or (
                     goal is not None and goal.phase in _VISITING
                 ):
@@ -1031,6 +1119,26 @@ def run(
             clearance = min(clearance, jaw.clearance)
             contacts += int(jaw.contact)
             tilt = max(tilt, jaw.tilt_degrees)
+            if task.plan is not None:
+                subject = task.plan.track_id
+            elif flying_track is not None:
+                subject = flying_track
+            elif goal is None:
+                subject = None
+            else:
+                subject = goal.track_id
+            tracking_error = (
+                None if command is None else distance(place, command.position)
+            )
+            watch.observe(
+                data.time,
+                contact=jaw.contact,
+                clearance=jaw.clearance,
+                vertical_acceleration=vertical_acceleration,
+                tracking_error=tracking_error,
+                refusal=tick_refusal,
+                track_id=subject,
+            )
             if telemetry is not None:
                 telemetry.write(
                     model,
@@ -1206,6 +1314,13 @@ def run(
             )
 
             flange = _flange(indices, data)
+            if not use_ground_truth:
+                for record in records:
+                    try:
+                        chute = channel_of(record.material)
+                    except KeyError:
+                        chute = ""
+                    story.note(record.track_id, record.material, chute)
             queue = selector.update(standing, flange, feeding.speed, now)
             LOGGER.debug(
                 "capture %d queue state: %d candidate(s), head=%s, recomputed=%s",
@@ -1225,36 +1340,24 @@ def run(
                 (mouth[0], mouth[1]),
                 surface,
             ).items():
-                if name in seen_down:
-                    continue
-                seen_down[name] = channel
-                placed[channel] = placed.get(channel, 0) + 1
-                slot = int(name.rsplit("_", 1)[1])
-                belongs = routes.get(slot)
-                if belongs is not None and belongs != channel:
-                    misrouted += 1
-                    LOGGER.warning(
-                        "misroute detected: object %s (channel %s) placed in chute %s",
-                        name,
-                        belongs,
-                        channel,
-                    )
-                else:
-                    LOGGER.debug(
-                        "object %s placed in chute %s",
-                        name,
-                        channel,
-                    )
+                _record_place(name, channel)
 
             for trigger in queue.reasons:
                 reorders[trigger] += 1
             head_id = None if queue.head is None else queue.head.track_id
-            if (
-                previous_head is not None
-                and head_id != previous_head
-                and any(item.track_id == previous_head for item in queue.order)
-            ):
+            still_waiting = previous_head is not None and any(
+                item.track_id == previous_head for item in queue.order
+            )
+            if previous_head is not None and head_id != previous_head and still_waiting:
                 head_churn += 1
+            if queue.recomputed or head_id != previous_head:
+                story.queue(
+                    data.time,
+                    queue.reasons,
+                    head_id,
+                    previous_head,
+                    still_waiting,
+                )
             if head_id != previous_head:
                 LOGGER.debug(
                     "selection target head changed: %s -> %s (head_churn=%d)",

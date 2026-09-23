@@ -68,6 +68,7 @@ from clave.control.settings import (
     Profile,
     TaskSettings,
 )
+from clave.control.story import StoryLog
 from clave.control.trajectory import State, as_point, as_vector, distance, where_carried
 from clave.errors import ClaveError
 from clave.world.effector import Effector
@@ -222,6 +223,7 @@ class TaskMachine:
         *,
         belt_surface: float | None = None,
         effector: Effector | None = None,
+        story: StoryLog | None = None,
     ) -> None:
         """Hold the settings and the belt the approach height is measured from.
 
@@ -247,6 +249,9 @@ class TaskMachine:
             belt_border_y: Lateral position of the belt border on the chute side,
                 or None to compute from belt_center_y - belt_width / 2.0.
             belt_surface: Legacy keyword alias for belt_surface_height_world.
+            story: The debug narrative. One machine shares the log the run
+                notes materials on, so a sentence can name the material. None
+                builds a log that emits only when DEBUG is enabled.
 
         Raises:
             TaskError: If the profile plans arcs and was given neither the
@@ -316,6 +321,8 @@ class TaskMachine:
         self._missed: list[int] = []
         self._refreshes: list[Reaim] = []
         self._abandoned: list[tuple[int, str]] = []
+        self._story = story if story is not None else StoryLog()
+        self._plan_refusal = ""
 
     @property
     def belt_surface(self) -> float:
@@ -493,6 +500,15 @@ class TaskMachine:
         if head.track_id != self._serving:
             self._serving, self._arrived_at = head.track_id, None
             self._phase = Phase.TRACK
+            self._story.note(head.track_id, "", head.channel)
+            self._story.tell(
+                at_seconds,
+                "the queue head is this object and the profile follows markers "
+                "rather than planning a grasp",
+                f"track {self._story.refer(head.track_id)} at approach height",
+                "pending",
+                channel=head.channel,
+            )
 
         goal = self._track(head, at_nanos, self._phase)
         gap = distance(flange_pos, goal.position)
@@ -514,6 +530,15 @@ class TaskMachine:
         # never reaches here.
         self._arrivals.append(gap)
         self._served.append(head.track_id)
+        self._story.tell(
+            at_seconds,
+            f"the flange held within tolerance for the dwell, {gap * 1000:.1f} mm "
+            "from the marker",
+            f"count the visit to {self._story.refer(head.track_id)} served and "
+            "take the next object",
+            "success",
+            channel=head.channel,
+        )
         self._serving, self._arrived_at = None, None
         self._phase = Phase.STANDBY
         return self.step(queue, flange_pos, at_seconds)
@@ -551,9 +576,11 @@ class TaskMachine:
             return None
         sampled = self._plan.at(at_seconds)
         if sampled is None:
-            self._finish(flange_pos)
+            self._finish(flange_pos, at_seconds)
             return None
         phase, state, grip = sampled
+        if phase is not self._phase:
+            self._narrate_phase(phase, at_seconds)
         if phase is Phase.HOLD and self._pick_error is None:
             # The hold begins at the instant the jaw reaches the object, so
             # the first tick of it is the one a pick is decided on. Later
@@ -572,6 +599,59 @@ class TaskMachine:
             yaw=yaw,
             grip=grip,
         )
+
+    def _narrate_phase(self, phase: Phase, at_seconds: float) -> None:
+        """Say that a flying visit has entered another phase.
+
+        Args:
+            phase: The phase the clock just reached.
+            at_seconds: Simulated time.
+        """
+        track = self._plan.track_id if self._plan is not None else self._serving
+        who = self._story.refer(track)
+        chute = self._story.channel_of(track)
+        if phase is Phase.DESCEND:
+            self._story.tell(
+                at_seconds,
+                "the approach is over and the plan says to come down",
+                f"descend onto {who}, moving with the belt",
+                "pending",
+                channel=chute,
+            )
+        elif phase is Phase.HOLD:
+            self._story.tell(
+                at_seconds,
+                "the descent has reached the grasp pose",
+                f"close the jaw on {who}",
+                "pending",
+                channel=chute,
+            )
+        elif phase is Phase.RETREAT:
+            self._story.tell(
+                at_seconds,
+                "the hold is over",
+                f"lift clear of the belt with the jaw shut on {who}",
+                "pending",
+                channel=chute,
+            )
+        elif phase is Phase.DELIVER:
+            if self._story.missed_the_grasp(track):
+                self._story.tell(
+                    at_seconds,
+                    "the jaw closed with nothing in it and the plan still "
+                    "has a release",
+                    f"fly the release of {who} anyway",
+                    "fail",
+                    channel=chute,
+                )
+            else:
+                self._story.tell(
+                    at_seconds,
+                    "the jaw is shut",
+                    f"put {who} in its chute",
+                    "pending",
+                    channel=chute,
+                )
 
     def _takes(self, pose: Point) -> bool:
         """Whether the arm may be commanded to a pose at all.
@@ -684,6 +764,14 @@ class TaskMachine:
         ):
             turned = self._yaw_at_pick(head, refreshed, at_seconds)
             self._refreshes.append(Reaim(at_seconds, track_id, drift, False, "took"))
+            self._story.tell(
+                at_seconds,
+                f"the fresh estimate stands {drift * 1000:.0f} mm from the aim "
+                "and the approach arc still fits",
+                f"bend the approach and keep fetching {self._story.refer(track_id)}",
+                "pending",
+                channel=self._story.channel_of(track_id),
+            )
             self._plan = refreshed.with_yaw(
                 target_yaw=turned,
                 initial_yaw=self._last_yaw,
@@ -695,6 +783,14 @@ class TaskMachine:
             # going that there is nothing to correct, so the refusal costs
             # nothing and the visit flies as planned.
             self._refreshes.append(Reaim(at_seconds, track_id, drift, True, "held"))
+            self._story.tell(
+                at_seconds,
+                f"the fresh estimate is {drift * 1000:.0f} mm from the aim, "
+                "inside the tolerance",
+                f"keep the plan I already have for {self._story.refer(track_id)}",
+                "pending",
+                channel=self._story.channel_of(track_id),
+            )
             return
         solved = self._resolve(head, flange, velocity, at_seconds)
         if solved is None:
@@ -707,6 +803,15 @@ class TaskMachine:
             )
             return
         self._refreshes.append(Reaim(at_seconds, track_id, drift, True, "solved"))
+        self._story.tell(
+            at_seconds,
+            f"the fresh estimate is {drift * 1000:.0f} mm from the aim and the "
+            "arc I had was refused",
+            f"solve the visit again ({solved.duration:.3f} s) and keep fetching "
+            f"{self._story.refer(track_id)}",
+            "pending",
+            channel=self._story.channel_of(track_id),
+        )
         turned = self._yaw_at_pick(head, solved, at_seconds)
         self._plan = solved.with_yaw(
             target_yaw=turned,
@@ -932,6 +1037,13 @@ class TaskMachine:
             at_seconds,
             reason,
         )
+        self._story.tell(
+            at_seconds,
+            reason,
+            f"abandon {self._story.refer(track_id)} and look for the next object",
+            "fail",
+            channel=self._story.channel_of(track_id),
+        )
         self._refreshes.append(Reaim(at_seconds, track_id, drift, refused, "abandoned"))
         self._abandoned.append((track_id, reason))
         if track_id not in self._missed:
@@ -977,11 +1089,28 @@ class TaskMachine:
             # Going home is the recovery, because the park pose is inside the
             # region by construction and the servo will take it. The
             # candidate is not recorded as missed: nothing is wrong with it.
+            self._story.note(head.track_id, "", head.channel)
+            self._story.tell(
+                at_seconds,
+                "the flange is outside the region the arm is trusted over",
+                f"go to the park pose instead of committing to "
+                f"{self._story.refer(head.track_id)}",
+                "pending",
+                channel=head.channel,
+            )
             self._serving = None
             return self._rest(flange, at_nanos)
         plan = self._resolve(head, flange, velocity, at_seconds)
         if plan is None:
             self._missed.append(head.track_id)
+            self._story.note(head.track_id, "", head.channel)
+            self._story.tell(
+                at_seconds,
+                self._plan_refusal or "no interception exists",
+                f"skip {self._story.refer(head.track_id)} rather than chase it",
+                "fail",
+                channel=head.channel,
+            )
             self._serving = None
             return self._rest(flange, at_nanos)
         target_yaw = self._yaw_at_pick(head, plan, at_seconds)
@@ -991,6 +1120,16 @@ class TaskMachine:
         self._serving = head.track_id
         self._pick_error = None
         self._phase = Phase.TRACK
+        self._story.note(head.track_id, "", head.channel)
+        self._story.tell(
+            at_seconds,
+            "the queue offered this object and an interception fits the belt "
+            "it has left",
+            f"fly a {plan.duration:.3f} s visit ({_visit_manner(plan)}) to fetch "
+            f"{self._story.refer(head.track_id)}",
+            "pending",
+            channel=head.channel,
+        )
         LOGGER.debug(
             "committed pick plan for candidate %d: duration=%.3f s, legs=%d, chute=%s",
             head.track_id,
@@ -1092,6 +1231,11 @@ class TaskMachine:
                     jaw_in_the_belt = descent_leg.segment.end.position[2]
         if plan is None:
             if jaw_in_the_belt is not None:
+                self._plan_refusal = (
+                    "the grasp pose would leave the jaw inside the belt "
+                    f"(lowest geometry at z={jaw_in_the_belt:.4f} m, "
+                    f"floor {self._grasp_floor_world:.4f} m)"
+                )
                 LOGGER.debug(
                     "pick planning refused candidate %d: its grasp pose leaves "
                     "the jaw's lowest geometry inside the %.3f m the jaw keeps "
@@ -1102,12 +1246,17 @@ class TaskMachine:
                     self._grasp_floor_world,
                 )
             else:
+                self._plan_refusal = (
+                    f"no interception exists in the {leaving:.3f} s of belt it has left"
+                )
                 LOGGER.debug(
                     "pick planning failed for candidate %d (leaving=%.3f s); "
                     "marked missed",
                     head.track_id,
                     leaving,
                 )
+        else:
+            self._plan_refusal = ""
         return plan
 
     def _held(self, at_nanos: int) -> Goal:
@@ -1138,7 +1287,7 @@ class TaskMachine:
             observed_at_nanos=at_nanos,
         )
 
-    def _finish(self, flange: Point) -> None:
+    def _finish(self, flange: Point, at_seconds: float) -> None:
         """Close a planned visit that has run out of arcs.
 
         Args:
@@ -1146,6 +1295,9 @@ class TaskMachine:
                 shorter than a tick and so was never sampled. That cannot
                 happen at the shipped dwell and tick, and falling back beats
                 recording a figure nobody measured.
+            at_seconds: When the plan ran out. The lift that says whether the
+                jaw kept the object is measured by the caller, so this line
+                is pending rather than a verdict.
         """
         assert self._plan is not None
         last = self._plan.legs[-1].segment.end.position
@@ -1154,6 +1306,15 @@ class TaskMachine:
         )
         self._arrivals.append(error)
         self._served.append(self._plan.track_id)
+        self._story.tell(
+            at_seconds,
+            f"the plan ran out with the flange {error * 1000:.1f} mm from the "
+            "pose it was aiming at",
+            f"open the jaw and wait for the lift to say whether "
+            f"{self._story.refer(self._plan.track_id)} was held",
+            "pending",
+            channel=self._story.channel_of(self._plan.track_id),
+        )
         LOGGER.debug(
             "completed pick visit for candidate %d: pick_error=%.4f m",
             self._plan.track_id,
@@ -1271,6 +1432,14 @@ class TaskMachine:
             refusal,
             faulted,
         )
+        who = self._story.refer(faulted)
+        self._story.tell(
+            at_nanos / NANOS_PER_SECOND,
+            f"the last commanded pose was refused ({refusal})",
+            f"hold the arm where it is and drop {who}",
+            "fail",
+            channel=self._story.channel_of(faulted),
+        )
         already = {track_id for track_id, _ in self._faults}
         if faulted is None or faulted not in already:
             self._faults.append((faulted, refusal))
@@ -1283,6 +1452,24 @@ class TaskMachine:
             track_id=faulted,
             observed_at_nanos=at_nanos,
         )
+
+
+def _visit_manner(plan: Plan) -> str:
+    """Return the phases of a plan, once each, in the order they are flown.
+
+    Args:
+        plan: The visit.
+
+    Returns:
+        A comma-separated list of phase names. A delivery that is two arcs
+        is named once, because the manner is the phase and not the arc.
+    """
+    names: list[str] = []
+    for leg in plan.legs:
+        name = leg.phase.value
+        if not names or names[-1] != name:
+            names.append(name)
+    return ", ".join(names)
 
 
 def _anywhere(pose: Point) -> bool:

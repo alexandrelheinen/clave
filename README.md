@@ -74,8 +74,16 @@ errors and grasp lifts. A window opens when a display is available.
 For example, to run a 30 seconds simulation, using ground truth perception, debug logging, without UI, but dumping the rendering video and telemetry to the folder `runs/debug/sample`: 
 
 ```bash
-clave sim --seconds 30 --gt --log-level DEBUG --no-window --video --telemetry --out runs/debug/sample
+clave sim --seconds 30 --gt --log-level DEBUG --no-progress --no-window --video --telemetry --out runs/debug/sample
 ```
+
+`--no-progress` turns the tqdm bar off. Debug lines and the bar share the
+terminal, and a bar that redraws a line erases the story of what the arm is
+doing. The story itself is the debug log: why an object was chosen, how the
+visit will be flown, whether the jaw closed, which chute it was released
+into, and any collision, acceleration spike, or loss of control along the
+way. It is specified in
+[docs/requirements/simulation-narrative.md](docs/requirements/simulation-narrative.md).
 
 ### Other commands
 
