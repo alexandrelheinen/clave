@@ -19,6 +19,14 @@ epsilons, protocol scales). Comments describe logic and invariants; they do
 not quote a YAML value or claim what happens at a particular shipped setting.
 See [.guidelines/style/parameters.md](../.guidelines/style/parameters.md).
 
+## Run outputs
+
+Artefacts from a simulation or demo go under `runs/<goal>/<identifier>/`,
+where `goal` is `debug`, `demo`, or `release`, and `identifier` uniquely
+names the run. Pull-request validation uses `pr` plus the PR number
+(`runs/debug/pr80` for PR #80). Keep the video, telemetry, and report for one
+run in that same folder.
+
 ## Physical and kinematic variable naming: `who_what_where`
 
 Variables representing physical quantities, spatial poses, velocities, and

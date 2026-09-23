@@ -82,10 +82,10 @@ By default it runs the sorting-line simulation and annotates the rollout with
 everything the tracker believes: markers, beliefs, queue decisions, arrival
 errors and grasp lifts. A window opens when a display is available.
 
-For example, to run a 30 seconds simulation, using ground truth perception, debug logging, without UI, but dumping the rendering video and telemetry to the folder `runs/debug/sample`: 
+For example, to run a 30 seconds simulation, using ground truth perception, debug logging, without UI, but dumping the rendering video and telemetry under `runs/debug/<identifier>` (for PR validation, `<identifier>` is `pr` plus the PR number, e.g. `pr80`):
 
 ```bash
-clave sim --seconds 30 --gt --log-level DEBUG --no-progress --no-window --video --telemetry --out runs/debug/sample
+clave sim --seconds 30 --gt --log-level DEBUG --no-progress --no-window --video --telemetry --out runs/debug/pr80
 ```
 
 `--no-progress` turns the tqdm bar off. Debug lines and the bar share the

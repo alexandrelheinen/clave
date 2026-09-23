@@ -1385,16 +1385,6 @@ def run(
             else:
                 standing = markers_for(records, effector, surface)
 
-            LOGGER.debug(
-                "capture %d at %.3f s: settled %d tracker records, "
-                "feed=%s (%d standing markers)",
-                captures,
-                data.time,
-                len(records),
-                "ground_truth" if use_ground_truth else "tracker_estimates",
-                len(standing),
-            )
-
             flange = _flange(indices, data)
             if not use_ground_truth:
                 for record in records:
@@ -1404,13 +1394,6 @@ def run(
                         chute = ""
                     story.note(record.track_id, record.material, chute)
             queue = selector.update(standing, flange, feeding.speed, now)
-            LOGGER.debug(
-                "capture %d queue state: %d candidate(s), head=%s, recomputed=%s",
-                captures,
-                len(queue.order),
-                queue.head.track_id if queue.head else None,
-                queue.recomputed,
-            )
 
             routes.update({item.index: item.channel for item in conveyor.active})
             for name, channel in _placed(
@@ -1439,13 +1422,6 @@ def run(
                     head_id,
                     previous_head,
                     still_waiting,
-                )
-            if head_id != previous_head:
-                LOGGER.debug(
-                    "selection target head changed: %s -> %s (head_churn=%d)",
-                    previous_head,
-                    head_id,
-                    head_churn,
                 )
             previous_head = head_id
             goal = task.step(queue, flange, data.time, refusal, moving)
