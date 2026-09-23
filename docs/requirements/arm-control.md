@@ -563,6 +563,14 @@ clearance, over the first 0.20 s of the hold, and shall not raise it when the
 shut jaw is already clear. The retreat shall still lift its own clearance
 above where that hold finished.
 
+`AC-MOVE-68`: While a visit is in flight, the guidance state shall be the
+planned flange pose in task space (the flat output), advanced as if tracking
+were perfect: at time $t + \mathrm{d}t$ it is the trajectory at
+$t + \mathrm{d}t$ and the time to go shrinks by $\mathrm{d}t$. Re-aiming and
+re-solving a visit shall begin from that guidance state, not from the
+measured flange. Lag, a collision, or any other plant disturbance is a
+control problem for the servo, and shall not be written back into the plan.
+
 ## Test plan
 
 Each criterion names the test that guards it. The grasp-plane floor and the
@@ -575,6 +583,7 @@ because the rise is one correction.
 | `AC-MOVE-65` | `test_a_descent_correction_past_the_ceiling_is_taken_part_way` |
 | `AC-MOVE-66` | `test_an_approach_correction_past_the_ceiling_is_taken_part_way` |
 | `AC-MOVE-67` | `test_the_hold_rises_while_the_jaw_closes`, `test_the_rise_leads_the_hang_the_jaw_adds_as_it_shuts`, `test_a_grasp_the_shut_jaw_can_clear_does_not_rise`, `test_a_grasp_below_the_shut_floor_rises_back_to_it` |
+| `AC-MOVE-68` | `test_a_re_solved_visit_starts_from_the_guidance_state` |
 | `AC-GRIP-14` | `test_the_open_jaw_is_the_configured_open_reach` |
 | `AC-MARK-17` | `test_the_grasp_plane_stands_on_the_open_jaw` |
 
@@ -684,6 +693,15 @@ leaving its radius is enough. What matters is whether a rebuild moves the
 head, and over the same run the head was swapped zero times while the track
 it replaced was still there to be served. A rebuild that keeps its head
 costs nothing.
+
+**Why the plan is not closed on the measured flange.** Guidance lives in the
+flat output (the end-effector pose) and is model-based: the planned state
+advances along the trajectory under perfect tracking, and the time to go
+shrinks by the tick. The measured flange is what the servo tracks that
+reference with. Writing a lag or a collision back into the next solve makes
+the projected path rush off the arc the jaw was already on, which is how a
+control disturbance becomes a guidance problem. `AC-MOVE-68` is the rule:
+re-aim already sampled the plan, and re-solve now does too.
 
 **What interception and the bounds found.** Four more defects, and two of
 them are the same mistake at different layers, which is the part worth
