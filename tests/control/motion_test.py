@@ -3,15 +3,39 @@
 from __future__ import annotations
 
 import math
+from pathlib import Path
 
 import pytest
 
 from clave.control.motion import Reference, toward
 from clave.control.settings import MotionSettings, Phase
 from clave.control.task import Goal
+from clave.world.arm import ReachBounds
+from clave.world.config import load
 
 TIMESTEP = 0.002
-LIMITS = MotionSettings(max_speed=1.00, max_acceleration=2.50)
+LIMITS = MotionSettings(
+    max_speed=1.00,
+    max_acceleration=2.50,
+    intercept_passes=3,
+    minimum_segment_seconds=0.50,
+    segment_sample_count=64,
+    bisection_passes=40,
+    minimum_delivery_seconds=0.05,
+    correction_steps=32,
+)
+_ARM = load(
+    Path(__file__).resolve().parents[2] / "configs" / "world" / "sorting_line.yml"
+)["arm"]
+BOUNDS = ReachBounds(
+    float(_ARM["reach_min_meters"]),
+    float(_ARM["reach_max_meters"]),
+    (
+        float(_ARM["tool_above_base_meters"][0]),
+        float(_ARM["tool_above_base_meters"][1]),
+    ),
+)
+BASE_XY = (0.0, -0.70)
 
 
 def goal_at(
@@ -113,7 +137,16 @@ def test_a_tighter_acceleration_takes_longer_to_arrive() -> None:
         (0.0, 0.0, 1.12),
         goal,
         ticks=4000,
-        limits=MotionSettings(max_speed=LIMITS.max_speed, max_acceleration=0.5),
+        limits=MotionSettings(
+            max_speed=LIMITS.max_speed,
+            max_acceleration=0.5,
+            intercept_passes=LIMITS.intercept_passes,
+            minimum_segment_seconds=LIMITS.minimum_segment_seconds,
+            segment_sample_count=LIMITS.segment_sample_count,
+            bisection_passes=LIMITS.bisection_passes,
+            minimum_delivery_seconds=0.05,
+            correction_steps=32,
+        ),
     )
 
     def ticks_to_arrive(history: list[Reference]) -> int:
@@ -210,15 +243,14 @@ def test_a_longer_tick_travels_further() -> None:
     )
 
 
-BASE_XY = (0.0, -0.70)
-INNER = 0.25
+INNER = BOUNDS.reach_min
 
 
 def keep_inside(pose: tuple[float, float, float]) -> tuple[float, float, float]:
     """The shipped projection, over the shipped arm base."""
     from clave.world.arm import project_into_reach
 
-    x, y = project_into_reach(BASE_XY, pose[0], pose[1])
+    x, y = project_into_reach(BASE_XY, pose[0], pose[1], BOUNDS)
     return x, y, pose[2]
 
 
@@ -396,11 +428,10 @@ def test_an_intercept_beyond_reach_is_pulled_back_to_the_edge() -> None:
     was reachable. Four visits in a sixteen second run were refused that way
     at 1.266 m to 1.287 m against a 1.25 m limit.
     """
-    from clave.world.arm import REACH_MAX_METERS
 
     far = (BASE_XY[0] + 1.40, BASE_XY[1], 1.12)
     pulled = keep_inside(far)
-    assert math.dist(pulled[:2], BASE_XY) <= REACH_MAX_METERS
+    assert math.dist(pulled[:2], BASE_XY) <= BOUNDS.reach_max
     assert pulled[2] == pytest.approx(1.12)
 
 

@@ -144,8 +144,14 @@ def test_the_park_pose_lies_inside_the_region_the_arm_is_trusted_over() -> None:
     world = load(WORLD)
     base = [float(value) for value in world["arm"]["base_position_meters"]]
 
-    assert armmod.reaches((base[0], base[1]), park[0], park[1])
-    lowest, highest = armmod.TOOL_ABOVE_BASE_METERS
+    band = [float(v) for v in world["arm"]["tool_above_base_meters"]]
+    bounds = armmod.ReachBounds(
+        float(world["arm"]["reach_min_meters"]),
+        float(world["arm"]["reach_max_meters"]),
+        (band[0], band[1]),
+    )
+    assert armmod.reaches((base[0], base[1]), park[0], park[1], bounds)
+    lowest, highest = bounds.tool_above_base
     assert lowest <= park[2] - base[2] <= highest
 
 

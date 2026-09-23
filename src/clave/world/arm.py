@@ -81,37 +81,29 @@ TOOL_SITE = "arm_attachment_site"
 """The flange an end effector bolts to, which every target is expressed for."""
 
 REACH_MARGIN_METERS = 0.001
-"""How far past the inner radius a projected point is placed, in meters.
+"""Projection offset past a closed reach bound.
 
-Projecting exactly onto the boundary produces a point `reaches` then rejects,
-because `math.hypot` of the result lands a few parts in a quadrillion under
-the radius it was built from. A millimetre is far below anything the arm
-resolves and far above that error.
+A language and architecture threshold, not a design parameter: projecting
+exactly onto the boundary can leave `hypot` a few ulps inside the refused
+set. The offset is far below anything the arm resolves.
 """
 
-REACH_MIN_METERS = 0.25
-"""Inner radius of the usable annulus, measured about the base column.
 
-A sweep found the tool unreachable inside 0.200 m with the tool held vertical
-and reachable at 0.200 m exactly. This sits above that, so the region a caller
-trusts is strictly inside the region the arm can serve.
-"""
+@dataclass(frozen=True)
+class ReachBounds:
+    """Trusted workspace annulus and vertical band, from world configuration.
 
-REACH_MAX_METERS = 1.25
-"""Outer radius of the usable annulus.
+    Attributes:
+        reach_min: Inner radius about the base, in meters.
+        reach_max: Outer radius about the base, in meters.
+        tool_above_base: Lowest and highest flange height relative to the
+            arm base, in meters.
+    """
 
-The same sweep put the furthest solvable point between 1.266 m and 1.309 m
-depending on bearing. This sits below the smallest of those, for the same
-reason.
-"""
+    reach_min: float
+    reach_max: float
+    tool_above_base: tuple[float, float]
 
-TOOL_ABOVE_BASE_METERS = (-0.05, 0.45)
-"""Vertical band the tool is trusted in, relative to the arm's own base.
-
-Swept at 0.70 m radius, solutions exist from the base plane to 0.55 m above it
-and below. The band stops short at both ends so the trusted region stays inside
-the measured one.
-"""
 
 SHOULDER_PAN_UNLIMITED = True
 """Axis 1 travels plus or minus 360 degrees, so the annulus has no missing wedge.
@@ -152,6 +144,7 @@ class ArmIndices:
             top of its pedestal.
         lower: Lower joint limits.
         upper: Upper joint limits.
+        reach: Trusted workspace from world configuration.
     """
 
     joint_ids: tuple[int, ...]
@@ -164,40 +157,42 @@ class ArmIndices:
     base_position: NDArray[np.float64]
     lower: NDArray[np.float64]
     upper: NDArray[np.float64]
+    reach: ReachBounds
 
 
-def reaches(base_xy: tuple[float, float], x: float, y: float) -> bool:
+def reaches(
+    base_xy: tuple[float, float],
+    x: float,
+    y: float,
+    bounds: ReachBounds,
+) -> bool:
     """Whether a point lies in the annulus the arm is trusted over.
 
-    Pure geometry, so the test the world applies and the one the safety envelope
-    applies cannot drift apart. They did once, on an earlier arm, and showed up
-    as a 47 percent override rate.
-
-    This is a region proven by sweep rather than a solve. Running inverse
-    kinematics per call would cost milliseconds and give a different answer on
-    different seeds, since the solve is iterative; a fixed region is cheap,
-    deterministic and shared. What keeps it honest is the test that re-sweeps it.
+    Pure geometry against the configured bounds, so the world test and the
+    safety envelope cannot drift apart by reading different literals.
 
     Args:
         base_xy: Where the arm's base column stands, in world meters.
         x: Target x, in world meters.
         y: Target y, in world meters.
+        bounds: Reach annulus from world configuration.
 
     Returns:
         Whether the point lies between the inner and outer radii.
     """
     radius = math.hypot(x - base_xy[0], y - base_xy[1])
-    return REACH_MIN_METERS <= radius <= REACH_MAX_METERS
+    return bounds.reach_min <= radius <= bounds.reach_max
 
 
-def locate(model: Any) -> ArmIndices:
+def locate(model: Any, reach: ReachBounds) -> ArmIndices:
     """Find the arm's joints, actuators and flange in a compiled model.
 
     Args:
         model: The compiled model.
+        reach: Trusted workspace from world configuration.
 
     Returns:
-        The indices and the base position the solver needs.
+        The indices, base position, and reach bounds the solver needs.
 
     Raises:
         KeyError: If a joint, actuator or site is absent, naming it.
@@ -237,6 +232,7 @@ def locate(model: Any) -> ArmIndices:
         base_position=np.array(data.xpos[base_body], dtype=np.float64),
         lower=np.array([model.jnt_range[j][0] for j in joint_ids]),
         upper=np.array([model.jnt_range[j][1] for j in joint_ids]),
+        reach=reach,
     )
 
 
@@ -319,6 +315,7 @@ def solve(
         (float(arm.base_position[0]), float(arm.base_position[1])),
         float(target[0]),
         float(target[1]),
+        arm.reach,
     ):
         radius = math.hypot(
             float(target[0]) - float(arm.base_position[0]),
@@ -326,10 +323,10 @@ def solve(
         )
         raise ReachError(
             f"target is {radius:.3f} m from the base, outside the "
-            f"{REACH_MIN_METERS:.2f} m to {REACH_MAX_METERS:.2f} m annulus"
+            f"{arm.reach.reach_min:.2f} m to {arm.reach.reach_max:.2f} m annulus"
         )
 
-    lowest, highest = TOOL_ABOVE_BASE_METERS
+    lowest, highest = arm.reach.tool_above_base
     above = float(target[2]) - float(arm.base_position[2])
     if not lowest <= above <= highest:
         raise ReachError(
@@ -701,69 +698,48 @@ def _track_pose(
     return wanted
 
 
-def project_into_band(base_z: float, z: float) -> float:
-    """Pull a height back into the vertical band the arm is trusted over.
-
-    The horizontal projection has a companion for the same reason: a pose
-    the arm is not trusted at is refused, and a refusal that nothing can
-    correct latches. The arm overshoots the band by a few millimetres under
-    its own dynamics, and once it is outside, a reference reseeded from the
-    measured flange is outside too, so every pose after it is refused and
-    the arm never moves again. Measured on the shipped line, one excursion
-    of 7 mm past the ceiling produced 226 refusals in three minutes.
+def project_into_band(base_z: float, z: float, bounds: ReachBounds) -> float:
+    """Pull a height back into the configured vertical band.
 
     Args:
         base_z: Height of the arm's mounting face.
         z: The height wanted.
+        bounds: Vertical band from world configuration.
 
     Returns:
         The height, unchanged when it was already inside the band.
     """
-    lowest, highest = TOOL_ABOVE_BASE_METERS
+    lowest, highest = bounds.tool_above_base
     floor = base_z + lowest + REACH_MARGIN_METERS
     ceiling = base_z + highest - REACH_MARGIN_METERS
     return min(max(z, floor), ceiling)
 
 
 def project_into_reach(
-    base_xy: tuple[float, float], x: float, y: float
+    base_xy: tuple[float, float],
+    x: float,
+    y: float,
+    bounds: ReachBounds,
 ) -> tuple[float, float]:
-    """Pull a point back into the annulus the arm is trusted over.
+    """Pull a point back into the configured reach annulus.
 
-    The region the arm is trusted over is an annulus, so it is not convex: a
-    straight line between two points inside it can pass through the hole
-    around the base. Measured on the shipped line, a traverse from the park
-    pose to the far side of the belt passes within 0.10 m of the base, where
-    the arm is not trusted and the pose is refused. Neither endpoint is at
-    fault and no choice of park pose removes the case, because the base sits
-    between the arm's resting place and part of the belt.
-
-    So a point inside the hole is pushed radially out to the inner radius.
-    The path that results runs straight until it meets the hole, slides
-    around it, and runs straight again, which is what a linear move under a
-    workspace constraint does. This is a constraint projection and not
-    obstacle avoidance: nothing here knows about anything in the scene.
-
-    The outer radius needs the same treatment for a different reason. A
-    chord between two points inside a disc stays inside it, so a path never
-    leaves that way, but an interception does: aiming ahead of an object the
-    belt is carrying puts the aim downstream of a pose that was reachable,
-    and four visits in a sixteen second run were refused at 1.266 m to
-    1.287 m against a 1.25 m limit. Pulling the aim back to the edge sends
-    the arm to the boundary to wait, which is what it can actually do.
+    The trusted region is an annulus, so it is not convex: a straight line
+    between two admitted poses can pass through the hole around the base.
+    Projection pushes out of the hole and back from past the outer radius.
 
     Args:
         base_xy: Where the arm stands, in the horizontal plane.
         x: The point's first coordinate.
         y: The point's second coordinate.
+        bounds: Reach annulus from world configuration.
 
     Returns:
-        The point, unchanged when it was already outside the hole.
+        The point, unchanged when it was already inside the annulus.
     """
     offset_x, offset_y = x - base_xy[0], y - base_xy[1]
     radius = math.hypot(offset_x, offset_y)
-    inner = REACH_MIN_METERS + REACH_MARGIN_METERS
-    outer = REACH_MAX_METERS - REACH_MARGIN_METERS
+    inner = bounds.reach_min + REACH_MARGIN_METERS
+    outer = bounds.reach_max - REACH_MARGIN_METERS
     if inner <= radius <= outer:
         return x, y
     if radius == 0.0:
@@ -849,8 +825,9 @@ def reachable(
         (float(arm.base_position[0]), float(arm.base_position[1])),
         float(target_pos[0]),
         float(target_pos[1]),
+        arm.reach,
     ):
         return False
-    lowest, highest = TOOL_ABOVE_BASE_METERS
+    lowest, highest = arm.reach.tool_above_base
     above = float(target_pos[2]) - float(arm.base_position[2])
     return lowest <= above <= highest

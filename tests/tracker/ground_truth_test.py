@@ -20,7 +20,7 @@ from clave.tracker.markers import ground_truth_markers
 from clave.world.belt import SpawnedObject
 from clave.world.config import load
 from clave.world.effector import Effector
-from clave.world.scene import BeltGeometry, SceneLayout
+from clave.world.scene import BeltGeometry, SceneLayout, TakeawayDrive
 
 ROOT = Path(__file__).resolve().parents[2]
 WORLD_CONFIG = ROOT / "configs" / "world" / "sorting_line.yml"
@@ -40,6 +40,7 @@ def minimal_plan() -> SceneLayout:
             width=0.5,
             surface_height=0.90,
             speed=0.31,
+            height_tolerance=0.05,
         ),
         arm_base=(0.0, -0.45, 0.90),
         reach_min=0.30,
@@ -51,6 +52,14 @@ def minimal_plan() -> SceneLayout:
         objects=(),
         pool_size=4,
         timestep=0.002,
+        takeaway=TakeawayDrive(
+            speed=0.20,
+            height_min=0.25,
+            height_max=0.45,
+            mouth_half_width=0.15,
+            past_mouth=1.50,
+            toward_mouth=0.10,
+        ),
         dressed=False,
     )
 

@@ -250,7 +250,10 @@ def capture(root: Path, scenario: StillScenario, out: Path) -> list[Path]:
         config.require_range(spawn, "drop_height_meters", "spawn"),
         entry_margin=float(config.require(spawn, "entry_margin_meters", "spawn")),
     )
-    indices = armmod.locate(model)
+    indices = armmod.locate(
+        model,
+        armmod.ReachBounds(plan.reach_min, plan.reach_max, plan.tool_above_base),
+    )
     half_window = conveyor.report.window_length / 2.0
 
     for _ in range(int(scenario.capture_at_seconds / plan.timestep)):

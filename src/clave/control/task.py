@@ -83,15 +83,6 @@ LOGGER = logging.getLogger(__name__)
 NANOS_PER_SECOND = 1_000_000_000
 """Nanoseconds in a second, for the instant a goal records."""
 
-LEG_SAMPLES = 5
-"""Poses per plan leg in the trusted-region test, counting both endpoints.
-
-Five is the resolution the feasibility claim is made at: what the check can
-miss is a leg that leaves the annulus and returns within a quarter of its own
-length. Raising it costs a call into the world geometry per pose per leg, so
-the reason to raise it is a refusal that a finer sampling would have caught.
-"""
-
 
 class TaskError(ClaveError):
     """The task machine cannot run this configuration."""
@@ -943,12 +934,18 @@ class TaskMachine:
             max_acceleration=self._motion.max_acceleration,
             at_seconds=at_seconds,
             drift_horizon=self._settings.drift_horizon,
+            minimum_segment_seconds=self._motion.minimum_segment_seconds,
+            closing_rise_seconds=self._settings.closing_rise_seconds,
             retreat_lift=retreat_lift,
             over=over,
             belt_border_y=self._belt_border_y,
             safe_height_world=transit_height_world,
             cross_speed=self._settings.approach_speed,
             clearance_flange_z=self._shut_flange_floor_world,
+            segment_sample_count=self._motion.segment_sample_count,
+            bisection_passes=self._motion.bisection_passes,
+            minimum_delivery_seconds=self._motion.minimum_delivery_seconds,
+            correction_steps=self._motion.correction_steps,
         )
         if (
             steered is None
@@ -1047,7 +1044,7 @@ class TaskMachine:
         # that leaves the annulus and returns within one spacing, and that is
         # the resolution the claim is made at. `np.linspace` rather than a
         # literal step so the count and the fractions cannot drift apart.
-        fractions = np.linspace(0.0, 1.0, LEG_SAMPLES)
+        fractions = np.linspace(0.0, 1.0, self._settings.leg_samples)
         for leg in plan.legs:
             for fraction in fractions:
                 at = leg.segment.duration * float(fraction)
@@ -1151,7 +1148,13 @@ class TaskMachine:
             safe_height_world=transit_height_world,
             cross_speed=self._settings.approach_speed,
             drift_horizon=self._settings.drift_horizon,
+            minimum_segment_seconds=self._motion.minimum_segment_seconds,
+            closing_rise_seconds=self._settings.closing_rise_seconds,
             clearance_flange_z=self._shut_flange_floor_world,
+            segment_sample_count=self._motion.segment_sample_count,
+            bisection_passes=self._motion.bisection_passes,
+            minimum_delivery_seconds=self._motion.minimum_delivery_seconds,
+            correction_steps=self._motion.correction_steps,
         )
 
     def _abandon(
@@ -1369,7 +1372,13 @@ class TaskMachine:
                 safe_height_world=transit_height_world,
                 cross_speed=self._settings.approach_speed,
                 drift_horizon=self._settings.drift_horizon,
+                minimum_segment_seconds=self._motion.minimum_segment_seconds,
+                closing_rise_seconds=self._settings.closing_rise_seconds,
                 clearance_flange_z=self._shut_flange_floor_world,
+                segment_sample_count=self._motion.segment_sample_count,
+                bisection_passes=self._motion.bisection_passes,
+                minimum_delivery_seconds=self._motion.minimum_delivery_seconds,
+                correction_steps=self._motion.correction_steps,
             )
             if attempt is not None:
                 descent_leg = next(

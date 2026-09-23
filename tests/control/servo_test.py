@@ -25,9 +25,16 @@ def world() -> Any:
     from clave.world import scene
 
     raw = load(ROOT / "configs" / "world" / "sorting_line.yml")
-    model, data, _ = scene.build(raw, numpy.random.default_rng(0), ROOT)
+    model, data, plan = scene.build(raw, numpy.random.default_rng(0), ROOT)
     mujoco.mj_forward(model, data)
-    return model, data, armmod.locate(model)
+    return (
+        model,
+        data,
+        armmod.locate(
+            model,
+            armmod.ReachBounds(plan.reach_min, plan.reach_max, plan.tool_above_base),
+        ),
+    )
 
 
 def flange_of(world: Any) -> tuple[float, float, float]:
@@ -481,10 +488,10 @@ def test_a_lead_at_the_edge_of_reach_is_projected_rather_than_refused(
     base = (float(arm.base_position[0]), float(arm.base_position[1]))
 
     def keep_inside(pose: tuple[float, float, float]) -> tuple[float, float, float]:
-        x, y = armmod.project_into_reach(base, pose[0], pose[1])
+        x, y = armmod.project_into_reach(base, pose[0], pose[1], arm.reach)
         return x, y, pose[2]
 
-    edge = (base[0] + armmod.REACH_MAX_METERS - 0.005, base[1], 1.15)
+    edge = (base[0] + arm.reach.reach_max - 0.005, base[1], 1.15)
     step = follow(
         model,
         data,

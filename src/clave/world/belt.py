@@ -42,9 +42,6 @@ from clave.world import arm
 from clave.world.config import Range
 from clave.world.scene import PARKED_X, PARKED_Z, SceneLayout
 
-BELT_HEIGHT_TOLERANCE = 0.05
-"""Vertical allowance for an object resting on the belt, in meters."""
-
 
 @dataclass(frozen=True)
 class ReachReport:
@@ -101,7 +98,12 @@ def within_reach(position: tuple[float, float, float], plan: SceneLayout) -> boo
     above = position[2] - plan.arm_base[2]
     if not lowest <= above <= highest:
         return False
-    return arm.reaches((plan.arm_base[0], plan.arm_base[1]), position[0], position[1])
+    return arm.reaches(
+        (plan.arm_base[0], plan.arm_base[1]),
+        position[0],
+        position[1],
+        arm.ReachBounds(plan.reach_min, plan.reach_max, plan.tool_above_base),
+    )
 
 
 def reach_report(plan: SceneLayout) -> ReachReport:
@@ -136,7 +138,12 @@ def reach_report(plan: SceneLayout) -> ReachReport:
         # The belt centerline is y = 0; `offset` is how far the shoulder sits
         # from it, which the sweep sees through the shoulder position rather
         # than by being passed as a coordinate.
-        if arm.reaches((plan.arm_base[0], plan.arm_base[1]), x, 0.0):
+        if arm.reaches(
+            (plan.arm_base[0], plan.arm_base[1]),
+            x,
+            0.0,
+            arm.ReachBounds(plan.reach_min, plan.reach_max, plan.tool_above_base),
+        ):
             hits += 1
             last = x
             if not seen:
@@ -413,7 +420,7 @@ class Conveyor:
                 data.qvel[velocity] = self.running
             elif _on_takeaway(position, self.plan):
                 # Drive sorted objects along the take-away conveyor away from the line.
-                data.qvel[velocity + 1] = -0.20
+                data.qvel[velocity + 1] = -self.plan.takeaway.speed
             if on_belt and within_reach(
                 (float(position[0]), float(position[1]), float(position[2])), self.plan
             ):
@@ -427,21 +434,23 @@ class Conveyor:
 def _on_belt(position: Any, plan: SceneLayout) -> bool:
     """Return whether a body is still resting in the driven belt region."""
     surface = plan.belt.surface_height
+    tolerance = plan.belt.height_tolerance
     return bool(
         abs(position[0]) <= plan.belt.length / 2.0
         and abs(position[1]) <= plan.belt.width / 2.0
-        and surface - BELT_HEIGHT_TOLERANCE
-        < position[2]
-        <= surface + BELT_HEIGHT_TOLERANCE
+        and surface - tolerance < position[2] <= surface + tolerance
     )
 
 
 def _on_takeaway(position: Any, plan: SceneLayout) -> bool:
     """Return whether a body is resting on one of the take-away conveyors."""
     x, y, z = float(position[0]), float(position[1]), float(position[2])
-    if not (0.25 <= z <= 0.45):
+    drive = plan.takeaway
+    if not (drive.height_min <= z <= drive.height_max):
         return False
     for cx, cy, _ in plan.chutes.values():
-        if abs(x - cx) <= 0.15 and (cy - 1.50 <= y <= cy + 0.10):
+        if abs(x - cx) <= drive.mouth_half_width and (
+            cy - drive.past_mouth <= y <= cy + drive.toward_mouth
+        ):
             return True
     return False

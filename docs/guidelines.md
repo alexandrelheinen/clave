@@ -8,6 +8,17 @@ and
 This file covers only what is specific to CLAVE. Method, gates, and merge
 policy live in [CONTRIBUTING.md](../CONTRIBUTING.md).
 
+## Algorithm parameters come from configuration
+
+An algorithm has four independent parts: inputs, outputs, parameters, and
+logic. Design parameters (speeds, clearances, durations, tolerances, sample
+counts, gains) load from configuration through typed settings. Source code
+holds the logic and may keep unit conversions, algebraic coefficients such as
+`5 Z / (2 V)`, and language or architecture thresholds (floating-point
+epsilons, protocol scales). Comments describe logic and invariants; they do
+not quote a YAML value or claim what happens at a particular shipped setting.
+See [.guidelines/style/parameters.md](../.guidelines/style/parameters.md).
+
 ## Physical and kinematic variable naming: `who_what_where`
 
 Variables representing physical quantities, spatial poses, velocities, and

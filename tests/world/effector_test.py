@@ -44,7 +44,10 @@ def test_the_jaw_closes_with_the_force_the_world_asks_for() -> None:
 
     raw = load(CONFIG)
     compiled, _data, _plan = scene.build(raw, numpy.random.default_rng(0), ROOT)
-    index = armmod.locate(compiled).gripper_actuator
+    index = armmod.locate(
+        compiled,
+        armmod.ReachBounds(_plan.reach_min, _plan.reach_max, _plan.tool_above_base),
+    ).gripper_actuator
     wanted = float(raw["effector"]["closing_torque_newton_meters"])
     assert compiled.actuator_forcerange[index][1] == pytest.approx(wanted)
     assert compiled.actuator_forcerange[index][0] == pytest.approx(-wanted)

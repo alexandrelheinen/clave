@@ -141,13 +141,13 @@ def _why(arm: armmod.ArmIndices, target_position_world: NDArray[np.float64]) -> 
             - np.asarray(arm.base_position, dtype=np.float64)[:2]
         )
     )
-    if not armmod.REACH_MIN_METERS <= radius <= armmod.REACH_MAX_METERS:
+    if not arm.reach.reach_min <= radius <= arm.reach.reach_max:
         return (
             f"{radius:.3f} m from the base, outside the "
-            f"{armmod.REACH_MIN_METERS:.2f} m to "
-            f"{armmod.REACH_MAX_METERS:.2f} m annulus"
+            f"{arm.reach.reach_min:.2f} m to "
+            f"{arm.reach.reach_max:.2f} m annulus"
         )
-    lowest, highest = armmod.TOOL_ABOVE_BASE_METERS
+    lowest, highest = arm.reach.tool_above_base
     above = float(target_position_world[2]) - float(arm.base_position[2])
     return (
         f"{above:+.3f} m from the base, outside the trusted "

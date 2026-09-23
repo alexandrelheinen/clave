@@ -20,8 +20,11 @@ def built() -> tuple[Any, Any, armmod.ArmIndices]:
     import mujoco
 
     raw = config.load(CONFIG)
-    model, data, _ = scene.build(raw, np.random.default_rng(0), ROOT)
-    indices = armmod.locate(model)
+    model, data, plan = scene.build(raw, np.random.default_rng(0), ROOT)
+    indices = armmod.locate(
+        model,
+        armmod.ReachBounds(plan.reach_min, plan.reach_max, plan.tool_above_base),
+    )
     mujoco.mj_forward(model, data)
     return model, data, indices
 
@@ -124,7 +127,7 @@ def test_a_target_past_the_outer_radius_is_refused() -> None:
     pytest.importorskip("mujoco")
     model, data, indices = built()
     base = indices.base_position
-    far = np.array([0.0, base[1] + armmod.REACH_MAX_METERS + 0.3, base[2]])
+    far = np.array([0.0, base[1] + indices.reach.reach_max + 0.3, base[2]])
     assert not armmod.reachable(indices, far)
     with pytest.raises(armmod.ReachError):
         armmod.solve(model, data, indices, far)
@@ -189,7 +192,7 @@ def test_a_missing_arm_is_reported_by_name() -> None:
 
     empty = mujoco.MjModel.from_xml_string("<mujoco><worldbody/></mujoco>")
     with pytest.raises(KeyError, match="arm_shoulder_pan_joint"):
-        armmod.locate(empty)
+        armmod.locate(empty, armmod.ReachBounds(0.25, 1.25, (-0.05, 0.45)))
 
 
 # The stall measured when the command was already on the mass. The roll sits

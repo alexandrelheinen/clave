@@ -745,7 +745,10 @@ def run(
     tracker_cam = mujoco.Renderer(model, height=180, width=240) if opened else None
     start_wall = time.perf_counter()
 
-    indices = armmod.locate(model)
+    indices = armmod.locate(
+        model,
+        armmod.ReachBounds(plan.reach_min, plan.reach_max, plan.tool_above_base),
+    )
     jaw_geoms = _jaw_collision_geoms(model, indices)
     belt_geom = int(mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "belt"))
     telemetry = None
@@ -827,8 +830,14 @@ def run(
         Returns:
             The pose, unchanged where it was already inside.
         """
-        x, y = armmod.project_into_reach(base_xy, pose[0], pose[1])
-        return x, y, armmod.project_into_band(float(indices.base_position[2]), pose[2])
+        x, y = armmod.project_into_reach(base_xy, pose[0], pose[1], indices.reach)
+        return (
+            x,
+            y,
+            armmod.project_into_band(
+                float(indices.base_position[2]), pose[2], indices.reach
+            ),
+        )
 
     def admits(pose: tuple[float, float, float]) -> bool:
         """Whether the arm is trusted at a pose.

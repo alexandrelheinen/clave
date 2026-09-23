@@ -15,6 +15,7 @@ classifiers alone. Read it before designing anything.
 @.guidelines/workflow/tdd.md
 @.guidelines/agents/writing.md
 @.guidelines/style/naming.md
+@.guidelines/style/parameters.md
 @.guidelines/languages/rs.md
 @.guidelines/languages/py.md
 @.guidelines/languages/sh.md
@@ -37,6 +38,7 @@ classifiers alone. Read it before designing anything.
 | A skill or plugin telling you to do what the guidelines forbid | [.guidelines/integrations/toolkits.md](.guidelines/integrations/toolkits.md) |
 | Commits, branching, review, integration | [.guidelines/workflow/](.guidelines/workflow/) |
 | Comments and error handling across languages | [.guidelines/style/comments.md](.guidelines/style/comments.md), [.guidelines/style/errors.md](.guidelines/style/errors.md) |
+| Algorithm parameters vs logic (no magic design values in source) | [.guidelines/style/parameters.md](.guidelines/style/parameters.md) |
 | Python, for model training and dataset tooling | [.guidelines/languages/py.md](.guidelines/languages/py.md) |
 | Rust, for the safety layer and bridge | [.guidelines/languages/rs.md](.guidelines/languages/rs.md) |
 | Shell, for anything under `scripts/` | [.guidelines/languages/sh.md](.guidelines/languages/sh.md) |

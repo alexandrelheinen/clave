@@ -29,6 +29,13 @@ APPROACH_SPEED = 0.25
 DWELL = 0.30
 PARK = (0.45, -1.00, 1.20)
 OBJECT = (0.30, 0.0, 1.035)
+DRIFT_HORIZON = 0.30
+MINIMUM_SEGMENT = 0.50
+CLOSING_RISE = 0.20
+SEGMENT_SAMPLES = 64
+BISECTION_PASSES = 40
+MINIMUM_DELIVERY = 0.05
+CORRECTION_STEPS = 32
 
 
 def a_plan(**overrides: object) -> Plan | None:
@@ -46,6 +53,13 @@ def a_plan(**overrides: object) -> Plan | None:
         "latest": 4.00,
         "at_seconds": 0.0,
         "margin": 1.0,
+        "drift_horizon": DRIFT_HORIZON,
+        "minimum_segment_seconds": MINIMUM_SEGMENT,
+        "closing_rise_seconds": CLOSING_RISE,
+        "segment_sample_count": SEGMENT_SAMPLES,
+        "bisection_passes": BISECTION_PASSES,
+        "minimum_delivery_seconds": MINIMUM_DELIVERY,
+        "correction_steps": CORRECTION_STEPS,
     }
     fields.update(overrides)
     return plan_pick(**fields)  # type: ignore[arg-type]
@@ -181,14 +195,23 @@ def test_a_lateral_velocity_carries_the_object_only_while_it_lasts() -> None:
     four seconds a visit commits ahead that is 900 mm, and the run that did it
     aimed two visits in nine at a pose 208 and 346 mm from any object.
     """
-    from clave.control.settings import DRIFT_HORIZON
+    from pathlib import Path
+
+    from clave.control.settings import ControlSettings
+    from clave.world.config import load
+
+    horizon = ControlSettings.load(
+        load(
+            Path(__file__).resolve().parents[2] / "configs" / "runtime" / "control.yml"
+        )
+    ).task.drift_horizon
 
     drifting = a_plan(belt_velocity=(BELT[0], 0.05, 0.0))
     assert drifting is not None
     across = next(leg for leg in drifting.legs if leg.phase is Phase.DESCEND).segment
     carried = across.end.position[1] - OBJECT[1]
     assert carried > 0.0, "the drift across the belt is not predicted at all"
-    assert carried <= 0.05 * DRIFT_HORIZON + 1e-9, (
+    assert carried <= 0.05 * horizon + 1e-9, (
         "the drift is carried past the horizon it lasts for"
     )
 
@@ -214,6 +237,13 @@ def test_a_descent_is_retargeted_only_while_it_is_underway() -> None:
             max_speed=1.00,
             max_acceleration=2.50,
             at_seconds=at,
+            drift_horizon=DRIFT_HORIZON,
+            minimum_segment_seconds=MINIMUM_SEGMENT,
+            closing_rise_seconds=CLOSING_RISE,
+            segment_sample_count=SEGMENT_SAMPLES,
+            bisection_passes=BISECTION_PASSES,
+            minimum_delivery_seconds=MINIMUM_DELIVERY,
+            correction_steps=CORRECTION_STEPS,
         )
 
     assert steer(OBJECT, plan.started_at + 0.01) is None
@@ -296,6 +326,13 @@ def test_re_aiming_keeps_the_arrival_time_and_moves_the_target() -> None:
         max_speed=1.00,
         max_acceleration=2.50,
         at_seconds=0.5,
+        drift_horizon=DRIFT_HORIZON,
+        minimum_segment_seconds=MINIMUM_SEGMENT,
+        closing_rise_seconds=CLOSING_RISE,
+        segment_sample_count=SEGMENT_SAMPLES,
+        bisection_passes=BISECTION_PASSES,
+        minimum_delivery_seconds=MINIMUM_DELIVERY,
+        correction_steps=CORRECTION_STEPS,
     )
     assert again is not None
     assert again.pick_at == pytest.approx(plan.pick_at, abs=1e-9)
@@ -325,6 +362,13 @@ def test_re_aiming_begins_where_the_arm_has_got_to() -> None:
         max_speed=1.00,
         max_acceleration=2.50,
         at_seconds=0.5,
+        drift_horizon=DRIFT_HORIZON,
+        minimum_segment_seconds=MINIMUM_SEGMENT,
+        closing_rise_seconds=CLOSING_RISE,
+        segment_sample_count=SEGMENT_SAMPLES,
+        bisection_passes=BISECTION_PASSES,
+        minimum_delivery_seconds=MINIMUM_DELIVERY,
+        correction_steps=CORRECTION_STEPS,
     )
     assert again is not None
     start = again.legs[0].segment.start
@@ -353,6 +397,13 @@ def test_nothing_is_re_aimed_once_the_descent_has_begun() -> None:
             max_speed=1.00,
             max_acceleration=2.50,
             at_seconds=descending,
+            drift_horizon=DRIFT_HORIZON,
+            minimum_segment_seconds=MINIMUM_SEGMENT,
+            closing_rise_seconds=CLOSING_RISE,
+            segment_sample_count=SEGMENT_SAMPLES,
+            bisection_passes=BISECTION_PASSES,
+            minimum_delivery_seconds=MINIMUM_DELIVERY,
+            correction_steps=CORRECTION_STEPS,
         )
         is None
     )
@@ -383,6 +434,13 @@ def test_a_margin_widens_the_correction_an_arc_will_accept() -> None:
                 max_speed=1.00,
                 max_acceleration=2.50,
                 at_seconds=0.5,
+                drift_horizon=DRIFT_HORIZON,
+                minimum_segment_seconds=MINIMUM_SEGMENT,
+                closing_rise_seconds=CLOSING_RISE,
+                segment_sample_count=SEGMENT_SAMPLES,
+                bisection_passes=BISECTION_PASSES,
+                minimum_delivery_seconds=MINIMUM_DELIVERY,
+                correction_steps=CORRECTION_STEPS,
             )
             is not None
         )
@@ -452,7 +510,7 @@ def test_the_delivery_stays_inside_the_speed_ceiling() -> None:
     """
     plan = a_plan(over=(1.14, -0.42, 0.90), max_speed=1.00)
     assert plan is not None
-    assert plan.legs[-1].segment.peak_speed() <= 1.00 + 1e-6
+    assert plan.legs[-1].segment.peak_speed(SEGMENT_SAMPLES) <= 1.00 + 1e-6
 
 
 def test_no_chute_means_no_delivery_rather_than_a_broken_one() -> None:
@@ -629,10 +687,17 @@ def test_a_descent_correction_past_the_ceiling_is_taken_part_way() -> None:
         max_speed=1.00,
         max_acceleration=2.50,
         at_seconds=at,
+        drift_horizon=DRIFT_HORIZON,
+        minimum_segment_seconds=MINIMUM_SEGMENT,
+        closing_rise_seconds=CLOSING_RISE,
+        segment_sample_count=SEGMENT_SAMPLES,
+        bisection_passes=BISECTION_PASSES,
+        minimum_delivery_seconds=MINIMUM_DELIVERY,
+        correction_steps=CORRECTION_STEPS,
     )
     assert steered is not None
     descent = next(leg.segment for leg in steered.legs if leg.phase is Phase.DESCEND)
-    assert descent.peak_speed() <= 1.00 + 1e-6
+    assert descent.peak_speed(SEGMENT_SAMPLES) <= 1.00 + 1e-6
     assert math.dist(descent.end.position, OBJECT) < math.dist(stale, OBJECT)
 
 
@@ -659,6 +724,13 @@ def test_an_approach_correction_past_the_ceiling_is_taken_part_way() -> None:
         max_speed=1.00,
         max_acceleration=2.50,
         at_seconds=at,
+        drift_horizon=DRIFT_HORIZON,
+        minimum_segment_seconds=MINIMUM_SEGMENT,
+        closing_rise_seconds=CLOSING_RISE,
+        segment_sample_count=SEGMENT_SAMPLES,
+        bisection_passes=BISECTION_PASSES,
+        minimum_delivery_seconds=MINIMUM_DELIVERY,
+        correction_steps=CORRECTION_STEPS,
     )
     assert again is not None
     old = next(
@@ -671,8 +743,8 @@ def test_an_approach_correction_past_the_ceiling_is_taken_part_way() -> None:
     assert abs(new[1] - wild[1]) > 0.20
     for leg in again.legs:
         if leg.phase is Phase.TRACK:
-            assert leg.segment.fits(1.00, 2.50)
-        assert leg.segment.peak_speed() <= 1.00 + 1e-6
+            assert leg.segment.fits(1.00, 2.50, SEGMENT_SAMPLES)
+        assert leg.segment.peak_speed(SEGMENT_SAMPLES) <= 1.00 + 1e-6
 
 
 def test_the_hold_rises_while_the_jaw_closes() -> None:

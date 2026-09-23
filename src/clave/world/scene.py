@@ -96,12 +96,36 @@ class BeltGeometry:
         width: Belt width, in meters.
         surface_height: Height of the belt surface above the floor, in meters.
         speed: Belt speed in meters per second, resolved from its range.
+        height_tolerance: Vertical allowance for deciding an object still
+            rests on the belt, in meters.
     """
 
     length: float
     width: float
     surface_height: float
     speed: float
+    height_tolerance: float
+
+
+@dataclass(frozen=True)
+class TakeawayDrive:
+    """How sorted objects are driven once they leave a chute.
+
+    Attributes:
+        speed: Drive speed along the take-away, in meters per second.
+        height_min: Lowest height that still counts as on a take-away.
+        height_max: Highest height that still counts as on a take-away.
+        mouth_half_width: Lateral acceptance around a chute mouth, in meters.
+        past_mouth: How far past the mouth along the take-away still counts.
+        toward_mouth: How far back toward the mouth still counts, in meters.
+    """
+
+    speed: float
+    height_min: float
+    height_max: float
+    mouth_half_width: float
+    past_mouth: float
+    toward_mouth: float
 
 
 @dataclass(frozen=True)
@@ -123,6 +147,7 @@ class SceneLayout:
             Computed here rather than where the geometry is built, so the
             arm releasing over an opening and the opening itself come from
             one arithmetic.
+        takeaway: How the take-away conveyor drives sorted objects.
         objects: The object set the pool draws from.
         pool_size: How many object bodies exist.
         timestep: Simulation timestep in seconds.
@@ -142,6 +167,7 @@ class SceneLayout:
     objects: tuple[ObjectSpec, ...]
     pool_size: int
     timestep: float
+    takeaway: TakeawayDrive
     chutes: dict[str, tuple[float, float, float]] = field(default_factory=dict)
     dressed: bool = False
 
@@ -272,6 +298,22 @@ def layout(raw: dict[str, Any], rng: np.random.Generator) -> SceneLayout:
         width=float(require(belt_cfg, "width_meters", "belt")),
         surface_height=float(require(belt_cfg, "surface_height_meters", "belt")),
         speed=require_range(belt_cfg, "speed_meters_per_second", "belt").sample(rng),
+        height_tolerance=float(require(belt_cfg, "height_tolerance_meters", "belt")),
+    )
+    takeaway_cfg = require(require(raw, "chutes"), "takeaway", "chutes")
+    takeaway = TakeawayDrive(
+        speed=float(
+            require(takeaway_cfg, "speed_meters_per_second", "chutes.takeaway")
+        ),
+        height_min=float(require(takeaway_cfg, "height_min_meters", "chutes.takeaway")),
+        height_max=float(require(takeaway_cfg, "height_max_meters", "chutes.takeaway")),
+        mouth_half_width=float(
+            require(takeaway_cfg, "mouth_half_width_meters", "chutes.takeaway")
+        ),
+        past_mouth=float(require(takeaway_cfg, "past_mouth_meters", "chutes.takeaway")),
+        toward_mouth=float(
+            require(takeaway_cfg, "toward_mouth_meters", "chutes.takeaway")
+        ),
     )
     base = require(arm_cfg, "base_position_meters", "arm")
     band = require(arm_cfg, "tool_above_base_meters", "arm")
@@ -287,6 +329,7 @@ def layout(raw: dict[str, Any], rng: np.random.Generator) -> SceneLayout:
         chutes=_chute_mouths(
             require(raw, "chutes"), channels(specs), belt.surface_height
         ),
+        takeaway=takeaway,
         objects=specs,
         pool_size=int(require(spawn_cfg, "pool_size", "spawn")),
         timestep=float(require(physics, "timestep_seconds", "physics")),
