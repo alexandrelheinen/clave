@@ -12,7 +12,14 @@ import math
 
 import pytest
 
-from clave.control.pick import JAW_OPEN, JAW_SHUT, Plan, plan_pick, refine
+from clave.control.pick import (
+    JAW_OPEN,
+    JAW_SHUT,
+    Plan,
+    plan_pick,
+    refine,
+    retarget_descent,
+)
 from clave.control.settings import Phase
 from clave.control.trajectory import State
 
@@ -184,6 +191,56 @@ def test_a_lateral_velocity_carries_the_object_only_while_it_lasts() -> None:
     assert carried <= 0.05 * DRIFT_HORIZON + 1e-9, (
         "the drift is carried past the horizon it lasts for"
     )
+
+
+def test_a_descent_is_retargeted_only_while_it_is_underway() -> None:
+    """AC-MOVE-63: retargeting a descent moves its end and nothing earlier.
+
+    Called before the descent there is still an approach to bend, and that is
+    refine's job. Called during it, the end moves onto the position handed in
+    and the arrival stays the instant the visit already chose.
+    """
+    plan = a_plan()
+    assert plan is not None
+
+    def steer(position: tuple[float, float, float], at: float) -> Plan | None:
+        return retarget_descent(
+            plan=plan,
+            object_position=position,
+            belt_velocity=BELT,
+            approach_clearance_z=CLEARANCE,
+            approach_speed=APPROACH_SPEED,
+            dwell_seconds=DWELL,
+            max_speed=1.00,
+            max_acceleration=2.50,
+            at_seconds=at,
+        )
+
+    assert steer(OBJECT, plan.started_at + 0.01) is None
+    edges = plan._boundaries()
+    index = next(i for i, leg in enumerate(plan.legs) if leg.phase is Phase.DESCEND)
+    at = plan.started_at + edges[index] + 0.05
+    # Where the belt has carried the object by this instant, plus 20 mm across
+    # it. Handing the position from the start of the visit asks the descent to
+    # run back up the belt, which is the correction the speed ceiling refuses.
+    carried = (
+        OBJECT[0] + BELT[0] * at,
+        OBJECT[1] + 0.020,
+        OBJECT[2],
+    )
+    steered = steer(carried, at)
+    assert steered is not None
+    assert steered.pick_at == pytest.approx(plan.pick_at, abs=1e-9)
+    end = next(
+        leg.segment.end.position for leg in steered.legs if leg.phase is Phase.DESCEND
+    )
+    assert end[1] == pytest.approx(carried[1], abs=1e-9)
+    assert end[0] == pytest.approx(OBJECT[0] + BELT[0] * plan.pick_at, abs=1e-9)
+    assert end[2] == pytest.approx(OBJECT[2], abs=1e-9)
+    for before, after in zip(steered.legs, steered.legs[1:], strict=False):
+        assert after.segment.start.position == pytest.approx(
+            before.segment.end.position
+        )
 
 
 def test_a_plan_runs_out_rather_than_extrapolating() -> None:

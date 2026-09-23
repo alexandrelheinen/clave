@@ -27,6 +27,9 @@ import math
 from dataclasses import dataclass
 from typing import Any
 
+import numpy as np
+from numpy.typing import NDArray
+
 from clave.taxonomy import REJECT_CHANNEL, channel_of
 from clave.tracker.track import WasteObject
 from clave.world.effector import Effector
@@ -358,6 +361,55 @@ def markers_for(
     return tuple(marker_for(record, effector, surface) for record in records)
 
 
+def _box_corners(size: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Return the eight corners of a box centred on its geom frame.
+
+    Args:
+        size: Half-extents, the three numbers MuJoCo stores for a box.
+
+    Returns:
+        The corners, shape `(8, 3)`, in the geom frame.
+    """
+    signs = np.array(
+        [[x, y, z] for x in (-1.0, 1.0) for y in (-1.0, 1.0) for z in (-1.0, 1.0)]
+    )
+    return signs * size
+
+
+def _horizontal_footprint(
+    local: NDArray[np.float64], rotation: NDArray[np.float64]
+) -> tuple[float, float, float]:
+    """Return how wide an object is in the belt plane, and which way it faces.
+
+    The jaw closes horizontally. The width it has to clear and the axis it has
+    to line up with are the short and long directions of the object after the
+    body's rotation, projected onto the belt. The body's Euler yaw is that axis
+    only while the object lies flat on the axes it was scanned in; a parcel on
+    its side has its long direction in what used to be its height.
+
+    Args:
+        local: Points in the geom frame, one row each.
+        rotation: The geom's rotation, mapping that frame into the world.
+
+    Returns:
+        The full width along the short horizontal axis, the full width along
+        the long one, both in meters, and the yaw of the short axis in radians.
+        The yaw is an axis, so the opposite direction is the same answer.
+    """
+    flat = (local @ rotation.T)[:, :2]
+    centered = flat - flat.mean(axis=0)
+    _values, vectors = np.linalg.eigh(centered.T @ centered)
+    minor = vectors[:, 0]
+    major = vectors[:, 1]
+    along_short = centered @ minor
+    along_long = centered @ major
+    return (
+        float(along_short.max() - along_short.min()),
+        float(along_long.max() - along_long.min()),
+        math.atan2(float(minor[1]), float(minor[0])),
+    )
+
+
 def ground_truth_markers(
     model: Any,
     data: Any,
@@ -404,8 +456,14 @@ def ground_truth_markers(
         if body < 0:
             continue
 
-        pos = data.xpos[body]
-        x, y, z = float(pos[0]), float(pos[1]), float(pos[2])
+        # The centre of mass, not the body origin. A scanned mesh keeps its
+        # origin wherever the scan left it, and on this set that is tens of
+        # millimetres from the mass. The free joint's linear velocity follows
+        # the origin, so a marker built on the origin aims the jaw at a point
+        # that whips around the parcel as it turns. `xipos` is the mass, and
+        # `cvel`'s linear half is the velocity of that mass.
+        com = data.xipos[body]
+        x, y, z = float(com[0]), float(com[1]), float(com[2])
 
         # Exclude objects not resting on the driven belt region.
         # Height tolerance of 0.15 m accommodates packaging resting on the belt
@@ -444,17 +502,10 @@ def ground_truth_markers(
             center_z = float(data.geom_xpos[geom_id][2])
             pad_z = grasp_plane(surface, effector, center_z)
         elif geom_type == mujoco.mjtGeom.mjGEOM_BOX:
-            sx = float(model.geom_size[geom_id][0])
-            sy = float(model.geom_size[geom_id][1])
-            dim_x, dim_y = 2.0 * sx, 2.0 * sy
-            if dim_x <= dim_y:
-                opening = dim_x
-                extent = dim_y
-                closing_axis = yaw
-            else:
-                opening = dim_y
-                extent = dim_x
-                closing_axis = yaw + math.pi / 2.0
+            opening, extent, closing_axis = _horizontal_footprint(
+                _box_corners(np.asarray(model.geom_size[geom_id], dtype=np.float64)),
+                rotation,
+            )
             center_z = float(data.geom_xpos[geom_id][2])
             pad_z = grasp_plane(surface, effector, center_z)
         elif geom_type == mujoco.mjtGeom.mjGEOM_MESH:
@@ -462,19 +513,9 @@ def ground_truth_markers(
             if mesh_id >= 0:
                 start = model.mesh_vertadr[mesh_id]
                 count = model.mesh_vertnum[mesh_id]
-                verts = model.mesh_vert[start : start + count]
-                dim_x = float(verts[:, 0].max() - verts[:, 0].min())
-                dim_y = float(verts[:, 1].max() - verts[:, 1].min())
-                if dim_x <= dim_y:
-                    opening = dim_x
-                    extent = dim_y
-                    closing_axis = yaw
-                else:
-                    opening = dim_y
-                    extent = dim_x
-                    closing_axis = yaw + math.pi / 2.0
-                R = rotation
-                world_z = (R[2, :] @ verts.T) + float(data.geom_xpos[geom_id][2])
+                verts = np.asarray(model.mesh_vert[start : start + count])
+                opening, extent, closing_axis = _horizontal_footprint(verts, rotation)
+                world_z = (rotation[2, :] @ verts.T) + float(data.geom_xpos[geom_id][2])
                 center_z = float((world_z.min() + world_z.max()) / 2.0)
                 pad_z = grasp_plane(surface, effector, center_z)
             else:
@@ -501,32 +542,19 @@ def ground_truth_markers(
 
         obj_velocity: Point | None = None
         yaw_rate: float | None = None
-        jnt_id = model.body_jntadr[body] if body < len(model.body_jntadr) else -1
-        if jnt_id >= 0 and model.jnt_type[jnt_id] == mujoco.mjtJoint.mjJNT_FREE:
-            dof_adr = model.jnt_dofadr[jnt_id]
+        # `cvel` is the com-based spatial velocity, angular then linear, in the
+        # world frame. The linear half belongs to the same point `xipos` names,
+        # which is the point the marker stands on. The free joint's own `qvel`
+        # is the origin's velocity instead, and the two disagree by the cross
+        # product of the spin and the origin's offset from the mass.
+        if data.cvel is not None and len(data.cvel) > body:
+            spatial = data.cvel[body]
             obj_velocity = (
-                float(data.qvel[dof_adr]),
-                float(data.qvel[dof_adr + 1]),
-                float(data.qvel[dof_adr + 2]),
+                float(spatial[3]),
+                float(spatial[4]),
+                float(spatial[5]),
             )
-            # A free joint carries its angular velocity in the *body* frame, so
-            # the rate about the belt normal is that vector projected onto the
-            # world's vertical axis. Read off the compiled model rather than
-            # assumed: a body tilted 30 degrees about y with 1.0 rad/s in its
-            # own z turned at 0.87 rad/s about the world's, which is the
-            # projection and not the component.
-            spin = data.qvel[dof_adr + 3 : dof_adr + 6]
-            yaw_rate = float(
-                rotation[2, 0] * float(spin[0])
-                + rotation[2, 1] * float(spin[1])
-                + rotation[2, 2] * float(spin[2])
-            )
-        elif hasattr(data, "cvel") and data.cvel is not None and len(data.cvel) > body:
-            obj_velocity = (
-                float(data.cvel[body][3]),
-                float(data.cvel[body][4]),
-                float(data.cvel[body][5]),
-            )
+            yaw_rate = float(spatial[2])
 
         remaining = max(0.0, window_exit - x)
         effective_speed = (

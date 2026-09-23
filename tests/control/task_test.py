@@ -810,8 +810,109 @@ def test_the_tool_is_turned_to_where_the_object_will_be_facing() -> None:
     assert other._plan_yaw == pytest.approx(0.20)
 
 
-def test_reaim_ignores_calls_outside_track_phase() -> None:
-    """_reaim does not modify the plan or target yaw outside Phase.TRACK."""
+def _into_the_descent(arm: TaskMachine) -> float:
+    """Advance the clock to a tick on the descent and return that time."""
+    plan = arm.plan
+    assert plan is not None
+    edges = plan._boundaries()
+    index = next(i for i, leg in enumerate(plan.legs) if leg.phase is Phase.DESCEND)
+    at = plan.started_at + edges[index] + 0.05
+    flown = arm.flight(at, PARK)
+    assert flown is not None
+    assert flown.phase is Phase.DESCEND
+    return at
+
+
+def test_a_descent_moves_onto_where_the_object_is() -> None:
+    """AC-MOVE-63: a descent in progress is aimed at the freshest estimate.
+
+    The approach was the last time the aim could be rebuilt as a visit. After
+    it, the object is still moving and the jaw has not shut, and a descent
+    frozen at its start arrives where the object was. On a ground-truth run
+    that staleness was centimetres of jaw gap with the flange already on its
+    command.
+    """
+    arm = machine(profile=Profile.FULL_VISIT)
+    riding = Candidate(
+        track_id=1,
+        anchor=(0.30, 0.0, PINCH_Z),
+        flange=(0.30, 0.0, PICK_Z),
+        closing_axis=0.20,
+        distance_before_leaving=1.5,
+        velocity_world=(BELT_SPEED, 0.0, 0.0),
+    )
+    arm.step(queue_of(riding), PARK, 0.0)
+    at = _into_the_descent(arm)
+    plan = arm.plan
+    assert plan is not None
+    before = next(
+        leg.segment.end.position for leg in plan.legs if leg.phase is Phase.DESCEND
+    )
+    carried = 0.30 + BELT_SPEED * at
+    shifted = Candidate(
+        track_id=1,
+        anchor=(carried, 0.020, PINCH_Z),
+        flange=(carried, 0.020, PICK_Z),
+        closing_axis=0.40,
+        distance_before_leaving=1.5,
+        velocity_world=(BELT_SPEED, 0.0, 0.0),
+    )
+    arm._reaim(queue_of(shifted), PARK, (BELT_SPEED, 0.0, 0.0), at)
+    assert arm.flying is True
+    assert arm.abandoned == ()
+    steered = arm.plan
+    assert steered is not None
+    after = next(
+        leg.segment.end.position for leg in steered.legs if leg.phase is Phase.DESCEND
+    )
+    assert after[1] == pytest.approx(0.020, abs=1e-6)
+    assert abs(after[1] - before[1]) > 0.010
+    assert steered.pick_at == pytest.approx(plan.pick_at, abs=1e-9)
+    assert arm._plan_yaw == pytest.approx(0.40)
+
+
+def test_a_descent_is_not_given_up_when_the_correction_will_not_fit() -> None:
+    """AC-MOVE-63: a descent that cannot be bent is kept, not abandoned.
+
+    Solving the visit again from mid-descent sends an arm that is already
+    coming down back up the belt, or takes the visit away a fraction of a
+    second before the jaw shuts. An object that has fallen far behind the aim
+    is the case the approach answers by abandoning. On the descent the plan
+    already in hand is the one that flies.
+    """
+    arm = machine(profile=Profile.FULL_VISIT)
+    riding = Candidate(
+        track_id=1,
+        anchor=(0.30, 0.0, PINCH_Z),
+        flange=(0.30, 0.0, PICK_Z),
+        closing_axis=math.pi / 2.0,
+        distance_before_leaving=1.5,
+        velocity_world=(BELT_SPEED, 0.0, 0.0),
+    )
+    arm.step(queue_of(riding), PARK, 0.0)
+    at = _into_the_descent(arm)
+    plan = arm.plan
+    wild = Candidate(
+        track_id=1,
+        anchor=(0.30, 2.0, PINCH_Z),
+        flange=(0.30, 2.0, PICK_Z),
+        closing_axis=math.pi / 2.0,
+        distance_before_leaving=1.5,
+        velocity_world=(BELT_SPEED, 0.0, 0.0),
+    )
+    arm._reaim(queue_of(wild), PARK, (BELT_SPEED, 0.0, 0.0), at)
+    assert arm.flying is True
+    assert arm.abandoned == ()
+    assert arm.plan is plan
+
+
+def test_reaim_ignores_calls_once_the_jaw_is_shut() -> None:
+    """_reaim does not modify the plan once the jaw is shut.
+
+    The descent is still corrected, because the object is moving and the jaw
+    has not closed. The hold is not: a closed jaw that keeps chasing pulls
+    whatever it caught across the belt.
+    """
     arm = machine(profile=Profile.FULL_VISIT)
     cand = Candidate(
         track_id=1,
@@ -823,8 +924,7 @@ def test_reaim_ignores_calls_outside_track_phase() -> None:
     arm.step(queue_of(cand), PARK, 0.0)
     assert arm._plan_yaw == pytest.approx(0.20)
 
-    # Force phase to Phase.DESCEND
-    arm._phase = Phase.DESCEND
+    arm._phase = Phase.HOLD
     changed = Candidate(
         track_id=1,
         anchor=(0.30, 0.0, PINCH_Z),
@@ -833,7 +933,6 @@ def test_reaim_ignores_calls_outside_track_phase() -> None:
         distance_before_leaving=1.5,
     )
     arm._reaim(queue_of(changed), PARK, (0.0, 0.0, 0.0), 0.50)
-    # Plan yaw remains untouched because phase was not Phase.TRACK
     assert arm._plan_yaw == pytest.approx(0.20)
 
 

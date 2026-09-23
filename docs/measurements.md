@@ -948,3 +948,114 @@ is a sub-20 ms event that the series does not catch. It is recorded rather than
 explained: nothing has been done to show whether it is a solver artefact at a
 contact or a real excursion.
 
+## Where the time went after the arithmetic moved to numpy
+
+Taken on a 4-core Intel Xeon with about 7 GiB available, `MUJOCO_GL=osmesa`,
+seed 0, `clave sim --seconds 24 --no-window --gt --view belt`, no video. One
+run each. cProfile, time inside `debug_run.run`, which is not the wall clock
+of the process. This is not the Ryzen machine the latency tables above were
+taken on, and it is not a claim about that machine. On this one the numpy
+rewrite was not a twofold slowdown. The same 24 s wall-clocked at 40.9 s after
+the rewrite and 37.4 s on the commit it replaced. The profile of that numpy
+run, 38.1 s inside `run`, is what says where the added time sat. The twofold
+figure was not reproduced here.
+
+| | Numpy, before these changes | After |
+| --- | --- | --- |
+| Time inside `run` | 38.1 s | 28.0 s |
+| `mjr_render`, 144 calls | 9.44 s | 9.27 s |
+| `_descend`, self / cumulative | 5.98 s / 13.54 s | 1.01 s / 5.94 s |
+| `_lowest_world_z`, self, 156000 calls | 4.74 s | 1.68 s |
+| `numpy.cross`, self / calls | 1.47 s / 90324 | 0.82 s / 67802 |
+| `trajectory.at`, cumulative | 1.22 s, through `sample` | 0.54 s, one row |
+| `_reaim`, cumulative | not among the top 25 | 3.11 s over 373 calls |
+
+The render is untouched and is still the single largest cost. The three that
+moved are the inverse-kinematics step, which allocated a fresh `MjData` and a
+fresh Jacobian on every physics tick; the jaw-clearance walk, which rebuilt a
+mesh's vertices on every geom of every tick; and the quintic, which answered
+one instant by building the basis for a 65-point grid. The per-tick `at` is
+the closed form of that one row. `sample` remains the grid, and a peak search
+still uses it. The 3.11 s of `_reaim` is the cost of steering from ground
+truth every 50 ms, which the run below is the reason for. It is smaller than
+what the three fixes gave back.
+
+## Why a precise pose still missed the object
+
+Same machine, same seed, `--gt`, so selection and planning consume MuJoCo's
+own body state and not a tracker estimate. Thirty-six simulated seconds, no
+window, belt view. The question at each closure is which of the three numbers
+is wrong: the command against the centre of mass (the plan), the flange
+against the command (the inverse kinematics), the commanded yaw against the
+object's short horizontal axis (the orientation). A jaw symmetric about 90°
+is folded into 45°.
+
+The centre of mass is `data.xipos`. The free-joint origin is `data.xpos`, and
+on these scans the two differ by tens of millimetres, including 78 mm in
+height on one body. A marker built on the origin aims the jaw at a point that
+orbits the parcel. The run before the one below already stood the marker on
+the mass and took the short axis from the belt-plane footprint. It still held
+**0 of 4** grasps. The flange was 1.8 to 2.6 mm from its command on four
+closures and 87.2 mm on the fifth, so the usual miss was not the inverse
+kinematics. The command sat 20 to 49 mm from the mass, and the short-axis yaw
+was 13° to 36° off, because the aim froze when the descent began. The descent
+is 0.4 s and the capture is 0.5 s. A visit steered only at the capture closes
+on a prediction made before the descent started. Lateral speed at those
+closures was up to 0.125 m/s, which is centimetres over that 0.4 s. The data
+was already exact. The plan was not reading it.
+
+The descent is now moved onto the latest pose every 50 ms, and the arrival
+time stays the instant the visit already chose. A correction that breaks the
+speed ceiling keeps the plan already in hand. Abandoning from mid-descent, or
+solving a new interception there, is what a refused approach does, and it
+sends an arm that is already coming down back up the belt. The acceleration
+ceiling is not applied to that splice: the descent's duration is fixed by the
+clearance and the approach speed, and the descent already in hand peaks at
+4.57 m/s² against a guidance ceiling of 2.50 m/s². Gating the splice on 2.50
+refuses a correction of zero.
+
+Thirty-six seconds after that change, seed 0:
+
+| Closure | Command vs mass | Flange vs command | Yaw vs short axis | Pinch vs mass | What it was |
+| --- | --- | --- | --- | --- | --- |
+| 8.520 s, object_0 | (−0, −1) mm | 2.1 mm | 2.1° | (−1, −2, +2) mm | Held. Lift 118 mm, placed in the HDPE chute |
+| 17.138 s, object_2 | (0, 0) mm | **108.3 mm** | 0.0° | (+91, −48, +2) mm | The command was on the mass. The arm was not |
+| 26.692 s, object_1 | (0, 0) mm | 1.1 mm | 0.2° | (0, 0, +13) mm | On the mass, 13 mm above it. Lift 0 |
+| 32.560 s, object_0 | **(+69, +1) mm** | 2.9 mm | 1.9° | (+67, +1, −1) mm | The arm tracked a stale command |
+
+Grasps held: **1 of 4**, against 0 of 4 on the run that aimed at the mass and
+still froze the descent. Jaw to the object when it shut: 3, 103, 13, 67 mm,
+against 52, 34, 85, 69, 26 mm. Arrival median 2.9 mm, worst 108.3 mm. Two
+visits were given up during the approach, at 44 mm and 31 mm, which is the
+approach answering a prediction it cannot bend. The worst aim disagreement
+recorded over the run was 1267 mm, and that figure is the disagreement at a
+steer, including the moment before a visit is solved again. It is not a gap
+at the jaw.
+
+The four closures are three different failures, and only one of them was the
+frozen descent.
+
+**The arm does not reach a command that is already on the object.** object_2
+was nearly stopped, the command sat on its mass, the short axis agreed to a
+tenth of a degree, and the flange was 108 mm and 16° of tool yaw away from
+that command. The same visit on the previous run was the same failure at
+87 mm, with the command already on the mass. Inverse kinematics, damped and
+warm-started, did not arrive. Nothing about the estimate explains it.
+
+**The jaw can be on the mass and still not hold the parcel.** object_1 at
+26.692 s was centred to a millimetre, the tool was on the short axis, and the
+pinch was 13 mm above the mass. The pads are 37.5 mm tall and their lowest
+geometry stays 10 mm above the belt, so a flat parcel is met near its top.
+The lift was zero. That is the grasp height recorded above, and this run did
+not move it.
+
+**A correction the speed ceiling refuses leaves the jaw where the object
+was.** object_0 at 32.560 s was spinning at 5.05 rad/s with a cross-belt
+velocity of −0.174 m/s. The flange was 2.9 mm from the command and the
+command was 69 mm downstream of the mass. The steer runs every 50 ms. Once
+the object has moved further than the time remaining can cover at the speed
+ceiling, the plan already in hand is the one that flies, and it is the plan
+from before the object moved. That is the ceiling doing what it is for. It is
+also why a parcel at 5 rad/s is not a tolerance to widen: the pose was exact,
+and the arm was not allowed to dive after it.
+

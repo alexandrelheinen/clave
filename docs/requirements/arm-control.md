@@ -476,6 +476,15 @@ the instant the jaws close rather than the yaw it held when the claim was
 made, because the claim is made once per capture and the jaws close up to half
 a second later.
 
+`AC-MOVE-63`: While a visit is on its descent, the system shall keep moving
+the end of that descent onto the freshest estimate of the object, keeping the
+arrival time already chosen, and shall keep the plan it already has when the
+corrected arc breaks the speed ceiling or leaves the region the arm is trusted
+over, rather than abandon the visit or solve a new interception from
+mid-descent. The descent's duration is fixed by the clearance and the approach
+speed, so the acceleration that duration produces is the one the descent
+already in hand carries, and it is not a reason to refuse the correction.
+
 ## The guidance formulation
 
 The mathematics has its own document,

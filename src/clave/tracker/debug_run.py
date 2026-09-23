@@ -54,6 +54,7 @@ except ImportError:
 
 
 import numpy as np
+from numpy.typing import NDArray
 
 from clave.control.guidance import Command, Motion, toward
 from clave.control.pick import JAW_OPEN
@@ -312,6 +313,35 @@ def _jaw_collision_geoms(model: Any, arm: Any) -> tuple[int, ...]:
     )
 
 
+_MESH_VERTS: dict[tuple[int, int], NDArray[np.float64]] = {}
+"""Mesh vertices copied once per compiled model, keyed by model id and mesh id.
+
+The jaw's clearance is read every physics tick, and a mesh's vertices do not
+change. Copying them out of the model on each tick was most of the cost of
+that read.
+"""
+
+
+def _mesh_vertices(model: Any, mesh: int) -> NDArray[np.float64]:
+    """Return one mesh's vertices, copied out of the model the first time.
+
+    Args:
+        model: The compiled model.
+        mesh: The mesh id.
+
+    Returns:
+        The vertices, shape `(count, 3)`, in the mesh frame.
+    """
+    key = (id(model), mesh)
+    cached = _MESH_VERTS.get(key)
+    if cached is None:
+        start = int(model.mesh_vertadr[mesh])
+        count = int(model.mesh_vertnum[mesh])
+        cached = np.array(model.mesh_vert[start : start + count], dtype=np.float64)
+        _MESH_VERTS[key] = cached
+    return cached
+
+
 def _lowest_world_z(model: Any, data: Any, geom: int) -> float:
     """Return the lowest height of one collision geom's own volume.
 
@@ -334,19 +364,26 @@ def _lowest_world_z(model: Any, data: Any, geom: int) -> float:
     size = model.geom_size[geom]
     kind = model.geom_type[geom]
     if kind == mujoco.mjtGeom.mjGEOM_BOX:
-        return centre - float(np.abs(rotation[2, :]) @ np.asarray(size))
+        # The support of a box along world-down is the size of each local axis
+        # times how much of that axis points down. Written out rather than as a
+        # matrix product because this runs once per geom per physics tick.
+        return centre - (
+            abs(float(rotation[2, 0])) * float(size[0])
+            + abs(float(rotation[2, 1])) * float(size[1])
+            + abs(float(rotation[2, 2])) * float(size[2])
+        )
     if kind == mujoco.mjtGeom.mjGEOM_SPHERE:
         return centre - float(size[0])
     if kind in (mujoco.mjtGeom.mjGEOM_CYLINDER, mujoco.mjtGeom.mjGEOM_CAPSULE):
-        return centre - float(np.abs(rotation[2, 2])) * float(size[1]) - float(size[0])
+        return centre - abs(float(rotation[2, 2])) * float(size[1]) - float(size[0])
     mesh = int(model.geom_dataid[geom])
     if kind == mujoco.mjtGeom.mjGEOM_MESH and mesh >= 0:
-        start = int(model.mesh_vertadr[mesh])
-        count = int(model.mesh_vertnum[mesh])
-        verts = np.asarray(model.mesh_vert[start : start + count])
-        return float(
-            (verts @ rotation.T + np.asarray(data.geom_xpos[geom]))[:, 2].min()
-        )
+        # World z of a vertex is the mesh-frame vertex dotted with the third
+        # row of the rotation, plus the geom origin. That is the z column of
+        # `verts @ rotation.T + origin` without building the other two.
+        row = rotation[2]
+        origin = float(data.geom_xpos[geom][2])
+        return float((_mesh_vertices(model, mesh) @ row).min() + origin)
     return centre - float(max(size))
 
 
@@ -910,6 +947,13 @@ def run(
         else None
     )
     next_capture = 0.0
+    # Ground truth is the object's own pose, so the arm can read it far faster
+    # than the cameras settle. A descent lasts 0.4 s and the capture is 0.5 s,
+    # which means a visit steered only at the capture closes on a prediction
+    # made before the descent began. Fifty milliseconds keeps that prediction
+    # inside a few millimetres at the lateral speeds measured on this belt.
+    next_ground_truth = 0.0
+    ground_truth_steer = 0.05
     next_frame = 0.0
     telemetry_phase = Phase.STANDBY
     # The acceleration watch is a second difference. The first sample has no
@@ -1038,6 +1082,16 @@ def run(
                     # tracker estimate has no body to measure against. Folded
                     # into the 90 degrees a jaw is symmetric about, because
                     # closing along an object's other axis is the same grasp.
+                    if nearest is not None:
+                        _log_closure(
+                            mujoco,
+                            model,
+                            data,
+                            indices,
+                            nearest[0],
+                            command,
+                            place,
+                        )
                     if use_ground_truth and command.yaw is not None and nearest:
                         body = _body_yaw(mujoco, model, data, nearest[0])
                         if body is not None:
@@ -1239,6 +1293,25 @@ def run(
                     key = cv2.waitKey(1) & 0xFF
                     if key in (27, ord("q")):
                         break
+
+            if use_ground_truth and task.flying and data.time >= next_ground_truth:
+                next_ground_truth = data.time + ground_truth_steer
+                now_gt = int(data.time * NANOS_PER_SECOND)
+                standing = ground_truth_markers(
+                    model,
+                    data,
+                    conveyor.active,
+                    plan,
+                    effector,
+                    surface,
+                    now_gt,
+                    tracker.window_exit,
+                    feeding.speed,
+                )
+                flange = _flange(indices, data)
+                queue = selector.update(standing, flange, feeding.speed, now_gt)
+                goal = task.step(queue, flange, data.time, refusal, moving)
+                refusal = None
 
             if data.time < next_capture:
                 continue
@@ -1881,6 +1954,264 @@ def _in_the_jaw(
     )
     at = int(np.argmin(gaps))
     return (conveyor.active[at].name, float(gaps[at]))
+
+
+def _fold_jaw_degrees(delta_degrees: float) -> float:
+    """Return how far two headings are apart, folded into a jaw's symmetry.
+
+    A jaw is symmetric about 90 degrees, so 40 degrees and 50 degrees the
+    other way are the same miss. The fold is `(delta + 45) mod 90 - 45`.
+
+    Args:
+        delta_degrees: One heading minus the other, in degrees.
+
+    Returns:
+        The absolute miss, in degrees, from 0 to 45.
+    """
+    return abs((delta_degrees + 45.0) % 90.0 - 45.0)
+
+
+def _short_axis_degrees(mujoco: Any, model: Any, data: Any, name: str) -> float | None:
+    """Return the yaw of an object's short axis in the belt plane, in degrees.
+
+    The jaw closes horizontally. The direction it has to match is the short
+    direction of the object after it has been rotated into the world, projected
+    onto the belt, not the body's Euler yaw. Those two agree while the object
+    lies flat on the axes it was scanned in, and they come apart as soon as it
+    tips.
+
+    Args:
+        mujoco: The imported module.
+        model: The compiled model.
+        data: Its state.
+        name: The body's name.
+
+    Returns:
+        The yaw in degrees, or None when the shape has no preferred axis.
+    """
+    body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, name)
+    if body < 0:
+        return None
+    geom = int(model.body_geomadr[body])
+    if geom < 0:
+        return None
+    rotation = data.geom_xmat[geom].reshape(3, 3)
+    origin = np.asarray(data.geom_xpos[geom], dtype=np.float64)
+    kind = model.geom_type[geom]
+    if kind == mujoco.mjtGeom.mjGEOM_BOX:
+        size = np.asarray(model.geom_size[geom], dtype=np.float64)
+        signs = np.array(
+            [[x, y, z] for x in (-1.0, 1.0) for y in (-1.0, 1.0) for z in (-1.0, 1.0)]
+        )
+        local = signs * size
+    elif kind == mujoco.mjtGeom.mjGEOM_MESH:
+        mesh = int(model.geom_dataid[geom])
+        if mesh < 0:
+            return None
+        local = _mesh_vertices(model, mesh)
+    else:
+        return None
+    flat = (local @ rotation.T + origin)[:, :2]
+    centered = flat - flat.mean(axis=0)
+    _values, vectors = np.linalg.eigh(centered.T @ centered)
+    minor = vectors[:, 0]
+    return math.degrees(math.atan2(float(minor[1]), float(minor[0])))
+
+
+def _free_velocity(
+    mujoco: Any, model: Any, data: Any, name: str
+) -> tuple[Point, float] | None:
+    """Return a free body's linear velocity and its spin about the belt normal.
+
+    Args:
+        mujoco: The imported module.
+        model: The compiled model.
+        data: Its state.
+        name: The body's name.
+
+    Returns:
+        The linear velocity in meters per second and the spin in radians per
+        second, or None when the body has no free joint.
+    """
+    body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, name)
+    if body < 0:
+        return None
+    joint = int(model.body_jntadr[body])
+    if joint < 0 or model.jnt_type[joint] != mujoco.mjtJoint.mjJNT_FREE:
+        return None
+    address = int(model.jnt_dofadr[joint])
+    linear = (
+        float(data.qvel[address]),
+        float(data.qvel[address + 1]),
+        float(data.qvel[address + 2]),
+    )
+    geom = int(model.body_geomadr[body])
+    rotation = data.geom_xmat[geom].reshape(3, 3)
+    spin = data.qvel[address + 3 : address + 6]
+    about_up = float(rotation[2] @ np.asarray(spin, dtype=np.float64))
+    return linear, about_up
+
+
+def _log_closure(
+    mujoco: Any,
+    model: Any,
+    data: Any,
+    indices: Any,
+    name: str,
+    command: Command,
+    flange: Point,
+) -> None:
+    """Log where a closing jaw sat relative to the object and to its command.
+
+    Three distances, because a grasp fails for different reasons that one
+    number confuses. The flange against the command is the inverse kinematics.
+    The command against the object, in the belt plane, is the plan. The pinch
+    against the object is what the jaw actually did, which is both of those
+    plus the tool not being vertical. The yaw is split the same way: the tool
+    against the command, and the command against the object's own short axis.
+
+    Args:
+        mujoco: The imported module.
+        model: The compiled model.
+        data: Its state.
+        indices: The arm indices.
+        name: The nearest object's body name.
+        command: The pose the plan asked for on this tick.
+        flange: Where the flange actually is.
+    """
+    pinch = _pinch(indices, data)
+    center = _object_place(mujoco, model, data, name)
+    origin = _body_origin(mujoco, model, data, name)
+    centroid = _geometric_center(mujoco, model, data, name)
+
+    def _offset(left: Point, right: Point) -> tuple[float, float, float]:
+        return (
+            (left[0] - right[0]) * 1000.0,
+            (left[1] - right[1]) * 1000.0,
+            (left[2] - right[2]) * 1000.0,
+        )
+
+    gap = _offset(pinch, center)
+    origin_gap = None if origin is None else _offset(origin, center)
+    shape_gap = None if centroid is None else _offset(centroid, center)
+    pinch_shape = None if centroid is None else _offset(pinch, centroid)
+    aim = tuple((command.position[axis] - center[axis]) * 1000.0 for axis in range(2))
+    aim_origin = (
+        None
+        if origin is None
+        else tuple(
+            (command.position[axis] - origin[axis]) * 1000.0 for axis in range(2)
+        )
+    )
+    tracked = distance(flange, command.position) * 1000.0
+    tool = math.degrees(armmod.tool_yaw(data, indices))
+    ordered = None if command.yaw is None else math.degrees(command.yaw)
+    body = _body_yaw(mujoco, model, data, name)
+    short = _short_axis_degrees(mujoco, model, data, name)
+    motion = _free_velocity(mujoco, model, data, name)
+
+    def _yaw(left: float | None, right: float | None) -> str:
+        if left is None or right is None:
+            return "n/a"
+        return f"{_fold_jaw_degrees(left - right):.1f}"
+
+    if motion is None:
+        velocity, spin = "n/a", "n/a"
+    else:
+        linear, rate = motion
+        velocity = f"({linear[0]:+.3f}, {linear[1]:+.3f}, {linear[2]:+.3f})"
+        spin = f"{rate:+.2f}"
+
+    def _millimetres(offset: tuple[float, float, float] | None) -> str:
+        if offset is None:
+            return "n/a"
+        return f"({offset[0]:+.0f}, {offset[1]:+.0f}, {offset[2]:+.0f})"
+
+    LOGGER.info(
+        "closure at %.3f s on %s: pinch-com dx=%+.0f dy=%+.0f dz=%+.0f mm; "
+        "pinch-shape %s mm; origin-com %s mm; shape-com %s mm; "
+        "command-com dx=%+.0f dy=%+.0f mm; command-origin %s mm; "
+        "flange-command %.1f mm; "
+        "tool-command yaw %s deg; command-body yaw %s deg; "
+        "command-short-axis yaw %s deg; object v=%s m/s spin=%s rad/s",
+        data.time,
+        name,
+        gap[0],
+        gap[1],
+        gap[2],
+        _millimetres(pinch_shape),
+        _millimetres(origin_gap),
+        _millimetres(shape_gap),
+        aim[0],
+        aim[1],
+        (
+            "n/a"
+            if aim_origin is None
+            else f"({aim_origin[0]:+.0f}, {aim_origin[1]:+.0f})"
+        ),
+        tracked,
+        _yaw(tool, ordered),
+        _yaw(ordered, body),
+        _yaw(ordered, short),
+        velocity,
+        spin,
+    )
+
+
+def _body_origin(mujoco: Any, model: Any, data: Any, name: str) -> Point | None:
+    """Return a body's frame origin, which is where a marker is drawn from.
+
+    Args:
+        mujoco: The imported module.
+        model: The compiled model.
+        data: Its state.
+        name: The body's name.
+
+    Returns:
+        The origin in world frame meters, or None when the body is absent.
+        This is `xpos`, not the centre of mass: scanned meshes keep their
+        origin wherever the scan left it.
+    """
+    body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, name)
+    if body < 0:
+        return None
+    place = data.xpos[body]
+    return float(place[0]), float(place[1]), float(place[2])
+
+
+def _geometric_center(mujoco: Any, model: Any, data: Any, name: str) -> Point | None:
+    """Return the centre of an object's geometry in the world, not its origin.
+
+    Args:
+        mujoco: The imported module.
+        model: The compiled model.
+        data: Its state.
+        name: The body's name.
+
+    Returns:
+        The mean of the geometry in world frame meters, or None when the body
+        has no box or mesh to read one from.
+    """
+    body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, name)
+    if body < 0:
+        return None
+    geom = int(model.body_geomadr[body])
+    if geom < 0:
+        return None
+    rotation = data.geom_xmat[geom].reshape(3, 3)
+    origin = np.asarray(data.geom_xpos[geom], dtype=np.float64)
+    kind = model.geom_type[geom]
+    if kind == mujoco.mjtGeom.mjGEOM_BOX:
+        local = np.zeros(3)
+    elif kind == mujoco.mjtGeom.mjGEOM_MESH:
+        mesh = int(model.geom_dataid[geom])
+        if mesh < 0:
+            return None
+        local = _mesh_vertices(model, mesh).mean(axis=0)
+    else:
+        local = np.zeros(3)
+    world = rotation @ local + origin
+    return float(world[0]), float(world[1]), float(world[2])
 
 
 def _body_yaw(mujoco: Any, model: Any, data: Any, name: str) -> float | None:

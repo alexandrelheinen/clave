@@ -669,6 +669,161 @@ def refine(
     )
 
 
+def retarget_descent(
+    plan: Plan,
+    object_position: Point,
+    belt_velocity: Point,
+    approach_clearance_z: float,
+    approach_speed: float,
+    dwell_seconds: float,
+    max_speed: float,
+    max_acceleration: float,
+    at_seconds: float,
+    drift_horizon: float = DRIFT_HORIZON,
+    retreat_lift: float | None = None,
+    over: Point | None = None,
+    belt_border_y: float | None = None,
+    safe_height_world: float | None = None,
+    cross_speed: float | None = None,
+) -> Plan | None:
+    """Point the descent already in progress at where the object is now.
+
+    The approach was solved against an earlier estimate. Once the flange is
+    on the way down, that estimate is at most one steer old, and the object
+    has whatever velocity it has now. Rebuilding the whole visit would send
+    the arm back up. The arrival stays the instant already chosen. What moves
+    is the end of the descent, and the carry and the retreat are hung off
+    that end the same way a fresh plan would.
+
+    Args:
+        plan: The visit in flight, already on its descent.
+        object_position: Where the object is now.
+        belt_velocity: How it is moving.
+        approach_clearance_z: The clearance the descent was planned through.
+        approach_speed: How fast the descent was coming down.
+        dwell_seconds: How long the jaw stays shut.
+        max_speed: Speed ceiling, in meters per second.
+        max_acceleration: Acceleration ceiling, in meters per second squared.
+        at_seconds: Simulated time.
+        drift_horizon: How long a lateral velocity is carried.
+        retreat_lift: How far the retreat climbs, when it differs from the
+            clearance.
+        over: The chute mouth the delivery was heading for, or None.
+        belt_border_y: The belt edge the delivery crosses.
+        safe_height_world: The height the delivery clears the barrier at.
+        cross_speed: How fast the delivery crosses that edge.
+
+    Returns:
+        The visit from this instant on, or None when this instant is not
+        inside the descent or the corrected arc breaks the speed ceiling.
+        None leaves the caller on the plan it already has. The descent's
+        duration is already fixed, and that duration is what sets its
+        acceleration, so the acceleration ceiling that gates an approach
+        does not gate this splice: the descent already in hand is past it.
+    """
+    belt = _transport(belt_velocity)
+    elapsed = at_seconds - plan.started_at
+    edges = plan._boundaries()
+    descent_index = next(
+        (index for index, leg in enumerate(plan.legs) if leg.phase is Phase.DESCEND),
+        None,
+    )
+    if descent_index is None:
+        return None
+    opened, closed = edges[descent_index], edges[descent_index + 1]
+    if elapsed < opened or elapsed >= closed:
+        return None
+    into = elapsed - opened
+    remaining = closed - elapsed
+    if remaining <= 1e-3:
+        return None
+    leg = plan.legs[descent_index]
+    here = leg.segment.at(into)
+    dropping = Segment(
+        start=here,
+        end=State(
+            position=where_carried(
+                object_position,
+                belt,
+                remaining,
+                0.0,
+                drift_horizon,
+            ),
+            velocity=belt,
+            acceleration=(0.0, 0.0, 0.0),
+        ),
+        duration=remaining,
+    )
+    # The duration is the time left, not a duration searched for, so the
+    # acceleration is whatever that time produces. The descent this replaces
+    # was accepted on the same terms: its duration comes from the clearance
+    # and the approach speed, and its peak acceleration is already past the
+    # ceiling that gates an approach. What a correction can break, and what
+    # this refuses, is the speed ceiling.
+    if dropping.peak_speed() > max_speed:
+        return None
+    ceiling = max_acceleration if max_acceleration > 0.0 else 2.50
+    holding = _carry(dropping.end, dwell_seconds, belt)
+    rising = _retreat(holding.end, approach_clearance_z, approach_speed, belt)
+    legs = [
+        Leg(Phase.DESCEND, dropping, leg.grip),
+        Leg(Phase.HOLD, holding, JAW_SHUT),
+        Leg(Phase.RETREAT, rising, JAW_SHUT),
+    ]
+    if over is not None and safe_height_world is not None and belt_border_y is not None:
+        cross_v = approach_speed if cross_speed is None else cross_speed
+        lift = approach_clearance_z if retreat_lift is None else retreat_lift
+        safe_height = max(over[2], safe_height_world)
+        climbing = _climb(
+            rising.end,
+            max(safe_height, holding.end.position[2] + lift),
+            belt,
+            max_speed,
+            ceiling,
+        )
+        legs.append(Leg(Phase.RETREAT, climbing, JAW_SHUT))
+        border = State(
+            position=(over[0], belt_border_y, safe_height),
+            velocity=(0.0, -cross_v, 0.0),
+            acceleration=(0.0, 0.0, 0.0),
+        )
+        chute = State(
+            position=over,
+            velocity=(0.0, 0.0, 0.0),
+            acceleration=(0.0, 0.0, 0.0),
+        )
+        legs.append(
+            Leg(
+                Phase.DELIVER,
+                _fit_segment(
+                    climbing.end, border, max_speed, ceiling, min_duration=0.50
+                ),
+                JAW_SHUT,
+            )
+        )
+        legs.append(
+            Leg(
+                Phase.DELIVER,
+                _fit_segment(
+                    border,
+                    chute,
+                    max_speed,
+                    ceiling,
+                    min_duration=MINIMUM_DELIVERY_SECONDS,
+                ),
+                JAW_SHUT,
+            )
+        )
+    return Plan(
+        track_id=plan.track_id,
+        legs=tuple(legs),
+        started_at=at_seconds,
+        pick_at=at_seconds + remaining,
+        target_yaw=plan.target_yaw,
+        initial_yaw=plan.initial_yaw,
+    )
+
+
 def _deliver(start: State, target_position_world: Point, max_speed: float) -> Segment:
     """Return the arc that carries the object to its chute and lets go.
 

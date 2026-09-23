@@ -100,11 +100,17 @@ in the language of mathematics: a vector is an array and its algebra is
 numpy's, a scalar field over a grid is one expression, and a quantity that
 numpy names is called by that name.
 
-The reason is legibility. These are 3-vectors at a few hundred hertz, where
-arithmetic cost is irrelevant, and `np.linalg.norm(a - b) <= tol` is the same
-text as the specification it implements. A square root of a sum of three
-indexed squares is a second implementation of that specification, and the two
-can disagree in a way no reviewer notices without evaluating both.
+The reason is legibility. A few microseconds on a 3-vector does not decide a
+design, and `np.linalg.norm(a - b) <= tol` is the same text as the
+specification it implements. A square root of a sum of three indexed squares
+is a second implementation of that specification, and the two can disagree in
+a way no reviewer notices without evaluating both.
+
+What does decide it is building a batch for one row. A physics tick is two
+milliseconds, and evaluating one instant of a quintic by stacking the basis
+for a whole grid was measured as the per-tick cost the numpy rewrite added.
+`sample` stays the batch path, for a peak search over a grid. `at` evaluates
+the one row. The numbers are in [measurements.md](measurements.md).
 
 ### Where the primitives live
 

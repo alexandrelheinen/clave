@@ -22,13 +22,18 @@ That makes the two profiles differ in how they are driven and not only in
 how many phases they run, which is why a caller asks [TaskMachine.flying]
 which regime it is in rather than reading the phase.
 
-**A plan owns which object and when; not where.** Re-deciding the target
-mid-flight would turn an interception into a chase, and re-deciding the
-arrival time would leave nothing able to schedule against it, so both are
-fixed the moment the machine commits. The aim is refreshed every capture
-until the descent begins, because the belt model predicts the x axis
-exactly and predicts nothing else, and an object that rolls drifts out from
-under a pose solved three seconds ago.
+**A plan owns which object and when; not where.** Re-deciding which object
+a visit is about would turn an interception into a chase, and re-deciding
+the arrival time would leave nothing able to schedule against it, so both
+are fixed the moment the machine commits. Where the jaw closes is not. The
+aim is refreshed on every new estimate until the jaw shuts, because the
+belt model predicts travel along the belt and predicts a roll across it
+only for as long as that roll lasts, and an object drifts out from under a
+pose solved three seconds ago. Through the approach the arc is bent onto
+the fresher estimate. Once the descent has started there is no approach
+left to bend, and solving the visit again would send the arm back up, so
+only the end of the descent moves. A correction that breaks a ceiling
+leaves the plan already in hand.
 
 **A refresh that cannot follow the object is answered, not ignored.** An
 approach arc can only be bent so far, and an object that has fallen behind
@@ -58,7 +63,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from clave.control.pick import Flight, Plan, plan_pick, refine
+from clave.control.pick import Flight, Plan, plan_pick, refine, retarget_descent
 from clave.control.selection import Candidate, Queue
 from clave.control.settings import (
     CalibrationSettings,
@@ -765,7 +770,11 @@ class TaskMachine:
                 step in velocity.
             at_seconds: Simulated time.
         """
-        if self._phase is not Phase.TRACK:
+        # The hold is the jaw already shut, and moving the aim then drags a
+        # closed jaw across the belt. The descent is not: it is the last
+        # fraction of a second, the object is still moving, and a correction
+        # frozen at the start of it is a jaw that arrives where the object was.
+        if self._phase not in (Phase.TRACK, Phase.DESCEND):
             return
         assert self._plan is not None
         assert self._guidance is not None
@@ -787,8 +796,17 @@ class TaskMachine:
                 refused=True,
             )
             return
-        aim = _aim_of(self._plan)
         target = self._grasp_pose(head)
+        if self._phase is Phase.DESCEND:
+            # The approach is over. Bending it is what refine does, and once
+            # the track legs have finished it answers None, which the rest of
+            # this method reads as a refusal and may abandon the visit from.
+            # A jaw that is already on the way down is a fraction of a second
+            # from the object, and the answer to a correction that will not
+            # fit is the plan already in hand.
+            self._steer_descent(head, target, at_seconds)
+            return
+        aim = _aim_of(self._plan)
         drift = distance(self._fresh_aim(head, target, at_seconds), aim)
         refreshed = self._refinement(head, target, at_seconds)
         if (
@@ -859,6 +877,61 @@ class TaskMachine:
             drift * 1000,
             solved.duration,
         )
+
+    def _steer_descent(self, head: Candidate, target: Point, at_seconds: float) -> None:
+        """Move the end of a descent onto the freshest estimate, or leave it.
+
+        The approach is over, so there is no arc left to bend, and solving the
+        visit again would send the arm back up the belt. The jaw has not shut,
+        so the object is still moving and a descent frozen at its start arrives
+        where the object was. A correction that breaks a ceiling, or that the
+        arm is not trusted over, leaves the plan already in hand: abandoning
+        from here drops an object the jaw is a fraction of a second from.
+
+        Args:
+            head: The candidate being served.
+            target: The fresh grasp pose, in world frame meters.
+            at_seconds: Simulated time.
+        """
+        assert self._plan is not None
+        assert self._guidance is not None
+        transit_height_world = self._safe_height_world
+        retreat_lift = max(
+            self._settings.grasp_clearance, transit_height_world - target[2]
+        )
+        chute = self._chutes.get(head.channel)
+        over = (chute[0], chute[1], transit_height_world) if chute is not None else None
+        steered = retarget_descent(
+            plan=self._plan,
+            object_position=target,
+            belt_velocity=self._object_velocity(head),
+            approach_clearance_z=self._settings.grasp_clearance,
+            approach_speed=self._settings.approach_speed,
+            dwell_seconds=self._settings.dwell_seconds,
+            max_speed=self._guidance.max_speed,
+            max_acceleration=self._guidance.max_acceleration,
+            at_seconds=at_seconds,
+            drift_horizon=self._settings.drift_horizon,
+            retreat_lift=retreat_lift,
+            over=over,
+            belt_border_y=self._belt_border_y,
+            safe_height_world=transit_height_world,
+            cross_speed=self._settings.approach_speed,
+        )
+        if (
+            steered is None
+            or not self._takes(_aim_of(steered))
+            or not self._within_reach(steered)
+        ):
+            return
+        drift = distance(self._fresh_aim(head, target, at_seconds), _aim_of(self._plan))
+        turned = self._yaw_at_pick(head, steered, at_seconds)
+        self._refreshes.append(Reaim(at_seconds, head.track_id, drift, False, "took"))
+        self._plan = steered.with_yaw(
+            target_yaw=turned,
+            initial_yaw=self._last_yaw,
+        )
+        self._plan_yaw = turned
 
     def _yaw_at_pick(
         self, head: Candidate, plan: Plan, at_seconds: float

@@ -422,6 +422,50 @@ means the warm start stops being a module global and becomes something the
 caller threads through, which is a wider change than this.
 """
 
+_SCRATCH: dict[int, Any] = {}
+"""One scratch `MjData` per compiled model, reused by every descent step.
+
+A descent runs at the physics rate. Building a fresh `MjData` each call copies
+the whole state, including every object on the belt, and then overwrites the
+six arm joints anyway: the flange pose depends only on those joints. The copy
+was the whole self-time of the descent.
+"""
+
+_JACOBIAN: dict[
+    int, tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]
+] = {}
+"""Jacobian buffers and the 6×6 identity, one set per compiled model."""
+
+
+def _descent_workspace(
+    model: Any,
+) -> tuple[Any, NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
+    """Return the scratch state and the Jacobian buffers for a model.
+
+    Args:
+        model: The compiled model.
+
+    Returns:
+        The scratch `MjData`, the position Jacobian, the rotation Jacobian and
+        a 6×6 identity used by the damped normal equations.
+    """
+    import mujoco
+
+    key = id(model)
+    scratch = _SCRATCH.get(key)
+    if scratch is None:
+        scratch = mujoco.MjData(model)
+        buffers = (
+            np.zeros((3, model.nv)),
+            np.zeros((3, model.nv)),
+            np.eye(6),
+        )
+        _SCRATCH[key] = scratch
+        _JACOBIAN[key] = buffers
+    jacp, jacr, eye = _JACOBIAN[key]
+    return scratch, jacp, jacr, eye
+
+
 _TRACKING_ITERATIONS = 8
 """Descent steps per control call when warm starting.
 
@@ -548,7 +592,7 @@ def _descend(
     import mujoco
 
     wanted_axis = np.array([math.cos(yaw), math.sin(yaw), 0.0], dtype=np.float64)
-    scratch = mujoco.MjData(model)
+    scratch, jacp, jacr, eye = _descent_workspace(model)
     for slot, joint in enumerate(arm.joint_ids):
         scratch.qpos[model.jnt_qposadr[joint]] = seed[slot]
     columns = list(arm.dof_indices)
@@ -565,8 +609,6 @@ def _descend(
             and np.linalg.norm(rotation_error) < 1e-2
         ):
             break
-        jacp = np.zeros((3, model.nv))
-        jacr = np.zeros((3, model.nv))
         mujoco.mj_jacSite(model, scratch, jacp, jacr, arm.tool_site)
         stacked = np.vstack([jacp[:, columns], jacr[:, columns]])
         error = np.concatenate([position_error, rotation_error])
@@ -577,7 +619,7 @@ def _descend(
             damping_sq = _DAMPING**2 + (0.35**2) * scale
         else:
             damping_sq = _DAMPING**2
-        square = stacked @ stacked.T + damping_sq * np.eye(6)
+        square = stacked @ stacked.T + damping_sq * eye
         delta = stacked.T @ np.linalg.solve(square, error)
         delta = np.clip(delta, -0.20, 0.20)
         here = np.array(
