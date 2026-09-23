@@ -930,6 +930,16 @@ than a shim. What it needs is the belt modelled as a *surface* moving under the
 object, with friction between them, rather than a velocity imposed on the
 body's centre.
 
+A settling zone was tried as the repair this bullet points to, and measured the
+same way it was rejected. Stepping the conveyor directly at seed 0 and reading
+the total angular speed (the norm across all three axes) as each object crossed
+the gate: damping the rotation upstream of the gate (an exponential decay of
+the angular velocity at 8 per second) moved the p90 from **6.4 to 14.2 rad/s**,
+and a damping torque applied through the solver made the simulation unstable
+within five seconds. Damping does not settle a parcel; it freezes it mid-tumble
+where the driven centre keeps winding it up. The belt model remains the only
+repair that touches the cause.
+
 **One pad contact of −98 mm appears in the report and not in the telemetry.**
 The report's clearance is the minimum over every physics tick; the telemetry
 series is sampled at 100 Hz. On the run above the report carries a single tick
