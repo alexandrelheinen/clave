@@ -1,0 +1,4 @@
+{
+  "name": "CLAVE",
+  "install": "./scripts/cloud-agent-install.sh"
+}
