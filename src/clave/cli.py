@@ -746,6 +746,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help="logging verbosity (default: INFO)",
     )
     sim.add_argument(
+        "--no-progress",
+        action="store_true",
+        help=("disable the tqdm progress bar so debug lines are not overwritten by it"),
+    )
+    sim.add_argument(
         "--fps",
         type=int,
         default=None,
@@ -875,7 +880,8 @@ def _debug_tracker(root: Path, args: Any) -> int:
     LOGGER.debug(
         "sim parameters: seconds=%.3f (use sim --seconds to override), seed=%d, "
         "out=%s, video=%s, telemetry=%s, telemetry_rate=%.3f, "
-        "trajectory_seconds=%.3f, window=%s, view=%s, ground_truth_tracker=%s",
+        "trajectory_seconds=%.3f, window=%s, view=%s, ground_truth_tracker=%s, "
+        "progress=%s",
         args.seconds,
         args.seed,
         args.out,
@@ -886,6 +892,7 @@ def _debug_tracker(root: Path, args: Any) -> int:
         not args.no_window,
         args.view,
         args.ground_truth_tracker,
+        not args.no_progress,
     )
     telemetry_path = None
     if args.telemetry:
@@ -906,6 +913,7 @@ def _debug_tracker(root: Path, args: Any) -> int:
         trajectory_seconds=args.trajectory_seconds,
         ground_truth_tracker=args.ground_truth_tracker,
         belt_speed=args.belt_speed,
+        progress=not args.no_progress,
     )
     for line in report_lines(report):
         _log_output(line)

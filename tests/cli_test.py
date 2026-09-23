@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from clave.cli import main
+from clave.cli import _build_parser, main
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -63,6 +63,13 @@ def test_malformed_manifest_exits_non_zero(
     )
     assert main(["--root", str(tmp_path), "verify-manifest"]) == 1
     assert "dup" in caplog.text
+
+
+def test_sim_no_progress_is_off_unless_asked() -> None:
+    """AC-STORY-07: the progress bar is the default, and --no-progress turns it off."""
+    parser = _build_parser()
+    assert parser.parse_args(["sim"]).no_progress is False
+    assert parser.parse_args(["sim", "--no-progress"]).no_progress is True
 
 
 def test_no_command_is_an_error() -> None:

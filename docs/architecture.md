@@ -273,6 +273,17 @@ generated from a seed through one seeding entry point rather than downloaded.
 A training run records its configuration digest, its dataset digest and its
 environment, so a figure can be traced to the world that produced it.
 
+## Debug narrative
+
+`clave sim --log-level DEBUG` tells the visit as it happens: why the queue
+changed, which object the arm committed to and by which phases, whether the
+jaw closed, which chute the object crossed, and the collisions, acceleration
+spikes, and losses of control a watch reports along the way. The sentences
+and the watches are specified in
+[requirements/simulation-narrative.md](requirements/simulation-narrative.md).
+The watch does not command the arm. `--no-progress` turns the step bar off
+so it does not redraw over those lines.
+
 ## What is absent
 
 Naming these here keeps a reader from inferring them from the presence of

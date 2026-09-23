@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import math
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -23,6 +24,7 @@ from clave.control.settings import (
     Profile,
     TaskSettings,
 )
+from clave.control.story import StoryLog
 from clave.control.task import TaskError, TaskMachine
 from clave.world.effector import Effector
 
@@ -80,6 +82,15 @@ def machine(**overrides: object) -> TaskMachine:
     motion-only machine ignores them and a test that switches profile should
     not also have to remember to switch its fixture.
     """
+    story = overrides.pop("story", None)
+    if story is not None and not isinstance(story, StoryLog):
+        raise TypeError("story must be a StoryLog")
+    raw_chutes = overrides.pop("chutes", None)
+    chutes = (
+        cast("dict[str, tuple[float, float, float]]", raw_chutes)
+        if raw_chutes is not None
+        else None
+    )
     return TaskMachine(
         task_settings(**overrides),
         CalibrationSettings(flange_offset=(0.0, 0.0, 0.0)),
@@ -87,6 +98,8 @@ def machine(**overrides: object) -> TaskMachine:
         belt_speed=BELT_SPEED,
         guidance=LIMITS,
         effector=EFFECTOR,
+        story=story,
+        chutes=chutes,
     )
 
 
@@ -830,3 +843,116 @@ def test_rest_preserves_last_commanded_yaw() -> None:
     arm._last_yaw = 0.75
     goal = arm._rest(PARK, at_nanos=1_000_000)
     assert goal.target_yaw_world == pytest.approx(0.75)
+
+
+def test_the_task_machine_narrates_the_visit() -> None:
+    """AC-STORY-03: commit, phases, a re-aim, a miss, a fault, and giving up."""
+    lines: list[str] = []
+    story = StoryLog(sink=lines.append)
+    story.note(1, "M-01", "CH-PET")
+    story.note(7, "M-11", "CH-REJECT")
+    arm = machine(
+        profile=Profile.FULL_VISIT,
+        story=story,
+        chutes={"CH-PET": (0.20, -0.80, BELT_SURFACE)},
+    )
+    only = Candidate(
+        track_id=1,
+        anchor=(0.30, 0.0, PINCH_Z),
+        flange=(0.30, 0.0, PICK_Z),
+        closing_axis=math.pi / 2.0,
+        distance_before_leaving=1.5,
+        channel="CH-PET",
+    )
+    arm.step(queue_of(only), PARK, 0.0)
+    assert any(
+        "I will fly a" in line and "object 1 (PET, M-01)" in line for line in lines
+    )
+    assert any("track, descend, hold, retreat, deliver" in line for line in lines)
+
+    carried = Candidate(
+        track_id=1,
+        anchor=(0.30 + BELT_SPEED * 0.20, 0.0, PINCH_Z),
+        flange=(0.30 + BELT_SPEED * 0.20, 0.0, PICK_Z),
+        closing_axis=math.pi / 2.0,
+        distance_before_leaving=1.5,
+        channel="CH-PET",
+    )
+    arm.flight(0.05, PARK)
+    arm.step(queue_of(carried), PARK, 0.20)
+    assert any("fresh estimate" in line for line in lines)
+
+    seen: set[Phase] = set()
+    at_seconds = 0.20
+    while at_seconds < 8.0 and Phase.HOLD not in seen:
+        at_seconds += 0.01
+        flown = arm.flight(at_seconds, PARK)
+        assert flown is not None
+        seen.add(flown.phase)
+    assert Phase.DESCEND in seen
+    assert any("descend onto object 1" in line for line in lines)
+    assert any("close the jaw on object 1" in line for line in lines)
+
+    story.grasp_reading(at_seconds, 1, 0.080)
+    while at_seconds < 8.0 and not any("fly the release" in line for line in lines):
+        at_seconds += 0.01
+        flown = arm.flight(at_seconds, PARK)
+        if flown is None:
+            break
+    released = [line for line in lines if "fly the release of object 1" in line]
+    assert released
+    assert released[-1].endswith(": fail")
+
+    given_lines: list[str] = []
+    given_story = StoryLog(sink=given_lines.append)
+    given_story.note(1, "M-01", "CH-PET")
+    giving_up = machine(profile=Profile.FULL_VISIT, story=given_story)
+    giving_up.step(queue_of(only), PARK, 0.0)
+    giving_up.flight(0.05, PARK)
+    giving_up.step(queue_of(), PARK, 0.20)
+    assert any(
+        "abandon object 1" in line and line.endswith(": fail") for line in given_lines
+    )
+
+    missed = machine(profile=Profile.FULL_VISIT, story=story)
+    leaving = Candidate(
+        track_id=7,
+        anchor=(0.30, 0.0, PINCH_Z),
+        flange=(0.30, 0.0, PICK_Z),
+        closing_axis=0.0,
+        distance_before_leaving=0.01,
+        channel="CH-REJECT",
+    )
+    missed.step(queue_of(leaving), PARK, 1.0)
+    assert any("skip object 7" in line and line.endswith(": fail") for line in lines)
+
+    faulted = machine(story=story)
+    faulted.step(queue_of(only), PARK, 2.0, refusal="outside the annulus")
+    assert any(
+        "refused (outside the annulus)" in line and "hold the arm" in line
+        for line in lines
+    )
+
+
+def test_a_motion_only_visit_narrates_the_track_and_the_arrival() -> None:
+    """AC-STORY-03: motion-only says it is tracking, and success is arriving."""
+    lines: list[str] = []
+    story = StoryLog(sink=lines.append)
+    story.note(7, "M-08", "CH-FIBER")
+    arm = machine(story=story)
+    head = Candidate(
+        track_id=7,
+        anchor=(0.30, 0.0, PINCH_Z),
+        flange=(0.30, 0.0, PICK_Z),
+        closing_axis=None,
+        distance_before_leaving=1.5,
+        channel="CH-FIBER",
+    )
+    goal = arm.step(queue_of(head), PARK, 0.0)
+    assert any("at approach height" in line and "object 7" in line for line in lines)
+    arm.step(queue_of(head), goal.position, 0.0)
+    arm.step(queue_of(head), goal.position, 0.31)
+    assert any(
+        "count the visit to object 7" in line and line.endswith(": success")
+        for line in lines
+    )

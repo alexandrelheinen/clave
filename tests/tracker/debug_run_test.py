@@ -22,6 +22,7 @@ from clave.tracker.debug_run import (
     _jaw_collision_geoms,
     _jaw_state,
     _park_the_arm,
+    _progress,
     _run_metadata,
     _TelemetryWriter,
 )
@@ -78,6 +79,21 @@ def test_the_run_records_what_it_was_asked_for_ac_move_54() -> None:
     assert record["parameters"] == ask
     for name in ("revision", "dirty", "config_digests", "config_paths"):
         assert name in record, f"the parameters replaced {name}"
+
+
+def test_no_progress_is_a_plain_range() -> None:
+    """AC-STORY-07: without a bar the step loop is a plain range."""
+    assert isinstance(_progress(4, False), range)
+    bar = _progress(4, True)
+    try:
+        if type(bar).__name__ == "tqdm":
+            assert getattr(bar, "disable", False) is False
+        else:
+            assert isinstance(bar, range)
+    finally:
+        close = getattr(bar, "close", None)
+        if close is not None:
+            close()
 
 
 def test_the_report_survives_the_terminal_it_printed_on_ac_move_55() -> None:
