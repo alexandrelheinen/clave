@@ -264,6 +264,36 @@ new trajectory that rushes off the path the jaw was already following. The
 requirement that states this is `AC-MOVE-68` in
 [requirements/arm-control.md](requirements/arm-control.md).
 
+## The target frame
+
+The polynomials are defined in the **target frame**, not as free curves in
+world. World commands are the composition of the model target pose with the
+arc sample.
+
+During intercept through retreat (and the climb that clears the belt), the
+target is the object. Its model transport is belt-axis only,
+
+$$
+\mathbf{v}_T = (v_b, 0, 0)
+$$
+
+(or $(\max(0, v_x), 0, 0)$ when the estimate supplies $v_x$). Measured
+lateral body velocity is not $\mathbf{v}_T$: it aims the target origin for a
+finite horizon (`drift_horizon`) and does not become the velocity the jaw
+matches on the hold or the retreat. In that frame the hold is rest (modulo
+the closing rise) and the retreat is $+\hat{\mathbf{z}}$ over
+$\delta t = 2Z / V_a$.
+
+During delivery and release the target is the chute (or exit). The same
+interception formulation applies with $\mathbf{v}_T = \mathbf{0}$: a
+stationary intercept whose terminal velocity is rest. Pick and release
+therefore differ only by which target owns the arcs and by whether that
+target moves.
+
+`AC-MOVE-69` through `AC-MOVE-72` in
+[requirements/arm-control.md](requirements/arm-control.md) state the
+requirements.
+
 ## What this does not settle
 
 Whether the grasp holds. The formulation puts the jaw on the object at a
