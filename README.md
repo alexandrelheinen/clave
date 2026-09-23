@@ -16,7 +16,18 @@ v1.x line runs in simulation.
 *CLAVE*, which stands for _Coleta de Lixo Auxiliada por Visão Embarcada_, is also Portuguese for the musical clef, which places the project in the
 same family as **arco**, **bossa**, **fret**, and **luthier**.
 
-## What this project is about
+<table>
+  <tr>
+    <td width="49%">
+      <img src="docs/images/clave_sim_pick_frame.png" alt="Pick frame" width="100%">
+    </td>
+    <td width="49%">
+      <img src="docs/images/clave_sorting_line_simulation.gif" alt="Simulation animation" width="100%">
+    </td>
+  </tr>
+</table>
+
+## About
 
 The hard problem is learning a policy that maps visual streams to physical
 actions. Classifying an object on a belt is a solved exercise; predicting
@@ -103,7 +114,7 @@ two of the five headline metrics cannot be measured yet and that document says
 why.
 
 
-## The simulated line, and its dimensions
+## Simulation
 
 Every number below is configuration in
 [configs/world/sorting_line.yml](configs/world/sorting_line.yml), and every one
@@ -182,7 +193,7 @@ it the scanned objects.
 | `third_party/aws-robomaker-small-warehouse-world` | 17 MB | Warehouse props and textures |
 | `.guidelines` | Under 10 MB | The shared guidelines |
 
-## What runs today
+## Current version
 
 Everything through v1.0.0 runs in simulation and nothing has touched hardware.
 
@@ -257,18 +268,6 @@ outside the v1.x line. What CLAVE takes from each sibling is itemized in the
 | `third_party/` | Pinned submodules: the ROBOTIS arm, the AWS warehouse props, the YCB objects |
 | [docs/requirements/](docs/requirements/) | One document per feature: intent, scope, acceptance criteria, and the ids its tests reference |
 | `scripts/` | Toolchain setup and the local quality gate |
-
-## Getting started
-
-```bash
-git clone --recurse-submodules https://github.com/alexandrelheinen/clave.git
-cd clave
-./scripts/setup.sh
-./scripts/validate.sh
-```
-
-If the clone already exists without submodules, run
-`git submodule update --init --recursive` first.
 
 ## License
 
