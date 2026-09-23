@@ -11,10 +11,12 @@ import pytest
 from clave.tracker.belt_frame import Footprint
 from clave.tracker.evidence import Role
 from clave.tracker.markers import (
+    MAX_GRASP_ABOVE_SURFACE_METERS,
     UNORIENTED_PADS,
     GraspMarker,
     color_for,
     draw,
+    grasp_plane,
     marker_for,
     markers_for,
 )
@@ -147,6 +149,7 @@ def test_the_pads_are_the_shape_of_the_effector_the_marker_was_given() -> None:
         pad_height=0.044,
         grasp_height=0.030,
         lowest_below_flange=0.1735,
+        open_lowest_below_flange=0.1603,
         jaw_clearance=0.010,
         opening=0.085,
     )
@@ -155,6 +158,25 @@ def test_the_pads_are_the_shape_of_the_effector_the_marker_was_given() -> None:
     left, right = marker.pad_positions_belt
     reach = marker.opening / 2.0 + tool.pad_thickness / 2.0
     assert math.dist(left[:2], right[:2]) == pytest.approx(2.0 * reach)
+
+
+def test_the_grasp_plane_stands_on_the_open_jaw() -> None:
+    """AC-MARK-17: the grasp plane's floor is the open jaw's pinch floor.
+
+    A centre below that floor is lifted to it. A centre above it is taken as
+    it stands, and a centre past the height an object on the belt still has
+    is clamped there. The shut hang is what the hold rises by, not the floor
+    the descent arrives at.
+    """
+    tool = effector()
+    floor = BELT_SURFACE + tool.open_pinch_floor
+    assert grasp_plane(BELT_SURFACE, tool, floor - 0.020) == pytest.approx(floor)
+    stood = grasp_plane(BELT_SURFACE, tool, floor + 0.010)
+    assert stood == pytest.approx(floor + 0.010)
+    ceiling = BELT_SURFACE + MAX_GRASP_ABOVE_SURFACE_METERS
+    high = grasp_plane(BELT_SURFACE, tool, BELT_SURFACE + 1.0)
+    assert high == pytest.approx(ceiling)
+    assert floor < BELT_SURFACE + tool.pinch_floor
 
 
 def test_an_object_wider_than_the_jaw_is_marked_unreachable() -> None:

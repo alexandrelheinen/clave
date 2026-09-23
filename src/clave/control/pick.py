@@ -301,6 +301,7 @@ def plan_pick(
     belt_border_y: float | None = None,
     safe_height_world: float | None = None,
     cross_speed: float | None = None,
+    jaw_rise: float = 0.0,
 ) -> Plan | None:
     """Plan a whole visit, or report that there is no time for one.
 
@@ -337,6 +338,8 @@ def plan_pick(
             barrier, in meters, or None to derive from flange or target height.
         cross_speed: Speed across the belt border, in meters per second, or None
             to match approach_speed.
+        jaw_rise: How far the flange climbs while the jaw shuts, in meters.
+            Zero leaves the hold as a carry at the height the descent arrived at.
 
     Returns:
         The plan, or None when no interception inside `latest` respects both
@@ -436,6 +439,7 @@ def plan_pick(
         cross_speed=cross_v,
         max_acceleration=max_accel,
         drift_horizon=drift_horizon,
+        jaw_rise=jaw_rise,
     )
 
 
@@ -462,6 +466,7 @@ def refine(
     belt_border_y: float | None = None,
     safe_height_world: float | None = None,
     cross_speed: float | None = None,
+    jaw_rise: float = 0.0,
 ) -> Plan | None:
     """Correct a plan in flight against a fresher estimate of the object.
 
@@ -493,11 +498,13 @@ def refine(
         belt_border_y: Lateral position of the belt border on the chute side.
         safe_height_world: Safe clearance height above the belt side barrier.
         cross_speed: Speed across the belt border, in meters per second.
+        jaw_rise: How far the flange climbs while the jaw shuts, in meters.
 
     Returns:
         The re-aimed plan, or None when there is nothing left to re-aim or
-        the re-aimed arc breaks a ceiling. None means keep flying the plan
-        already in hand rather than abandon the visit.
+        no positive fraction of the correction stays inside both ceilings.
+        A fraction of zero is not a correction, and it is the refusal a
+        caller already treats as a re-aim that did not land.
     """
     obj_pos = object_position if object_position is not None else object_position_belt
     if obj_pos is None:
@@ -539,9 +546,10 @@ def refine(
                 as_vector(obj_pos)
                 + as_vector(belt_vel) * np.asarray([1.0, 0.0, 0.0]) * rem_entry
             )
-            new_track_arc = Segment(
+            new_track_arc = _feasible_arc(
                 start=entry_leg.end,
-                end=State(
+                kept=track_leg.end,
+                wanted=State(
                     position=where_carried(
                         obj_pos_at_border,
                         belt_vel,
@@ -557,13 +565,22 @@ def refine(
                     acceleration=(0.0, 0.0, 0.0),
                 ),
                 duration=track_leg.duration,
+                max_speed=max_speed,
+                max_acceleration=max_accel,
             )
-            if not new_track_arc.fits(max_speed, max_accel):
+            if new_track_arc is None:
                 return None
+            aimed = _object_under(
+                new_track_arc.end.position,
+                belt_vel,
+                new_track_arc.duration + dt,
+                clearance,
+                drift_horizon,
+            )
             return _assemble(
                 new_track_arc,
                 plan.track_id,
-                obj_pos_at_border,
+                aimed,
                 belt_vel,
                 clearance,
                 approach_speed,
@@ -578,14 +595,16 @@ def refine(
                 cross_speed=cross_v,
                 max_acceleration=max_accel,
                 drift_horizon=drift_horizon,
+                jaw_rise=jaw_rise,
             )
         if elapsed < entry_leg.duration + track_leg.duration:
             rem_track = (entry_leg.duration + track_leg.duration) - elapsed
             track_elapsed = elapsed - entry_leg.duration
             current_state = track_leg.at(track_elapsed)
-            new_track_arc = Segment(
+            new_track_arc = _feasible_arc(
                 start=current_state,
-                end=State(
+                kept=track_leg.end,
+                wanted=State(
                     position=where_carried(
                         obj_pos,
                         belt_vel,
@@ -601,13 +620,22 @@ def refine(
                     acceleration=(0.0, 0.0, 0.0),
                 ),
                 duration=rem_track,
+                max_speed=max_speed,
+                max_acceleration=max_accel,
             )
-            if not new_track_arc.fits(max_speed, max_accel):
+            if new_track_arc is None:
                 return None
+            aimed = _object_under(
+                new_track_arc.end.position,
+                belt_vel,
+                new_track_arc.duration + dt,
+                clearance,
+                drift_horizon,
+            )
             return _assemble(
                 new_track_arc,
                 plan.track_id,
-                obj_pos,
+                aimed,
                 belt_vel,
                 clearance,
                 approach_speed,
@@ -621,6 +649,7 @@ def refine(
                 cross_speed=cross_v,
                 max_acceleration=max_accel,
                 drift_horizon=drift_horizon,
+                jaw_rise=jaw_rise,
             )
         return None
 
@@ -628,9 +657,10 @@ def refine(
     remaining = reaching.duration - elapsed
     if remaining <= 0.0:
         return None
-    arc = Segment(
+    arc = _feasible_arc(
         start=reaching.at(elapsed),
-        end=State(
+        kept=reaching.end,
+        wanted=State(
             position=where_carried(
                 obj_pos,
                 belt_vel,
@@ -646,13 +676,18 @@ def refine(
             acceleration=(0.0, 0.0, 0.0),
         ),
         duration=remaining,
+        max_speed=max_speed,
+        max_acceleration=max_accel,
     )
-    if not arc.fits(max_speed, max_accel):
+    if arc is None:
         return None
+    aimed = _object_under(
+        arc.end.position, belt_vel, arc.duration + dt, clearance, drift_horizon
+    )
     return _assemble(
         arc,
         plan.track_id,
-        obj_pos,
+        aimed,
         belt_vel,
         clearance,
         approach_speed,
@@ -666,6 +701,7 @@ def refine(
         cross_speed=cross_v,
         max_acceleration=max_accel,
         drift_horizon=drift_horizon,
+        jaw_rise=jaw_rise,
     )
 
 
@@ -685,6 +721,7 @@ def retarget_descent(
     belt_border_y: float | None = None,
     safe_height_world: float | None = None,
     cross_speed: float | None = None,
+    jaw_rise: float = 0.0,
 ) -> Plan | None:
     """Point the descent already in progress at where the object is now.
 
@@ -712,14 +749,16 @@ def retarget_descent(
         belt_border_y: The belt edge the delivery crosses.
         safe_height_world: The height the delivery clears the barrier at.
         cross_speed: How fast the delivery crosses that edge.
+        jaw_rise: How far the flange climbs while the jaw shuts, in meters.
 
     Returns:
         The visit from this instant on, or None when this instant is not
-        inside the descent or the corrected arc breaks the speed ceiling.
-        None leaves the caller on the plan it already has. The descent's
-        duration is already fixed, and that duration is what sets its
-        acceleration, so the acceleration ceiling that gates an approach
-        does not gate this splice: the descent already in hand is past it.
+        inside the descent or no positive fraction of the correction stays
+        under the speed ceiling. None leaves the caller on the plan it
+        already has. The descent's duration is already fixed, and that
+        duration is what sets its acceleration, so the acceleration ceiling
+        that gates an approach does not gate this splice: the descent
+        already in hand is past it.
     """
     belt = _transport(belt_velocity)
     elapsed = at_seconds - plan.started_at
@@ -739,9 +778,17 @@ def retarget_descent(
         return None
     leg = plan.legs[descent_index]
     here = leg.segment.at(into)
-    dropping = Segment(
+    # The duration is the time left, not a duration searched for, so the
+    # acceleration is whatever that time produces. The descent this replaces
+    # was accepted on the same terms: its duration comes from the clearance
+    # and the approach speed, and its peak acceleration is already past the
+    # ceiling that gates an approach. What a correction can break is the
+    # speed ceiling, and the part of the correction that stays under it is
+    # the part that flies. None of it fitting leaves the plan already in hand.
+    dropping = _feasible_arc(
         start=here,
-        end=State(
+        kept=leg.segment.end,
+        wanted=State(
             position=where_carried(
                 object_position,
                 belt,
@@ -753,21 +800,17 @@ def retarget_descent(
             acceleration=(0.0, 0.0, 0.0),
         ),
         duration=remaining,
+        max_speed=max_speed,
+        max_acceleration=None,
     )
-    # The duration is the time left, not a duration searched for, so the
-    # acceleration is whatever that time produces. The descent this replaces
-    # was accepted on the same terms: its duration comes from the clearance
-    # and the approach speed, and its peak acceleration is already past the
-    # ceiling that gates an approach. What a correction can break, and what
-    # this refuses, is the speed ceiling.
-    if dropping.peak_speed() > max_speed:
+    if dropping is None:
         return None
     ceiling = max_acceleration if max_acceleration > 0.0 else 2.50
-    holding = _carry(dropping.end, dwell_seconds, belt)
-    rising = _retreat(holding.end, approach_clearance_z, approach_speed, belt)
+    held = _hold(dropping.end, dwell_seconds, belt, jaw_rise)
+    rising = _retreat(held[-1].segment.end, approach_clearance_z, approach_speed, belt)
     legs = [
         Leg(Phase.DESCEND, dropping, leg.grip),
-        Leg(Phase.HOLD, holding, JAW_SHUT),
+        *held,
         Leg(Phase.RETREAT, rising, JAW_SHUT),
     ]
     if over is not None and safe_height_world is not None and belt_border_y is not None:
@@ -776,7 +819,7 @@ def retarget_descent(
         safe_height = max(over[2], safe_height_world)
         climbing = _climb(
             rising.end,
-            max(safe_height, holding.end.position[2] + lift),
+            max(safe_height, held[-1].segment.end.position[2] + lift),
             belt,
             max_speed,
             ceiling,
@@ -867,6 +910,7 @@ def _assemble(
     safe_height_world: float | None = None,
     cross_speed: float | None = None,
     max_acceleration: float = 2.50,
+    jaw_rise: float = 0.0,
 ) -> Plan:
     """Hang the descent, the carry, the retreat and delivery off an approach arc.
 
@@ -887,6 +931,7 @@ def _assemble(
         safe_height_world: Safe clearance height above the belt side barrier.
         cross_speed: Speed across the belt border, in meters per second.
         max_acceleration: Acceleration ceiling in meters per second squared.
+        jaw_rise: How far the flange climbs while the jaw shuts, in meters.
 
     Returns:
         The whole visit.
@@ -900,9 +945,9 @@ def _assemble(
         approach_speed,
         drift_horizon,
     )
-    holding = _carry(dropping.end, dwell_seconds, belt_velocity_world)
+    held = _hold(dropping.end, dwell_seconds, belt_velocity_world, jaw_rise)
     rising = _retreat(
-        holding.end, approach_clearance_z, approach_speed, belt_velocity_world
+        held[-1].segment.end, approach_clearance_z, approach_speed, belt_velocity_world
     )
     legs = []
     if entry_segment is not None:
@@ -911,7 +956,7 @@ def _assemble(
         [
             Leg(Phase.TRACK, reaching, JAW_OPEN),
             Leg(Phase.DESCEND, dropping, JAW_OPEN),
-            Leg(Phase.HOLD, holding, JAW_SHUT),
+            *held,
             Leg(Phase.RETREAT, rising, JAW_SHUT),
         ]
     )
@@ -923,7 +968,7 @@ def _assemble(
         reach_up = approach_clearance_z if retreat_lift is None else retreat_lift
         climbing = _climb(
             rising.end,
-            max(safe_height, holding.end.position[2] + reach_up),
+            max(safe_height, held[-1].segment.end.position[2] + reach_up),
             belt_velocity_world,
             max_speed,
             max_acceleration,
@@ -958,6 +1003,179 @@ def _assemble(
         started_at=at_seconds,
         pick_at=at_seconds + entry_duration + reaching.duration + dropping.duration,
     )
+
+
+CLOSING_RISE_SECONDS = 0.20
+"""How long the hold spends raising the flange while the jaw shuts, in seconds.
+
+The shipped jaw reaches its shut hang 0.30 s after the close is commanded,
+and a rest-to-rest quintic of 0.20 s leads that hang. Longer than this, the
+quintic lags and the pads dip into the clearance. Shorter, the rise is
+steeper and the lead grows. The rest of the dwell is a carry at the height
+the rise arrived at.
+"""
+
+_FEASIBLE_STEPS = 32
+"""How many fractions of a correction are tried against a ceiling.
+
+The largest fraction that fits is the one flown. One part in thirty-two is
+a few millimetres on the corrections this line actually refuses, which is
+finer than the aim tolerance and cheap next to one quintic.
+"""
+
+
+def _object_under(
+    end: Point,
+    velocity: Point,
+    seconds: float,
+    clearance: float,
+    drift_horizon: float,
+) -> Point:
+    """Return the object a carried aim at `end` was predicted from.
+
+    This is `where_carried` run backwards over `seconds` at `clearance`. A
+    partial correction blends two aims, and the descent has to come down onto
+    that blend. Handing it the object the whole correction wanted sends the
+    descent sideways across the gap the approach was not allowed to close.
+
+    Args:
+        end: Where the approach arc finishes, clearance above the object.
+        velocity: How the object is moving.
+        seconds: How far ahead the aim was carried, which is the approach
+            plus the descent. The approach finishes where the object will be
+            when the jaw arrives, not when the descent begins.
+        clearance: How far above the object the arc finishes, in meters.
+        drift_horizon: How long a lateral velocity is carried.
+
+    Returns:
+        The object position the arc is aiming at, at the arc's own start.
+    """
+    across = min(seconds, drift_horizon)
+    return (
+        end[0] - velocity[0] * seconds,
+        end[1] - velocity[1] * across,
+        end[2] - clearance,
+    )
+
+
+def _mix(left: Point, right: Point, alpha: float) -> Point:
+    """Return the point `alpha` of the way from `left` to `right`."""
+    return (
+        (1.0 - alpha) * left[0] + alpha * right[0],
+        (1.0 - alpha) * left[1] + alpha * right[1],
+        (1.0 - alpha) * left[2] + alpha * right[2],
+    )
+
+
+def _blend(left: State, right: State, alpha: float) -> State:
+    """Return the state `alpha` of the way from `left` to `right`."""
+    return State(
+        position=_mix(left.position, right.position, alpha),
+        velocity=_mix(left.velocity, right.velocity, alpha),
+        acceleration=_mix(left.acceleration, right.acceleration, alpha),
+    )
+
+
+def _feasible_arc(
+    start: State,
+    kept: State,
+    wanted: State,
+    duration: float,
+    max_speed: float,
+    max_acceleration: float | None,
+) -> Segment | None:
+    """Return the arc toward `wanted` that stays inside the ceiling.
+
+    `kept` is the end already in hand. The largest fraction of the way from
+    `kept` to `wanted` whose quintic respects the ceiling is the one flown.
+    A fraction of zero is not a correction, and the caller keeps the plan it
+    already has rather than replacing it with a re-fit of the same end.
+
+    Args:
+        start: Where the arc begins.
+        kept: The end the plan already aims at.
+        wanted: The end the freshest estimate asks for.
+        duration: How long the arc has, in seconds. Already chosen.
+        max_speed: Speed ceiling, in meters per second.
+        max_acceleration: Acceleration ceiling, in meters per second squared,
+            or None when only the speed ceiling applies. A descent's duration
+            is fixed by the clearance and the approach speed, and that
+            duration is what sets its acceleration, so the acceleration
+            ceiling is not what refuses it.
+
+    Returns:
+        The arc, or None when no positive fraction fits.
+    """
+    best: Segment | None = None
+    for step in range(_FEASIBLE_STEPS + 1):
+        alpha = step / _FEASIBLE_STEPS
+        if alpha == 0.0:
+            continue
+        arc = Segment(start=start, end=_blend(kept, wanted, alpha), duration=duration)
+        fits = (
+            arc.peak_speed() <= max_speed
+            if max_acceleration is None
+            else arc.fits(max_speed, max_acceleration)
+        )
+        if fits:
+            best = arc
+    return best
+
+
+def _rise(start: State, seconds: float, belt_velocity: Point, lift: float) -> Segment:
+    """Return the arc that raises the flange while the jaw is closing.
+
+    Args:
+        start: Where the descent ended, already moving with the belt.
+        seconds: How long the rise takes.
+        belt_velocity: How the belt is moving.
+        lift: How far the flange climbs, in meters.
+
+    Returns:
+        The arc. Vertical velocity is zero at both ends, so it chains with
+        a descent that arrived moving only with the belt and with the carry
+        that follows.
+    """
+    return Segment(
+        start=start,
+        end=State(
+            position=as_point(
+                as_vector(start.position)
+                + as_vector(belt_velocity) * seconds
+                + np.asarray([0.0, 0.0, lift])
+            ),
+            velocity=belt_velocity,
+            acceleration=(0.0, 0.0, 0.0),
+        ),
+        duration=seconds,
+    )
+
+
+def _hold(
+    start: State, seconds: float, belt_velocity: Point, lift: float
+) -> tuple[Leg, ...]:
+    """Return the hold: a rise while the jaw shuts, then a carry.
+
+    Args:
+        start: Where the descent ended.
+        seconds: How long the jaw is given to close.
+        belt_velocity: How the belt is moving.
+        lift: How far the flange climbs during the close, in meters. Zero
+            leaves the hold as the carry it was.
+
+    Returns:
+        One or two hold legs. The jaw is commanded shut on both.
+    """
+    if lift <= 1e-6 or seconds <= 1e-3:
+        carry = _carry(start, max(seconds, 1e-3), belt_velocity)
+        return (Leg(Phase.HOLD, carry, JAW_SHUT),)
+    rise_for = min(CLOSING_RISE_SECONDS, seconds)
+    risen = _rise(start, rise_for, belt_velocity, lift)
+    legs = [Leg(Phase.HOLD, risen, JAW_SHUT)]
+    rest = seconds - rise_for
+    if rest > 1e-3:
+        legs.append(Leg(Phase.HOLD, _carry(risen.end, rest, belt_velocity), JAW_SHUT))
+    return tuple(legs)
 
 
 def _carry(start: State, seconds: float, belt_velocity: Point) -> Segment:

@@ -1033,29 +1033,46 @@ steer, including the moment before a visit is solved again. It is not a gap
 at the jaw.
 
 The four closures are three different failures, and only one of them was the
-frozen descent.
+frozen descent. The mechanisms, measured on that same run and on the compiled
+jaw, are what the correction is built on. The ceilings do not move.
 
-**The arm does not reach a command that is already on the object.** object_2
-was nearly stopped, the command sat on its mass, the short axis agreed to a
-tenth of a degree, and the flange was 108 mm and 16° of tool yaw away from
-that command. The same visit on the previous run was the same failure at
-87 mm, with the command already on the mass. Inverse kinematics, damped and
-warm-started, did not arrive. Nothing about the estimate explains it.
+**The roll is on its stop.** At the onset of the 108 mm miss the joints are
+approximately `(2.645, −2.883, −0.001, −4.969, 4.712, 6.283)` rad and the
+command is `(-0.823, -0.057, 1.284)` m at yaw −2.334 rad. Wrist 3, the tool
+roll, sits on its upper stop of ±2π. Wrist 2 is at 270°, so this is not the
+wrist singularity. The singular values of the 6×6 Jacobian are
+`(1.934, 1.638, 1.005, 0.753, 0.630, 2.5e-4)`. The position error is about
+5 mm and the rotation error is 0.132 rad of yaw, with the tool already
+pointing down. The whole of `Jᵀe` sits on the shoulder pan and on the stopped
+roll. Eight further damped iterations, and forty, leave the tool 4.8 mm
+short. Each later tick starts from that answer while the command moves, and
+the miss grows to 108 mm. The joint step during that growth is 0.0002 to
+0.0004 rad, under the 0.00418 rad a tick may spend at 2.09 rad/s. A parallel
+jaw is the same grip at yaw and at yaw plus half a turn, and that is the
+grip with travel left. The other minimum of the same pose is 9.14 rad away
+in joint space. At 2.09 rad/s that slew is about 4.4 s, and about 1.4 s
+remains before the jaw closes, so a descent does not switch to it.
 
-**The jaw can be on the mass and still not hold the parcel.** object_1 at
-26.692 s was centred to a millimetre, the tool was on the short axis, and the
-pinch was 13 mm above the mass. The pads are 37.5 mm tall and their lowest
-geometry stays 10 mm above the belt, so a flat parcel is met near its top.
-The lift was zero. That is the grasp height recorded above, and this run did
-not move it.
+**The open jaw and the shut jaw are not the same hang.** Commanded shut from
+the open hang of 160.34 mm, at the 0.30 N·m this line closes with, the hang
+grows by 1.43, 4.50, 7.77, 10.51, 12.38 and 13.21 mm at 0.05 s intervals, and
+it is at the shut hang of 173.5 mm by 0.30 s. The dwell is 0.40 s. A
+rest-to-rest quintic of that 13.32 mm rise lags the hang by 0.16 mm over
+0.20 s, by 0.66 mm over 0.25 s, by 1.73 mm over 0.30 s and by 4.13 mm over
+0.40 s. The descent therefore stops a millimetre above the open hang, and
+the hold climbs the difference in the first 0.20 s. Object_1's centre was
+14.4 mm above the belt. The shut floor is 27.7 mm, so the plane clamped the
+pinch 13 mm above the centre. The open floor is 15.5 mm, which is under that
+centre.
 
-**A correction the speed ceiling refuses leaves the jaw where the object
-was.** object_0 at 32.560 s was spinning at 5.05 rad/s with a cross-belt
-velocity of −0.174 m/s. The flange was 2.9 mm from the command and the
-command was 69 mm downstream of the mass. The steer runs every 50 ms. Once
-the object has moved further than the time remaining can cover at the speed
-ceiling, the plan already in hand is the one that flies, and it is the plan
-from before the object moved. That is the ceiling doing what it is for. It is
-also why a parcel at 5 rad/s is not a tolerance to widen: the pose was exact,
-and the arm was not allowed to dive after it.
+**The ceiling refuses a fraction it could have flown.** Object_0 at 32.560 s
+was spinning at 5.05 rad/s with a cross-belt velocity of −0.174 m/s. The
+flange was 2.9 mm from a command 69 mm downstream of the mass, because the
+correction that would have followed it broke the speed ceiling and the whole
+arc was refused. The same refusal, on the approach, is the visit given up at
+44 mm and the one given up at 31 mm. The largest fraction of the blend from
+the end already in hand to the end the estimate asks for, whose quintic stays
+inside the ceiling, is the arc that flies. A fraction of zero is not a
+correction. A parcel at 5 rad/s is not a tolerance to widen: the pose was
+exact, and the arm was not allowed to dive after it.
 

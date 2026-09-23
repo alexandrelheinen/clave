@@ -139,6 +139,13 @@ both.
 lowest collision geometry of the jaw, because the grasp plane's clearance is
 measured to the second of those and the first is what an arm is commanded to.
 
+`AC-GRIP-14`: The system shall record the jaw's lowest collision geometry
+with the jaw open, separately from the shut figure, and a test shall read
+both out of the compiled model. The open figure is the one a descent arrives
+against. The difference is what the hold rises by while the jaw shuts, and a
+configuration in which the open reach is not shorter than the shut reach
+shall fail at load.
+
 ## Design notes
 
 **Why the grasp phases already exist.** The task machine's phases are

@@ -127,6 +127,28 @@ def test_a_grasp_plane_inside_the_jaw_clearance_is_refused() -> None:
         Effector.load(raw)
 
 
+def test_an_open_reach_past_the_shut_one_is_refused() -> None:
+    """AC-GRIP-14: an open reach past the shut one is refused.
+
+    Closing would not drop the pads, and the hold would have nothing to rise
+    by. That is a configuration that describes the linkage backwards.
+    """
+    raw = load(CONFIG)
+    raw["effector"]["open_lowest_below_flange_meters"] = (
+        float(raw["effector"]["lowest_below_flange_meters"]) + 0.001
+    )
+    with pytest.raises(ClaveError, match="open_lowest_below_flange_meters"):
+        Effector.load(raw)
+
+
+def test_an_absent_open_reach_fails_at_load_naming_itself() -> None:
+    """AC-GRIP-14: an absent open reach fails at load naming itself."""
+    raw = load(CONFIG)
+    del raw["effector"]["open_lowest_below_flange_meters"]
+    with pytest.raises(ClaveError, match="open_lowest_below_flange_meters"):
+        Effector.load(raw)
+
+
 def test_an_absent_clearance_key_fails_at_load_naming_itself() -> None:
     """AC-GRIP-13: an absent clearance key fails at load naming itself."""
     raw = load(CONFIG)

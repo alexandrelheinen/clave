@@ -129,38 +129,23 @@ def test_no_object_in_the_set_is_wider_than_the_jaw() -> None:
     ], "an object the jaw cannot close on is back in the set"
 
 
-def _pad_geometry(world: Any, grip: float) -> tuple[tuple[float, float, float], float]:
-    """Return one pad's extents in the tool frame and its lowest depth below it.
+def _pad_box(world: Any) -> Any:
+    """Return one pad's corners in the tool frame, flange at the origin.
 
-    Measured from the compiled model rather than read from the configuration,
-    because the configuration is what is under test. A finger's collision shape
-    is two boxes, so the extents are taken over both, and they are taken in the
-    tool's own frame: the jaw closes along the tool's x, its depth is y, its
-    height is z, and the flange is the origin.
-
-    The linkage moves, so the answer depends on where it stands: this settles
-    the jaw at the commanded grip for long enough to be shut or open rather than
-    asking `mj_forward`, which computes positions and never moves a finger.
+    A finger's collision shape is two boxes, so the corners are taken over
+    both, in the tool's own frame: the jaw closes along the tool's x, its
+    depth is y, its height is z.
 
     Args:
         world: The compiled model, its data and the arm indices.
-        grip: What to command the jaw, from zero open to one shut.
 
     Returns:
-        The extents along `(x, y, z)` of the tool frame, and how far the lowest
-        corner of the pad reaches below the flange. Both in meters.
+        The corners, one row per corner, in meters.
     """
     numpy = pytest.importorskip("numpy")
     import mujoco
 
-    from clave.world import arm as armmod
-
     model, data, _, arm = world
-    for slot, actuator in enumerate(arm.actuator_ids):
-        data.ctrl[actuator] = armmod.joint_positions(model, data, arm)[slot]
-    armmod.hold(data, arm, closed=grip)
-    for _ in range(2000):
-        mujoco.mj_step(model, data)
     axes = data.site_xmat[arm.tool_site].reshape(3, 3)
     origin = data.site_xpos[arm.tool_site]
     corners = []
@@ -185,7 +170,38 @@ def _pad_geometry(world: Any, grip: float) -> tuple[tuple[float, float, float], 
                         [sx * size[0], sy * size[1], sz * size[2]]
                     )
                     corners.append(axes.T @ (centre + offset - origin))
-    box = numpy.asarray(corners)
+    return numpy.asarray(corners)
+
+
+def _pad_geometry(world: Any, grip: float) -> tuple[tuple[float, float, float], float]:
+    """Return one pad's extents in the tool frame and its lowest depth below it.
+
+    Measured from the compiled model rather than read from the configuration,
+    because the configuration is what is under test.
+
+    The linkage moves, so the answer depends on where it stands: this settles
+    the jaw at the commanded grip for long enough to be shut or open rather than
+    asking `mj_forward`, which computes positions and never moves a finger.
+
+    Args:
+        world: The compiled model, its data and the arm indices.
+        grip: What to command the jaw, from zero open to one shut.
+
+    Returns:
+        The extents along `(x, y, z)` of the tool frame, and how far the lowest
+        corner of the pad reaches below the flange. Both in meters.
+    """
+    import mujoco
+
+    from clave.world import arm as armmod
+
+    model, data, _, arm = world
+    for slot, actuator in enumerate(arm.actuator_ids):
+        data.ctrl[actuator] = armmod.joint_positions(model, data, arm)[slot]
+    armmod.hold(data, arm, closed=grip)
+    for _ in range(2000):
+        mujoco.mj_step(model, data)
+    box = _pad_box(world)
     span = box.max(axis=0) - box.min(axis=0)
     return (float(span[0]), float(span[1]), float(span[2])), float(box[:, 2].max())
 
@@ -229,3 +245,48 @@ def test_the_configured_lowest_geometry_is_the_compiled_worst_case(world: Any) -
     assert shut_depth == pytest.approx(jaw.lowest_below_flange, abs=0.001)
     assert open_depth < shut_depth, "the shut jaw is not the lowest it gets"
     assert shut_depth > jaw.finger_length, "the pads are above the pinch point"
+
+
+def test_the_open_jaw_is_the_configured_open_reach(world: Any) -> None:
+    """AC-GRIP-14: the open jaw's lowest geometry is the compiled one.
+
+    The descent arrives against this reach. The shut reach is what the hold
+    rises to, and the two are not the same number.
+    """
+    from clave.world.effector import Effector
+
+    jaw = Effector.load(load(WORLD))
+    _, open_depth = _pad_geometry(world, 0.0)
+    assert open_depth == pytest.approx(jaw.open_lowest_below_flange, abs=0.001)
+    assert jaw.open_lowest_below_flange < jaw.lowest_below_flange
+
+
+def test_the_rise_leads_the_hang_the_jaw_adds_as_it_shuts(world: Any) -> None:
+    """AC-MOVE-67: the rise leads the hang the jaw adds as it shuts.
+
+    A rest-to-rest quintic over the first 0.20 s of the hold climbs the extra
+    hang of the shut jaw. The linkage adds that hang more slowly than the
+    quintic, except at one sample, and the millimetre the descent stops short
+    covers that sample. Past the rise the hold is already at the full climb.
+    """
+    import mujoco
+
+    from clave.control.trajectory import Segment, State
+    from clave.world import arm as armmod
+    from clave.world.effector import ARRIVAL_LEAD_METERS, Effector
+
+    jaw = Effector.load(load(WORLD))
+    _, open_hang = _pad_geometry(world, 0.0)
+    model, data, _, arm = world
+    armmod.hold(data, arm, closed=1.0)
+    rise = Segment(
+        start=State.at_rest((0.0, 0.0, 0.0)),
+        end=State.at_rest((0.0, 0.0, jaw.closing_drop)),
+        duration=0.20,
+    )
+    step = float(model.opt.timestep)
+    for index in range(1, int(round(0.40 / step)) + 1):
+        mujoco.mj_step(model, data)
+        growth = float(_pad_box(world)[:, 2].max()) - open_hang
+        climbed = rise.at(index * step).position[2]
+        assert growth <= climbed + ARRIVAL_LEAD_METERS + 1e-6

@@ -238,6 +238,13 @@ effector:
   # below it, and a clearance quoted at the pinch point is that much more
   # generous than the clearance the jaw has.
   lowest_below_flange_meters: 0.1735
+  # The same reach with the jaw open.
+  #
+  # MEASURED from the compiled model: 160.3 mm open against 173.5 mm shut.
+  # The descent arrives against the open figure. The hold rises by the
+  # difference while the jaw closes, so the shut figure keeps the same
+  # clearance above the belt. A test reads both states and fails if this drifts.
+  open_lowest_below_flange_meters: 0.1603
   # The clearance that lowest geometry keeps above the belt surface, in meters.
   #
   # MEASURED, and it is the number the marker's grasp plane is derived from and

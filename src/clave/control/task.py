@@ -302,17 +302,20 @@ class TaskMachine:
             else settings.approach_height
         )
         self._safe_height_world = self._belt_surface_height_world + safe_clearance
-        # The flange height below which the jaw's lowest geometry is inside the
-        # clearance it keeps above the belt. Zero when no effector was given,
-        # which only happens under motion-only, where the flange never descends.
+        # The flange height below which the open jaw's lowest geometry is
+        # inside the clearance it keeps above the belt. The shut jaw hangs
+        # further, and the hold rises by that difference while the fingers
+        # close. Zero when no effector was given, which only happens under
+        # motion-only, where the flange never descends.
         self._grasp_floor_world = (
             0.0
             if effector is None
-            else self._belt_surface_height_world + effector.flange_floor
+            else self._belt_surface_height_world + effector.open_flange_floor
         )
         self._jaw_below_flange_world = (
-            0.0 if effector is None else effector.lowest_below_flange
+            0.0 if effector is None else effector.open_lowest_below_flange
         )
+        self._jaw_rise = 0.0 if effector is None else effector.closing_drop
         self._serving: int | None = None
         self._arrived_at: float | None = None
         self._phase = Phase.STANDBY
@@ -917,6 +920,7 @@ class TaskMachine:
             belt_border_y=self._belt_border_y,
             safe_height_world=transit_height_world,
             cross_speed=self._settings.approach_speed,
+            jaw_rise=self._jaw_rise,
         )
         if (
             steered is None
@@ -1119,6 +1123,7 @@ class TaskMachine:
             safe_height_world=transit_height_world,
             cross_speed=self._settings.approach_speed,
             drift_horizon=self._settings.drift_horizon,
+            jaw_rise=self._jaw_rise,
         )
 
     def _abandon(
@@ -1334,6 +1339,7 @@ class TaskMachine:
                 safe_height_world=transit_height_world,
                 cross_speed=self._settings.approach_speed,
                 drift_horizon=self._settings.drift_horizon,
+                jaw_rise=self._jaw_rise,
             )
             if attempt is not None:
                 descent_leg = next(

@@ -601,3 +601,96 @@ def test_plan_smooths_and_updates_yaw_through_quintic_interpolation() -> None:
     sym_mid = sym_plan.yaw_at(mid_t)
     assert sym_mid is not None
     assert sym_mid == pytest.approx(0.20)
+
+
+def test_a_descent_correction_past_the_ceiling_is_taken_part_way() -> None:
+    """AC-MOVE-65: a descent correction past the ceiling is taken part way.
+
+    Handing the object's position from the start of the visit asks the descent
+    to run back up the belt. The whole correction breaks the speed ceiling.
+    The part that stays under it still moves the end, and the arc that flies
+    respects the ceiling.
+    """
+    plan = a_plan()
+    assert plan is not None
+    edges = plan._boundaries()
+    index = next(i for i, leg in enumerate(plan.legs) if leg.phase is Phase.DESCEND)
+    at = plan.started_at + edges[index] + 0.05
+    stale = next(
+        leg.segment.end.position for leg in plan.legs if leg.phase is Phase.DESCEND
+    )
+    steered = retarget_descent(
+        plan=plan,
+        object_position=OBJECT,
+        belt_velocity=BELT,
+        approach_clearance_z=CLEARANCE,
+        approach_speed=APPROACH_SPEED,
+        dwell_seconds=DWELL,
+        max_speed=1.00,
+        max_acceleration=2.50,
+        at_seconds=at,
+    )
+    assert steered is not None
+    descent = next(leg.segment for leg in steered.legs if leg.phase is Phase.DESCEND)
+    assert descent.peak_speed() <= 1.00 + 1e-6
+    assert math.dist(descent.end.position, OBJECT) < math.dist(stale, OBJECT)
+
+
+def test_an_approach_correction_past_the_ceiling_is_taken_part_way() -> None:
+    """AC-MOVE-66: an approach correction past the ceiling is taken part way.
+
+    Late in the approach, little time remains. The whole correction does not
+    fit and the fraction that does is what flies, including the descent hung
+    off that fraction. A fraction of zero would be the plan already in hand,
+    which refine reports by returning None.
+    """
+    plan = a_plan(margin=1.15)
+    assert plan is not None
+    track = next(leg.segment for leg in plan.legs if leg.phase is Phase.TRACK)
+    at = track.duration - 0.30
+    wild = (OBJECT[0] + BELT[0] * at, OBJECT[1] + 1.10, OBJECT[2])
+    again = refine(
+        plan=plan,
+        object_position=wild,
+        belt_velocity=BELT,
+        z_offset=CLEARANCE,
+        approach_speed=APPROACH_SPEED,
+        dwell_seconds=DWELL,
+        max_speed=1.00,
+        max_acceleration=2.50,
+        at_seconds=at,
+    )
+    assert again is not None
+    old = next(
+        leg.segment.end.position for leg in plan.legs if leg.phase is Phase.DESCEND
+    )
+    new = next(
+        leg.segment.end.position for leg in again.legs if leg.phase is Phase.DESCEND
+    )
+    assert math.dist(new, wild) < math.dist(old, wild)
+    assert abs(new[1] - wild[1]) > 0.20
+    for leg in again.legs:
+        if leg.phase is Phase.TRACK:
+            assert leg.segment.fits(1.00, 2.50)
+        assert leg.segment.peak_speed() <= 1.00 + 1e-6
+
+
+def test_the_hold_rises_while_the_jaw_closes() -> None:
+    """AC-MOVE-67: the hold rises by how much further the shut jaw hangs.
+
+    The descent arrives at the open jaw's clearance. The first part of the
+    hold climbs the extra hang, and the rest carries at that height. The
+    retreat still lifts its own clearance above where the hold finished.
+    """
+    drop = 0.0132
+    plan = a_plan(jaw_rise=drop)
+    assert plan is not None
+    holds = [leg for leg in plan.legs if leg.phase is Phase.HOLD]
+    assert [leg.grip for leg in holds] == [JAW_SHUT, JAW_SHUT]
+    rise, carry = (leg.segment for leg in holds)
+    assert rise.duration == pytest.approx(0.20)
+    assert rise.end.position[2] - rise.start.position[2] == pytest.approx(drop)
+    assert carry.end.position[2] == pytest.approx(rise.end.position[2])
+    assert carry.end.velocity == pytest.approx(BELT)
+    retreat = next(leg.segment for leg in plan.legs if leg.phase is Phase.RETREAT)
+    assert retreat.end.position[2] - carry.end.position[2] == pytest.approx(CLEARANCE)

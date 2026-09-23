@@ -40,6 +40,7 @@ EFFECTOR = Effector(
     pad_height=0.0375,
     grasp_height=0.045,
     lowest_below_flange=0.1735,
+    open_lowest_below_flange=0.1603,
     jaw_clearance=0.025,
     opening=0.085,
 )
@@ -322,7 +323,10 @@ def test_a_planned_visit_meets_the_object_moving_with_the_belt() -> None:
         flown = arm.flight(at_seconds, PARK)
         assert flown is not None
         if flown.phase is Phase.HOLD:
-            assert flown.velocity == pytest.approx((BELT_SPEED, 0.0, 0.0), abs=1e-9)
+            # The hold may be climbing while the jaw shuts. That climb is
+            # vertical. Along the belt the flange still moves with the object.
+            assert flown.velocity[0] == pytest.approx(BELT_SPEED, abs=1e-9)
+            assert flown.velocity[1] == pytest.approx(0.0, abs=1e-9)
             return
     pytest.fail("the visit never reached the object")
 
@@ -536,7 +540,7 @@ def test_a_grasp_pose_at_the_jaw_clearance_is_taken() -> None:
     boundary would refuse every marker for the shortest object in the set.
     """
     arm = machine(profile=Profile.FULL_VISIT)
-    floor = BELT_SURFACE + EFFECTOR.flange_floor
+    floor = BELT_SURFACE + EFFECTOR.open_flange_floor
     shortest = Candidate(
         track_id=3,
         anchor=(0.30, 0.0, PINCH_Z),
@@ -876,9 +880,10 @@ def test_a_descent_is_not_given_up_when_the_correction_will_not_fit() -> None:
 
     Solving the visit again from mid-descent sends an arm that is already
     coming down back up the belt, or takes the visit away a fraction of a
-    second before the jaw shuts. An object that has fallen far behind the aim
-    is the case the approach answers by abandoning. On the descent the plan
-    already in hand is the one that flies.
+    second before the jaw shuts. A miss a fraction of which still fits is
+    taken that far, which is `AC-MOVE-65`. This miss is past every fraction
+    the speed ceiling allows, so the plan already in hand is the one that
+    flies, and the visit is not abandoned.
     """
     arm = machine(profile=Profile.FULL_VISIT)
     riding = Candidate(
@@ -894,8 +899,8 @@ def test_a_descent_is_not_given_up_when_the_correction_will_not_fit() -> None:
     plan = arm.plan
     wild = Candidate(
         track_id=1,
-        anchor=(0.30, 2.0, PINCH_Z),
-        flange=(0.30, 2.0, PICK_Z),
+        anchor=(0.30, 10.0, PINCH_Z),
+        flange=(0.30, 10.0, PICK_Z),
         closing_axis=math.pi / 2.0,
         distance_before_leaving=1.5,
         velocity_world=(BELT_SPEED, 0.0, 0.0),
