@@ -40,7 +40,6 @@ quantised pose jumps by the radius every time the anchor catches up.
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -48,8 +47,6 @@ from clave.control.settings import Point, SelectionSettings
 from clave.control.trajectory import distance
 from clave.tracker.belt_frame import carry
 from clave.tracker.markers import GraspMarker
-
-LOGGER = logging.getLogger(__name__)
 
 NANOS_PER_SECOND = 1_000_000_000
 """Nanoseconds in a second, for the instants a marker carries."""
@@ -264,12 +261,6 @@ class Selector:
             for marker in marker_list
             if self._admissible(marker, at_nanos)
         }
-        LOGGER.debug(
-            "selector evaluated %d marker(s): %d admissible (%s)",
-            len(marker_list),
-            len(live),
-            list(live.keys()),
-        )
         for track_id in tuple(self._anchors):
             if track_id not in live:
                 del self._anchors[track_id]
@@ -283,16 +274,6 @@ class Selector:
             reasons.add("appeared")
         if reasons:
             self._order = self._sorted(live, flange, belt_speed, at_nanos)
-            LOGGER.debug(
-                "selector queue reordered (%s): %s",
-                ", ".join(sorted(reasons)),
-                list(self._order),
-            )
-        else:
-            LOGGER.debug(
-                "selector queue preserved: %s",
-                list(self._order),
-            )
 
         def candidate_for(track_id: int) -> Candidate:
             marker = live[track_id]
@@ -424,36 +405,12 @@ class Selector:
             Whether to order it.
         """
         if not marker.reachable:
-            LOGGER.debug(
-                "marker %d rejected: unreachable opening %.3f m",
-                marker.track_id,
-                marker.opening,
-            )
             return False
         if marker.valid_until_nanos <= at_nanos:
-            LOGGER.debug(
-                "marker %d rejected: expired window (%d <= %d)",
-                marker.track_id,
-                marker.valid_until_nanos,
-                at_nanos,
-            )
             return False
         if not self._admits(marker.flange):
-            LOGGER.debug(
-                "marker %d rejected: flange outside workspace [%.3f, %.3f, %.3f]",
-                marker.track_id,
-                marker.flange[0],
-                marker.flange[1],
-                marker.flange[2],
-            )
             return False
-        if not self._pickability(marker):
-            LOGGER.debug(
-                "marker %d rejected: pickability rule refused",
-                marker.track_id,
-            )
-            return False
-        return True
+        return self._pickability(marker)
 
     def _cost(self, candidate: Candidate, flange: Point) -> float:
         """Return what serving this candidate from here costs.

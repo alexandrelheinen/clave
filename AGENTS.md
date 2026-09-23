@@ -169,3 +169,42 @@ step has to prove before it is tagged.
 Do not push or update a pull request until it exits 0. Do not describe a
 gate as passing without having run it, and do not claim hardware
 validation without evidence.
+
+## After algorithm work (mandatory)
+
+When a finished task changes algorithm behaviour (control, planning,
+perception, tracking, safety checks, or the parameters those paths read),
+run a 30 second simulation with video and attach that video in the chat
+reply that closes the task. Write under `runs/<goal>/<identifier>` (see
+[Run outputs](#run-outputs) below). For work on a pull request the identifier
+is `pr` plus the PR number:
+
+```bash
+clave sim --seconds 30 --gt --log-level DEBUG --no-progress --no-window --video --telemetry --out runs/debug/pr80
+```
+
+The playable file is `runs/debug/pr80/tracker-debug.mp4` (or the matching
+`pr` folder for that PR). Skip this only for pure docs, guidelines text,
+formatting, or tooling that cannot change what the arm does.
+
+## Run outputs
+
+Simulation and demo artefacts live under:
+
+```text
+runs/<goal>/<identifier>/
+```
+
+- **`goal`**: one of `debug`, `demo`, or `release`.
+- **`identifier`**: a unique name for that run. For pull-request validation
+  use `pr` plus the PR number (`pr80` for PR #80). Ad-hoc checks may use a
+  short descriptive slug (`agent-check`, `belt-speed`, a date stamp).
+
+Do not dump run products into the repository root or into `runs/` without a
+goal. Videos, telemetry, and reports stay beside each other in that folder.
+
+Simulation DEBUG output is the narrative in
+[docs/requirements/simulation-narrative.md](docs/requirements/simulation-narrative.md):
+one line per decision or watch episode via `clave.control.story`. Heartbeat
+logs (every capture, every queue evaluation, every preserved order) do not
+belong on the terminal.
