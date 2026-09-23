@@ -765,18 +765,21 @@ class TaskMachine:
         So a refusal is answered rather than ignored. Within the configured
         tolerance the plan is still aimed where the object is and the refusal
         is noise. Past it the visit is solved again from the freshest estimate,
+        starting at the guidance state the plan already holds (AC-MOVE-68),
         which may well choose a later interception at a slower object's
         position. And if no interception exists at all, the visit is abandoned
         with its reason recorded and the object recorded as missed.
 
         Args:
             queue: The order selection produced, for the track being served.
-            flange: Where the flange stands.
-            velocity: How fast the reference is moving, so a re-solved visit
-                begins where the motion already is rather than asking for a
-                step in velocity.
+            flange: Where the flange stands. Kept for the call site; a mid-
+                flight re-solve does not start from it.
+            velocity: How fast the reference was moving when the caller last
+                measured it. Kept for the call site; a mid-flight re-solve
+                takes velocity from the plan sample instead.
             at_seconds: Simulated time.
         """
+        del flange, velocity
         # The hold is the jaw already shut, and moving the aim then drags a
         # closed jaw across the belt. The descent is not: it is the last
         # fraction of a second, the object is still moving, and a correction
@@ -857,7 +860,24 @@ class TaskMachine:
                 f"keep the plan I already have for {self._story.refer(track_id)}",
             )
             return
-        solved = self._resolve(head, flange, velocity, at_seconds)
+        # Re-solve from the guidance state, not the measured flange. The plan
+        # advances under perfect tracking in the flat output; lag and collisions
+        # are a control problem. Starting the new visit at the plant writes that
+        # disturbance into the next projected trajectory (AC-MOVE-68).
+        sampled = self._plan.at(at_seconds)
+        if sampled is None:
+            self._abandon(
+                track_id,
+                at_seconds,
+                f"no interception from an aim {drift * 1000:.0f} mm out",
+                drift=drift,
+                refused=True,
+            )
+            return
+        _, guided, _ = sampled
+        solved = self._resolve(
+            head, guided.position, guided.velocity, at_seconds
+        )
         if solved is None:
             self._abandon(
                 track_id,
@@ -1296,9 +1316,11 @@ class TaskMachine:
 
         Args:
             head: The candidate to serve.
-            flange: Where the flange stands, which is where the first arc of
-                the plan begins.
-            velocity: How fast the reference is moving.
+            flange: Where the first arc of the plan begins. On the first
+                commit this is the measured flange; on a mid-flight re-solve
+                it is the guidance state sampled from the plan already in
+                hand (AC-MOVE-68).
+            velocity: How fast that start is moving.
             at_seconds: Simulated time the plan starts.
 
         Returns:

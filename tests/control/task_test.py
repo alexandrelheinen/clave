@@ -778,6 +778,61 @@ def test_a_plan_is_never_flowed_onto_an_object_that_has_moved_away() -> None:
         assert arm.plan is None
 
 
+def test_a_re_solved_visit_starts_from_the_guidance_state() -> None:
+    """AC-MOVE-68: a mid-flight re-solve begins at the planned pose, not the flange.
+
+    Guidance is model-based in the flat output. The planned end-effector state
+    advances as if tracking were perfect, and the plant's lag is a control
+    problem. Re-solving from the measured flange writes that lag into the next
+    plan: the projected trajectory rushes off the arc the jaw was already on,
+    which is the defect this guards.
+    """
+    arm = machine(profile=Profile.FULL_VISIT)
+    riding = Candidate(
+        track_id=1,
+        anchor=(0.10, 0.0, PINCH_Z),
+        flange=(0.10, 0.0, PICK_Z),
+        closing_axis=math.pi / 2.0,
+        distance_before_leaving=1.5,
+        velocity_world=(BELT_SPEED, 0.0, 0.0),
+    )
+    arm.step(queue_of(riding), PARK, 0.0)
+    assert arm.flying is True
+    at = 1.00
+    guided = arm.flight(at, PARK)
+    assert guided is not None
+    guidance = guided.position
+    # The flange has lagged sideways off the path. The object has also jumped
+    # across the belt far enough that the approach arc cannot be bent onto it,
+    # so the visit is solved again -- and that solve must not start at the lag.
+    lagged = (guidance[0], guidance[1] - 0.35, guidance[2])
+    jumped = Candidate(
+        track_id=1,
+        anchor=(0.10, 0.45, PINCH_Z),
+        flange=(0.10, 0.45, PICK_Z),
+        closing_axis=math.pi / 2.0,
+        distance_before_leaving=1.5,
+        velocity_world=(BELT_SPEED, 0.0, 0.0),
+    )
+    arm.step(queue_of(jumped), lagged, at)
+    solved = [refresh for refresh in arm.refreshes if refresh.action == "solved"]
+    assert solved, (
+        "the object did not force a re-solve; refreshes were "
+        f"{[(r.action, r.drift) for r in arm.refreshes]}"
+    )
+    plan = arm.plan
+    assert plan is not None
+    start = plan.legs[0].segment.start.position
+    assert math.dist(start, guidance) < 0.02, (
+        f"re-solve began at {start}, {math.dist(start, guidance) * 1000:.0f} mm "
+        f"from the guidance state {guidance}, so the plant lag was written "
+        "into the plan"
+    )
+    assert math.dist(start, lagged) > 0.20, (
+        f"re-solve began at the lagged flange {lagged} rather than at guidance"
+    )
+
+
 def test_a_served_object_that_leaves_the_queue_abandons_the_visit() -> None:
     """AC-MOVE-57: a visit to an object that is no longer a candidate is given up.
 
