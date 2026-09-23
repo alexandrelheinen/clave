@@ -500,24 +500,29 @@ remaining position gradient sits on that stopped joint. Eight further
 iterations leave the tool 4.8 mm short. The warm start then stores an answer
 that does not close the gap, and each later tick starts from it while the
 command keeps moving, so a miss of 5 mm becomes a miss of 108 mm while the
-joint command itself is nowhere near its rate cap. The other grip puts the
-roll back toward the middle of its travel. A solution nine radians away in
-joint space also reaches the pose, and it is not taken during a descent: at
-the joint-speed ceiling that slew is longer than the time left before the jaw
-closes. The millimetre the other grip has to stay inside is the convergence
-the solver already uses.
+joint command itself is nowhere near its rate cap. A step that increases the
+distance is discarded, which stops the solver walking further off. It does
+not give the stopped roll any travel, so a command that moves while the roll
+is stopped is still missed. The other grip does reach a tool-down pose from
+that stall,
+about three quarters of a radian of roll closer to centre. It is not taken.
+The warm start would leave the arm there, and the command, capped at the
+joint speed, flies the tilt between the two. Taking it tilted the tool 34
+degrees and put the jaw 27 mm into the belt. A solution nine radians away in
+joint space also reaches the pose, and it is not taken for the same reason:
+at the joint-speed ceiling that slew is longer than the descent that remains.
 
 **The pads meet a flat parcel at its top.** The open jaw hangs 160.3 mm below
 the flange and the shut jaw hangs 173.5 mm. A grasp plane clamped to the shut
 hang holds the pinch 13 mm above a centre that is itself about 14 mm above
-the belt, so the pads, 37.5 mm tall, meet the parcel near its top and the
-lift is zero. The descent arrives at the open hang. A millimetre above that
-geometry covers the 0.16 mm a rest-to-rest quintic of 0.20 s lags the hang
-by, at the sample that lags most. The hold climbs the 13.2 mm in that 0.20 s
-and carries for the rest of the dwell. Spreading the same climb over the
-whole 0.40 s dwell lags by 4 mm and spends the clearance. Closing at the low
-flange, with no rise, puts the pads into the belt. The clearance stays 10 mm.
-The shut hang and the open hang grant the same clearance at the two ends.
+the belt. The pads hang 17.7 mm below that pinch once the jaw has shut, so
+they meet the parcel near its top and the lift is zero. The descent arrives
+at the open hang, a millimetre above it so a 0.20 s quintic leads the hang
+the linkage adds. The hold then rises only by how far that arrival sits below
+the height the shut jaw needs in order to keep the clearance. A grasp the
+shut jaw can already clear does not rise: lifting it raises the pads off an
+object they were about to drop onto. Spreading a rise over the whole 0.40 s
+dwell lags by 4 mm and spends the clearance. The clearance stays 10 mm.
 
 **A correction the ceiling cannot take whole is taken as far as it allows.**
 Once an object has moved further than the time remaining can cover at the
@@ -532,12 +537,11 @@ names, and the visit is solved again or abandoned. The descent is gated on
 speed alone, for the reason `AC-MOVE-63` gives. The approach is gated on
 speed and acceleration.
 
-`AC-MOVE-64`: When the tool roll sits more than half a turn from the middle
-of its travel, the system shall track the same jaw the other way round,
-whenever that grip keeps the tool within a millimetre of the grip that kept
-the commanded yaw and puts the roll closer to the middle of its travel. A
-descent step that increases the tool's distance from the command shall be
-discarded, so the next tick does not start further away.
+`AC-MOVE-64`: A descent step that increases the tool's distance from the
+command shall be discarded, so the next tick does not start further away.
+The same jaw the other way round is not substituted for the commanded yaw:
+that pose leaves the warm start off the arm, and the command can only close
+the difference at the joint-speed cap.
 
 `AC-MOVE-65`: When a descent already in flight is moved onto a fresher
 estimate and the whole correction breaks the speed ceiling, the system shall
@@ -548,13 +552,16 @@ already in hand. The acceleration ceiling does not refuse the fraction.
 `AC-MOVE-66`: When an approach already in flight is moved onto a fresher
 estimate and the whole correction breaks the speed ceiling or the
 acceleration ceiling, the system shall fly the largest fraction of that
-correction that stays inside both. A fraction of zero is the refusal
-`AC-MOVE-56` names.
+correction that stays inside both, when that fraction lands inside the aim
+tolerance. A fraction that does not land, including a fraction of zero, is
+the refusal `AC-MOVE-56` names.
 
-`AC-MOVE-67`: While the jaw is closing, the system shall raise the flange by
-the extra hang of the shut jaw, over the first 0.20 s of the hold, and the
-descent shall arrive at the clearance the open jaw keeps. The retreat shall
-still lift its own clearance above where that hold finished.
+`AC-MOVE-67`: The descent shall arrive at the clearance the open jaw keeps.
+While the jaw is closing, the system shall raise the flange by how far that
+arrival sits below the height the shut jaw needs in order to keep the same
+clearance, over the first 0.20 s of the hold, and shall not raise it when the
+shut jaw is already clear. The retreat shall still lift its own clearance
+above where that hold finished.
 
 ## Test plan
 
@@ -564,10 +571,10 @@ because the rise is one correction.
 
 | Criterion | Test |
 | --- | --- |
-| `AC-MOVE-64` | `test_a_wrist_wound_to_its_stop_takes_the_other_grip`, `test_a_descent_that_walks_off_the_command_is_discarded` |
+| `AC-MOVE-64` | `test_a_wrist_on_its_stop_is_not_walked_off_the_command`, `test_a_descent_that_walks_off_the_command_is_discarded` |
 | `AC-MOVE-65` | `test_a_descent_correction_past_the_ceiling_is_taken_part_way` |
 | `AC-MOVE-66` | `test_an_approach_correction_past_the_ceiling_is_taken_part_way` |
-| `AC-MOVE-67` | `test_the_hold_rises_while_the_jaw_closes`, `test_the_rise_leads_the_hang_the_jaw_adds_as_it_shuts` |
+| `AC-MOVE-67` | `test_the_hold_rises_while_the_jaw_closes`, `test_the_rise_leads_the_hang_the_jaw_adds_as_it_shuts`, `test_a_grasp_the_shut_jaw_can_clear_does_not_rise`, `test_a_grasp_below_the_shut_floor_rises_back_to_it` |
 | `AC-GRIP-14` | `test_the_open_jaw_is_the_configured_open_reach` |
 | `AC-MARK-17` | `test_the_grasp_plane_stands_on_the_open_jaw` |
 
@@ -623,27 +630,31 @@ measurement, so judging the arm against the object would measure the tracker
 and the effector assumption together with the controller. Separating them is
 what lets one of the three be wrong without hiding the other two.
 
-**Why the other grip, and not a second solution.** The damped step that
-tracks a moving command is local. Once the roll is on its stop, that step
-has no joint left for the last few millimetres, and storing the step anyway
-walks the tool off the command on the ticks that follow. Half a turn is the
-same jaw. The other minimum of the same pose is several radians of shoulder
-and elbow away, which at the joint-speed ceiling does not finish before the
-jaw closes, so a descent does not switch to it.
+**Why a worsening step is discarded, and the other grip is not taken.** The
+damped step that tracks a moving command is local. Once the roll is on its
+stop, that step has no joint left for the last few millimetres, and storing
+a step that does not close the gap walks the tool off the command on the
+ticks that follow. Half a turn is the same jaw, and from the stall it is a
+tool-down pose. Commanding it moves the warm start off the arm. The joint
+command is capped, so the arm spends the difference tilted, and the jaw meets
+the belt. The other minimum of the same pose is several radians of shoulder
+and elbow away, which does not finish before the jaw closes either.
 
 **Why a refused correction is taken part way.** A ceiling that refuses the
 whole arc also refuses a correction of a few millimetres, and the jaw then
 closes on the pose from before the object moved. The largest fraction that
 fits is still the same quintic, with the same duration, and a fraction of
 zero is the refusal the caller already has. The ceilings themselves do not
-move.
+move. The descent hung off that fraction comes down onto the fraction, not
+across the gap the approach was not allowed to close.
 
-**Why the hold rises while the jaw shuts.** The linkage hangs 13.2 mm further
-shut than open. Arriving at the shut hang holds a flat parcel below the pads.
-Arriving at the open hang and staying there puts the pads into the belt as
-the jaw shuts. The climb is 0.20 s because that is the duration whose
-rest-to-rest quintic leads the hang the linkage adds. The clearance the open
-arrival granted is the clearance the shut jaw keeps.
+**Why the hold rises only as far as the shut jaw needs.** The linkage hangs
+13.2 mm further shut than open. Arriving at the open hang and staying there
+puts the pads through the clearance as the jaw shuts. Rising by the whole of
+that hang on a grasp the shut jaw can already clear lifts the pads off the
+object. The climb is whatever restores the clearance, over 0.20 s, because
+that is the duration whose rest-to-rest quintic leads the hang the linkage
+adds.
 
 **Why red is reserved rather than merely chosen.** The park pose is the one
 marker in the scene that is not a track, so a reader has to tell it apart at a

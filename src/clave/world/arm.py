@@ -632,27 +632,6 @@ def _descend(
     return np.array([float(scratch.qpos[model.jnt_qposadr[j]]) for j in arm.joint_ids])
 
 
-_WRIST_ROLL = 5
-"""The last axis, which rolls the tool about its own pointing direction.
-
-A parallel jaw is the same grip after half a turn, so this axis can sit in
-either of two places for one yaw. Tracking one of them without a bound winds
-it into the ±2π stop, and once it is there the damped step that would finish
-the yaw has nowhere to go. Measured on the stalled visit, the Jacobian's
-smallest singular value was 2.5e-4 and the whole of the remaining position
-gradient sat on this joint. Eight further iterations left the tool 4.8 mm
-short, and each later call started from that answer, so the miss grew to
-108 mm while the joint command itself was nowhere near its rate cap.
-"""
-
-_WRIST_CENTRE_RADIANS = math.pi
-"""How far the roll may sit from zero before the other grip is tried.
-
-Half a turn is the nearer of the two grips. Past it, the same jaw the other
-way round puts the roll back toward the middle of its travel.
-"""
-
-
 def _tool_distance(
     model: Any,
     arm: ArmIndices,
@@ -689,11 +668,19 @@ def _track_pose(
 ) -> NDArray[np.float64]:
     """Descend from a seed, and do not walk the tool off the target.
 
-    A parallel jaw matches the object at `yaw` and at `yaw + π`. When the
-    roll is already past half a turn, the second of those is the one that
-    still has travel left. A step that increases the tool's distance from
-    the target is discarded: the warm start would otherwise remember it, and
-    the next tick would start further away.
+    A step that increases the tool's distance from the target is discarded.
+    The warm start would otherwise remember it, and the next tick would start
+    further away while the command keeps moving. Measured at the stall where
+    the roll sits on its stop, that is how a miss of 5 mm became 108 mm with
+    the joint command nowhere near its rate cap.
+
+    The same jaw the other way round does reach a tool-down pose from that
+    stall, about three quarters of a radian of roll closer to centre. It is
+    not taken. The warm start would leave the arm there, and the command,
+    which may only move at the joint-speed cap, then flies the tilt between
+    the two. Measured with that grip accepted: the tool tilted 34 degrees and
+    the jaw went 27 mm into the belt. Discarding the worsening step, and
+    keeping the seed, is what holds the arrival.
 
     Args:
         model: The compiled model.
@@ -707,18 +694,10 @@ def _track_pose(
         The joint angles to command next.
     """
     wanted = _descend(model, arm, seed, target, yaw, iterations)
-    wanted_gap = _tool_distance(model, arm, wanted, target)
-    seed_gap = _tool_distance(model, arm, seed, target)
-    if wanted_gap > seed_gap:
-        wanted = seed
-        wanted_gap = seed_gap
-    if abs(float(wanted[_WRIST_ROLL])) <= _WRIST_CENTRE_RADIANS:
-        return wanted
-    turned = _descend(model, arm, seed, target, yaw + math.pi, iterations)
-    turned_gap = _tool_distance(model, arm, turned, target)
-    nearer = abs(float(turned[_WRIST_ROLL])) + 0.05 < abs(float(wanted[_WRIST_ROLL]))
-    if nearer and turned_gap <= wanted_gap + 1e-3:
-        return turned
+    if _tool_distance(model, arm, wanted, target) > _tool_distance(
+        model, arm, seed, target
+    ):
+        return seed
     return wanted
 
 

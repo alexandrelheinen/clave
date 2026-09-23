@@ -323,10 +323,7 @@ def test_a_planned_visit_meets_the_object_moving_with_the_belt() -> None:
         flown = arm.flight(at_seconds, PARK)
         assert flown is not None
         if flown.phase is Phase.HOLD:
-            # The hold may be climbing while the jaw shuts. That climb is
-            # vertical. Along the belt the flange still moves with the object.
-            assert flown.velocity[0] == pytest.approx(BELT_SPEED, abs=1e-9)
-            assert flown.velocity[1] == pytest.approx(0.0, abs=1e-9)
+            assert flown.velocity == pytest.approx((BELT_SPEED, 0.0, 0.0), abs=1e-9)
             return
     pytest.fail("the visit never reached the object")
 
@@ -510,6 +507,48 @@ def test_the_full_visit_profile_needs_the_jaw_geometry() -> None:
             belt_speed=BELT_SPEED,
             guidance=LIMITS,
         )
+
+
+def test_a_grasp_the_shut_jaw_can_clear_does_not_rise() -> None:
+    """AC-MOVE-67: a grasp the shut jaw can clear does not rise.
+
+    The pads drop as the jaw shuts. Lifting the flange on a grasp that
+    already clears the belt lifts the pads off the object.
+    """
+    arm = machine(profile=Profile.FULL_VISIT)
+    arm.step(queue_of(candidate(1, x=0.30)), PARK, 0.0)
+    assert arm.plan is not None
+    holds = [leg for leg in arm.plan.legs if leg.phase is Phase.HOLD]
+    assert len(holds) == 1
+    assert holds[0].segment.end.position[2] == pytest.approx(
+        holds[0].segment.start.position[2]
+    )
+
+
+def test_a_grasp_below_the_shut_floor_rises_back_to_it() -> None:
+    """AC-MOVE-67: a grasp below the shut floor rises back to it.
+
+    Arriving at the open jaw and staying there puts the pads through the
+    clearance as the linkage hangs further. The hold climbs that difference
+    and no more.
+    """
+    arm = machine(profile=Profile.FULL_VISIT)
+    low = BELT_SURFACE + EFFECTOR.open_flange_floor
+    short = Candidate(
+        track_id=3,
+        anchor=(0.30, 0.0, low - EFFECTOR.finger_length),
+        flange=(0.30, 0.0, low),
+        closing_axis=math.pi / 2.0,
+        distance_before_leaving=1.5,
+    )
+    arm.step(queue_of(short), PARK, 0.0)
+    assert arm.plan is not None
+    holds = [leg for leg in arm.plan.legs if leg.phase is Phase.HOLD]
+    rise, carry = (leg.segment for leg in holds)
+    assert rise.duration == pytest.approx(0.20)
+    climbed = rise.end.position[2] - rise.start.position[2]
+    assert climbed == pytest.approx(EFFECTOR.flange_floor - EFFECTOR.open_flange_floor)
+    assert carry.end.position[2] == pytest.approx(rise.end.position[2])
 
 
 def test_a_grasp_pose_below_the_jaw_clearance_is_refused() -> None:

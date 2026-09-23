@@ -208,14 +208,15 @@ _STALL_TARGET = np.array([-0.823157126636458, -0.05745090470265107, 1.2838158909
 _STALL_YAW = -2.3343556939486056
 
 
-def test_a_wrist_wound_to_its_stop_takes_the_other_grip() -> None:
-    """AC-MOVE-64: a wrist wound to its stop takes the other grip.
+def test_a_wrist_on_its_stop_is_not_walked_off_the_command() -> None:
+    """AC-MOVE-64: a wrist on its stop is not walked off the command.
 
-    A parallel jaw is the same grip after half a turn. A descent that keeps
-    the commanded yaw spends the roll, and the roll is already on its stop, so
-    the tool stays short of the command. The other grip puts the roll back
-    inside its travel. It is kept only while the tool stays within a
-    millimetre of the descent that kept the commanded yaw.
+    These joint angles are the stall measured when the command was already on
+    the mass. The roll sits on its upper stop, and a further descent cannot
+    spend it. The same jaw the other way round does move the roll, and it is
+    not taken: that pose is three quarters of a radian away, and the command
+    can only approach it at the joint-speed cap, which flies the tilt between
+    the two. What is taken is the descent that does not increase the miss.
     """
     pytest.importorskip("mujoco")
     model, _, indices = built()
@@ -225,9 +226,9 @@ def test_a_wrist_wound_to_its_stop_takes_the_other_grip() -> None:
     plain_gap = armmod._tool_distance(model, indices, plain, _STALL_TARGET)
     tracked_gap = armmod._tool_distance(model, indices, tracked, _STALL_TARGET)
     seed_gap = armmod._tool_distance(model, indices, seed, _STALL_TARGET)
-    assert abs(float(tracked[5])) + 0.50 < abs(float(seed[5]))
-    assert tracked_gap <= seed_gap + 1e-3
-    assert tracked_gap <= plain_gap + 1e-3
+    assert abs(float(tracked[5]) - float(seed[5])) < 0.05
+    assert tracked_gap <= seed_gap + 1e-9
+    assert tracked_gap <= plain_gap + 1e-9
 
 
 def test_a_descent_that_walks_off_the_command_is_discarded() -> None:

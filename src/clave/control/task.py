@@ -315,7 +315,11 @@ class TaskMachine:
         self._jaw_below_flange_world = (
             0.0 if effector is None else effector.open_lowest_below_flange
         )
-        self._jaw_rise = 0.0 if effector is None else effector.closing_drop
+        self._shut_flange_floor_world = (
+            0.0
+            if effector is None
+            else self._belt_surface_height_world + effector.flange_floor
+        )
         self._serving: int | None = None
         self._arrived_at: float | None = None
         self._phase = Phase.STANDBY
@@ -812,8 +816,14 @@ class TaskMachine:
         aim = _aim_of(self._plan)
         drift = distance(self._fresh_aim(head, target, at_seconds), aim)
         refreshed = self._refinement(head, target, at_seconds)
+        landed = (
+            refreshed is not None
+            and distance(self._fresh_aim(head, target, at_seconds), _aim_of(refreshed))
+            <= self._settings.aim_tolerance
+        )
         if (
             refreshed is not None
+            and landed
             and self._takes(_aim_of(refreshed))
             and self._within_reach(refreshed)
         ):
@@ -920,7 +930,7 @@ class TaskMachine:
             belt_border_y=self._belt_border_y,
             safe_height_world=transit_height_world,
             cross_speed=self._settings.approach_speed,
-            jaw_rise=self._jaw_rise,
+            clearance_flange_z=self._shut_flange_floor_world,
         )
         if (
             steered is None
@@ -1123,7 +1133,7 @@ class TaskMachine:
             safe_height_world=transit_height_world,
             cross_speed=self._settings.approach_speed,
             drift_horizon=self._settings.drift_horizon,
-            jaw_rise=self._jaw_rise,
+            clearance_flange_z=self._shut_flange_floor_world,
         )
 
     def _abandon(
@@ -1339,7 +1349,7 @@ class TaskMachine:
                 safe_height_world=transit_height_world,
                 cross_speed=self._settings.approach_speed,
                 drift_horizon=self._settings.drift_horizon,
-                jaw_rise=self._jaw_rise,
+                clearance_flange_z=self._shut_flange_floor_world,
             )
             if attempt is not None:
                 descent_leg = next(
