@@ -716,7 +716,7 @@ class TaskMachine:
         Args:
             at_seconds: Simulated time.
             track_id: The object the visit is about.
-            action: ``took``, ``held``, or ``solved``.
+            action: ``took``, ``held``, ``solved``, or ``descent``.
             because: The cause, without a leading "because".
             doing: What the arm will do, without a leading "I will".
         """
@@ -927,6 +927,14 @@ class TaskMachine:
         drift = distance(self._fresh_aim(head, target, at_seconds), _aim_of(self._plan))
         turned = self._yaw_at_pick(head, steered, at_seconds)
         self._refreshes.append(Reaim(at_seconds, head.track_id, drift, False, "took"))
+        self._narrate_reaim(
+            at_seconds,
+            head.track_id,
+            "descent",
+            f"the descent is underway and the fresh estimate stands "
+            f"{drift * 1000:.0f} mm from the aim",
+            f"move the end of the descent onto {self._story.refer(head.track_id)}",
+        )
         self._plan = steered.with_yaw(
             target_yaw=turned,
             initial_yaw=self._last_yaw,
