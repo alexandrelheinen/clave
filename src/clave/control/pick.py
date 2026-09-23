@@ -71,17 +71,30 @@ cannot be handed a zero.
 
 
 def _transport(velocity: Point) -> Point:
-    """Return the velocity the belt carries, which is not the object's own.
+    r"""Return the belt-axis model transport the jaw matches ($\mathbf{v}_T$).
 
-    The belt drives one axis and gravity settles the object on the other two,
-    so an object's measured velocity has a vertical component that is the belt
-    letting it down rather than carrying it anywhere. Predicting that component
-    forward over an interception of seconds asks for a grasp plane tens of
-    millimetres below the object, and on the shipped line below the belt: a
-    recorded run replayed through the compiled model put the pads 0.7 mm inside
-    the belt surface on 343 of 6001 samples. Travel along the belt and drift
-    across it are both predicted, because an object really does reach the jaw
-    somewhere other than where it is.
+    The arcs are planned in the target frame. For the object target, transport
+    is belt-axis only: the belt drives one axis, and contact-induced lateral
+    or vertical body velocity is a disturbance, not the model the hold and
+    retreat ride. Lateral drift still aims the target origin through
+    [_drift_velocity] and [where_carried], for a finite horizon only.
+
+    Args:
+        velocity: The velocity a caller measured for the object.
+
+    Returns:
+        $(\max(0, v_x), 0, 0)$: no reverse travel along the belt, and no
+        lateral or vertical matching.
+    """
+    return (max(0.0, float(velocity[0])), 0.0, 0.0)
+
+
+def _drift_velocity(velocity: Point) -> Point:
+    """Return the velocity used only to aim the target origin for a while.
+
+    Across the belt nothing drives the object, so this component is carried
+    only through [where_carried] / `drift_horizon`. It must not become the
+    matching velocity of HOLD or RETREAT (`AC-MOVE-71`).
 
     Args:
         velocity: The velocity a caller measured for the object.
@@ -89,7 +102,7 @@ def _transport(velocity: Point) -> Point:
     Returns:
         The same velocity with no component along the belt normal.
     """
-    return (velocity[0], velocity[1], 0.0)
+    return (float(velocity[0]), float(velocity[1]), 0.0)
 
 
 def _fit_segment(
@@ -184,6 +197,9 @@ class Plan:
             because it is the figure the interception exists to produce.
         target_yaw: Orientation about the belt normal at the pick, or None.
         initial_yaw: Orientation about the belt normal at the approach start, or None.
+        transport_velocity: Belt-axis model transport for the object target.
+            World hold and retreat are this transport composed with rest and
+            +Z in the object frame.
     """
 
     track_id: int
@@ -192,6 +208,7 @@ class Plan:
     pick_at: float
     target_yaw: float | None = None
     initial_yaw: float | None = None
+    transport_velocity: Point = (0.0, 0.0, 0.0)
 
     @property
     def duration(self) -> float:
@@ -211,6 +228,7 @@ class Plan:
             pick_at=self.pick_at,
             target_yaw=target_yaw if target_yaw is not None else self.target_yaw,
             initial_yaw=initial_yaw if initial_yaw is not None else self.initial_yaw,
+            transport_velocity=self.transport_velocity,
         )
 
     def yaw_at(self, at_seconds: float) -> float | None:
@@ -366,7 +384,9 @@ def plan_pick(
     measured = belt_velocity if belt_velocity is not None else belt_velocity_world
     if measured is None:
         raise TypeError("plan_pick requires belt_velocity_world or belt_velocity")
-    belt_vel = _transport(measured)
+    # Aim uses drift (lateral for a horizon); matching uses belt-axis transport.
+    drift = _drift_velocity(measured)
+    transport = _transport(measured)
     clearance = z_offset if z_offset is not None else approach_clearance_z
     if clearance is None:
         raise TypeError("plan_pick requires approach_clearance_z or z_offset")
@@ -410,12 +430,12 @@ def plan_pick(
         # extrapolating the lateral component here as well would count it twice.
         obj_pos_at_border = as_point(
             as_vector(obj_pos)
-            + as_vector(belt_vel) * np.asarray([1.0, 0.0, 0.0]) * entry_arc.duration
+            + as_vector(transport) * np.asarray([1.0, 0.0, 0.0]) * entry_arc.duration
         )
         reaching = approach(
             border_approach,
             obj_pos_at_border,
-            belt_vel,
+            drift,
             clearance,
             approach_speed,
             max_speed,
@@ -430,7 +450,7 @@ def plan_pick(
         reaching = approach(
             flange,
             obj_pos,
-            belt_vel,
+            drift,
             clearance,
             approach_speed,
             max_speed,
@@ -449,7 +469,8 @@ def plan_pick(
         reaching,
         track_id,
         obj_pos_at_border,
-        belt_vel,
+        drift,
+        transport,
         clearance,
         approach_speed,
         dwell_seconds,
@@ -553,7 +574,8 @@ def refine(
     measured = belt_velocity if belt_velocity is not None else belt_velocity_world
     if measured is None:
         raise TypeError("refine requires belt_velocity_world or belt_velocity")
-    belt_vel = _transport(measured)
+    drift = _drift_velocity(measured)
+    transport = _transport(measured)
     clearance = z_offset if z_offset is not None else approach_clearance_z
     if clearance is None:
         raise TypeError("refine requires approach_clearance_z or z_offset")
@@ -585,7 +607,7 @@ def refine(
             # Along the belt only, for the same reason as the entry waypoint.
             obj_pos_at_border = as_point(
                 as_vector(obj_pos)
-                + as_vector(belt_vel) * np.asarray([1.0, 0.0, 0.0]) * rem_entry
+                + as_vector(transport) * np.asarray([1.0, 0.0, 0.0]) * rem_entry
             )
             new_track_arc = _feasible_arc(
                 start=entry_leg.end,
@@ -593,15 +615,15 @@ def refine(
                 wanted=State(
                     position=where_carried(
                         obj_pos_at_border,
-                        belt_vel,
+                        drift,
                         track_leg.duration + dt,
                         clearance,
                         drift_horizon,
                     ),
                     velocity=(
-                        belt_vel[0],
-                        belt_vel[1],
-                        belt_vel[2] - approach_speed,
+                        transport[0],
+                        transport[1],
+                        transport[2] - approach_speed,
                     ),
                     acceleration=(0.0, 0.0, 0.0),
                 ),
@@ -615,7 +637,7 @@ def refine(
                 return None
             aimed = _object_under(
                 new_track_arc.end.position,
-                belt_vel,
+                drift,
                 new_track_arc.duration + dt,
                 clearance,
                 drift_horizon,
@@ -624,7 +646,8 @@ def refine(
                 new_track_arc,
                 plan.track_id,
                 aimed,
-                belt_vel,
+                drift,
+                transport,
                 clearance,
                 approach_speed,
                 dwell_seconds,
@@ -657,15 +680,15 @@ def refine(
                 wanted=State(
                     position=where_carried(
                         obj_pos,
-                        belt_vel,
+                        drift,
                         rem_track + dt,
                         clearance,
                         drift_horizon,
                     ),
                     velocity=(
-                        belt_vel[0],
-                        belt_vel[1],
-                        belt_vel[2] - approach_speed,
+                        transport[0],
+                        transport[1],
+                        transport[2] - approach_speed,
                     ),
                     acceleration=(0.0, 0.0, 0.0),
                 ),
@@ -679,7 +702,7 @@ def refine(
                 return None
             aimed = _object_under(
                 new_track_arc.end.position,
-                belt_vel,
+                drift,
                 new_track_arc.duration + dt,
                 clearance,
                 drift_horizon,
@@ -688,7 +711,8 @@ def refine(
                 new_track_arc,
                 plan.track_id,
                 aimed,
-                belt_vel,
+                drift,
+                transport,
                 clearance,
                 approach_speed,
                 dwell_seconds,
@@ -722,15 +746,15 @@ def refine(
         wanted=State(
             position=where_carried(
                 obj_pos,
-                belt_vel,
+                drift,
                 remaining + dt,
                 clearance,
                 drift_horizon,
             ),
             velocity=(
-                belt_vel[0],
-                belt_vel[1],
-                belt_vel[2] - approach_speed,
+                transport[0],
+                transport[1],
+                transport[2] - approach_speed,
             ),
             acceleration=(0.0, 0.0, 0.0),
         ),
@@ -743,13 +767,14 @@ def refine(
     if arc is None:
         return None
     aimed = _object_under(
-        arc.end.position, belt_vel, arc.duration + dt, clearance, drift_horizon
+        arc.end.position, drift, arc.duration + dt, clearance, drift_horizon
     )
     return _assemble(
         arc,
         plan.track_id,
         aimed,
-        belt_vel,
+        drift,
+        transport,
         clearance,
         approach_speed,
         dwell_seconds,
@@ -839,7 +864,8 @@ def retarget_descent(
         that gates an approach does not gate this splice: the descent
         already in hand is past it.
     """
-    belt = _transport(belt_velocity)
+    drift = _drift_velocity(belt_velocity)
+    transport = _transport(belt_velocity)
     elapsed = at_seconds - plan.started_at
     edges = plan._boundaries()
     descent_index = next(
@@ -870,12 +896,12 @@ def retarget_descent(
         wanted=State(
             position=where_carried(
                 object_position,
-                belt,
+                drift,
                 remaining,
                 0.0,
                 drift_horizon,
             ),
-            velocity=belt,
+            velocity=transport,
             acceleration=(0.0, 0.0, 0.0),
         ),
         duration=remaining,
@@ -888,8 +914,10 @@ def retarget_descent(
         return None
     ceiling = max_acceleration
     rise = _closing_rise(dropping.end.position[2], jaw_rise, clearance_flange_z)
-    held = _hold(dropping.end, dwell_seconds, belt, rise, closing_rise_seconds)
-    rising = _retreat(held[-1].segment.end, approach_clearance_z, approach_speed, belt)
+    held = _hold(dropping.end, dwell_seconds, transport, rise, closing_rise_seconds)
+    rising = _retreat(
+        held[-1].segment.end, approach_clearance_z, approach_speed, transport
+    )
     legs = [
         Leg(Phase.DESCEND, dropping, leg.grip),
         *held,
@@ -902,7 +930,7 @@ def retarget_descent(
         climbing = _climb(
             rising.end,
             max(safe_height, held[-1].segment.end.position[2] + lift),
-            belt,
+            transport,
             max_speed,
             ceiling,
             segment_sample_count=segment_sample_count,
@@ -957,6 +985,7 @@ def retarget_descent(
         pick_at=at_seconds + remaining,
         target_yaw=plan.target_yaw,
         initial_yaw=plan.initial_yaw,
+        transport_velocity=transport,
     )
 
 
@@ -994,7 +1023,8 @@ def _assemble(
     reaching: Segment,
     track_id: int,
     object_position_belt: Point,
-    belt_velocity_world: Point,
+    aim_velocity: Point,
+    transport_velocity: Point,
     approach_clearance_z: float,
     approach_speed: float,
     dwell_seconds: float,
@@ -1024,7 +1054,8 @@ def _assemble(
         reaching: The approach tracking arc.
         track_id: Which track the visit is about.
         object_position_belt: Where the object is at `at_seconds`.
-        belt_velocity_world: How the belt is carrying it.
+        aim_velocity: Drift-aware velocity for aiming the target origin.
+        transport_velocity: Belt-axis model transport the jaw matches.
         approach_clearance_z: Clearance above the object, in meters.
         approach_speed: How fast the flange is coming down on arrival.
         dwell_seconds: How long the jaw is given to close.
@@ -1046,17 +1077,27 @@ def _assemble(
     dropping = descend(
         reaching,
         object_position_belt,
-        belt_velocity_world,
+        aim_velocity,
         approach_clearance_z,
         approach_speed,
         drift_horizon=drift_horizon,
     )
+    if dropping.end.velocity != transport_velocity:
+        dropping = Segment(
+            start=dropping.start,
+            end=State(
+                position=dropping.end.position,
+                velocity=transport_velocity,
+                acceleration=dropping.end.acceleration,
+            ),
+            duration=dropping.duration,
+        )
     rise = _closing_rise(dropping.end.position[2], jaw_rise, clearance_flange_z)
     held = _hold(
-        dropping.end, dwell_seconds, belt_velocity_world, rise, closing_rise_seconds
+        dropping.end, dwell_seconds, transport_velocity, rise, closing_rise_seconds
     )
     rising = _retreat(
-        held[-1].segment.end, approach_clearance_z, approach_speed, belt_velocity_world
+        held[-1].segment.end, approach_clearance_z, approach_speed, transport_velocity
     )
     legs = []
     if entry_segment is not None:
@@ -1075,10 +1116,11 @@ def _assemble(
         else:
             safe_height = max(target_position_world[2], reaching.start.position[2])
         reach_up = approach_clearance_z if retreat_lift is None else retreat_lift
+        # Delivery is interception with v_T = 0 (AC-MOVE-70).
         climbing = _climb(
             rising.end,
             max(safe_height, held[-1].segment.end.position[2] + reach_up),
-            belt_velocity_world,
+            transport_velocity,
             max_speed,
             max_acceleration,
             segment_sample_count=segment_sample_count,
@@ -1122,6 +1164,7 @@ def _assemble(
         legs=tuple(legs),
         started_at=at_seconds,
         pick_at=at_seconds + entry_duration + reaching.duration + dropping.duration,
+        transport_velocity=transport_velocity,
     )
 
 
@@ -1354,10 +1397,11 @@ def _retreat(
         z_offset: The clearance the descent came down through, in meters.
         approach_speed: The speed the descent came down at, which the retreat
             leaves at.
-        belt_velocity: How the belt is moving.
+        belt_velocity: Model transport (belt-axis only).
 
     Returns:
-        The arc, vertical in the belt's own frame and ending at the clearance.
+        The arc: vertical in the object target frame (+Z over the descent
+        duration), composed with transport into world.
     """
     seconds = descent_seconds(z_offset, approach_speed)
     return Segment(
@@ -1365,7 +1409,7 @@ def _retreat(
         end=State(
             position=as_point(
                 as_vector(start.position)
-                + as_vector(belt_velocity) * np.asarray([1.0, 1.0, 0.0]) * seconds
+                + as_vector(belt_velocity) * seconds
                 + np.asarray([0.0, 0.0, z_offset])
             ),
             velocity=as_point(

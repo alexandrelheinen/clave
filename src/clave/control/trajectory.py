@@ -477,6 +477,10 @@ def approach(
         raise TypeError("approach requires approach_clearance_z or z_offset")
 
     dt = descent_seconds(clearance, approach_speed)
+    # Aim positions carry lateral drift for a horizon; matching velocity is
+    # belt-axis only (AC-MOVE-71). The world image of object-frame rest at the
+    # pick is transport, not contact-disturbed cvel.
+    match = (max(0.0, float(obj_vel[0])), 0.0, 0.0)
 
     def arc(seconds: float) -> Segment:
         return Segment(
@@ -490,9 +494,9 @@ def approach(
                     drift_horizon,
                 ),
                 velocity=(
-                    obj_vel[0],
-                    obj_vel[1],
-                    obj_vel[2] - approach_speed,
+                    match[0],
+                    match[1],
+                    match[2] - approach_speed,
                 ),
                 acceleration=(0.0, 0.0, 0.0),
             ),
@@ -560,11 +564,12 @@ def descend(
 
     dt = descent_seconds(clearance, approach_speed)
     arrival = approach_arc.duration + dt
+    match = (max(0.0, float(obj_vel[0])), 0.0, 0.0)
     return Segment(
         start=approach_arc.end,
         end=State(
             position=where_carried(obj_pos, obj_vel, arrival, 0.0, drift_horizon),
-            velocity=obj_vel,
+            velocity=match,
             acceleration=(0.0, 0.0, 0.0),
         ),
         duration=dt,

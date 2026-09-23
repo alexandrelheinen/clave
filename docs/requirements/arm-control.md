@@ -571,6 +571,27 @@ re-solving a visit shall begin from that the motion reference state, not from th
 measured flange. Lag, a collision, or any other plant disturbance is a
 control problem for the servo, and shall not be written back into the plan.
 
+`AC-MOVE-69`: Visit arcs shall be planned in the **target frame**. During
+intercept through retreat (and the climb that clears the belt), the target is
+the object; during delivery and release, the target is the chute (or configured
+exit). World commands are the composition of the model target pose with the
+arc sample.
+
+`AC-MOVE-70`: Both segments use the **same interception formulation**. The
+chute (or exit) is an interception with target transport
+$\mathbf{v}_T = \mathbf{0}$.
+
+`AC-MOVE-71`: Object-target transport $\mathbf{v}_T$ is belt-axis only:
+$(v_b, 0, 0)$ or $(\max(0, v_x), 0, 0)$. Measured lateral or vertical body
+velocity shall not enter descent-end matching, HOLD, RETREAT, or climb.
+Lateral drift affects aim of the target origin only, via `drift_horizon`
+(`AC-MOVE-46`).
+
+`AC-MOVE-72`: In the object target frame, RETREAT is vertical
+($+\hat{\mathbf{z}}$) over the descent duration, and HOLD has negligible
+horizontal speed in that frame. A late-descent retarget that sees a large
+object $v_y$ shall not put HOLD or RETREAT on that lateral speed in world.
+
 ## Test plan
 
 Each criterion names the test that guards it. The grasp-plane floor and the
@@ -584,6 +605,10 @@ because the rise is one correction.
 | `AC-MOVE-66` | `test_an_approach_correction_past_the_ceiling_is_taken_part_way` |
 | `AC-MOVE-67` | `test_the_hold_rises_while_the_jaw_closes`, `test_the_rise_leads_the_hang_the_jaw_adds_as_it_shuts`, `test_a_grasp_the_shut_jaw_can_clear_does_not_rise`, `test_a_grasp_below_the_shut_floor_rises_back_to_it` |
 | `AC-MOVE-68` | `test_a_re_solved_visit_starts_from_the_motion_reference` |
+| `AC-MOVE-69` | `test_hold_and_retreat_are_vertical_in_the_object_frame` |
+| `AC-MOVE-70` | `test_delivery_is_an_intercept_to_a_stationary_chute` |
+| `AC-MOVE-71` | `test_matching_transport_drops_lateral_velocity`, `test_a_lateral_velocity_carries_the_object_only_while_it_lasts` |
+| `AC-MOVE-72` | `test_a_spiked_lateral_velocity_does_not_rewrite_hold_or_retreat` |
 | `AC-GRIP-14` | `test_the_open_jaw_is_the_configured_open_reach` |
 | `AC-MARK-17` | `test_the_grasp_plane_stands_on_the_open_jaw` |
 
@@ -702,6 +727,14 @@ reference with. Writing a lag or a collision back into the next solve makes
 the projected path rush off the arc the jaw was already on, which is how a
 control disturbance becomes a motion problem. `AC-MOVE-68` is the rule:
 re-aim already sampled the plan, and re-solve now does too.
+
+**Why the arcs are written in the target frame.** A hold that matches the
+object in world looks like a sideways rush when contact has given the parcel
+a lateral `cvel`, because that disturbance was being planned as transport.
+In the object frame the same hold is rest and the retreat is straight up.
+Pick and release are one interception problem: the object target moves with
+belt-axis model transport, and the chute target is the same solver with
+$\mathbf{v}_T = \mathbf{0}$ (`AC-MOVE-69` through `AC-MOVE-72`).
 
 **What interception and the bounds found.** Four more defects, and two of
 them are the same mistake at different layers, which is the part worth

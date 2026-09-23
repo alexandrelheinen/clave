@@ -766,3 +766,111 @@ def test_the_hold_rises_while_the_jaw_closes() -> None:
     assert carry.end.velocity == pytest.approx(BELT)
     retreat = next(leg.segment for leg in plan.legs if leg.phase is Phase.RETREAT)
     assert retreat.end.position[2] - carry.end.position[2] == pytest.approx(CLEARANCE)
+
+
+def test_matching_transport_drops_lateral_velocity() -> None:
+    """AC-MOVE-71: matching transport is belt-axis only.
+
+    Lateral body velocity aims the target origin for a horizon; it is not the
+    velocity HOLD and RETREAT ride.
+    """
+    from clave.control.pick import _drift_velocity, _transport
+
+    measured = (0.314, 0.50, -0.10)
+    assert _transport(measured) == pytest.approx((0.314, 0.0, 0.0))
+    assert _drift_velocity(measured) == pytest.approx((0.314, 0.50, 0.0))
+    assert _transport((-0.20, 0.10, 0.0)) == pytest.approx((0.0, 0.0, 0.0))
+
+
+def test_hold_and_retreat_are_vertical_in_the_object_frame() -> None:
+    """AC-MOVE-69 / AC-MOVE-72: hold≈rest and retreat=+Z in the object frame.
+
+    World motion during those legs is only the belt-axis transport composed
+    with the local arc. Subtracting transport * t leaves pure vertical retreat
+    and no horizontal hold speed.
+    """
+    plan = a_plan(belt_velocity=(BELT[0], 0.40, 0.0))
+    assert plan is not None
+    transport = plan.transport_velocity
+    assert transport == pytest.approx((BELT[0], 0.0, 0.0))
+
+    hold = next(leg for leg in plan.legs if leg.phase is Phase.HOLD).segment
+    for step in range(11):
+        state = hold.at(hold.duration * step / 10.0)
+        assert state.velocity[1] == pytest.approx(0.0, abs=1e-9)
+        assert state.velocity[0] == pytest.approx(transport[0], abs=1e-9)
+
+    retreat = next(leg for leg in plan.legs if leg.phase is Phase.RETREAT).segment
+    # Object frame: subtract transport travel from start to end.
+    local = (
+        retreat.end.position[0]
+        - retreat.start.position[0]
+        - transport[0] * retreat.duration,
+        retreat.end.position[1]
+        - retreat.start.position[1]
+        - transport[1] * retreat.duration,
+        retreat.end.position[2] - retreat.start.position[2],
+    )
+    assert local[0] == pytest.approx(0.0, abs=1e-9)
+    assert local[1] == pytest.approx(0.0, abs=1e-9)
+    assert local[2] == pytest.approx(CLEARANCE, abs=1e-9)
+
+
+def test_a_spiked_lateral_velocity_does_not_rewrite_hold_or_retreat() -> None:
+    """AC-MOVE-72: a late-descent retarget must not put HOLD on spiked vy.
+
+    Contact can give the parcel a large lateral cvel. Aim may move; matching
+    transport stays belt-axis.
+    """
+    plan = a_plan()
+    assert plan is not None
+    edges = plan._boundaries()
+    index = next(i for i, leg in enumerate(plan.legs) if leg.phase is Phase.DESCEND)
+    at = plan.started_at + edges[index] + 0.05
+    spiked = (BELT[0], 0.50, 0.0)
+    steered = retarget_descent(
+        plan=plan,
+        object_position=(OBJECT[0] + 0.02, OBJECT[1] + 0.03, OBJECT[2]),
+        belt_velocity=spiked,
+        approach_clearance_z=CLEARANCE,
+        approach_speed=APPROACH_SPEED,
+        dwell_seconds=DWELL,
+        max_speed=1.00,
+        max_acceleration=2.50,
+        at_seconds=at,
+        drift_horizon=DRIFT_HORIZON,
+        minimum_segment_seconds=MINIMUM_SEGMENT,
+        closing_rise_seconds=CLOSING_RISE,
+        segment_sample_count=SEGMENT_SAMPLES,
+        bisection_passes=BISECTION_PASSES,
+        minimum_delivery_seconds=MINIMUM_DELIVERY,
+        correction_steps=CORRECTION_STEPS,
+    )
+    assert steered is not None
+    assert steered.transport_velocity == pytest.approx((BELT[0], 0.0, 0.0))
+    hold = next(leg for leg in steered.legs if leg.phase is Phase.HOLD).segment
+    assert hold.start.velocity[1] == pytest.approx(0.0, abs=1e-9)
+    assert abs(hold.start.velocity[1]) < 0.05
+    retreat = next(leg for leg in steered.legs if leg.phase is Phase.RETREAT).segment
+    assert retreat.start.velocity[1] == pytest.approx(0.0, abs=1e-9)
+
+
+def test_delivery_is_an_intercept_to_a_stationary_chute() -> None:
+    """AC-MOVE-70: delivery is interception with v_T = 0 at the chute.
+
+    The visit ends at rest over the mouth. That is the stationary special case
+    of the same interception formulation the pick uses.
+    """
+    mouth = (0.58, -0.42, 1.20)
+    plan = a_plan(
+        over=mouth,
+        belt_border_y=-0.25,
+        safe_height_world=1.20,
+        cross_speed=APPROACH_SPEED,
+    )
+    assert plan is not None
+    delivers = [leg for leg in plan.legs if leg.phase is Phase.DELIVER]
+    assert delivers, "a chute visit must include delivery legs"
+    last = delivers[-1].segment
+    assert last.end.position == pytest.approx(mouth)
+    assert last.end.velocity == pytest.approx((0.0, 0.0, 0.0))
