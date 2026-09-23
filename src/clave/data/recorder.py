@@ -170,7 +170,10 @@ def record(
             "recorded from this world"
         )
 
-    indices = armmod.locate(model)
+    indices = armmod.locate(
+        model,
+        armmod.ReachBounds(plan.reach_min, plan.reach_max, plan.tool_above_base),
+    )
     renderer = mujoco.Renderer(model, height=height, width=width)
     segmenter = mujoco.Renderer(model, height=height, width=width)
     segmenter.enable_segmentation_rendering()

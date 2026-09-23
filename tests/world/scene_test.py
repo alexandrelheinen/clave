@@ -186,16 +186,14 @@ def test_the_pedestal_stands_clear_of_the_arm_sweep() -> None:
     pytest.importorskip("mujoco")
     import mujoco
 
-    from clave.world import arm as armmod
-
     raw = config.load(CONFIG)
     model, _, plan = scene.build(raw, np.random.default_rng(0), ROOT)
     geom = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "arm_pedestal")
     width, depth = float(model.geom_size[geom][0]), float(model.geom_size[geom][1])
     half_diagonal = float(np.hypot(width, depth))
-    assert half_diagonal < armmod.REACH_MIN_METERS, (
+    assert half_diagonal < plan.reach_min, (
         f"the pedestal reaches {half_diagonal:.3f} m from the base, inside the "
-        f"{armmod.REACH_MIN_METERS:.2f} m the arm sweeps"
+        f"{plan.reach_min:.2f} m the arm sweeps"
     )
     assert plan.pedestal == (width * 2.0, depth * 2.0)
 

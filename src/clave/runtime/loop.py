@@ -427,7 +427,10 @@ def run(
             "the belt never enters the arm's reach, so this world can publish "
             "no decision"
         )
-    indices = armmod.locate(model)
+    indices = armmod.locate(
+        model,
+        armmod.ReachBounds(plan.reach_min, plan.reach_max, plan.tool_above_base),
+    )
     renderer = mujoco.Renderer(
         model, height=settings.frame_height, width=settings.frame_width
     )

@@ -177,6 +177,12 @@ task:
   # better than that.
   drift_horizon_seconds: 0.30
 
+  # How long the flange rises while the jaw closes at the start of a hold.
+  closing_rise_seconds: 0.20
+
+  # Poses per plan leg in the trusted-region check, counting both endpoints.
+  leg_samples: 5
+
   # Where the arm rests when it has nothing to serve.
   #
   # The four bin mouths run from x = 0.30 m to x = 1.14 m at y = -0.42 m.
@@ -199,6 +205,18 @@ motion:
   # ceiling past what the machine does would not be.
   max_speed_meters_per_second: 1.00
   max_acceleration_meters_per_second_squared: 2.50
+  # How many times a moving-goal intercept is re-measured before use.
+  intercept_passes: 3
+  # Floor on a planned quintic duration, in seconds.
+  minimum_segment_seconds: 0.50
+  # Samples used to check peak speed and acceleration along a segment.
+  segment_sample_count: 64
+  # Halvings in the monotone duration search.
+  bisection_passes: 40
+  # Floor on a delivery or climb duration, in seconds.
+  minimum_delivery_seconds: 0.05
+  # Fractions tried when a partial correction must stay under a ceiling.
+  correction_steps: 32
 
 servo:
   # Fraction of each solved step commanded. One, meaning the solved angles go

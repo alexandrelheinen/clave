@@ -48,8 +48,8 @@ descent. Two things follow and both are large. A jaw arriving at rest has
 the object sliding through it at belt speed, which is the one thing a grasp
 cannot tolerate. And the horizontal catch-up a stationary approach forces
 dominates the descent: matching the object instead dropped peak acceleration
-from 4.58 to 0.94 metres per second squared at the shipped clearance, a
-factor of about five, with the slip at the jaw going from 0.314 m/s to zero.
+Peak acceleration falls with a longer descent, and the slip at the jaw
+goes to zero when the flange moves with the belt.
 """
 
 from __future__ import annotations
@@ -61,7 +61,7 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
-from clave.control.settings import DRIFT_HORIZON, Point
+from clave.control.settings import Point
 
 LOGGER = logging.getLogger(__name__)
 
@@ -139,21 +139,11 @@ def clip(value: float, ceiling: float) -> float:
     return float(np.clip(value, 0.0, ceiling))
 
 
-BISECTION_PASSES = 40
-"""How many halvings a monotone feasibility search takes.
-
-Forty passes take any bracket to about a picosecond, which is far below the
-two millisecond tick and costs nothing: each pass is a handful of polynomial
-evaluations. A tolerance would be a number to defend; a fixed count that is
-obviously enough is not.
-"""
-
-
 def bisect_feasible(
     feasible: Callable[[float], bool],
     low: float,
     high: float,
-    passes: int = BISECTION_PASSES,
+    passes: int,
 ) -> float:
     """Return the smallest value in a bracket whose predicate holds.
 
@@ -191,6 +181,7 @@ def bisect_feasible(
 def soonest_feasible(
     feasible: Callable[[float], bool],
     low: float,
+    passes: int,
 ) -> float:
     """Return the smallest duration at or above `low` whose predicate holds.
 
@@ -222,18 +213,7 @@ def soonest_feasible(
     high = low
     while not feasible(high):
         high *= 2.0
-    return bisect_feasible(feasible, low, high)
-
-
-SAMPLES = 64
-"""How many points a segment is sampled at to bound its speed and acceleration.
-
-The bound is on the Euclidean norm across three axes, and the norm of a
-vector of polynomials is not a polynomial, so its extremum has no closed
-form worth writing. Sampling a quintic at 64 points catches the peak to
-better than a percent, which is far inside the margin any of these bounds
-carry.
-"""
+    return bisect_feasible(feasible, low, high, passes)
 
 
 @dataclass(frozen=True)
@@ -351,7 +331,7 @@ class Segment:
             (_second(s) @ terms) / (span * span),
         )
 
-    def peaks(self) -> tuple[float, float]:
+    def peaks(self, sample_count: int) -> tuple[float, float]:
         """Return the largest speed and acceleration anywhere on the segment.
 
         Returns:
@@ -360,22 +340,24 @@ class Segment:
             a sampling of the segment.
         """
         _, velocity, acceleration = self.sample(
-            np.linspace(0.0, self.duration, SAMPLES + 1, dtype=np.float64)
+            np.linspace(0.0, self.duration, sample_count + 1, dtype=np.float64)
         )
         return (
             float(np.linalg.norm(velocity, axis=1).max()),
             float(np.linalg.norm(acceleration, axis=1).max()),
         )
 
-    def peak_speed(self) -> float:
+    def peak_speed(self, sample_count: int) -> float:
         """Return the largest speed anywhere on the segment, in meters per second."""
-        return self.peaks()[0]
+        return self.peaks(sample_count)[0]
 
-    def peak_acceleration(self) -> float:
+    def peak_acceleration(self, sample_count: int) -> float:
         """Return the largest acceleration anywhere, in meters per second squared."""
-        return self.peaks()[1]
+        return self.peaks(sample_count)[1]
 
-    def fits(self, max_speed: float, max_acceleration: float) -> bool:
+    def fits(
+        self, max_speed: float, max_acceleration: float, sample_count: int
+    ) -> bool:
         """Report whether the segment stays inside both ceilings.
 
         Args:
@@ -386,7 +368,7 @@ class Segment:
         Returns:
             Whether both hold everywhere on the segment.
         """
-        peak_speed, peak_acceleration = self.peaks()
+        peak_speed, peak_acceleration = self.peaks(sample_count)
         return peak_speed <= max_speed and peak_acceleration <= max_acceleration
 
 
@@ -441,8 +423,10 @@ def approach(
     max_acceleration: float = 0.0,
     latest: float = 0.0,
     margin: float = 1.0,
-    drift_horizon: float = DRIFT_HORIZON,
     *,
+    drift_horizon: float,
+    segment_sample_count: int,
+    bisection_passes: int,
     object_position: Point | None = None,
     object_velocity: Point | None = None,
     z_offset: float | None = None,
@@ -518,10 +502,15 @@ def approach(
     # Peak speed and peak acceleration both fall as the duration grows, so the
     # predicate is monotone and the soonest feasible interception is the
     # smallest feasible duration in the bracket.
-    if not arc(latest).fits(max_speed, max_acceleration):
+    if not arc(latest).fits(max_speed, max_acceleration, segment_sample_count):
         return None
     seconds = bisect_feasible(
-        lambda middle: arc(middle).fits(max_speed, max_acceleration), 0.0, latest
+        lambda middle: arc(middle).fits(
+            max_speed, max_acceleration, segment_sample_count
+        ),
+        0.0,
+        latest,
+        bisection_passes,
     )
     return arc(min(seconds * margin, latest))
 
@@ -532,8 +521,8 @@ def descend(
     object_velocity_world: Point | None = None,
     approach_clearance_z: float | None = None,
     approach_speed: float = 0.0,
-    drift_horizon: float = DRIFT_HORIZON,
     *,
+    drift_horizon: float,
     object_position: Point | None = None,
     object_velocity: Point | None = None,
     z_offset: float | None = None,
@@ -614,22 +603,11 @@ def where_carried(
 ) -> Point:
     """Return where an object will be, carrying its drift across the belt for a while.
 
-    The two horizontal axes are not the same process and predicting them the
-    same way is what this exists to stop. Along the belt the object is driven:
-    its velocity is the belt's, it holds for as long as the belt does, and
-    carrying it over a four second visit is right. Across the belt nothing
-    drives it. The drift comes from a parcel turning or being nudged, it decays
-    within a fraction of a second, and measured on the shipped line its
-    autocorrelation is +0.04 after 0.2 s and −0.02 after 0.8 s: it is a
-    transient, not a velocity.
-
-    Carried over the whole horizon it is not a prediction at all. The p90
-    lateral speed on this belt is 0.261 m/s, so a visit that commits four
-    seconds ahead asks for the jaws to meet the object **900 mm across the
-    belt** from where the object is, and measured, that is what the arms did:
-    two visits in nine commanded a pose 208 and 346 mm from any object, outside
-    the region the arm is trusted over, and the arm fell 50 to 80 mm behind the
-    command while the jaws closed on nothing.
+    The two horizontal axes are not the same process. Along the belt the object
+    is driven and its velocity holds for as long as the belt does. Across the
+    belt nothing drives it: the drift is a transient, so it is carried only for
+    `drift_horizon`. Carrying a lateral velocity for the whole visit invents
+    motion that is no longer there.
 
     Args:
         position: Where the object is now.

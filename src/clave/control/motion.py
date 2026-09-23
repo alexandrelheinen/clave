@@ -3,39 +3,22 @@
 A phase says where it wants the flange. It does not say how to get there, and
 commanding the goal outright is how a controller asks for a jump the actuators
 answer with a lunge. Motion is the layer in between: a straight line in task
-space, which is what an industrial linear move is, walked under a speed and an
-acceleration the machine actually has.
+space, which is what an industrial linear move is, walked under configured
+speed and acceleration ceilings.
 
 **The first argument is the reference, not the measurement.** Motion
 integrates its own previous output, seeded once from where the flange stood.
-Stepping from the measured flange instead looks equivalent and is not: the
-reference then never runs ahead of the plant, so every tick it restarts from
-wherever the arm lagged to and the effective speed becomes the tracking error
-divided by the tick rather than the configured ceiling. Measured on the
-shipped world, that mistake moved the flange 0.11 m in three seconds where
-the ceiling allows 0.71 m in less than one.
+Stepping from the measured flange instead makes the reference chase the plant
+rather than lead it.
 
 **The path is kept inside a region that is not convex.** The arm is trusted
-over an annulus, so a straight line between two poses it admits can still
-pass through the hole around the base. That is not a tuning problem and no
-choice of park pose removes it, because the base sits between the arm's
-resting place and part of the belt. Each stepped pose is therefore handed to
-a projection that pushes it back out of the hole, which makes the path run
-straight, slide around the hole, and run straight again.
+over an annulus from world configuration, so a straight line between two
+admitted poses can still pass through the hole around the base. Each stepped
+pose is handed to a projection that pushes it back into the trusted region.
 
-**A goal that rides the belt is aimed ahead of itself.** That lag was
-measured at 102 mm against a 10 mm arrival tolerance before this existed, and
-it has two parts that are easy to confuse. The arm travels while the object
-moves, and the goal itself is stale: it is decided once per capture and held
-for half a second, during which the belt carries the object 157 mm.
-
-Compensating only the traverse fixes nothing once the arm has caught up,
-because the traverse is then zero and the aim collapses onto a pose that is
-still half a second old. So the goal carries the instant it was seen, and the
-intercept is carried from there to now plus however long the traverse takes.
-The traverse is the fixed point of a short iteration: guess it, carry the
-object that far, and re-measure to where it landed. Belt speed is known here
-rather than estimated, so all of this is arithmetic and introduces no state.
+**A goal that rides the belt is aimed ahead of itself.** The goal carries the
+instant it was seen, and the intercept is carried from there to now plus the
+traverse. Belt speed is known here rather than estimated.
 """
 
 from __future__ import annotations
@@ -52,16 +35,6 @@ from clave.tracker.belt_frame import carry
 
 NANOS_PER_SECOND = 1_000_000_000
 """Nanoseconds in a second, for the belt travel the intercept carries."""
-
-INTERCEPT_PASSES = 3
-"""How many times the intercept is re-measured before it is used.
-
-The iteration converges geometrically while the belt runs slower than the
-arm, which it does by a factor of three on this line, so three passes put the
-remaining error well under the arrival tolerance. Iterating to a tolerance
-instead would put an unbounded loop on the control path to buy an accuracy
-nothing downstream can measure.
-"""
 
 
 @dataclass(frozen=True)
@@ -141,7 +114,14 @@ def toward(
         The command.
     """
     inside = keep_inside if keep_inside is not None else _unchanged
-    aim = _intercept(reference.position, goal, limits.max_speed, belt_speed, at_nanos)
+    aim = _intercept(
+        reference.position,
+        goal,
+        limits.max_speed,
+        belt_speed,
+        at_nanos,
+        limits.intercept_passes,
+    )
 
     remaining = distance(reference.position, aim)
     speed = _speed(reference.speed, remaining, timestep, limits)
@@ -178,6 +158,7 @@ def _intercept(
     max_speed: float,
     belt_speed: float,
     at_nanos: int,
+    passes: int,
 ) -> Point:
     """Return where to aim, ahead of a goal the belt is carrying.
 
@@ -197,7 +178,7 @@ def _intercept(
     if not goal.rides_belt or belt_speed <= 0.0 or max_speed <= 0.0:
         return goal.position
     aim = carry(goal.position, belt_speed, goal.observed_at_nanos, at_nanos)
-    for _ in range(INTERCEPT_PASSES):
+    for _ in range(passes):
         seconds = distance(reference, aim) / max_speed
         aim = carry(
             goal.position,
@@ -230,8 +211,8 @@ def _speed(
     step = limits.max_acceleration * timestep
     # The stopping curve is read where the tick will end rather than where it
     # began. Reading it at the start samples a continuous curve one tick late,
-    # and the profile then enters the braking leg with a drop of 0.0072 m/s
-    # against a bound of 0.0050. Looking ahead cuts that to 1.8e-6 m/s.
+    # and the profile then enters the braking leg above the bound. Looking
+    # ahead keeps the speed on the curve through the tick.
     ahead = max(0.0, remaining - speed * timestep)
     stoppable = float(np.sqrt(max(0.0, 2.0 * limits.max_acceleration * ahead)))
     wanted = clip(speed + step, min(limits.max_speed, stoppable))

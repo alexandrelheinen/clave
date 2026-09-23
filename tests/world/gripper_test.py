@@ -30,7 +30,15 @@ def world() -> Any:
 
     model, data, plan = scene.build(load(WORLD), numpy.random.default_rng(0), ROOT)
     mujoco.mj_forward(model, data)
-    return model, data, plan, armmod.locate(model)
+    return (
+        model,
+        data,
+        plan,
+        armmod.locate(
+            model,
+            armmod.ReachBounds(plan.reach_min, plan.reach_max, plan.tool_above_base),
+        ),
+    )
 
 
 def test_the_gripper_is_on_the_flange(world: Any) -> None:

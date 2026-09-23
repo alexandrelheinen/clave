@@ -13,7 +13,6 @@ import yaml
 
 from clave.runtime import loop
 from clave.runtime.inference import ScriptedPredictor, associate
-from clave.world import arm as armmod
 from clave.world import config
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -99,10 +98,6 @@ def test_the_envelope_is_derived_from_the_world_rather_than_restated() -> None:
     assert derived["tool_above_base_meters"] == [
         float(v) for v in config.require(arm, "tool_above_base_meters", "arm")
     ]
-    # The envelope carries the region clave.world.arm applies, so
-    # the checker cannot admit a point the world calls unreachable.
-    assert derived["reach_meters"] == [armmod.REACH_MIN_METERS, armmod.REACH_MAX_METERS]
-    assert derived["tool_above_base_meters"] == list(armmod.TOOL_ABOVE_BASE_METERS)
 
 
 def test_a_percentile_is_an_observed_sample_rather_than_an_interpolation() -> None:

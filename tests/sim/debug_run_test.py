@@ -43,7 +43,16 @@ def world() -> Any:
 
     model, data, plan = scene.build(load(WORLD), numpy.random.default_rng(0), ROOT)
     mujoco.mj_forward(model, data)
-    return mujoco, model, data, plan, armmod.locate(model)
+    return (
+        mujoco,
+        model,
+        data,
+        plan,
+        armmod.locate(
+            model,
+            armmod.ReachBounds(plan.reach_min, plan.reach_max, plan.tool_above_base),
+        ),
+    )
 
 
 def test_the_run_records_the_revision_and_the_configuration_digests() -> None:
@@ -291,6 +300,13 @@ def test_a_plan_reports_each_leg_for_its_own_duration() -> None:
         latest=4.00,
         at_seconds=0.0,
         margin=1.0,
+        drift_horizon=0.30,
+        minimum_segment_seconds=0.50,
+        closing_rise_seconds=0.20,
+        segment_sample_count=64,
+        bisection_passes=40,
+        minimum_delivery_seconds=0.05,
+        correction_steps=32,
     )
     assert plan is not None
     tick = 0.001

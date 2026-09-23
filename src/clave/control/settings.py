@@ -19,21 +19,6 @@ from typing import Any
 
 from clave.world.config import WorldConfigError, require
 
-DRIFT_HORIZON = 0.30
-"""How long an object's drift across the belt is carried, in seconds.
-
-An object is driven along the belt and not across it. The drift comes from a
-parcel turning or being nudged, and measured on the shipped line the
-autocorrelation of the cross-belt velocity is +0.04 after 0.2 s and -0.02
-after 0.8 s: it decays within a fraction of a second, so carrying it over a
-four second visit is not a prediction. The p90 lateral speed on this belt is
-0.261 m/s, which over four seconds is 900 mm of aim error -- and measured, two
-visits in nine commanded a pose 208 and 346 mm from any object, outside the
-region the arm is trusted over, with the arm falling 50 to 80 mm behind the
-command while the jaws closed on nothing. 0.30 s is one and a half times the
-measured decorrelation time. Configured as `task.drift_horizon_seconds`.
-"""
-
 Point = tuple[float, float, float]
 """A position in belt frame meters, which is MuJoCo world."""
 
@@ -143,9 +128,10 @@ class TaskSettings:
             the visit is re-solved, in meters. Past it, a plan that cannot be
             corrected is abandoned rather than flown.
         drift_horizon: How long an object's drift across the belt is carried
-            forward, in seconds. The travel along the belt is carried for the
-            whole interception; the drift across it decays within a fraction
-            of a second and is carried for this long.
+            forward, in seconds.
+        closing_rise_seconds: How long the flange rises while the jaw closes
+            at the start of a hold.
+        leg_samples: Poses per plan leg in the trusted-region check.
     """
 
     profile: Profile
@@ -158,9 +144,11 @@ class TaskSettings:
     interception_margin: float
     park_position_world: Point
     park_marker_color: Point
-    safe_clearance: float = 0.300
-    aim_tolerance: float = 0.030
-    drift_horizon: float = DRIFT_HORIZON
+    aim_tolerance: float
+    drift_horizon: float
+    closing_rise_seconds: float
+    leg_samples: int
+    safe_clearance: float | None = None
 
     def __init__(
         self,
@@ -175,8 +163,10 @@ class TaskSettings:
         park_position_world: Point | None = None,
         park_marker_color: Point = (0.0, 0.0, 0.0),
         safe_clearance: float | None = None,
-        aim_tolerance: float = 0.030,
-        drift_horizon: float = DRIFT_HORIZON,
+        aim_tolerance: float | None = None,
+        drift_horizon: float | None = None,
+        closing_rise_seconds: float | None = None,
+        leg_samples: int | None = None,
         *,
         park_position: Point | None = None,
     ) -> None:
@@ -185,6 +175,14 @@ class TaskSettings:
             raise TypeError(
                 "TaskSettings requires park_position_world or park_position"
             )
+        if aim_tolerance is None:
+            raise TypeError("TaskSettings requires aim_tolerance")
+        if drift_horizon is None:
+            raise TypeError("TaskSettings requires drift_horizon")
+        if closing_rise_seconds is None:
+            raise TypeError("TaskSettings requires closing_rise_seconds")
+        if leg_samples is None:
+            raise TypeError("TaskSettings requires leg_samples")
         object.__setattr__(self, "profile", profile)
         object.__setattr__(self, "approach_height", approach_height)
         object.__setattr__(self, "arrival_tolerance", arrival_tolerance)
@@ -202,6 +200,8 @@ class TaskSettings:
         )
         object.__setattr__(self, "aim_tolerance", aim_tolerance)
         object.__setattr__(self, "drift_horizon", drift_horizon)
+        object.__setattr__(self, "closing_rise_seconds", closing_rise_seconds)
+        object.__setattr__(self, "leg_samples", leg_samples)
 
     @property
     def park_position(self) -> Point:
@@ -217,10 +217,27 @@ class MotionSettings:
         max_speed: Flange speed ceiling in task space, in meters per second.
         max_acceleration: Flange acceleration ceiling, in meters per second
             squared.
+        intercept_passes: How many times a moving-goal intercept is
+            re-measured before use.
+        minimum_segment_seconds: Floor on a planned quintic duration, in
+            seconds.
+        segment_sample_count: Samples used to check peak speed and
+            acceleration along a segment.
+        bisection_passes: Halvings in the monotone duration search.
+        minimum_delivery_seconds: Floor on a delivery or climb duration, in
+            seconds.
+        correction_steps: Fractions tried when a partial correction must stay
+            under a ceiling.
     """
 
     max_speed: float
     max_acceleration: float
+    intercept_passes: int
+    minimum_segment_seconds: float
+    segment_sample_count: int
+    bisection_passes: int
+    minimum_delivery_seconds: float
+    correction_steps: int
 
 
 @dataclass(frozen=True)
@@ -317,6 +334,8 @@ class ControlSettings:
                 ),
                 aim_tolerance=_positive(task, "aim_tolerance_meters", "task"),
                 drift_horizon=_positive(task, "drift_horizon_seconds", "task"),
+                closing_rise_seconds=_positive(task, "closing_rise_seconds", "task"),
+                leg_samples=int(require(task, "leg_samples", "task")),
             ),
             motion=MotionSettings(
                 max_speed=_positive(motion, "max_speed_meters_per_second", "motion"),
@@ -325,6 +344,18 @@ class ControlSettings:
                     "max_acceleration_meters_per_second_squared",
                     "motion",
                 ),
+                intercept_passes=int(require(motion, "intercept_passes", "motion")),
+                minimum_segment_seconds=_positive(
+                    motion, "minimum_segment_seconds", "motion"
+                ),
+                segment_sample_count=int(
+                    require(motion, "segment_sample_count", "motion")
+                ),
+                bisection_passes=int(require(motion, "bisection_passes", "motion")),
+                minimum_delivery_seconds=_positive(
+                    motion, "minimum_delivery_seconds", "motion"
+                ),
+                correction_steps=int(require(motion, "correction_steps", "motion")),
             ),
             servo=ServoSettings(
                 gain=float(require(servo, "gain", "servo")),

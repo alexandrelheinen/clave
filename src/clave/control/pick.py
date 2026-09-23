@@ -32,7 +32,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from clave.control.settings import DRIFT_HORIZON, Phase, Point
+from clave.control.settings import Phase, Point
 from clave.control.trajectory import (
     Segment,
     State,
@@ -62,7 +62,6 @@ endpoints at zero, only one basis term survives and its derivative is
 `docs/trajectory-formulation.md` derives it.
 """
 
-MINIMUM_DELIVERY_SECONDS = 0.05
 """A floor on the delivery, so a chute already underneath is not a zero arc.
 
 A segment of no duration divides by its own span. The floor is far below
@@ -98,7 +97,10 @@ def _fit_segment(
     end: State,
     max_speed: float,
     max_acceleration: float,
-    min_duration: float = 0.50,
+    min_duration: float,
+    *,
+    segment_sample_count: int,
+    bisection_passes: int,
 ) -> Segment:
     """Return a quintic segment respecting speed and acceleration ceilings.
 
@@ -123,13 +125,13 @@ def _fit_segment(
 
     def feasible(seconds: float) -> bool:
         return Segment(start=start, end=end, duration=seconds).fits(
-            max_speed, max_acceleration
+            max_speed, max_acceleration, segment_sample_count
         )
 
     return Segment(
         start=start,
         end=end,
-        duration=soonest_feasible(feasible, lower),
+        duration=soonest_feasible(feasible, lower, bisection_passes),
     )
 
 
@@ -288,10 +290,16 @@ def plan_pick(
     latest: float = 0.0,
     at_seconds: float = 0.0,
     margin: float = 1.0,
-    drift_horizon: float = DRIFT_HORIZON,
     target_position_world: Point | None = None,
     retreat_lift: float | None = None,
     *,
+    drift_horizon: float,
+    minimum_segment_seconds: float,
+    closing_rise_seconds: float,
+    segment_sample_count: int,
+    bisection_passes: int,
+    minimum_delivery_seconds: float,
+    correction_steps: int,
     object_position: Point | None = None,
     belt_velocity: Point | None = None,
     z_offset: float | None = None,
@@ -363,7 +371,7 @@ def plan_pick(
     if clearance is None:
         raise TypeError("plan_pick requires approach_clearance_z or z_offset")
     target_pos = over if over is not None else target_position_world
-    max_accel = max_acceleration if max_acceleration > 0.0 else 2.50
+    max_accel = max_acceleration
     border_y = (
         belt_border_y
         if belt_border_y is not None
@@ -386,7 +394,13 @@ def plan_pick(
             acceleration=(0.0, 0.0, 0.0),
         )
         entry_arc = _fit_segment(
-            flange, border_approach, max_speed, max_accel, min_duration=0.50
+            flange,
+            border_approach,
+            max_speed,
+            max_accel,
+            min_duration=minimum_segment_seconds,
+            segment_sample_count=segment_sample_count,
+            bisection_passes=bisection_passes,
         )
         if entry_arc.duration >= latest:
             return None
@@ -408,7 +422,9 @@ def plan_pick(
             max_accel,
             remaining_latest,
             margin,
-            drift_horizon,
+            drift_horizon=drift_horizon,
+            segment_sample_count=segment_sample_count,
+            bisection_passes=bisection_passes,
         )
     else:
         reaching = approach(
@@ -421,7 +437,9 @@ def plan_pick(
             max_accel,
             latest,
             margin,
-            drift_horizon,
+            drift_horizon=drift_horizon,
+            segment_sample_count=segment_sample_count,
+            bisection_passes=bisection_passes,
         )
 
     if reaching is None:
@@ -445,8 +463,14 @@ def plan_pick(
         cross_speed=cross_v,
         max_acceleration=max_accel,
         drift_horizon=drift_horizon,
+        minimum_segment_seconds=minimum_segment_seconds,
+        closing_rise_seconds=closing_rise_seconds,
         jaw_rise=jaw_rise,
         clearance_flange_z=clearance_flange_z,
+        segment_sample_count=segment_sample_count,
+        bisection_passes=bisection_passes,
+        minimum_delivery_seconds=minimum_delivery_seconds,
+        correction_steps=correction_steps,
     )
 
 
@@ -460,10 +484,16 @@ def refine(
     max_speed: float = 0.0,
     max_acceleration: float = 0.0,
     at_seconds: float = 0.0,
-    drift_horizon: float = DRIFT_HORIZON,
     target_position_world: Point | None = None,
     retreat_lift: float | None = None,
     *,
+    drift_horizon: float,
+    minimum_segment_seconds: float,
+    closing_rise_seconds: float,
+    segment_sample_count: int,
+    bisection_passes: int,
+    minimum_delivery_seconds: float,
+    correction_steps: int,
     object_position: Point | None = None,
     belt_velocity: Point | None = None,
     z_offset: float | None = None,
@@ -528,7 +558,7 @@ def refine(
     if clearance is None:
         raise TypeError("refine requires approach_clearance_z or z_offset")
     target_pos = over if over is not None else target_position_world
-    max_accel = max_acceleration if max_acceleration > 0.0 else 2.50
+    max_accel = max_acceleration
     border_y = (
         belt_border_y
         if belt_border_y is not None
@@ -550,7 +580,7 @@ def refine(
                 end=entry_leg.end,
                 duration=rem_entry,
             )
-            if not new_entry_arc.fits(max_speed, max_accel):
+            if not new_entry_arc.fits(max_speed, max_accel, segment_sample_count):
                 return None
             # Along the belt only, for the same reason as the entry waypoint.
             obj_pos_at_border = as_point(
@@ -578,6 +608,8 @@ def refine(
                 duration=track_leg.duration,
                 max_speed=max_speed,
                 max_acceleration=max_accel,
+                segment_sample_count=segment_sample_count,
+                correction_steps=correction_steps,
             )
             if new_track_arc is None:
                 return None
@@ -606,8 +638,14 @@ def refine(
                 cross_speed=cross_v,
                 max_acceleration=max_accel,
                 drift_horizon=drift_horizon,
+                minimum_segment_seconds=minimum_segment_seconds,
+                closing_rise_seconds=closing_rise_seconds,
                 jaw_rise=jaw_rise,
                 clearance_flange_z=clearance_flange_z,
+                segment_sample_count=segment_sample_count,
+                bisection_passes=bisection_passes,
+                minimum_delivery_seconds=minimum_delivery_seconds,
+                correction_steps=correction_steps,
             )
         if elapsed < entry_leg.duration + track_leg.duration:
             rem_track = (entry_leg.duration + track_leg.duration) - elapsed
@@ -634,6 +672,8 @@ def refine(
                 duration=rem_track,
                 max_speed=max_speed,
                 max_acceleration=max_accel,
+                segment_sample_count=segment_sample_count,
+                correction_steps=correction_steps,
             )
             if new_track_arc is None:
                 return None
@@ -661,8 +701,14 @@ def refine(
                 cross_speed=cross_v,
                 max_acceleration=max_accel,
                 drift_horizon=drift_horizon,
+                minimum_segment_seconds=minimum_segment_seconds,
+                closing_rise_seconds=closing_rise_seconds,
                 jaw_rise=jaw_rise,
                 clearance_flange_z=clearance_flange_z,
+                segment_sample_count=segment_sample_count,
+                bisection_passes=bisection_passes,
+                minimum_delivery_seconds=minimum_delivery_seconds,
+                correction_steps=correction_steps,
             )
         return None
 
@@ -691,6 +737,8 @@ def refine(
         duration=remaining,
         max_speed=max_speed,
         max_acceleration=max_accel,
+        segment_sample_count=segment_sample_count,
+        correction_steps=correction_steps,
     )
     if arc is None:
         return None
@@ -714,8 +762,14 @@ def refine(
         cross_speed=cross_v,
         max_acceleration=max_accel,
         drift_horizon=drift_horizon,
+        minimum_segment_seconds=minimum_segment_seconds,
+        closing_rise_seconds=closing_rise_seconds,
         jaw_rise=jaw_rise,
         clearance_flange_z=clearance_flange_z,
+        segment_sample_count=segment_sample_count,
+        bisection_passes=bisection_passes,
+        minimum_delivery_seconds=minimum_delivery_seconds,
+        correction_steps=correction_steps,
     )
 
 
@@ -729,7 +783,6 @@ def retarget_descent(
     max_speed: float,
     max_acceleration: float,
     at_seconds: float,
-    drift_horizon: float = DRIFT_HORIZON,
     retreat_lift: float | None = None,
     over: Point | None = None,
     belt_border_y: float | None = None,
@@ -737,6 +790,14 @@ def retarget_descent(
     cross_speed: float | None = None,
     jaw_rise: float = 0.0,
     clearance_flange_z: float | None = None,
+    *,
+    drift_horizon: float,
+    minimum_segment_seconds: float,
+    closing_rise_seconds: float,
+    segment_sample_count: int,
+    bisection_passes: int,
+    minimum_delivery_seconds: float,
+    correction_steps: int,
 ) -> Plan | None:
     """Point the descent already in progress at where the object is now.
 
@@ -820,12 +881,14 @@ def retarget_descent(
         duration=remaining,
         max_speed=max_speed,
         max_acceleration=None,
+        segment_sample_count=segment_sample_count,
+        correction_steps=correction_steps,
     )
     if dropping is None:
         return None
-    ceiling = max_acceleration if max_acceleration > 0.0 else 2.50
+    ceiling = max_acceleration
     rise = _closing_rise(dropping.end.position[2], jaw_rise, clearance_flange_z)
-    held = _hold(dropping.end, dwell_seconds, belt, rise)
+    held = _hold(dropping.end, dwell_seconds, belt, rise, closing_rise_seconds)
     rising = _retreat(held[-1].segment.end, approach_clearance_z, approach_speed, belt)
     legs = [
         Leg(Phase.DESCEND, dropping, leg.grip),
@@ -842,6 +905,9 @@ def retarget_descent(
             belt,
             max_speed,
             ceiling,
+            segment_sample_count=segment_sample_count,
+            bisection_passes=bisection_passes,
+            minimum_delivery_seconds=minimum_delivery_seconds,
         )
         legs.append(Leg(Phase.RETREAT, climbing, JAW_SHUT))
         border = State(
@@ -858,7 +924,13 @@ def retarget_descent(
             Leg(
                 Phase.DELIVER,
                 _fit_segment(
-                    climbing.end, border, max_speed, ceiling, min_duration=0.50
+                    climbing.end,
+                    border,
+                    max_speed,
+                    ceiling,
+                    min_duration=minimum_segment_seconds,
+                    segment_sample_count=segment_sample_count,
+                    bisection_passes=bisection_passes,
                 ),
                 JAW_SHUT,
             )
@@ -871,7 +943,9 @@ def retarget_descent(
                     chute,
                     max_speed,
                     ceiling,
-                    min_duration=MINIMUM_DELIVERY_SECONDS,
+                    min_duration=minimum_delivery_seconds,
+                    segment_sample_count=segment_sample_count,
+                    bisection_passes=bisection_passes,
                 ),
                 JAW_SHUT,
             )
@@ -886,7 +960,13 @@ def retarget_descent(
     )
 
 
-def _deliver(start: State, target_position_world: Point, max_speed: float) -> Segment:
+def _deliver(
+    start: State,
+    target_position_world: Point,
+    max_speed: float,
+    *,
+    minimum_delivery_seconds: float,
+) -> Segment:
     """Return the arc that carries the object to its chute and lets go.
 
     Args:
@@ -898,7 +978,7 @@ def _deliver(start: State, target_position_world: Point, max_speed: float) -> Se
         The arc, ending at rest over the mouth.
     """
     span = distance(start.position, target_position_world)
-    seconds = max(PEAK_OVER_MEAN * span / max_speed, MINIMUM_DELIVERY_SECONDS)
+    seconds = max(PEAK_OVER_MEAN * span / max_speed, minimum_delivery_seconds)
     return Segment(
         start=start,
         end=State(
@@ -922,13 +1002,19 @@ def _assemble(
     target_position_world: Point | None = None,
     max_speed: float = 1.0,
     retreat_lift: float | None = None,
-    drift_horizon: float = DRIFT_HORIZON,
     *,
+    drift_horizon: float,
+    minimum_segment_seconds: float,
+    closing_rise_seconds: float,
+    segment_sample_count: int,
+    bisection_passes: int,
+    minimum_delivery_seconds: float,
+    correction_steps: int,
     entry_segment: Segment | None = None,
     belt_border_y: float = -0.25,
     safe_height_world: float | None = None,
     cross_speed: float | None = None,
-    max_acceleration: float = 2.50,
+    max_acceleration: float,
     jaw_rise: float = 0.0,
     clearance_flange_z: float | None = None,
 ) -> Plan:
@@ -963,10 +1049,12 @@ def _assemble(
         belt_velocity_world,
         approach_clearance_z,
         approach_speed,
-        drift_horizon,
+        drift_horizon=drift_horizon,
     )
     rise = _closing_rise(dropping.end.position[2], jaw_rise, clearance_flange_z)
-    held = _hold(dropping.end, dwell_seconds, belt_velocity_world, rise)
+    held = _hold(
+        dropping.end, dwell_seconds, belt_velocity_world, rise, closing_rise_seconds
+    )
     rising = _retreat(
         held[-1].segment.end, approach_clearance_z, approach_speed, belt_velocity_world
     )
@@ -993,6 +1081,9 @@ def _assemble(
             belt_velocity_world,
             max_speed,
             max_acceleration,
+            segment_sample_count=segment_sample_count,
+            bisection_passes=bisection_passes,
+            minimum_delivery_seconds=minimum_delivery_seconds,
         )
         legs.append(Leg(Phase.RETREAT, climbing, JAW_SHUT))
         border_retreat = State(
@@ -1006,14 +1097,22 @@ def _assemble(
             acceleration=(0.0, 0.0, 0.0),
         )
         seg_to_border = _fit_segment(
-            climbing.end, border_retreat, max_speed, max_acceleration, min_duration=0.50
+            climbing.end,
+            border_retreat,
+            max_speed,
+            max_acceleration,
+            min_duration=minimum_segment_seconds,
+            segment_sample_count=segment_sample_count,
+            bisection_passes=bisection_passes,
         )
         seg_to_chute = _fit_segment(
             border_retreat,
             chute_target,
             max_speed,
             max_acceleration,
-            min_duration=MINIMUM_DELIVERY_SECONDS,
+            min_duration=minimum_delivery_seconds,
+            segment_sample_count=segment_sample_count,
+            bisection_passes=bisection_passes,
         )
         legs.append(Leg(Phase.DELIVER, seg_to_border, JAW_SHUT))
         legs.append(Leg(Phase.DELIVER, seg_to_chute, JAW_SHUT))
@@ -1024,25 +1123,6 @@ def _assemble(
         started_at=at_seconds,
         pick_at=at_seconds + entry_duration + reaching.duration + dropping.duration,
     )
-
-
-CLOSING_RISE_SECONDS = 0.20
-"""How long the hold spends raising the flange while the jaw shuts, in seconds.
-
-The shipped jaw reaches its shut hang 0.30 s after the close is commanded,
-and a rest-to-rest quintic of 0.20 s leads that hang. Longer than this, the
-quintic lags and the pads dip into the clearance. Shorter, the rise is
-steeper and the lead grows. The rest of the dwell is a carry at the height
-the rise arrived at.
-"""
-
-_FEASIBLE_STEPS = 32
-"""How many fractions of a correction are tried against a ceiling.
-
-The largest fraction that fits is the one flown. One part in thirty-two is
-a few millimetres on the corrections this line actually refuses, which is
-finer than the aim tolerance and cheap next to one quintic.
-"""
 
 
 def _object_under(
@@ -1104,6 +1184,9 @@ def _feasible_arc(
     duration: float,
     max_speed: float,
     max_acceleration: float | None,
+    *,
+    segment_sample_count: int,
+    correction_steps: int,
 ) -> Segment | None:
     """Return the arc toward `wanted` that stays inside the ceiling.
 
@@ -1128,15 +1211,15 @@ def _feasible_arc(
         The arc, or None when no positive fraction fits.
     """
     best: Segment | None = None
-    for step in range(_FEASIBLE_STEPS + 1):
-        alpha = step / _FEASIBLE_STEPS
+    for step in range(correction_steps + 1):
+        alpha = step / correction_steps
         if alpha == 0.0:
             continue
         arc = Segment(start=start, end=_blend(kept, wanted, alpha), duration=duration)
         fits = (
-            arc.peak_speed() <= max_speed
+            arc.peak_speed(segment_sample_count) <= max_speed
             if max_acceleration is None
-            else arc.fits(max_speed, max_acceleration)
+            else arc.fits(max_speed, max_acceleration, segment_sample_count)
         )
         if fits:
             best = arc
@@ -1194,7 +1277,11 @@ def _closing_rise(
 
 
 def _hold(
-    start: State, seconds: float, belt_velocity: Point, lift: float
+    start: State,
+    seconds: float,
+    belt_velocity: Point,
+    lift: float,
+    closing_rise_seconds: float,
 ) -> tuple[Leg, ...]:
     """Return the hold: a rise while the jaw shuts, then a carry.
 
@@ -1211,7 +1298,7 @@ def _hold(
     if lift <= 1e-6 or seconds <= 1e-3:
         carry = _carry(start, max(seconds, 1e-3), belt_velocity)
         return (Leg(Phase.HOLD, carry, JAW_SHUT),)
-    rise_for = min(CLOSING_RISE_SECONDS, seconds)
+    rise_for = min(closing_rise_seconds, seconds)
     risen = _rise(start, rise_for, belt_velocity, lift)
     legs = [Leg(Phase.HOLD, risen, JAW_SHUT)]
     rest = seconds - rise_for
@@ -1259,9 +1346,8 @@ def _retreat(
 
     Ending at rest is not a neutral alternative. The object's frame carries the
     belt and the flange does not, so a retreat that ends at rest slides
-    backwards through the whole lift relative to the object it is holding: on
-    the shipped line that is 0.26 m/s of relative motion for as long as the
-    lift lasts.
+    backwards through the whole lift relative to the object it is holding: for
+    as long as the lift lasts.
 
     Args:
         start: Where the hold ended, moving with the belt.
@@ -1297,6 +1383,10 @@ def _climb(
     belt_velocity: Point,
     max_speed: float,
     max_acceleration: float,
+    *,
+    segment_sample_count: int,
+    bisection_passes: int,
+    minimum_delivery_seconds: float,
 ) -> Segment:
     """Return the arc that lifts the object to the height the delivery crosses at.
 
@@ -1326,7 +1416,7 @@ def _climb(
     ceiling = max(max_speed, 1e-6)
     level = np.asarray([start.position[0], start.position[1], target_z])
     span = float(np.linalg.norm(level - as_vector(start.position)))
-    lower = max(PEAK_OVER_MEAN * span / ceiling, MINIMUM_DELIVERY_SECONDS)
+    lower = max(PEAK_OVER_MEAN * span / ceiling, minimum_delivery_seconds)
 
     def arc(seconds: float) -> Segment:
         return Segment(
@@ -1348,6 +1438,6 @@ def _climb(
         )
 
     def feasible(seconds: float) -> bool:
-        return arc(seconds).fits(max_speed, max_acceleration)
+        return arc(seconds).fits(max_speed, max_acceleration, segment_sample_count)
 
-    return arc(soonest_feasible(feasible, lower))
+    return arc(soonest_feasible(feasible, lower, bisection_passes))

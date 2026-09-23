@@ -8,9 +8,16 @@ import pytest
 
 from clave.world import arm as armmod
 from clave.world import belt, config, scene
-from clave.world.scene import BeltGeometry, SceneLayout
+from clave.world.scene import BeltGeometry, SceneLayout, TakeawayDrive
 
 ROOT = Path(__file__).resolve().parents[2]
+_ARM = config.load(ROOT / "configs" / "world" / "sorting_line.yml")["arm"]
+_REACH_MIN = float(_ARM["reach_min_meters"])
+_REACH_MAX = float(_ARM["reach_max_meters"])
+_TOOL_ABOVE = (
+    float(_ARM["tool_above_base_meters"][0]),
+    float(_ARM["tool_above_base_meters"][1]),
+)
 CONFIG = ROOT / "configs" / "world" / "sorting_line.yml"
 
 
@@ -23,24 +30,38 @@ def layout(speed: float, offset: float) -> SceneLayout:
     """
 
     return SceneLayout(
-        belt=BeltGeometry(length=3.0, width=1.0, surface_height=0.90, speed=speed),
+        belt=BeltGeometry(
+            length=3.0,
+            width=1.0,
+            surface_height=0.90,
+            speed=speed,
+            height_tolerance=0.05,
+        ),
         arm_base=(0.0, offset, 0.90),
-        reach_min=armmod.REACH_MIN_METERS,
-        reach_max=armmod.REACH_MAX_METERS,
-        tool_above_base=(-0.05, 0.45),
+        reach_min=_REACH_MIN,
+        reach_max=_REACH_MAX,
+        tool_above_base=_TOOL_ABOVE,
         pedestal=(0.30, 0.30),
         channels=("CH-PET",),
         objects=(),
         pool_size=0,
         timestep=0.002,
+        takeaway=TakeawayDrive(
+            speed=0.20,
+            height_min=0.25,
+            height_max=0.45,
+            mouth_half_width=0.15,
+            past_mouth=1.50,
+            toward_mouth=0.10,
+        ),
     )
 
 
 def test_the_report_states_the_annulus_window_and_budget() -> None:
     """The report states the annulus window and budget."""
     report = belt.reach_report(layout(speed=0.2, offset=-0.34))
-    assert report.reach_min == armmod.REACH_MIN_METERS
-    assert report.reach_max == armmod.REACH_MAX_METERS
+    assert report.reach_min == _REACH_MIN
+    assert report.reach_max == _REACH_MAX
     assert report.belt_offset == pytest.approx(0.34)
     assert report.window_length > 0
     assert report.time_budget == pytest.approx(report.window_length / 0.2)
@@ -54,9 +75,7 @@ def test_a_belt_outside_reach_yields_no_window() -> None:
     the 0.9 m that stranded the previous arm leaves this one comfortably on
     the belt.
     """
-    report = belt.reach_report(
-        layout(speed=0.2, offset=-(armmod.REACH_MAX_METERS + 0.5))
-    )
+    report = belt.reach_report(layout(speed=0.2, offset=-(_REACH_MAX + 0.5)))
     assert report.window_length == 0.0
     assert not report.reachable
 
@@ -206,7 +225,12 @@ def test_the_window_covers_both_halves_of_the_belt() -> None:
         for x in range(
             int(-plan.belt.length / 2.0 / step), int(plan.belt.length / 2.0 / step) + 1
         )
-        if armmod.reaches((plan.arm_base[0], plan.arm_base[1]), x * step, 0.0)
+        if armmod.reaches(
+            (plan.arm_base[0], plan.arm_base[1]),
+            x * step,
+            0.0,
+            armmod.ReachBounds(_REACH_MIN, _REACH_MAX, _TOOL_ABOVE),
+        )
     ]
     assert min(reachable) < 0.0, "nothing upstream of the arm is reachable"
     span = max(reachable) - min(reachable)

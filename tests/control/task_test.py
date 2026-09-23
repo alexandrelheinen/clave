@@ -32,7 +32,21 @@ ROOT = Path(__file__).resolve().parents[2]
 BELT_SURFACE = 0.90
 PARK = (0.45, -1.00, 1.20)
 BELT_SPEED = 0.314
-LIMITS = MotionSettings(max_speed=1.00, max_acceleration=2.50)
+LIMITS = MotionSettings(
+    max_speed=1.00,
+    max_acceleration=2.50,
+    intercept_passes=3,
+    minimum_segment_seconds=0.50,
+    segment_sample_count=64,
+    bisection_passes=40,
+    minimum_delivery_seconds=0.05,
+    correction_steps=32,
+)
+# Test-only algorithm parameters (production loads these from control.yml).
+DRIFT_HORIZON = 0.30
+CLOSING_RISE = 0.20
+AIM_TOLERANCE = 0.030
+LEG_SAMPLES = 5
 EFFECTOR = Effector(
     finger_length=0.1558,
     pad_thickness=0.008,
@@ -71,6 +85,10 @@ def task_settings(**overrides: object) -> TaskSettings:
         "interception_margin": 1.15,
         "park_position": PARK,
         "park_marker_color": (0.85, 0.10, 0.10),
+        "aim_tolerance": AIM_TOLERANCE,
+        "drift_horizon": DRIFT_HORIZON,
+        "closing_rise_seconds": CLOSING_RISE,
+        "leg_samples": LEG_SAMPLES,
     }
     fields.update(overrides)
     return TaskSettings(**fields)  # type: ignore[arg-type]

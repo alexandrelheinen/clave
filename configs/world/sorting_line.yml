@@ -38,6 +38,8 @@ belt:
   # standing operator's waist, and a robot retrofitted onto such a line
   # inherits it.
   surface_height_meters: 0.90
+  # Vertical allowance for deciding an object still rests on the belt, in meters.
+  height_tolerance_meters: 0.05
   # A range, drawn once per run from the seed, not a fixed speed. A line whose
   # speed never varies trains a policy that has memorised one speed.
   #
@@ -362,6 +364,17 @@ chutes:
     surface_height_meters: 0.30
     width_meters: 0.24
     length_meters: 1.40
+    # How fast a sorted object is driven along the take-away, in meters per second.
+    speed_meters_per_second: 0.20
+    # Vertical band that counts as resting on a take-away, in meters.
+    height_min_meters: 0.25
+    height_max_meters: 0.45
+    # Lateral acceptance around a chute mouth when scoring a take-away hit, in meters.
+    mouth_half_width_meters: 0.15
+    # How far past the mouth along the take-away an object still counts, in meters.
+    past_mouth_meters: 1.50
+    # How far back toward the mouth along the take-away still counts, in meters.
+    toward_mouth_meters: 0.10
 
 structure:
   # The belt and the arm used to float. Nothing below changes a trajectory: a

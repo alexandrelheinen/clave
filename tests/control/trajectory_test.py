@@ -21,6 +21,9 @@ BELT = (0.314, 0.0, 0.0)
 MAX_SPEED = 1.00
 MAX_ACCELERATION = 2.50
 Z_OFFSET = 0.05
+DRIFT_HORIZON = 0.30
+SEGMENT_SAMPLES = 64
+BISECTION_PASSES = 40
 APPROACH_SPEED = 0.25
 PARK = (0.45, -1.00, 1.20)
 
@@ -191,12 +194,14 @@ def test_a_descent_that_matches_the_object_costs_far_less_acceleration() -> None
     )
     landing = (BELT[0] * span, 0.0, 0.95)
 
-    stopping = Segment(top, State.at_rest(landing), span).peak_acceleration()
+    stopping = Segment(top, State.at_rest(landing), span).peak_acceleration(
+        SEGMENT_SAMPLES
+    )
     matching = Segment(
         top,
         State(position=landing, velocity=BELT, acceleration=(0.0, 0.0, 0.0)),
         span,
-    ).peak_acceleration()
+    ).peak_acceleration(SEGMENT_SAMPLES)
     assert matching < 0.35 * stopping
 
 
@@ -217,6 +222,9 @@ def test_the_approach_ends_above_where_the_object_will_be() -> None:
         MAX_SPEED,
         MAX_ACCELERATION,
         latest=6.0,
+        drift_horizon=DRIFT_HORIZON,
+        segment_sample_count=SEGMENT_SAMPLES,
+        bisection_passes=BISECTION_PASSES,
     )
     assert arc is not None
     arrival = arc.duration + descent_seconds(Z_OFFSET, APPROACH_SPEED)
@@ -240,6 +248,9 @@ def test_the_approach_arrives_already_descending_and_moving_with_the_belt() -> N
         MAX_SPEED,
         MAX_ACCELERATION,
         latest=6.0,
+        drift_horizon=DRIFT_HORIZON,
+        segment_sample_count=SEGMENT_SAMPLES,
+        bisection_passes=BISECTION_PASSES,
     )
     assert arc is not None
     assert arc.end.velocity[0] == pytest.approx(BELT[0])
@@ -257,10 +268,13 @@ def test_the_approach_respects_both_ceilings_over_its_whole_length() -> None:
         MAX_SPEED,
         MAX_ACCELERATION,
         latest=6.0,
+        drift_horizon=DRIFT_HORIZON,
+        segment_sample_count=SEGMENT_SAMPLES,
+        bisection_passes=BISECTION_PASSES,
     )
     assert arc is not None
-    assert arc.peak_speed() <= MAX_SPEED + 1e-9
-    assert arc.peak_acceleration() <= MAX_ACCELERATION + 1e-9
+    assert arc.peak_speed(SEGMENT_SAMPLES) <= MAX_SPEED + 1e-9
+    assert arc.peak_acceleration(SEGMENT_SAMPLES) <= MAX_ACCELERATION + 1e-9
 
 
 def test_the_interception_found_is_the_soonest_feasible_one() -> None:
@@ -279,10 +293,13 @@ def test_the_interception_found_is_the_soonest_feasible_one() -> None:
         MAX_SPEED,
         MAX_ACCELERATION,
         latest=6.0,
+        drift_horizon=DRIFT_HORIZON,
+        segment_sample_count=SEGMENT_SAMPLES,
+        bisection_passes=BISECTION_PASSES,
     )
     assert arc is not None
     hurried = Segment(arc.start, arc.end, arc.duration * 0.85)
-    assert not hurried.fits(MAX_SPEED, MAX_ACCELERATION)
+    assert not hurried.fits(MAX_SPEED, MAX_ACCELERATION, SEGMENT_SAMPLES)
 
 
 def test_a_search_from_only_a_lower_bound_finds_the_soonest_fit() -> None:
@@ -296,20 +313,22 @@ def test_a_search_from_only_a_lower_bound_finds_the_soonest_fit() -> None:
     def feasible(seconds: float) -> bool:
         return seconds >= 0.6
 
-    found = soonest_feasible(feasible, 0.4)
+    found = soonest_feasible(feasible, 0.4, BISECTION_PASSES)
     assert found == pytest.approx(0.6)
     assert not feasible(found * 0.85)
 
 
 def test_a_lower_bound_that_already_fits_is_kept() -> None:
     """The search does not move a duration that already fits."""
-    assert soonest_feasible(lambda seconds: seconds >= 0.2, 0.5) == pytest.approx(0.5)
+    assert soonest_feasible(
+        lambda seconds: seconds >= 0.2, 0.5, BISECTION_PASSES
+    ) == pytest.approx(0.5)
 
 
 def test_a_feasibility_search_needs_a_positive_seed() -> None:
     """The bracket grows by doubling, so a zero or negative seed cannot grow."""
     with pytest.raises(ValueError):
-        soonest_feasible(lambda seconds: True, 0.0)
+        soonest_feasible(lambda seconds: True, 0.0, BISECTION_PASSES)
 
 
 def test_an_object_that_cannot_be_reached_in_time_is_refused() -> None:
@@ -328,6 +347,9 @@ def test_an_object_that_cannot_be_reached_in_time_is_refused() -> None:
             MAX_SPEED,
             MAX_ACCELERATION,
             latest=0.2,
+            drift_horizon=DRIFT_HORIZON,
+            segment_sample_count=SEGMENT_SAMPLES,
+            bisection_passes=BISECTION_PASSES,
         )
         is None
     )
@@ -349,9 +371,19 @@ def test_the_descent_starts_exactly_where_the_approach_ended() -> None:
         MAX_SPEED,
         MAX_ACCELERATION,
         latest=6.0,
+        drift_horizon=DRIFT_HORIZON,
+        segment_sample_count=SEGMENT_SAMPLES,
+        bisection_passes=BISECTION_PASSES,
     )
     assert first is not None
-    second = descend(first, now, BELT, Z_OFFSET, APPROACH_SPEED)
+    second = descend(
+        first,
+        now,
+        BELT,
+        Z_OFFSET,
+        APPROACH_SPEED,
+        drift_horizon=DRIFT_HORIZON,
+    )
     assert second.start == first.end
 
 
@@ -367,9 +399,19 @@ def test_the_descent_lands_on_the_object_moving_with_it() -> None:
         MAX_SPEED,
         MAX_ACCELERATION,
         latest=6.0,
+        drift_horizon=DRIFT_HORIZON,
+        segment_sample_count=SEGMENT_SAMPLES,
+        bisection_passes=BISECTION_PASSES,
     )
     assert first is not None
-    second = descend(first, now, BELT, Z_OFFSET, APPROACH_SPEED)
+    second = descend(
+        first,
+        now,
+        BELT,
+        Z_OFFSET,
+        APPROACH_SPEED,
+        drift_horizon=DRIFT_HORIZON,
+    )
     arrival = first.duration + second.duration
     assert second.end.position[0] == pytest.approx(now[0] + BELT[0] * arrival)
     assert second.end.position[2] == pytest.approx(now[2])
@@ -393,9 +435,19 @@ def test_the_pair_never_stops_between_the_two_arcs() -> None:
         MAX_SPEED,
         MAX_ACCELERATION,
         latest=6.0,
+        drift_horizon=DRIFT_HORIZON,
+        segment_sample_count=SEGMENT_SAMPLES,
+        bisection_passes=BISECTION_PASSES,
     )
     assert first is not None
-    second = descend(first, now, BELT, Z_OFFSET, APPROACH_SPEED)
+    second = descend(
+        first,
+        now,
+        BELT,
+        Z_OFFSET,
+        APPROACH_SPEED,
+        drift_horizon=DRIFT_HORIZON,
+    )
     for arc, fraction in ((first, 0.9), (first, 1.0), (second, 0.0), (second, 0.1)):
         speed = math.dist((0, 0, 0), arc.at(arc.duration * fraction).velocity)
         assert speed > 0.1, f"the flange all but stopped at the join: {speed:.3f} m/s"
@@ -420,6 +472,9 @@ def test_a_belt_the_arm_cannot_outrun_refuses_every_interception() -> None:
             MAX_SPEED,
             MAX_ACCELERATION,
             latest=8.0,
+            drift_horizon=DRIFT_HORIZON,
+            segment_sample_count=SEGMENT_SAMPLES,
+            bisection_passes=BISECTION_PASSES,
         )
         is None
     )
