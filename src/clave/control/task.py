@@ -875,9 +875,7 @@ class TaskMachine:
             )
             return
         _, guided, _ = sampled
-        solved = self._resolve(
-            head, guided.position, guided.velocity, at_seconds
-        )
+        solved = self._resolve(head, guided.position, guided.velocity, at_seconds)
         if solved is None:
             self._abandon(
                 track_id,
