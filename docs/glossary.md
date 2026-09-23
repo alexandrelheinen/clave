@@ -54,12 +54,12 @@ describes.
 | `track` | Track filter | State estimation instance tracking a single waste object | `src/clave/tracker/track.py` |
 | `flange` | Tool mounting plate | The circular wrist mounting face of the robot arm where the tool bolts | `src/clave/world/arm.py`, `src/clave/control/task.py` |
 | `end_effector` | End-effector | The complete gripper assembly bolted to the arm flange | `src/clave/world/effector.py` |
-| `jaw` / `claw` | Gripper fingers | Opposing actuated fingers of the gripper | `src/clave/world/gripper.py` |
+| `jaw` / `claw` | Gripper fingers | Opposing actuated fingers of the gripper | `src/clave/world/effector.py` |
 | `pads` | Gripper pads | Contact surfaces on the gripper jaws that compress against the object | `src/clave/tracker/markers.py` |
 | `pinch` | Pinch center | Geometric center of contact between closed gripper pads | `src/clave/world/arm.py`, `src/clave/tracker/markers.py` |
 | `belt` | Conveyor belt | Primary sorting conveyor carrying items from intake to sorter | `src/clave/world/belt.py` |
 | `takeaway_belt` | Takeaway conveyor | Secondary conveyor receiving sorted or reject materials | `src/clave/world/scene.py` |
-| `camera` | Visual sensor | Overhead or wrist camera producing RGB/depth frames | `src/clave/world/optics.py` |
+| `camera` | Visual sensor | Overhead or wrist camera producing RGB/depth frames | `src/clave/tracker/belt_frame.py` |
 | `chute` / `funnel` | Collection hopper | Receptacle receiving sorted material streams (PET, HDPE, reject) | `src/clave/world/scene.py` |
 | `base` | Arm base | Rigid pedestal or mounting chassis of the robot manipulator | `src/clave/world/arm.py` |
 | `joint` | Arm joint | Articulated revolute or prismatic actuator axis of the arm | `src/clave/world/arm.py` |
@@ -111,7 +111,7 @@ expressed.
 
 | Frame | Origin | Axes Orientation | Typical Usage |
 |---|---|---|---|
-| `world` | Simulation / cell origin on floor $(0, 0, 0)$ | $+x$: conveyor travel direction<br>$+y$: across conveyor belt<br>$+z$: vertical upward normal from floor | Interception planning, guidance limits, safety checking, absolute robot reach |
+| `world` | Simulation / cell origin on floor $(0, 0, 0)$ | $+x$: conveyor travel direction<br>$+y$: across conveyor belt<br>$+z$: vertical upward normal from floor | Interception planning, motion limits, safety checking, absolute robot reach |
 | `belt` | Belt surface centerline | $+x$: along belt travel<br>$+y$: across belt lateral width<br>$+z$: vertical upward from belt surface | Object tracking, footprint geometry, intake window bounds |
 | `camera` | Camera optical focal center | $+z$: along optical axis (view direction)<br>$+x$: image right<br>$+y$: image down (or robot optical frame) | Raw detections, pixel reprojection, visual servoing |
 | `base` | Robot arm base pedestal | $+z$: along joint 1 axis<br>$+x, +y$: base mounting plate plane | Forward and inverse kinematics, joint limits |

@@ -36,7 +36,7 @@ def test_the_shipped_configuration_loads() -> None:
     assert settings.task.grasp_clearance > 0.0
     assert settings.task.approach_speed > 0.0
     assert settings.task.interception_limit > 0.0
-    assert settings.guidance.max_speed > 0.0
+    assert settings.motion.max_speed > 0.0
     assert settings.servo.gain > 0.0
 
 
@@ -50,8 +50,8 @@ def test_the_shipped_configuration_loads() -> None:
         ("task", "dwell_seconds"),
         ("task", "park_position_meters"),
         ("task", "park_marker_color"),
-        ("guidance", "max_speed_meters_per_second"),
-        ("guidance", "max_acceleration_meters_per_second_squared"),
+        ("motion", "max_speed_meters_per_second"),
+        ("motion", "max_acceleration_meters_per_second_squared"),
         ("servo", "gain"),
         ("servo", "max_joint_speed_radians_per_second"),
         ("calibration", "flange_offset_meters"),
@@ -68,8 +68,8 @@ def test_an_absent_key_fails_at_load_naming_itself(block: str, key: str) -> None
 def test_an_absent_block_fails_at_load_naming_itself() -> None:
     """AC-MOVE-14: an absent block fails at load naming itself."""
     parsed = raw()
-    del parsed["guidance"]
-    with pytest.raises(ClaveError, match="guidance"):
+    del parsed["motion"]
+    with pytest.raises(ClaveError, match="motion"):
         ControlSettings.load(parsed)
 
 
@@ -97,8 +97,8 @@ def test_both_profiles_are_selectable() -> None:
     [
         ("selection", "anchor_radius_meters"),
         ("task", "approach_height_meters"),
-        ("guidance", "max_speed_meters_per_second"),
-        ("guidance", "max_acceleration_meters_per_second_squared"),
+        ("motion", "max_speed_meters_per_second"),
+        ("motion", "max_acceleration_meters_per_second_squared"),
         ("servo", "max_joint_speed_radians_per_second"),
     ],
 )
@@ -256,7 +256,7 @@ def test_the_debug_views_are_named_and_one_is_the_default() -> None:
 
 def test_an_unknown_view_names_the_ones_that_exist() -> None:
     """An unknown view names the ones that exist."""
-    from clave.tracker.debug_run import DebugRunError, _view
+    from clave.sim.debug_run import DebugRunError, _view
 
     debug = load(ROOT / "configs" / "debug" / "tracker.yml")
     with pytest.raises(DebugRunError, match="belt"):
@@ -273,7 +273,7 @@ def test_the_park_marker_is_visible_from_the_default_view() -> None:
     """
     mujoco = pytest.importorskip("mujoco")
     numpy = pytest.importorskip("numpy")
-    from clave.tracker.debug_run import _view
+    from clave.sim.debug_run import _view
     from clave.tracker.markers import draw_park
     from clave.world import config as world_config
     from clave.world import scene

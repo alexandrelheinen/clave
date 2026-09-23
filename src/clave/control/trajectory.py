@@ -1,6 +1,6 @@
 """Trajectories with known duration, so an interception time can be solved for.
 
-Guidance until now stepped a reference toward a goal under a speed and an
+Motion until now stepped a reference toward a goal under a speed and an
 acceleration bound, which is enough to arrive somewhere and not enough to
 pick anything up. Arriving is not the problem: a jaw has to reach an object
 at a known instant, moving with it, having come straight down onto it. That

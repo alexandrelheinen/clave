@@ -139,7 +139,7 @@ class TaskSettings:
         safe_clearance: Flange clearance above the belt surface for crossing
             the belt border, in meters. If None, defaults to approach_height.
         aim_tolerance: How far the freshest estimate of the object's grasp
-            pose may stand from the pose a plan in flight is aiming at before
+            pose may stand from the pose a active plan is aiming at before
             the visit is re-solved, in meters. Past it, a plan that cannot be
             corrected is abandoned rather than flown.
         drift_horizon: How long an object's drift across the belt is carried
@@ -210,7 +210,7 @@ class TaskSettings:
 
 
 @dataclass(frozen=True)
-class GuidanceSettings:
+class MotionSettings:
     """What bounds the path between two poses.
 
     Attributes:
@@ -258,14 +258,14 @@ class ControlSettings:
     Attributes:
         selection: How the queue is ordered.
         task: The phases and the park pose.
-        guidance: The bounds on the path.
+        motion: The bounds on the path.
         servo: The joint step.
         calibration: The flange offset.
     """
 
     selection: SelectionSettings
     task: TaskSettings
-    guidance: GuidanceSettings
+    motion: MotionSettings
     servo: ServoSettings
     calibration: CalibrationSettings
 
@@ -286,7 +286,7 @@ class ControlSettings:
         """
         selection = require(raw, "selection")
         task = require(raw, "task")
-        guidance = require(raw, "guidance")
+        motion = require(raw, "motion")
         servo = require(raw, "servo")
         calibration = require(raw, "calibration")
 
@@ -318,14 +318,12 @@ class ControlSettings:
                 aim_tolerance=_positive(task, "aim_tolerance_meters", "task"),
                 drift_horizon=_positive(task, "drift_horizon_seconds", "task"),
             ),
-            guidance=GuidanceSettings(
-                max_speed=_positive(
-                    guidance, "max_speed_meters_per_second", "guidance"
-                ),
+            motion=MotionSettings(
+                max_speed=_positive(motion, "max_speed_meters_per_second", "motion"),
                 max_acceleration=_positive(
-                    guidance,
+                    motion,
                     "max_acceleration_meters_per_second_squared",
-                    "guidance",
+                    "motion",
                 ),
             ),
             servo=ServoSettings(

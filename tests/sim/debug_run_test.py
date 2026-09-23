@@ -16,9 +16,9 @@ from typing import Any
 
 import pytest
 
-from clave.control.guidance import Command
+from clave.control.motion import Command
 from clave.control.settings import Phase
-from clave.tracker.debug_run import (
+from clave.sim.debug_run import (
     _jaw_collision_geoms,
     _jaw_state,
     _park_the_arm,
@@ -104,7 +104,7 @@ def test_the_report_survives_the_terminal_it_printed_on_ac_move_55() -> None:
     reading them back from telemetry meant inferring which of thirteen objects
     each visit had been about.
     """
-    from clave.tracker.debug_run import (
+    from clave.sim.debug_run import (
         DebugRunReport,
         _report_document,
         report_lines,

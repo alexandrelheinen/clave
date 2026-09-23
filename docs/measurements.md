@@ -525,7 +525,7 @@ sensor observes an object after it leaves the gate.
 
 **One correction inside this change is below what the run can resolve, and
 is worth keeping anyway.** Making belt speed variable left the tracker, the
-task machine, guidance and selection all predicting with the speed the run
+task machine, motion and selection all predicting with the speed the run
 drew rather than the speed the belt is running at. The controller moves
 0.3125 to 0.304 m/s, and 0.0085 m/s over a two and a half second
 interception is 21 mm, which is the order of the jaw's side clearance.
@@ -1011,7 +1011,7 @@ solving a new interception there, is what a refused approach does, and it
 sends an arm that is already coming down back up the belt. The acceleration
 ceiling is not applied to that splice: the descent's duration is fixed by the
 clearance and the approach speed, and the descent already in hand peaks at
-4.57 m/s² against a guidance ceiling of 2.50 m/s². Gating the splice on 2.50
+4.57 m/s² against a motion ceiling of 2.50 m/s². Gating the splice on 2.50
 refuses a correction of zero.
 
 Thirty-six seconds after that change, seed 0:

@@ -1,4 +1,4 @@
-# The guidance formulation
+# The trajectory formulation
 
 How CLAVE plans the motion that takes a jaw onto an object the belt is
 carrying. [requirements/arm-control.md](requirements/arm-control.md) states
@@ -246,9 +246,9 @@ speed sits exactly on its ceiling while the acceleration sits near 1.5 of
 an allowed 2.5. Raising $a_{\max}$ would buy nothing. Only a faster flange,
 or a start closer to the belt, would shorten a visit.
 
-## Guidance state and plant state
+## Motion reference and plant state
 
-The arcs above are the guidance. They live in the flat output: the
+The arcs above are the motion layer. They live in the flat output: the
 end-effector pose, velocity and acceleration the plan asks for. Once a visit
 is committed, that state advances under a perfect-tracking model,
 
@@ -260,7 +260,7 @@ $$
 so a re-aim or a re-solve begins at $\mathbf{x}_g(t)$, not at the measured
 flange. The plant that trails, overshoots or collides is a control problem
 for the servo; feeding it back into the plan turns a tracking error into a
-new trajectory that rushes off the path the jaw was already flying. The
+new trajectory that rushes off the path the jaw was already following. The
 requirement that states this is `AC-MOVE-68` in
 [requirements/arm-control.md](requirements/arm-control.md).
 

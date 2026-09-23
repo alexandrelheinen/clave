@@ -519,7 +519,7 @@ def step_toward(
             command the actuators can follow.
 
             Measured against the previous command and not against the
-            measured position, which is the same distinction guidance makes
+            measured position, which is the same distinction motion makes
             one layer up and matters for the same reason. These are position
             actuators running a proportional-derivative loop, so the command
             has to lead the position to produce any force at all. Capping

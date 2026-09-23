@@ -132,7 +132,7 @@ branch = true
 omit = [
     "src/clave/candidates/perception.py",
     "src/clave/candidates/policy.py",
-    "src/clave/tracker/debug_run.py",
+    "src/clave/sim/debug_run.py",
 ]
 
 [tool.coverage.report]

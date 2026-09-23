@@ -190,7 +190,7 @@ class SpawnedObject:
             and this does not, so it is the only field here that names one
             object rather than one place. Anything that has to remember what
             it already did about an object -- which track the arm has served,
-            which one a plan in flight is aiming at -- has to key on this. A
+            which one a active plan is aiming at -- has to key on this. A
             run that keyed on the slot served each of the pool's slots once
             and then sat idle for the rest of the rollout, because every
             object after the first pass carried an identity already in the

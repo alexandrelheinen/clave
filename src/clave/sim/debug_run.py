@@ -18,7 +18,7 @@ straight above has no approach to read. That file carries two views and the
 run takes one by name: one camera cannot both read a 60 mm jaw and hold the
 park pose in frame.
 
-**The report separates flying from grasping.** An arm can reach the pose it
+**The report separates active motion from grasping.** An arm can reach the pose it
 was sent to perfectly and still hold nothing, which is what happens when the
 pose is not where the object is, so the run reports the distance to the
 commanded pose, the distance from the jaw to the nearest object at the
@@ -56,7 +56,7 @@ except ImportError:
 import numpy as np
 from numpy.typing import NDArray
 
-from clave.control.guidance import Command, Motion, toward
+from clave.control.motion import Command, Reference, toward
 from clave.control.pick import JAW_OPEN
 from clave.control.selection import Selector, pickable_in_belt
 from clave.control.servo import follow
@@ -158,7 +158,7 @@ class DebugRunReport:
             has gated with no way to produce.
         jaw_gaps: How far the nearest object was from the pinch site at the
             instant the jaw shut, in meters, one per visit. It separates the
-            two ways a pick fails: a large gap is a flight that arrived
+            two ways a pick fails: a large gap is a visit tick that arrived
             somewhere the object was not, and a small gap with no lift is a
             grasp that could not hold.
         profile: Which task profile the run used, because a distance to a
@@ -196,10 +196,10 @@ class DebugRunReport:
             the belt normal, in degrees.
         abandoned: Visits given up before the descent began, with the reason
             each was given up. Distinct from `missed`: an abandoned visit is a
-            plan that was flying and that the freshest estimate contradicted,
+            plan that was active and that the freshest estimate contradicted,
             and this is the only figure that tells that apart from an arm that
             never saw the object.
-        worst_aim_drift: The largest distance a plan in flight was found
+        worst_aim_drift: The largest distance a active plan was found
             aiming away from where the freshest estimate put the object, in
             meters, or None when no visit was ever re-aimed. This is the figure
             that catches a plan about to descend onto bare belt, and no arrival
@@ -455,7 +455,7 @@ class _TelemetryWriter:
             "pinch_y",
             "pinch_z",
             "phase_code",
-            "task_flying",
+            "task_active",
             "commanded_x",
             "commanded_y",
             "commanded_z",
@@ -482,15 +482,15 @@ class _TelemetryWriter:
         conveyor: Any,
         belt_speed: float,
         phase: Phase,
-        flying: bool,
+        active: bool,
         jaw: JawState,
         command: Any = None,
     ) -> None:
         """Write the current state when the requested sample period is due.
 
         Written after the tick's command has been decided rather than before it,
-        so the phase and the commanded pose in a row are the ones that tick was
-        flown on. Written before, the row carried the previous tick's phase,
+        so the phase and the commanded pose in a row are the ones that tick
+        commanded. Written before, the row carried the previous tick's phase,
         which is a millisecond of nothing on a 500 Hz tick and a whole leg on a
         coarse one: a run whose `DESCEND` column spanned 0.79 s against a
         0.40 s leg is what that looks like from outside.
@@ -510,7 +510,7 @@ class _TelemetryWriter:
             *flange,
             *pinch,
             list(Phase).index(phase),
-            int(flying),
+            int(active),
             *commanded,
             jaw.lowest_z,
             jaw.clearance,
@@ -855,7 +855,7 @@ def run(
         control.calibration,
         belt_surface=surface,
         belt_speed=plan.belt.speed,
-        guidance=control.guidance,
+        motion=control.motion,
         admits=admits,
         chutes=plan.chutes,
         belt_width=plan.belt.width,
@@ -877,7 +877,7 @@ def run(
     # The jaw's own figures, over every tick rather than every capture: a
     # contact with the belt lasts milliseconds and the capture cadence is 0.5 s.
     # How far each visit raised the object it went for, against where that
-    # object was resting when the plan was made. A flight can be perfect and
+    # object was resting when the plan was made. A visit can be perfect and
     # this still read zero, which is the whole point of measuring it apart.
     lifts: list[float] = []
     # The arm's own vertical motion, integrated at the physics rate rather than
@@ -894,7 +894,7 @@ def run(
     yaw_errors: list[float] = []
     counted = 0
     # And how near the jaw came to any object at all when it shut, which is
-    # the figure that separates a flight that missed from a grasp that let go.
+    # the figure that separates a visit tick that missed from a grasp that let go.
     gaps: list[float] = []
     resting: dict[str, float] = {}
     # A place is counted once per object, the first capture its centre is
@@ -917,10 +917,10 @@ def run(
     # interval, so the gap between these two figures is the staleness the
     # belt imposes and is what an interception has to close.
     closest_live = float("inf")
-    # Guidance integrates its own output, so the reference is seeded once and
+    # Motion integrates its own output, so the reference is seeded once and
     # fed back afterwards. Seeding it from the flange every tick would make it
     # chase the arm instead of leading it.
-    motion = Motion(position=_flange(indices, data), speed=0.0)
+    motion = Reference(position=_flange(indices, data), speed=0.0)
     # And which way it is going, which a plan needs so its first arc begins
     # where the motion already is instead of asking for a step in velocity.
     moving: Point = (0.0, 0.0, 0.0)
@@ -1042,12 +1042,12 @@ def run(
             # A planned visit is the exception in one direction only: the
             # plan was decided once, and it is sampled here every tick.
             place = _flange(indices, data)
-            was_flying = task.flying
-            flying_track = None if task.plan is None else task.plan.track_id
-            flown = task.flight(data.time, place)
+            was_active = task.active
+            active_track = None if task.plan is None else task.plan.track_id
+            flown = task.tick(data.time, place)
             rise = (place[2] - last_flange_z) / plan.timestep
             accel_sample = abs(rise - last_rise) / plan.timestep
-            if flown is not None or was_flying:
+            if flown is not None or was_active:
                 lurch = max(lurch, accel_sample)
                 climb = max(climb, rise)
             vertical_acceleration = 0.0 if not accel_ready else accel_sample
@@ -1097,11 +1097,11 @@ def run(
                         if body is not None:
                             turned = math.degrees(command.yaw) - body
                             yaw_errors.append(abs((turned + 45.0) % 90.0 - 45.0))
-                # Guidance resumes from where the plan left the reference, so
+                # Motion resumes from where the plan left the reference, so
                 # the park move after a visit does not start by jumping back
                 # to wherever the reference had been before the plan.
-                motion = Motion(position=command.position, speed=command.speed)
-            elif was_flying:
+                motion = Reference(position=command.position, speed=command.speed)
+            elif was_active:
                 telemetry_phase = Phase.STANDBY
                 # The plan ran out on this tick and the visit is recorded.
                 # Open the jaw, stand still, and let the next capture decide.
@@ -1118,7 +1118,7 @@ def run(
                 lifts.append(lift)
                 story.visit_ended(
                     data.time,
-                    flying_track,
+                    active_track,
                     lift,
                     held=lift >= GRASPED_METERS,
                 )
@@ -1128,18 +1128,18 @@ def run(
                 resting = {}
                 goal = None
                 moving = (0.0, 0.0, 0.0)
-                motion = Motion(position=keep_inside(place), speed=0.0)
+                motion = Reference(position=keep_inside(place), speed=0.0)
             elif goal is not None:
                 command = toward(
                     motion,
                     goal,
                     plan.timestep,
-                    control.guidance,
+                    control.motion,
                     feeding.speed,
                     int(data.time * NANOS_PER_SECOND),
                     keep_inside,
                 )
-                motion = Motion(position=command.position, speed=command.speed)
+                motion = Reference(position=command.position, speed=command.speed)
 
             tick_refusal: str | None = None
             if command is not None:
@@ -1175,8 +1175,8 @@ def run(
             tilt = max(tilt, jaw.tilt_degrees)
             if task.plan is not None:
                 subject = task.plan.track_id
-            elif flying_track is not None:
-                subject = flying_track
+            elif active_track is not None:
+                subject = active_track
             elif goal is None:
                 subject = None
             else:
@@ -1201,7 +1201,7 @@ def run(
                     conveyor,
                     feeding.speed,
                     telemetry_phase,
-                    task.flying,
+                    task.active,
                     jaw,
                     command,
                 )
@@ -1294,7 +1294,7 @@ def run(
                     if key in (27, ord("q")):
                         break
 
-            if use_ground_truth and task.flying and data.time >= next_ground_truth:
+            if use_ground_truth and task.active and data.time >= next_ground_truth:
                 next_ground_truth = data.time + ground_truth_steer
                 now_gt = int(data.time * NANOS_PER_SECOND)
                 standing = ground_truth_markers(
@@ -1455,9 +1455,9 @@ def run(
                 # can cut the corner of the hole while tracking, and reseeding
                 # the reference inside it is what turned one refusal into
                 # every refusal after it.
-                motion = Motion(position=keep_inside(flange), speed=0.0)
+                motion = Reference(position=keep_inside(flange), speed=0.0)
                 moving = (0.0, 0.0, 0.0)
-            if task.flying and not resting:
+            if task.active and not resting:
                 # Snapshot how high everything is lying before the arm
                 # touches anything, so a lift is measured against where the
                 # object actually was.

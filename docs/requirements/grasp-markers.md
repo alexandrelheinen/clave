@@ -25,7 +25,7 @@ debug run, so the markers read as solids rather than as a plan view. Removal
 of the two-dimensional overlay the debug view drew on captured frames.
 
 **Out.** Grasping. Nothing in CLAVE closes a jaw, and a marker is not a plan.
-Motion planning and approach trajectories, which stay in ARCO and FRET. The
+Reference planning and approach trajectories, which stay in ARCO and FRET. The
 runtime loop, which publishes decisions and does not render markers. Any
 change to what the tracker computes: this spec reads `WasteObject` and writes
 nothing back to it.

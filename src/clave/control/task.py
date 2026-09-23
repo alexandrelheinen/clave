@@ -3,7 +3,7 @@
 A visit is what the arm does about one object: go to it, stay with it long
 enough to prove it arrived, and move on. The machine says which phase it is
 in and where it wants the flange; it decides nothing about the path there,
-which is guidance, and nothing about joint angles, which is the servo.
+which is motion, and nothing about joint angles, which is the servo.
 
 Under the motion-only profile the phases are standby, tracking, parking and
 fault. That is what tuning arm speed against belt speed needs: the flange
@@ -19,7 +19,7 @@ commits to a candidate, gets back a sequence of timed arcs, and thereafter
 drives the arm from the clock rather than from proximity.
 
 That makes the two profiles differ in how they are driven and not only in
-how many phases they run, which is why a caller asks [TaskMachine.flying]
+how many phases they run, which is why a caller asks [TaskMachine.active]
 which regime it is in rather than reading the phase.
 
 **A plan owns which object and when; not where.** Re-deciding which object
@@ -39,7 +39,7 @@ leaves the plan already in hand.
 approach arc can only be bent so far, and an object that has fallen behind
 its own prediction -- one dragging on the belt, or one that has stopped
 drifting across it -- cannot be met by an arc already committed further
-downstream. The refinement is refused, and a machine that reacts by flying
+downstream. The refinement is refused, and a machine that reacts by running
 the plan it already had descends onto bare belt while reporting a
 millimetre arrival error against its own commands. So the freshest estimate
 is compared with the pose the plan is aiming at: inside the configured
@@ -63,11 +63,11 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from clave.control.pick import Flight, Plan, plan_pick, refine, retarget_descent
+from clave.control.pick import Plan, VisitTick, plan_pick, refine, retarget_descent
 from clave.control.selection import Candidate, Queue
 from clave.control.settings import (
     CalibrationSettings,
-    GuidanceSettings,
+    MotionSettings,
     Phase,
     Point,
     Profile,
@@ -99,7 +99,7 @@ class TaskError(ClaveError):
 
 @dataclass(frozen=True)
 class Reaim:
-    """What one refresh of a plan in flight found, and what was done about it.
+    """What one refresh of a active plan found, and what was done about it.
 
     A visit is planned once and re-aimed every capture, and the interesting
     case is the one where the re-aim does not land: the freshest estimate says
@@ -161,7 +161,7 @@ class Goal:
             moving, so a consumer aiming at it has to know how old it is.
         rides_belt: Whether the belt is carrying this pose while the arm
             travels to it. True for an object and false for the park pose,
-            which is what tells guidance whether to aim ahead of it.
+            which is what tells motion whether to aim ahead of it.
     """
 
     phase: Phase
@@ -219,7 +219,7 @@ class TaskMachine:
         calibration: CalibrationSettings,
         belt_surface_height_world: float | None = None,
         belt_speed: float = 0.0,
-        guidance: GuidanceSettings | None = None,
+        motion: MotionSettings | None = None,
         admits: Callable[[Point], bool] | None = None,
         chutes: dict[str, Point] | None = None,
         belt_width: float = 0.50,
@@ -238,7 +238,7 @@ class TaskMachine:
             belt_surface_height_world: Height of the belt surface, in meters.
             belt_speed: How fast the belt runs, in meters per second, which a
                 planned visit needs to know where the object will be.
-            guidance: The speed and acceleration ceilings a planned arc has to
+            motion: The speed and acceleration ceilings a planned arc has to
                 respect. Required under the full-visit profile and unused
                 under motion-only, which is stepped rather than planned.
             admits: Whether the arm is trusted at a pose, or None to plan
@@ -268,7 +268,7 @@ class TaskMachine:
             else (0.0 if belt_surface is None else belt_surface)
         )
         if settings.profile is Profile.FULL_VISIT:
-            if guidance is None:
+            if motion is None:
                 raise TaskError(
                     "the full-visit profile plans arcs and needs the speed and "
                     "acceleration ceilings to plan them under"
@@ -287,7 +287,7 @@ class TaskMachine:
         self._calibration = calibration
         self._belt_surface_height_world = surface
         self._belt_speed = belt_speed
-        self._guidance = guidance
+        self._motion = motion
         self._effector = effector
         self._admits = admits if admits is not None else _anywhere
         self._chutes = chutes or {}
@@ -376,9 +376,9 @@ class TaskMachine:
 
     @property
     def refreshes(self) -> tuple[Reaim, ...]:
-        """Every re-aim of a plan in flight, in order, with what came of it.
+        """Every re-aim of a active plan, in order, with what came of it.
 
-        One entry per capture a visit was flying for, so a run of any length
+        One entry per capture a visit was active for, so a run of any length
         reports a bounded list: the figure a reader wants is the largest drift
         a plan was allowed to keep, and the actions that were taken instead of
         keeping it.
@@ -390,7 +390,7 @@ class TaskMachine:
         """Every visit given up before the descent began, and why.
 
         Distinct from a miss, which is an interception that was never planned:
-        this is a plan that was flying and that the freshest estimate
+        this is a plan that was active and that the freshest estimate
         contradicted. Recorded with its reason because that is the difference
         between an arm that stopped working and an arm that was told to.
         """
@@ -398,7 +398,7 @@ class TaskMachine:
 
     @property
     def worst_aim_drift(self) -> float | None:
-        """The largest aim error a visit in flight was found holding, in meters.
+        """The largest aim error a active visit was found holding, in meters.
 
         None when no visit was ever refreshed, which is the honest answer for
         a run that never planned one.
@@ -423,19 +423,19 @@ class TaskMachine:
         self._belt_speed = metres_per_second
 
     @property
-    def flying(self) -> bool:
+    def active(self) -> bool:
         """Whether a planned visit is currently driving the arm.
 
         A caller reads this to know which regime it is in: while it is true
-        the arm is driven from [TaskMachine.flight] and guidance is out of
-        the path, because the arcs already respect the ceilings guidance
+        the arm is driven from [TaskMachine.tick] and motion is out of
+        the path, because the arcs already respect the ceilings motion
         would otherwise enforce.
         """
         return self._plan is not None
 
     @property
     def plan(self) -> Plan | None:
-        """Return the active visit plan, if one is currently flying."""
+        """Return the active visit plan, if one is currently active."""
         return self._plan
 
     @property
@@ -463,7 +463,7 @@ class TaskMachine:
 
         Called at the cadence decisions are made at, which is slower than the
         cadence the arm is driven at. Under a planned visit the driving is
-        [TaskMachine.flight]; this only commits to a candidate and then keeps
+        [TaskMachine.tick]; this only commits to a candidate and then keeps
         out of the way until the plan runs out.
 
         Args:
@@ -556,14 +556,14 @@ class TaskMachine:
         self._phase = Phase.STANDBY
         return self.step(queue, flange_pos, at_seconds)
 
-    def flight(
+    def tick(
         self,
         at_seconds: float,
         flange_position_world: Point | None = None,
         *,
         flange: Point | None = None,
-    ) -> Flight | None:
-        """Drive one tick of a planned visit, or report that none is flying.
+    ) -> VisitTick | None:
+        """Drive one tick of a planned visit, or report that none is active.
 
         Called at the rate the arm is actually commanded at, which is the
         physics rate: a goal half a second old is still the right goal, and a
@@ -576,7 +576,7 @@ class TaskMachine:
             flange: Legacy keyword alias for flange_position_world.
 
         Returns:
-            What to command, or None when no plan is flying. None on the tick
+            What to command, or None when no plan is active. None on the tick
             a plan runs out, which is also when the visit is recorded, so a
             caller that stops asking on None never misses the end.
         """
@@ -584,7 +584,7 @@ class TaskMachine:
             flange_position_world if flange_position_world is not None else flange
         )
         if flange_pos is None:
-            raise TypeError("flight requires flange_position_world or flange")
+            raise TypeError("tick requires flange_position_world or flange")
         if self._plan is None:
             return None
         sampled = self._plan.at(at_seconds)
@@ -605,7 +605,7 @@ class TaskMachine:
         if yaw is None:
             yaw = self._plan_yaw
         self._last_yaw = yaw
-        return Flight(
+        return VisitTick(
             phase=phase,
             position=state.position,
             velocity=state.velocity,
@@ -614,7 +614,7 @@ class TaskMachine:
         )
 
     def _narrate_phase(self, phase: Phase, at_seconds: float) -> None:
-        """Say that a flying visit has entered another phase.
+        """Say that an active visit has entered another phase.
 
         Args:
             phase: The phase the clock just reached.
@@ -746,7 +746,7 @@ class TaskMachine:
         velocity: Point,
         at_seconds: float,
     ) -> None:
-        """Point the plan in flight at a fresher estimate of its object, or give it up.
+        """Point the active plan at a fresher estimate of its object, or give it up.
 
         The arrival time does not move, so everything downstream of this is
         still scheduled against the same instant. What moves is where the
@@ -765,7 +765,7 @@ class TaskMachine:
         So a refusal is answered rather than ignored. Within the configured
         tolerance the plan is still aimed where the object is and the refusal
         is noise. Past it the visit is solved again from the freshest estimate,
-        starting at the guidance state the plan already holds (AC-MOVE-68),
+        starting at the motion reference the plan already holds (AC-MOVE-68),
         which may well choose a later interception at a slower object's
         position. And if no interception exists at all, the visit is abandoned
         with its reason recorded and the object recorded as missed.
@@ -773,9 +773,9 @@ class TaskMachine:
         Args:
             queue: The order selection produced, for the track being served.
             flange: Where the flange stands. Kept for the call site; a mid-
-                flight re-solve does not start from it.
+                mid-visit re-solve does not start from it.
             velocity: How fast the reference was moving when the caller last
-                measured it. Kept for the call site; a mid-flight re-solve
+                measured it. Kept for the call site; a mid-visit re-solve
                 takes velocity from the plan sample instead.
             at_seconds: Simulated time.
         """
@@ -787,7 +787,7 @@ class TaskMachine:
         if self._phase not in (Phase.TRACK, Phase.DESCEND):
             return
         assert self._plan is not None
-        assert self._guidance is not None
+        assert self._motion is not None
         track_id = self._plan.track_id
         head = next(
             (item for item in queue.order if item.track_id == track_id),
@@ -796,7 +796,7 @@ class TaskMachine:
         if head is None:
             # Whatever this visit was about is no longer a candidate: it has
             # left the window, or the slot it rode in now holds something else.
-            # There is no pose left to aim at, and a plan flying at the last one
+            # There is no pose left to aim at, and a plan active at the last one
             # it saw is a plan descending onto bare belt.
             self._abandon(
                 track_id,
@@ -860,7 +860,7 @@ class TaskMachine:
                 f"keep the plan I already have for {self._story.refer(track_id)}",
             )
             return
-        # Re-solve from the guidance state, not the measured flange. The plan
+        # Re-solve from the motion reference, not the measured flange. The plan
         # advances under perfect tracking in the flat output; lag and collisions
         # are a control problem. Starting the new visit at the plant writes that
         # disturbance into the next projected trajectory (AC-MOVE-68).
@@ -927,7 +927,7 @@ class TaskMachine:
             at_seconds: Simulated time.
         """
         assert self._plan is not None
-        assert self._guidance is not None
+        assert self._motion is not None
         transit_height_world = self._safe_height_world
         retreat_lift = max(
             self._settings.grasp_clearance, transit_height_world - target[2]
@@ -941,8 +941,8 @@ class TaskMachine:
             approach_clearance_z=self._settings.grasp_clearance,
             approach_speed=self._settings.approach_speed,
             dwell_seconds=self._settings.dwell_seconds,
-            max_speed=self._guidance.max_speed,
-            max_acceleration=self._guidance.max_acceleration,
+            max_speed=self._motion.max_speed,
+            max_acceleration=self._motion.max_acceleration,
             at_seconds=at_seconds,
             drift_horizon=self._settings.drift_horizon,
             retreat_lift=retreat_lift,
@@ -1113,7 +1113,7 @@ class TaskMachine:
     def _refinement(
         self, head: Candidate, target: Point, at_seconds: float
     ) -> Plan | None:
-        """Return the plan in flight rebuilt around a fresh aim, or None.
+        """Return the active plan rebuilt around a fresh aim, or None.
 
         The same call [clave.control.pick.refine] has always been given, split
         out so the caller can tell a refinement that came back from one that
@@ -1130,7 +1130,7 @@ class TaskMachine:
             the re-aimed arc breaks a ceiling.
         """
         assert self._plan is not None
-        assert self._guidance is not None
+        assert self._motion is not None
         transit_height_world = self._safe_height_world
         retreat_lift = max(
             self._settings.grasp_clearance, transit_height_world - target[2]
@@ -1144,8 +1144,8 @@ class TaskMachine:
             z_offset=self._settings.grasp_clearance,
             approach_speed=self._settings.approach_speed,
             dwell_seconds=self._settings.dwell_seconds,
-            max_speed=self._guidance.max_speed,
-            max_acceleration=self._guidance.max_acceleration,
+            max_speed=self._motion.max_speed,
+            max_acceleration=self._motion.max_acceleration,
             at_seconds=at_seconds,
             over=over,
             retreat_lift=retreat_lift,
@@ -1168,7 +1168,7 @@ class TaskMachine:
 
         The plan is discarded rather than flown, because the one thing known
         about it is that it arrives where the object is not. The arm is left
-        where it is with the jaw open -- a caller stops being handed a flight
+        where it is with the jaw open -- a caller stops being handed a visit tick
         and holds position -- and the object is recorded as missed, so the next
         capture reaches for something else instead of re-planning the same
         hopeless visit forever.
@@ -1228,7 +1228,7 @@ class TaskMachine:
             costs the objects behind it.
         """
         # The constructor refused this profile without ceilings to plan under.
-        assert self._guidance is not None
+        assert self._motion is not None
         if not self._admits(flange):
             # A plan begins where the arm is, so an arm outside the region it
             # is trusted over produces a plan whose very first pose the servo
@@ -1317,8 +1317,8 @@ class TaskMachine:
         Args:
             head: The candidate to serve.
             flange: Where the first arc of the plan begins. On the first
-                commit this is the measured flange; on a mid-flight re-solve
-                it is the guidance state sampled from the plan already in
+                commit this is the measured flange; on a mid-visit re-solve
+                it is the motion reference sampled from the plan already in
                 hand (AC-MOVE-68).
             velocity: How fast that start is moving.
             at_seconds: Simulated time the plan starts.
@@ -1330,7 +1330,7 @@ class TaskMachine:
             honest answer for an object the arm cannot reach in the belt it has
             left.
         """
-        assert self._guidance is not None
+        assert self._motion is not None
         target = self._grasp_pose(head)
         transit_height_world = self._safe_height_world
         retreat_lift = max(
@@ -1360,8 +1360,8 @@ class TaskMachine:
                 z_offset=self._settings.grasp_clearance,
                 approach_speed=self._settings.approach_speed,
                 dwell_seconds=self._settings.dwell_seconds,
-                max_speed=self._guidance.max_speed,
-                max_acceleration=self._guidance.max_acceleration,
+                max_speed=self._motion.max_speed,
+                max_acceleration=self._motion.max_acceleration,
                 latest=min(self._settings.interception_limit, leaving),
                 at_seconds=at_seconds,
                 margin=margin,
@@ -1415,7 +1415,7 @@ class TaskMachine:
         return plan
 
     def _held(self, at_nanos: int) -> Goal:
-        """Report the visit already in flight, without re-deciding it.
+        """Report the visit already active, without re-deciding it.
 
         Args:
             at_nanos: Now.

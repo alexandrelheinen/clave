@@ -85,7 +85,7 @@ class PublishedDecision:
         """How long the object stays reachable, in seconds.
 
         A subscriber uses this to tell a decision it can still act on from one
-        whose window closed while the message was in flight.
+        whose window closed while the message was in transit.
         """
         return (self.window_end_nanos - self.window_start_nanos) / NANOS_PER_SECOND
 

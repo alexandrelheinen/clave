@@ -9,7 +9,7 @@ out when it arrives by arriving.
 So a visit is planned as a sequence of timed arcs, each one's end being the
 next one's start, and the arm is driven by the clock rather than by
 proximity. [clave.control.trajectory] holds the arc algebra and
-`docs/guidance-formulation.md` the mathematics; this holds the sequence.
+`docs/trajectory-formulation.md` the mathematics; this holds the sequence.
 
 **The interception time is solved once; the aim is not.** A duration that
 keeps changing is a duration nothing can be scheduled against, so `T` is
@@ -59,7 +59,7 @@ PEAK_OVER_MEAN = 15.0 / 8.0
 Exact rather than a safety factor: with every boundary condition but the
 endpoints at zero, only one basis term survives and its derivative is
 `30 s^2 (1-s)^2`, which peaks at `15/8` in the middle.
-`docs/guidance-formulation.md` derives it.
+`docs/trajectory-formulation.md` derives it.
 """
 
 MINIMUM_DELIVERY_SECONDS = 0.05
@@ -134,7 +134,7 @@ def _fit_segment(
 
 
 @dataclass(frozen=True)
-class Flight:
+class VisitTick:
     """What the arm is asked for on one tick of a planned visit.
 
     Attributes:
@@ -476,7 +476,7 @@ def refine(
     jaw_rise: float = 0.0,
     clearance_flange_z: float | None = None,
 ) -> Plan | None:
-    """Correct a plan in flight against a fresher estimate of the object.
+    """Correct a active plan against a fresher estimate of the object.
 
     Refinement keeps the arrival time already chosen and solves only for a
     new approach arc that lands on the refreshed position at that instant.
@@ -484,7 +484,7 @@ def refine(
     exactly as they were off the old one.
 
     Args:
-        plan: The plan in flight.
+        plan: The active plan.
         object_position_belt: Where the object is now believed to be.
         belt_velocity_world: How the belt is moving.
         approach_clearance_z: Clearance above the object, in meters.
@@ -748,7 +748,7 @@ def retarget_descent(
     that end the same way a fresh plan would.
 
     Args:
-        plan: The visit in flight, already on its descent.
+        plan: The active visit, already on its descent.
         object_position: Where the object is now.
         belt_velocity: How it is moving.
         approach_clearance_z: The clearance the descent was planned through.

@@ -4,13 +4,13 @@
 
 CLAVE sorts recyclable waste traveling on a conveyor belt through a learned
 perception-action policy. A neural architecture fuses visual perception,
-object tracking, and pick timing into an end-to-end system trained via
-imitation and reinforcement learning.
+object tracking, and pick timing into an end-to-end system trained by
+imitation learning today, with reinforcement learning on the roadmap.
 
 The policy runs against the clock with
 hard safety guarantees: a Rust core handles interlocks and workspace limits,
 while neural inference provides perception and decision-making. Models train
-in Python against MuJoCo simulation supplied by FRET. Everything through the
+in Python against MuJoCo simulation in this repository. Everything through the
 v1.x line runs in simulation.
 
 *CLAVE*, which stands for _Coleta de Lixo Auxiliada por Visão Embarcada_, is also Portuguese for the musical clef, which places the project in the
@@ -44,7 +44,7 @@ policy trained end to end:
   occlusion, illumination change, and overlapping objects without geometric
   heuristics.
 - **Policy learning**: a perception-action loop trained by imitation from a
-  scripted expert, then fine-tuned with reinforcement learning in MuJoCo,
+  scripted expert (behavior cloning), with reinforcement fine-tuning planned
   so pick timing survives physical variation.
 - **Hybrid safety**: inference proposes, and a Rust layer disposes. Every
   action passes a deterministic check on workspace bounds and actuator
@@ -261,7 +261,7 @@ outside the v1.x line. What CLAVE takes from each sibling is itemized in the
 | [docs/roadmap.md](docs/roadmap.md) | The ladder to v1.0.0, its release criteria, and the spec dependency order |
 | [docs/architecture.md](docs/architecture.md) | What each block does, its inputs and outputs, and what is deliberately absent |
 | [docs/measurements.md](docs/measurements.md) | Every measured number a gate or a configuration value rests on |
-| [docs/guidance-formulation.md](docs/guidance-formulation.md) | The mathematics the arm's motion is planned with, and the one place it was wrong |
+| [docs/trajectory-formulation.md](docs/trajectory-formulation.md) | The mathematics the arm's motion is planned with, and the one place it was wrong |
 | `crates/` | The decision contract, the routing policy, the publisher, the safety layer, the runtime |
 | `src/clave/` | The world, the data pipeline, training, validation, the runtime, the benchmark, the demos |
 | `configs/` | Every tunable. Nothing in Python or MJCF carries a numeric default |

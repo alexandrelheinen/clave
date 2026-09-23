@@ -228,7 +228,7 @@ def test_ground_truth_selector_and_task_planning_ac_gt_04() -> None:
 
 def test_ground_truth_simulation_run_ac_gt_03_and_05(tmp_path: Path) -> None:
     """AC-GT-03, AC-GT-05: Simulation runs with ground truth while tracker observes."""
-    from clave.tracker.debug_run import run
+    from clave.sim.debug_run import run
 
     report = run(
         root=ROOT,

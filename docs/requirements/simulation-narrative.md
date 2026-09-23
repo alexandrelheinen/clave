@@ -45,7 +45,7 @@ the decisions a person can read, and a line at either rate is noise.
 | Queue rebuilt | The order of candidates changed, or it was rebuilt and did not | Why (`appeared`, `retired`, `anchor`), and whether the head changed. A head replaced while it is still waiting is the churn that sends the arm elsewhere |
 | Queue has no head | Nothing is served | That no visit will start |
 | Plan committed | The arm leaves park and flies a timed visit | The object, the material, the chute, the duration, and the phases in order, which is the manner of the visit |
-| Motion-only track begins | The arm follows a marker at approach height | The object, and that this profile does not grasp |
+| Reference-only track begins | The arm follows a marker at approach height | The object, and that this profile does not grasp |
 | Flange outside the trusted region | The arm goes home instead of committing, and the object is not marked missed | That the recovery is the park pose, because a plan that starts outside the region is refused forever |
 | No interception | The object is skipped | How much belt it had left, or that the grasp pose would put the jaw in the belt |
 | Re-aim took | The approach arc is bent onto a fresher estimate. The arrival time stays | The drift, in millimetres. One line when this becomes the decision |
@@ -60,7 +60,7 @@ the decisions a person can read, and a line at either rate is noise.
 | Visit ends | The plan has run out | The lift of the nearest object. Success only when that lift reaches the same 10 mm the report already uses for a held grasp |
 | Place | An object's centre crossed a chute mouth | The body, the material, the chute. Success when the chute is the material's channel. Fail, naming both channels, when it is not |
 | Servo fault | The task machine tears the plan up and holds | The refusal text |
-| Motion-only visit completes | The dwell finished inside tolerance | The arrival gap. This profile's success is arriving, not grasping |
+| Reference-only visit completes | The dwell finished inside tolerance | The arrival gap. This profile's success is arriving, not grasping |
 | Jaw touches the belt | The pads are in the belt. A grasp from there is not the one that was planned | The clearance, which is negative when the geometry is inside the belt |
 | Vertical acceleration spike | A slip or a lurch. The plan's own acceleration is bounded at 2.50 m/s² | The sampled peak and the watch |
 | Flange lags the command | The arm is not where this tick told it to be | The lag and the watch |
@@ -167,7 +167,7 @@ one is known, and an outcome token that is exactly `success`, `fail`, or
 `AC-STORY-03`: The task machine shall narrate each decision that changes the
 visit: committing a plan and naming its phases, beginning a motion-only
 track, refusing an interception, abandoning a visit, re-aiming, a servo
-fault, and each phase change of a flying visit among descend, hold, retreat,
+fault, and each phase change of an active visit among descend, hold, retreat,
 and deliver.
 
 `AC-STORY-04`: The close shall name the gap from the pinch to the nearest
