@@ -14,7 +14,6 @@ evidence that identity was recovered from pixels.
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
@@ -94,12 +93,12 @@ def associate(
         distance is what keeps a prediction pointing at empty belt from being
         published under some real object's identity.
     """
-    nearest, best = None, math.inf
-    for label in labels:
-        distance = math.dist(point, label.position)
-        if distance < best:
-            nearest, best = label, distance
-    return nearest if best <= radius else None
+    if not labels:
+        return None
+    places = np.asarray([label.position for label in labels], dtype=np.float64)
+    gaps = np.linalg.norm(places - np.asarray(point, dtype=np.float64), axis=1)
+    at = int(np.argmin(gaps))
+    return labels[at] if float(gaps[at]) <= radius else None
 
 
 class ScriptedPredictor:

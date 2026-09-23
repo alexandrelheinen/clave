@@ -13,6 +13,7 @@ from clave.control.trajectory import (
     descend,
     descent_limit_seconds,
     descent_seconds,
+    soonest_feasible,
 )
 
 BELT = (0.314, 0.0, 0.0)
@@ -252,6 +253,33 @@ def test_the_interception_found_is_the_soonest_feasible_one() -> None:
     assert arc is not None
     hurried = Segment(arc.start, arc.end, arc.duration * 0.85)
     assert not hurried.fits(MAX_SPEED, MAX_ACCELERATION)
+
+
+def test_a_search_from_only_a_lower_bound_finds_the_soonest_fit() -> None:
+    """`soonest_feasible` supplies the passing end a caller does not have.
+
+    `bisect_feasible` needs both ends of a bracket, and a search that starts
+    from a lower bound has only the failing end. This doubles upward to find
+    a passing end, then bisects: a shade sooner than the answer still fails.
+    """
+
+    def feasible(seconds: float) -> bool:
+        return seconds >= 0.6
+
+    found = soonest_feasible(feasible, 0.4)
+    assert found == pytest.approx(0.6)
+    assert not feasible(found * 0.85)
+
+
+def test_a_lower_bound_that_already_fits_is_kept() -> None:
+    """The search does not move a duration that already fits."""
+    assert soonest_feasible(lambda seconds: seconds >= 0.2, 0.5) == pytest.approx(0.5)
+
+
+def test_a_feasibility_search_needs_a_positive_seed() -> None:
+    """The bracket grows by doubling, so a zero or negative seed cannot grow."""
+    with pytest.raises(ValueError):
+        soonest_feasible(lambda seconds: True, 0.0)
 
 
 def test_an_object_that_cannot_be_reached_in_time_is_refused() -> None:

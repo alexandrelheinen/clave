@@ -31,9 +31,10 @@ identity away from the simulator and left the next one with no baseline.
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from typing import Protocol
+
+import numpy as np
 
 from clave.tracker.belt_frame import Footprint
 
@@ -184,11 +185,17 @@ def _nearest_within_gate(
         further than a small one and neither is measured against a constant
         somebody chose for a different belt.
     """
-    best: int | None = None
-    closest = math.inf
-    for track in tracks:
-        gate = GATE_MULTIPLE * track.footprint.major_extent
-        distance = math.dist(footprint.center[:2], track.footprint.center[:2])
-        if distance <= gate and distance < closest:
-            best, closest = track.track_id, distance
-    return best
+    if not tracks:
+        return None
+    # One gate per track, and the distances to all of them at once: the
+    # question is a nearest neighbour with a per-candidate ceiling, which is an
+    # argmin over a masked array rather than a loop with two comparisons in it.
+    centers = np.asarray([track.footprint.center for track in tracks], dtype=np.float64)
+    gaps = np.linalg.norm(centers[:, :2] - np.asarray(footprint.center)[:2], axis=1)
+    gates = GATE_MULTIPLE * np.asarray(
+        [track.footprint.major_extent for track in tracks], dtype=np.float64
+    )
+    inside = np.flatnonzero(gaps <= gates)
+    if inside.size == 0:
+        return None
+    return tracks[int(inside[int(np.argmin(gaps[inside]))])].track_id

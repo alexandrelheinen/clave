@@ -718,15 +718,26 @@ def _pad_places(marker: GraspMarker) -> tuple[tuple[float, Point], ...]:
     if marker.oriented and marker.closing_axis is not None:
         return tuple((marker.closing_axis, pad) for pad in marker.pads)
 
-    x, y, grasp_z = marker.grasp
+    grasp_z = marker.grasp[2]
     reach = marker.opening / 2.0 + marker.pad_size[0]
-    places = []
-    for index in range(UNORIENTED_PADS):
-        angle = index * 2.0 * math.pi / UNORIENTED_PADS
-        places.append(
-            (angle, (x + math.cos(angle) * reach, y + math.sin(angle) * reach, grasp_z))
-        )
-    return tuple(places)
+    import numpy as np
+
+    # A ring of pads round the grasp, one expression rather than one per pad:
+    # the angles are `linspace` over a full turn and the centers are the grasp
+    # plus the radius on each axis.
+    angles = np.linspace(0.0, 2.0 * np.pi, UNORIENTED_PADS, endpoint=False)
+    centers = np.stack(
+        (
+            marker.grasp[0] + np.cos(angles) * reach,
+            marker.grasp[1] + np.sin(angles) * reach,
+            np.full(UNORIENTED_PADS, grasp_z),
+        ),
+        axis=1,
+    )
+    return tuple(
+        (float(angle), (float(x), float(y), float(z)))
+        for angle, (x, y, z) in zip(angles, centers, strict=True)
+    )
 
 
 def _spin(yaw: float) -> Any:

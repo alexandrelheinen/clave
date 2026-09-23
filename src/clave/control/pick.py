@@ -30,13 +30,19 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
+import numpy as np
+
 from clave.control.settings import DRIFT_HORIZON, Phase, Point
 from clave.control.trajectory import (
     Segment,
     State,
     approach,
+    as_point,
+    as_vector,
     descend,
     descent_seconds,
+    distance,
+    soonest_feasible,
     where_carried,
 )
 
@@ -96,6 +102,11 @@ def _fit_segment(
 ) -> Segment:
     """Return a quintic segment respecting speed and acceleration ceilings.
 
+    The duration is found by the monotone feasibility search in
+    [clave.control.trajectory.soonest_feasible]: peak speed and acceleration
+    both fall as the duration grows, so the smallest duration that fits is a
+    bisection rather than a step over a range.
+
     Args:
         start: State at the beginning.
         end: State at the end.
@@ -106,15 +117,20 @@ def _fit_segment(
     Returns:
         The fitted segment respecting both ceilings.
     """
-    distance = math.dist(start.position, end.position)
+    span = distance(start.position, end.position)
     ceiling = max(max_speed, 1e-6)
-    duration = max(PEAK_OVER_MEAN * distance / ceiling, min_duration)
-    while duration < 30.0:
-        candidate = Segment(start=start, end=end, duration=duration)
-        if candidate.fits(max_speed, max_acceleration):
-            return candidate
-        duration += 0.05
-    return candidate
+    lower = max(PEAK_OVER_MEAN * span / ceiling, min_duration)
+
+    def feasible(seconds: float) -> bool:
+        return Segment(start=start, end=end, duration=seconds).fits(
+            max_speed, max_acceleration
+        )
+
+    return Segment(
+        start=start,
+        end=end,
+        duration=soonest_feasible(feasible, lower),
+    )
 
 
 @dataclass(frozen=True)
@@ -205,7 +221,7 @@ class Plan:
         elapsed = at_seconds - self.started_at
         if elapsed >= track_duration:
             return self.target_yaw
-        tau = min(1.0, max(0.0, elapsed / track_duration))
+        tau = float(np.clip(elapsed / track_duration, 0.0, 1.0))
         s = tau * tau * tau * (10.0 + tau * (-15.0 + 6.0 * tau))
         diff = (
             self.target_yaw - self.initial_yaw + math.pi / 2.0
@@ -366,10 +382,12 @@ def plan_pick(
         if entry_arc.duration >= latest:
             return None
         remaining_latest = latest - entry_arc.duration
-        obj_pos_at_border = (
-            obj_pos[0] + belt_vel[0] * entry_arc.duration,
-            obj_pos[1],
-            obj_pos[2],
+        # Along the belt only. The border waypoint stands upstream of the pick
+        # and the arc that follows it carries the drift across from there, so
+        # extrapolating the lateral component here as well would count it twice.
+        obj_pos_at_border = as_point(
+            as_vector(obj_pos)
+            + as_vector(belt_vel) * np.asarray([1.0, 0.0, 0.0]) * entry_arc.duration
         )
         reaching = approach(
             border_approach,
@@ -516,10 +534,10 @@ def refine(
             )
             if not new_entry_arc.fits(max_speed, max_accel):
                 return None
-            obj_pos_at_border = (
-                obj_pos[0] + belt_vel[0] * rem_entry,
-                obj_pos[1],
-                obj_pos[2],
+            # Along the belt only, for the same reason as the entry waypoint.
+            obj_pos_at_border = as_point(
+                as_vector(obj_pos)
+                + as_vector(belt_vel) * np.asarray([1.0, 0.0, 0.0]) * rem_entry
             )
             new_track_arc = Segment(
                 start=entry_leg.end,
@@ -662,8 +680,8 @@ def _deliver(start: State, target_position_world: Point, max_speed: float) -> Se
     Returns:
         The arc, ending at rest over the mouth.
     """
-    distance = math.dist(start.position, target_position_world)
-    seconds = max(PEAK_OVER_MEAN * distance / max_speed, MINIMUM_DELIVERY_SECONDS)
+    span = distance(start.position, target_position_world)
+    seconds = max(PEAK_OVER_MEAN * span / max_speed, MINIMUM_DELIVERY_SECONDS)
     return Segment(
         start=start,
         end=State(
@@ -803,10 +821,8 @@ def _carry(start: State, seconds: float, belt_velocity: Point) -> Segment:
     return Segment(
         start=start,
         end=State(
-            position=(
-                start.position[0] + belt_velocity[0] * seconds,
-                start.position[1] + belt_velocity[1] * seconds,
-                start.position[2] + belt_velocity[2] * seconds,
+            position=as_point(
+                as_vector(start.position) + as_vector(belt_velocity) * seconds
             ),
             velocity=belt_velocity,
             acceleration=(0.0, 0.0, 0.0),
@@ -846,15 +862,13 @@ def _retreat(
     return Segment(
         start=start,
         end=State(
-            position=(
-                start.position[0] + belt_velocity[0] * seconds,
-                start.position[1] + belt_velocity[1] * seconds,
-                start.position[2] + z_offset,
+            position=as_point(
+                as_vector(start.position)
+                + as_vector(belt_velocity) * np.asarray([1.0, 1.0, 0.0]) * seconds
+                + np.asarray([0.0, 0.0, z_offset])
             ),
-            velocity=(
-                belt_velocity[0],
-                belt_velocity[1],
-                belt_velocity[2] + approach_speed,
+            velocity=as_point(
+                as_vector(belt_velocity) + np.asarray([0.0, 0.0, approach_speed])
             ),
             acceleration=(0.0, 0.0, 0.0),
         ),
@@ -888,28 +902,37 @@ def _climb(
         max_acceleration: Acceleration ceiling, in meters per second squared.
 
     Returns:
-        The arc. Its duration is searched upward until it fits both ceilings,
+        The arc. Its duration is found by the monotone feasibility search,
         because the distance it has to cover grows with the duration: the belt
-        keeps carrying the object while the flange climbs.
+        keeps carrying the object while the flange climbs. Longer is always
+        easier, so the smallest duration that fits both ceilings is a
+        bisection rather than a step over a range.
     """
     ceiling = max(max_speed, 1e-6)
-    span = math.dist(start.position, (start.position[0], start.position[1], target_z))
-    duration = max(PEAK_OVER_MEAN * span / ceiling, MINIMUM_DELIVERY_SECONDS)
-    while duration < 30.0:
-        candidate = Segment(
+    level = np.asarray([start.position[0], start.position[1], target_z])
+    span = float(np.linalg.norm(level - as_vector(start.position)))
+    lower = max(PEAK_OVER_MEAN * span / ceiling, MINIMUM_DELIVERY_SECONDS)
+
+    def arc(seconds: float) -> Segment:
+        return Segment(
             start=start,
             end=State(
-                position=(
-                    start.position[0] + belt_velocity[0] * duration,
-                    start.position[1] + belt_velocity[1] * duration,
-                    target_z,
+                position=as_point(
+                    np.concatenate(
+                        (
+                            as_vector(start.position)[:2]
+                            + as_vector(belt_velocity)[:2] * seconds,
+                            np.asarray([target_z]),
+                        )
+                    )
                 ),
                 velocity=belt_velocity,
                 acceleration=(0.0, 0.0, 0.0),
             ),
-            duration=duration,
+            duration=seconds,
         )
-        if candidate.fits(max_speed, max_acceleration):
-            return candidate
-        duration += 0.05
-    return candidate
+
+    def feasible(seconds: float) -> bool:
+        return arc(seconds).fits(max_speed, max_acceleration)
+
+    return arc(soonest_feasible(feasible, lower))

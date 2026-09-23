@@ -53,12 +53,15 @@ except ImportError:
         return iterable
 
 
+import numpy as np
+
 from clave.control.guidance import Command, Motion, toward
 from clave.control.pick import JAW_OPEN
 from clave.control.selection import Selector, pickable_in_belt
 from clave.control.servo import follow
 from clave.control.settings import ControlSettings, Phase, Point
 from clave.control.task import TaskMachine
+from clave.control.trajectory import distance, norm
 from clave.errors import ClaveError
 from clave.tracker.adapters.detection import detections_from_masks
 from clave.tracker.adapters.render import segment_masks
@@ -323,7 +326,6 @@ def _lowest_world_z(model: Any, data: Any, geom: int) -> float:
         The lowest world height of that geom, in meters.
     """
     import mujoco
-    import numpy as np
 
     rotation = data.geom_xmat[geom].reshape(3, 3)
     centre = float(data.geom_xpos[geom][2])
@@ -566,7 +568,6 @@ def run(
     )
     import cv2
     import mujoco
-    import numpy as np
 
     from clave.tracker.sensors import SensorError
 
@@ -940,7 +941,7 @@ def run(
                 command = Command(
                     position=flown.position,
                     yaw=flown.yaw,
-                    speed=math.dist((0.0, 0.0, 0.0), flown.velocity),
+                    speed=norm(flown.velocity),
                     velocity=flown.velocity,
                     aim=flown.position,
                 )
@@ -1017,7 +1018,7 @@ def run(
                 elif flown is not None or (
                     goal is not None and goal.phase in _VISITING
                 ):
-                    closest = min(closest, math.dist(place, command.position))
+                    closest = min(closest, distance(place, command.position))
 
             # Written here rather than before the decisions, so a row's phase and
             # commanded pose are the ones that tick flew on, and the jaw's own
@@ -1270,7 +1271,7 @@ def run(
                     None,
                 )
                 if head is not None:
-                    closest_live = min(closest_live, math.dist(flange, head.flange))
+                    closest_live = min(closest_live, distance(flange, head.flange))
             if goal.phase is Phase.FAULT:
                 # The arm was told to hold, so the reference comes back to the
                 # pose it is holding rather than resuming from wherever it had
@@ -1613,7 +1614,6 @@ def _park_the_arm(
             configuration error rather than a run-time one, and finding it
             here beats a run that faults on every tick.
     """
-    import numpy as np
 
     try:
         angles = armmod.solve(model, data, indices, np.array(park, dtype=float))
@@ -1770,12 +1770,14 @@ def _in_the_jaw(
         The body's name and its distance from the pinch site, or None when
         the belt is empty.
     """
-    nearest, best = None, float("inf")
-    for item in conveyor.active:
-        gap = math.dist(pinch, _object_place(mujoco, model, data, item.name))
-        if gap < best:
-            nearest, best = (item.name, gap), gap
-    return nearest
+    places = [_object_place(mujoco, model, data, item.name) for item in conveyor.active]
+    if not places:
+        return None
+    gaps = np.linalg.norm(
+        np.asarray(places, dtype=np.float64) - np.asarray(pinch), axis=1
+    )
+    at = int(np.argmin(gaps))
+    return (conveyor.active[at].name, float(gaps[at]))
 
 
 def _body_yaw(mujoco: Any, model: Any, data: Any, name: str) -> float | None:
@@ -1947,7 +1949,6 @@ def _trajectory_on(
 ) -> int:
     """Draw the active plan's future path and discrete pose indicators."""
     import mujoco
-    import numpy as np
 
     added = _trajectory_sphere(scene, flange, 0.018, (0.95, 0.95, 0.95, 1.0))
     plan = task.plan
@@ -1980,7 +1981,7 @@ def _trajectory_on(
             0.024,
             (0.20, 0.90, 0.35, 1.0),
         )
-    del mujoco, np
+    del mujoco
     return added
 
 
@@ -2003,7 +2004,6 @@ def _trajectory_sphere(
 ) -> int:
     """Add one small trajectory indicator sphere to a render scene."""
     import mujoco
-    import numpy as np
 
     if scene.ngeom >= scene.maxgeom:
         return 0
@@ -2027,7 +2027,6 @@ def _trajectory_segment(
 ) -> int:
     """Add a thin capsule between two future trajectory samples."""
     import mujoco
-    import numpy as np
 
     vector = np.asarray(end, dtype=np.float64) - np.asarray(start, dtype=np.float64)
     length = float(np.linalg.norm(vector))

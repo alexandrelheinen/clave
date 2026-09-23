@@ -41,11 +41,11 @@ quantised pose jumps by the radius every time the anchor catches up.
 from __future__ import annotations
 
 import logging
-import math
 from collections.abc import Callable
 from dataclasses import dataclass
 
 from clave.control.settings import Point, SelectionSettings
+from clave.control.trajectory import distance
 from clave.tracker.belt_frame import carry
 from clave.tracker.markers import GraspMarker
 
@@ -341,7 +341,7 @@ class Selector:
                 else belt_speed
             )
             carried = carry(held.position, speed, held.at_nanos, at_nanos)
-            if math.dist(marker.grasp, carried) > self._settings.anchor_radius:
+            if distance(marker.grasp, carried) > self._settings.anchor_radius:
                 self._anchors[track_id] = _Anchor(marker.grasp, at_nanos)
                 moved = True
         return moved
@@ -466,7 +466,7 @@ class Selector:
             The cost, in meters. Lower is served sooner, so an object with
             little belt left scores low and outranks a nearer one.
         """
-        travel = math.dist(flange, candidate.anchor)
+        travel = distance(flange, candidate.anchor)
         return travel + self._settings.exit_weight * candidate.distance_before_leaving
 
 
