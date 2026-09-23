@@ -123,6 +123,12 @@ model closes.
 surface to the lowest gripper collision geometry, not to the pinch point, which
 sits below the pads and would grant a clearance the jaw does not have.
 
+`AC-MARK-17`: The system shall set the grasp plane's floor from the open jaw's
+lowest geometry, because the hold rises by the extra hang of the shut jaw
+while the fingers close. A centre below that floor is lifted to it. A centre
+above it is taken as it stands, up to the height an object on the belt still
+has.
+
 ## Design notes
 
 **Why the clearance is measured to the pads and not to the pinch point.** The
@@ -135,7 +141,10 @@ than the jaw's own, and the marker's old floor of 12.2 mm put the pads **5.5 mm
 inside the belt** while its own plane said they were clear of the surface. The
 marker keeps standing at the pinch point and derives the plane it may descend to
 from the effector's geometry, so the pose a caller reads and the clearance the
-world enforces cannot disagree.
+world enforces cannot disagree. The floor is the open jaw's, plus the
+millimetre the rise needs so it leads the hang. The shut hang is 13.2 mm
+further, and the hold climbs that while the jaw closes, which is what keeps
+the shut clearance equal to the clearance the arrival granted.
 
 **Why the pose is only partly derived.** The record supplies the horizontal
 grasp point, the closing axis and the opening, and all three come from the

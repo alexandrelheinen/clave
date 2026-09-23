@@ -248,13 +248,13 @@ about something else -- an object that fell, or one the arm is already carrying
 def grasp_plane(surface: float, effector: Effector, centre_z: float) -> float:
     """Return the pinch plane a marker may stand at for an object's centre.
 
-    The clamp's floor is the clearance the jaw keeps plus how far its lowest
-    collision geometry hangs below the pinch point, so the number the marker
-    grants is a clearance the pads have rather than one the point they close at
-    has. Quoting it at the pinch point instead is 4.5 to 17.7 mm more generous
-    than the jaw, depending on where its linkage stands, which is how the pads
-    came to rest on the belt while the marker's own plane said they were clear
-    of it.
+    The clamp's floor is the clearance the open jaw keeps plus how far its
+    lowest collision geometry hangs below the pinch point, plus the millimetre
+    the rise needs so it leads the hang. The shut jaw hangs further, and the
+    hold climbs that difference while the fingers close, so the clearance at
+    the end of the close is the clearance the arrival granted. Quoting the
+    floor at the shut hang instead holds a flat parcel 13 mm above its centre
+    for the whole close, and the pads meet it at the top.
 
     Args:
         surface: Belt surface height, in world frame meters.
@@ -265,7 +265,7 @@ def grasp_plane(surface: float, effector: Effector, centre_z: float) -> float:
         The pinch plane, in world frame meters.
     """
     return min(
-        max(centre_z, surface + effector.pinch_floor),
+        max(centre_z, surface + effector.open_pinch_floor),
         surface + MAX_GRASP_ABOVE_SURFACE_METERS,
     )
 

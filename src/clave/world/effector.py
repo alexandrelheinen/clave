@@ -19,6 +19,14 @@ from typing import Any
 
 from clave.world.config import WorldConfigError, require
 
+ARRIVAL_LEAD_METERS = 0.001
+"""How far above the open jaw's geometry the descent stops, in meters.
+
+A rest-to-rest quintic over the 0.20 s the hold spends rising lags the hang
+the linkage adds, by 0.16 mm at the sample that lags most. A millimetre
+covers that and stays well inside the clearance the jaw keeps.
+"""
+
 
 @dataclass(frozen=True)
 class Effector:
@@ -38,9 +46,13 @@ class Effector:
             sensor on this line estimates an object's height.
         lowest_below_flange: How far the jaw's lowest collision geometry reaches
             below the flange, in meters, at its lowest over the jaw's own
-            travel. Measured, and larger than `finger_length` on the shipped
-            jaw: the pads hang below the point the jaw closes at, so a clearance
-            quoted at that point is not a clearance the jaw has.
+            travel. Measured with the jaw shut, and larger than `finger_length`
+            on the shipped jaw: the pads hang below the point the jaw closes at,
+            so a clearance quoted at that point is not a clearance the jaw has.
+        open_lowest_below_flange: The same reach with the jaw open, in meters.
+            The linkage hangs less far open than shut, and the descent arrives
+            against this one. The hold then rises by the difference while the
+            jaw closes, which is what keeps the shut reach at the same clearance.
         jaw_clearance: The clearance the jaw's lowest geometry keeps above the
             belt surface, in meters.
         opening: The widest the jaw goes, in meters, read from the arm.
@@ -52,30 +64,67 @@ class Effector:
     pad_height: float
     grasp_height: float
     lowest_below_flange: float
+    open_lowest_below_flange: float
     jaw_clearance: float
     opening: float
 
     @property
     def pinch_floor(self) -> float:
-        """The lowest pinch plane that keeps the whole jaw clear of the belt.
+        """The lowest pinch plane that keeps the shut jaw clear of the belt.
 
         Measured from the belt surface, so a caller adds its own surface to it.
-        The marker clamps its grasp plane to this, which is what makes the
-        clearance it grants one the pads have: the pads hang below the pinch
-        point, so the plane the pinch point may stand at is the clearance plus
-        that overhang.
+        The pads hang below the pinch point, so the plane the pinch point may
+        stand at once the jaw has shut is the clearance plus that overhang.
+        The marker clamps to `open_pinch_floor` instead: the descent arrives
+        with the jaw open, and the hold climbs the difference.
         """
         return self.jaw_clearance + self.lowest_below_flange - self.finger_length
 
     @property
     def flange_floor(self) -> float:
-        """The lowest flange height that keeps the jaw clear of the belt.
+        """The lowest flange height that keeps the shut jaw clear of the belt.
 
-        Measured from the belt surface. The controller refuses a pose below it,
-        which is the same constraint as `pinch_floor` expressed against the pose
-        an arm is commanded to rather than the point the jaw closes at.
+        Measured from the belt surface. This is where the flange has to be
+        once the jaw has finished closing. The arrival is lower: see
+        `open_flange_floor`.
         """
         return self.jaw_clearance + self.lowest_below_flange
+
+    @property
+    def closing_drop(self) -> float:
+        """How much further the pads hang once the jaw has shut, in meters.
+
+        The hold raises the flange by this while the jaw closes, so the
+        clearance the open jaw arrived with is the clearance the shut jaw
+        keeps.
+        """
+        return self.lowest_below_flange - self.open_lowest_below_flange
+
+    @property
+    def open_pinch_floor(self) -> float:
+        """The lowest pinch plane that keeps the open jaw clear of the belt.
+
+        Measured from the belt surface. A millimetre above the geometry, so
+        the rise during the close, which a rest-to-rest quintic starts late,
+        still leads the hang the linkage adds. The marker clamps its grasp
+        plane to this. The shut plane is `pinch_floor`, and the hold climbs
+        the difference.
+        """
+        return (
+            self.jaw_clearance
+            + self.open_lowest_below_flange
+            - self.finger_length
+            + ARRIVAL_LEAD_METERS
+        )
+
+    @property
+    def open_flange_floor(self) -> float:
+        """The lowest flange height that keeps the open jaw clear of the belt.
+
+        Measured from the belt surface. The controller admits a descent to
+        this, and the hold is above it.
+        """
+        return self.jaw_clearance + self.open_lowest_below_flange + ARRIVAL_LEAD_METERS
 
     @classmethod
     def load(cls, raw: dict[str, Any]) -> Effector:
@@ -105,10 +154,20 @@ class Effector:
             "pad_height": _positive(block, "pad_height_meters"),
             "grasp_height": _positive(block, "grasp_height_meters"),
             "lowest_below_flange": _positive(block, "lowest_below_flange_meters"),
+            "open_lowest_below_flange": _positive(
+                block, "open_lowest_below_flange_meters"
+            ),
             "jaw_clearance": _positive(block, "jaw_clearance_meters"),
         }
         opening = float(require(arm, "max_grasp_width_meters", "arm"))
         effector = cls(opening=opening, **values)
+        if effector.open_lowest_below_flange >= effector.lowest_below_flange:
+            raise WorldConfigError(
+                f"effector.open_lowest_below_flange_meters is "
+                f"{effector.open_lowest_below_flange} and the shut jaw reaches "
+                f"{effector.lowest_below_flange}, so closing would not drop the "
+                f"pads and the hold would have nothing to rise by"
+            )
         if effector.grasp_height < effector.pinch_floor:
             raise WorldConfigError(
                 f"effector.grasp_height_meters is {effector.grasp_height} and the "

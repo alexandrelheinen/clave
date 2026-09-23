@@ -164,9 +164,10 @@ def test_ground_truth_markers_derivation_ac_gt_02() -> None:
     assert m0.channel == "chute_a"
     assert math.isclose(m0.pinch_position_belt[0], 0.10, abs_tol=1e-5)
     assert math.isclose(m0.pinch_position_belt[1], 0.05, abs_tol=1e-5)
-    # The object's own centre is 20 mm up, which is inside the clearance the
-    # jaw's lowest geometry keeps, so the plane stands at the floor instead.
-    assert math.isclose(m0.pinch_position_belt[2], 0.90 + eff.pinch_floor, abs_tol=1e-5)
+    # The object's own centre is 20 mm up. The open jaw's floor is below
+    # that, so the plane stands on the centre. The shut jaw hangs further,
+    # and the hold rises by that difference while the fingers close.
+    assert math.isclose(m0.pinch_position_belt[2], 0.92, abs_tol=1e-5)
     assert math.isclose(m0.opening, 0.06, abs_tol=1e-5)
     assert m0.oriented is False
     assert m0.closing_yaw_belt is None
@@ -398,10 +399,9 @@ def test_ground_truth_markers_keep_the_jaw_clear_of_the_belt() -> None:
     )
     assert len(markers) == 1
     marker = markers[0]
-    # The object's centre is 20 mm up and the jaw needs 27.7 mm, so the floor
-    # is what the plane stands at rather than the object's own centre.
-    assert math.isclose(
-        marker.pinch_position_belt[2], surface + eff.pinch_floor, abs_tol=1e-9
-    )
-    lowest = marker.flange[2] - eff.lowest_below_flange
-    assert math.isclose(lowest, surface + eff.jaw_clearance, abs_tol=1e-9)
+    # The object's centre is 20 mm up, above the open jaw's floor, so the
+    # plane stands on the centre. The open jaw's lowest geometry still
+    # clears the belt; the shut jaw's extra hang is what the hold rises by.
+    assert math.isclose(marker.pinch_position_belt[2], surface + 0.02, abs_tol=1e-4)
+    lowest = marker.flange[2] - eff.open_lowest_below_flange
+    assert lowest >= surface + eff.jaw_clearance - 1e-9

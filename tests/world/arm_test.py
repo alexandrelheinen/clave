@@ -190,3 +190,65 @@ def test_a_missing_arm_is_reported_by_name() -> None:
     empty = mujoco.MjModel.from_xml_string("<mujoco><worldbody/></mujoco>")
     with pytest.raises(KeyError, match="arm_shoulder_pan_joint"):
         armmod.locate(empty)
+
+
+# The stall measured when the command was already on the mass. The roll sits
+# on its upper stop. Clipped to the compiled limits before it is used.
+_STALL_JOINTS = np.array(
+    [
+        2.645491048232159,
+        -2.883348142443644,
+        -0.001063485045729,
+        -4.969290856013832,
+        4.712429309536971,
+        6.28319,
+    ]
+)
+_STALL_TARGET = np.array([-0.823157126636458, -0.05745090470265107, 1.2838158909149542])
+_STALL_YAW = -2.3343556939486056
+
+
+def test_a_wrist_wound_to_its_stop_takes_the_other_grip() -> None:
+    """AC-MOVE-64: a wrist wound to its stop takes the other grip.
+
+    A parallel jaw is the same grip after half a turn. A descent that keeps
+    the commanded yaw spends the roll, and the roll is already on its stop, so
+    the tool stays short of the command. The other grip puts the roll back
+    inside its travel. It is kept only while the tool stays within a
+    millimetre of the descent that kept the commanded yaw.
+    """
+    pytest.importorskip("mujoco")
+    model, _, indices = built()
+    seed = np.clip(_STALL_JOINTS, indices.lower, indices.upper)
+    plain = armmod._descend(model, indices, seed, _STALL_TARGET, _STALL_YAW, 8)
+    tracked = armmod._track_pose(model, indices, seed, _STALL_TARGET, _STALL_YAW, 8)
+    plain_gap = armmod._tool_distance(model, indices, plain, _STALL_TARGET)
+    tracked_gap = armmod._tool_distance(model, indices, tracked, _STALL_TARGET)
+    seed_gap = armmod._tool_distance(model, indices, seed, _STALL_TARGET)
+    assert abs(float(tracked[5])) + 0.50 < abs(float(seed[5]))
+    assert tracked_gap <= seed_gap + 1e-3
+    assert tracked_gap <= plain_gap + 1e-3
+
+
+def test_a_descent_that_walks_off_the_command_is_discarded() -> None:
+    """AC-MOVE-64: a descent that walks the tool off the command is discarded.
+
+    At the same stall the tool is already on a point, and a descent that
+    chases the remaining yaw walks it off that point. That step is not the
+    one the next tick starts from.
+    """
+    pytest.importorskip("mujoco")
+    import mujoco
+
+    model, data, indices = built()
+    seed = np.clip(_STALL_JOINTS, indices.lower, indices.upper)
+    for slot, joint in enumerate(indices.joint_ids):
+        data.qpos[model.jnt_qposadr[joint]] = seed[slot]
+    mujoco.mj_forward(model, data)
+    here = np.array(data.site_xpos[indices.tool_site], dtype=np.float64)
+    plain = armmod._descend(model, indices, seed, here, _STALL_YAW, 8)
+    tracked = armmod._track_pose(model, indices, seed, here, _STALL_YAW, 8)
+    plain_gap = armmod._tool_distance(model, indices, plain, here)
+    tracked_gap = armmod._tool_distance(model, indices, tracked, here)
+    assert plain_gap > 1e-4
+    assert tracked_gap <= 1e-6
