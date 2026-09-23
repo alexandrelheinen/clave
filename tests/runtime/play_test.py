@@ -5,10 +5,10 @@ from pathlib import Path
 
 import pytest
 
-from clave.demo.runner import predictor_for, summary
 from clave.demo.scenario import Scenario
 from clave.runtime.inference import ScriptedPredictor
 from clave.runtime.loop import RunReport, RuntimeSettings
+from clave.runtime.play import predictor_for, summary
 
 ROOT = Path(__file__).resolve().parents[2]
 DEMOS = ROOT / "configs" / "demos"
@@ -116,7 +116,7 @@ def test_a_scenario_runs_end_to_end_and_writes_its_record(
         pytest.skip("no offscreen GL backend here")
     import yaml
 
-    from clave.demo.runner import play
+    from clave.runtime.play import play
 
     # A short run, because what this proves is that the path works rather than
     # what the run decided.

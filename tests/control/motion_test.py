@@ -6,12 +6,12 @@ import math
 
 import pytest
 
-from clave.control.guidance import Motion, toward
-from clave.control.settings import GuidanceSettings, Phase
+from clave.control.motion import Reference, toward
+from clave.control.settings import MotionSettings, Phase
 from clave.control.task import Goal
 
 TIMESTEP = 0.002
-LIMITS = GuidanceSettings(max_speed=1.00, max_acceleration=2.50)
+LIMITS = MotionSettings(max_speed=1.00, max_acceleration=2.50)
 
 
 def goal_at(
@@ -33,9 +33,9 @@ def goal_at(
     )
 
 
-def at(position: tuple[float, float, float], speed: float = 0.0) -> Motion:
+def at(position: tuple[float, float, float], speed: float = 0.0) -> Reference:
     """The reference, standing somewhere at some speed."""
-    return Motion(position=position, speed=speed)
+    return Reference(position=position, speed=speed)
 
 
 def run(
@@ -43,14 +43,14 @@ def run(
     goal: Goal,
     ticks: int,
     belt_speed: float = 0.0,
-    limits: GuidanceSettings = LIMITS,
-) -> list[Motion]:
+    limits: MotionSettings = LIMITS,
+) -> list[Reference]:
     """Step the reference toward a goal and keep every state it passed."""
     motion = at(start)
     history = [motion]
     for _ in range(ticks):
         command = toward(motion, goal, TIMESTEP, limits, belt_speed, 0)
-        motion = Motion(position=command.position, speed=command.speed)
+        motion = Reference(position=command.position, speed=command.speed)
         history.append(motion)
     return history
 
@@ -113,10 +113,10 @@ def test_a_tighter_acceleration_takes_longer_to_arrive() -> None:
         (0.0, 0.0, 1.12),
         goal,
         ticks=4000,
-        limits=GuidanceSettings(max_speed=LIMITS.max_speed, max_acceleration=0.5),
+        limits=MotionSettings(max_speed=LIMITS.max_speed, max_acceleration=0.5),
     )
 
-    def ticks_to_arrive(history: list[Motion]) -> int:
+    def ticks_to_arrive(history: list[Reference]) -> int:
         for index, state in enumerate(history):
             if math.dist(state.position, goal.position) < 1e-6:
                 return index
@@ -179,7 +179,7 @@ def test_a_fault_goal_commands_no_motion() -> None:
     """AC-MOVE-05: a fault goal commands no motion.
 
     The task machine holds the flange where it is by asking for the pose it
-    already has, and guidance has to honour that rather than step toward it.
+    already has, and motion has to honour that rather than step toward it.
     """
     flange = (0.11, -0.22, 1.09)
     held = Goal(
@@ -190,7 +190,7 @@ def test_a_fault_goal_commands_no_motion() -> None:
         command = toward(motion, held, TIMESTEP, LIMITS, 0.0, 0)
         assert command.position == pytest.approx(flange)
         assert command.speed <= motion.speed
-        motion = Motion(position=command.position, speed=command.speed)
+        motion = Reference(position=command.position, speed=command.speed)
     assert motion.speed == pytest.approx(0.0)
 
 
@@ -246,8 +246,8 @@ def test_a_path_between_two_admitted_poses_stays_out_of_the_hole() -> None:
     for _ in range(4000):
         loose = toward(naive, goal, TIMESTEP, LIMITS, 0.0, 0)
         tight = toward(guarded, goal, TIMESTEP, LIMITS, 0.0, 0, keep_inside)
-        naive = Motion(position=loose.position, speed=loose.speed)
-        guarded = Motion(position=tight.position, speed=tight.speed)
+        naive = Reference(position=loose.position, speed=loose.speed)
+        guarded = Reference(position=tight.position, speed=tight.speed)
         if math.dist(naive.position[:2], BASE_XY) < INNER:
             breached = True
         assert math.dist(guarded.position[:2], BASE_XY) >= INNER - 1e-9
@@ -377,7 +377,7 @@ def test_interception_closes_the_lag_a_chasing_command_leaves() -> None:
                 )
             assert goal is not None
             command = toward(motion, goal, TIMESTEP, LIMITS, BELT, now)
-            motion = Motion(position=command.position, speed=command.speed)
+            motion = Reference(position=command.position, speed=command.speed)
             live = (origin[0] + BELT * tick * TIMESTEP, origin[1], origin[2])
             if tick > CAPTURE_TICKS * 4:
                 return math.dist(motion.position, live)

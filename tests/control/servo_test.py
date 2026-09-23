@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from clave.control.guidance import Command
+from clave.control.motion import Command
 from clave.control.servo import follow
 from clave.world.config import load
 
@@ -174,7 +174,7 @@ def test_the_arm_keeps_up_with_a_pose_moving_at_the_speed_ceiling(
     say so.
     """
     mujoco = pytest.importorskip("mujoco")
-    from clave.control.guidance import Motion, toward
+    from clave.control.motion import Reference, toward
     from clave.control.settings import ControlSettings, Phase
     from clave.control.task import Goal
 
@@ -189,11 +189,11 @@ def test_the_arm_keeps_up_with_a_pose_moving_at_the_speed_ceiling(
         track_id=1,
         observed_at_nanos=0,
     )
-    motion = Motion(position=flange_of(world), speed=0.0)
+    motion = Reference(position=flange_of(world), speed=0.0)
     lag = 0.0
     for _ in range(1500):
-        command = toward(motion, goal, 0.002, settings.guidance, 0.0, 0)
-        motion = Motion(position=command.position, speed=command.speed)
+        command = toward(motion, goal, 0.002, settings.motion, 0.0, 0)
+        motion = Reference(position=command.position, speed=command.speed)
         step = follow(model, data, arm, command, settings.servo.gain)
         assert step.refusal is None
         mujoco.mj_step(model, data)
@@ -205,17 +205,17 @@ def test_the_arm_keeps_up_with_a_pose_moving_at_the_speed_ceiling(
     assert lag < 0.30
 
 
-def test_stepping_guidance_from_the_measurement_crawls(world: Any) -> None:
-    """Stepping guidance from the measurement crawls.
+def test_stepping_motion_from_the_measurement_crawls(world: Any) -> None:
+    """Stepping the motion reference from the measurement crawls.
 
     The defect this pins down is easy to write and hard to see: feeding the
-    measured flange back into guidance makes the reference restart from
+    measured flange back into motion makes the reference restart from
     wherever the arm lagged to, so it never leads the plant and the traverse
     runs at the tracking error rather than at the ceiling. Keeping the test
     keeps somebody from simplifying the reference away again.
     """
     mujoco = pytest.importorskip("mujoco")
-    from clave.control.guidance import Motion, toward
+    from clave.control.motion import Reference, toward
     from clave.control.settings import ControlSettings, Phase
     from clave.control.task import Goal
 
@@ -232,15 +232,15 @@ def test_stepping_guidance_from_the_measurement_crawls(world: Any) -> None:
     )
     start = flange_of(world)
     for _ in range(500):
-        chasing_motion = Motion(position=flange_of(world), speed=0.0)
-        command = toward(chasing_motion, goal, 0.002, settings.guidance, 0.0, 0)
+        chasing_motion = Reference(position=flange_of(world), speed=0.0)
+        command = toward(chasing_motion, goal, 0.002, settings.motion, 0.0, 0)
         follow(model, data, arm, command, settings.servo.gain)
         mujoco.mj_step(model, data)
     chasing = math.dist(start, flange_of(world))
 
     # One second of ticks at the ceiling covers a metre. Chasing the plant
     # covers a fraction of that, and this is the fraction that matters.
-    assert chasing < 0.5 * settings.guidance.max_speed * 500 * 0.002
+    assert chasing < 0.5 * settings.motion.max_speed * 500 * 0.002
 
 
 def place(world: Any, angles: list[float]) -> None:
@@ -338,7 +338,7 @@ def test_the_cap_is_measured_against_the_previous_command(world: Any) -> None:
     """AC-MOVE-11: the cap is measured against the previous command.
 
     Not against the measured position, which is the same distinction
-    guidance makes one layer up and matters for the same reason. These are
+    motion makes one layer up and matters for the same reason. These are
     position actuators running a proportional-derivative loop, so the
     command has to lead the position to produce force. Capping that lead
     instead of the command rate left almost no driving error: a flange asked

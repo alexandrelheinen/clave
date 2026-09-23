@@ -174,8 +174,10 @@ from.
 
 The object id is not recovered from pixels. `associate()` matches the predicted
 point to the nearest labeled object within a radius, so identity is ground truth
-borrowed from the simulator. CLAVE has no tracker, and this is where one plugs
-in.
+borrowed from the simulator. The proposal loop has no tracker yet, and this is
+where one plugs in. The operator harness in `clave.sim` already drives
+`clave.tracker` and `clave.control` together for debug runs, separate from the
+proposal path to Rust.
 
 ### Learned stages
 

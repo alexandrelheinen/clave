@@ -1,7 +1,7 @@
 """One commanded pose, turned into joint angles and written to the actuators.
 
 The only module in the control path that compiles a model, and the only one
-with no decisions in it. It takes the pose guidance produced, asks
+with no decisions in it. It takes the pose motion produced, asks
 `clave.world.arm` for joint angles that put the flange there with the tool
 vertical, and writes them.
 
@@ -36,7 +36,7 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
-from clave.control.guidance import Command
+from clave.control.motion import Command
 from clave.control.settings import Point
 from clave.control.trajectory import as_point, as_vector
 from clave.world import arm as armmod

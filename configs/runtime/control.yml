@@ -102,14 +102,14 @@ task:
   # An assumption, bounded by the algebra rather than measured. With the
   # clearance above it puts the descent at 2Z/V = 0.40 s, four fifths of the
   # 5Z/(2V) = 0.50 s beyond which the quintic dips below the object it is
-  # descending onto. See docs/guidance-formulation.md for that derivation.
+  # descending onto. See docs/trajectory-formulation.md for that derivation.
   approach_speed_meters_per_second: 0.25
 
   # The longest interception a pick will plan for. Past it the object is
   # refused rather than chased, which is the honest answer for something the
   # arm cannot reach in the belt it has left.
   #
-  # MEASURED against the table in docs/guidance-formulation.md: from the park
+  # MEASURED against the table in docs/trajectory-formulation.md: from the park
   # pose, interceptions across the reachable window solve between 2.07 and
   # 2.48 s, and adding the descent puts the longest at 2.88 s. Four seconds
   # clears that with margin while still refusing an object that has already
@@ -120,7 +120,7 @@ task:
   #
   # MEASURED, and it is not cosmetic. The bisection returns the soonest arc
   # that fits, which by construction sits exactly on whichever ceiling binds,
-  # and docs/guidance-formulation.md records that the binding one is always
+  # and docs/trajectory-formulation.md records that the binding one is always
   # speed. An arc on its ceiling cannot be re-aimed: every correction breaks
   # the bound it was already touching, so the refinement is refused and the
   # arm flies a three second old prediction onto an object that has drifted.
@@ -132,7 +132,7 @@ task:
   interception_margin: 1.15
 
   # How far the freshest estimate of an object's grasp pose may stand from the
-  # pose a plan in flight is aiming at before the machine acts on the
+  # pose a active plan is aiming at before the machine acts on the
   # difference.
   #
   # MEASURED, and the number that exposed the reason this exists. On the
@@ -188,7 +188,7 @@ task:
   # trusted. Red, because nothing else in the scene is.
   park_marker_color: [0.85, 0.10, 0.10]
 
-guidance:
+motion:
   # Flange speed and acceleration bounds in task space.
   #
   # One metre per second is what a collaborative arm of this class sustains at

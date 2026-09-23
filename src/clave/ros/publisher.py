@@ -224,7 +224,7 @@ class DecisionPublisher:
         # BoundingBox3D is the one field of a Detection3D that CLAVE has no
         # other use for, since CLAVE estimates a pick point rather than an
         # object extent. The window duration rides in size.x so a subscriber
-        # can tell an actionable decision from one that went stale in flight.
+        # can tell an actionable decision from one that went stale in transit.
         detection.bbox.center = material.pose.pose
         detection.bbox.size.x = fields.window_seconds
 

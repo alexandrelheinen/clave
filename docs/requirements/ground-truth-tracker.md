@@ -26,7 +26,7 @@ execution of visual perception, segmentation, and tracker settling. Visual scene
 markers reflecting the active feeding source.
 
 **Out.** Modifying the internal state or beliefs of `Tracker` during
-ground-truth feeding. Changes to the physical robot kinematic solver, guidance
+ground-truth feeding. Changes to the physical robot kinematic solver, motion
 polynomial formulation, or safety checks. Eliminating tracker debug telemetry or
 logs.
 

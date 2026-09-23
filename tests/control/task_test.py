@@ -19,7 +19,7 @@ from clave.control.selection import Candidate, Queue
 from clave.control.settings import (
     CalibrationSettings,
     ControlSettings,
-    GuidanceSettings,
+    MotionSettings,
     Phase,
     Profile,
     TaskSettings,
@@ -32,7 +32,7 @@ ROOT = Path(__file__).resolve().parents[2]
 BELT_SURFACE = 0.90
 PARK = (0.45, -1.00, 1.20)
 BELT_SPEED = 0.314
-LIMITS = GuidanceSettings(max_speed=1.00, max_acceleration=2.50)
+LIMITS = MotionSettings(max_speed=1.00, max_acceleration=2.50)
 EFFECTOR = Effector(
     finger_length=0.1558,
     pad_thickness=0.008,
@@ -97,7 +97,7 @@ def machine(**overrides: object) -> TaskMachine:
         CalibrationSettings(flange_offset=(0.0, 0.0, 0.0)),
         belt_surface=BELT_SURFACE,
         belt_speed=BELT_SPEED,
-        guidance=LIMITS,
+        motion=LIMITS,
         effector=EFFECTOR,
         story=story,
         chutes=chutes,
@@ -147,7 +147,7 @@ def test_a_queue_with_a_head_puts_the_arm_in_tracking() -> None:
 def test_the_goal_rides_at_the_configured_approach_height() -> None:
     """The goal rides at the configured approach height above the belt.
 
-    Motion only, so the flange never descends: the height it tracks at is the
+    Reference only, so the flange never descends: the height it tracks at is the
     height it holds.
     """
     goal = machine().step(queue_of(candidate()), flange=PARK, at_seconds=0.0)
@@ -268,7 +268,7 @@ def _fly(arm: TaskMachine, only: Candidate, span: float = 8.0) -> list[Phase]:
     at_seconds = 0.0
     while at_seconds < span:
         at_seconds += 0.01
-        flown = arm.flight(at_seconds, PARK)
+        flown = arm.tick(at_seconds, PARK)
         if flown is None:
             break
         seen.append(flown.phase)
@@ -285,7 +285,7 @@ def test_a_full_visit_tracks_descends_grasps_and_retreats() -> None:
         Phase.RETREAT,
     ]
     assert arm.served == (1,)
-    assert arm.flying is False
+    assert arm.active is False
 
 
 def test_a_planned_visit_shuts_the_jaw_only_once_it_is_on_the_object() -> None:
@@ -300,7 +300,7 @@ def test_a_planned_visit_shuts_the_jaw_only_once_it_is_on_the_object() -> None:
     at_seconds, shut_from = 0.0, None
     while at_seconds < 8.0:
         at_seconds += 0.01
-        flown = arm.flight(at_seconds, PARK)
+        flown = arm.tick(at_seconds, PARK)
         if flown is None:
             break
         if flown.grip > 0.0 and shut_from is None:
@@ -320,7 +320,7 @@ def test_a_planned_visit_meets_the_object_moving_with_the_belt() -> None:
     at_seconds = 0.0
     while at_seconds < 8.0:
         at_seconds += 0.01
-        flown = arm.flight(at_seconds, PARK)
+        flown = arm.tick(at_seconds, PARK)
         assert flown is not None
         if flown.phase is Phase.HOLD:
             assert flown.velocity == pytest.approx((BELT_SPEED, 0.0, 0.0), abs=1e-9)
@@ -341,7 +341,7 @@ def test_a_planned_visit_descends_onto_where_the_object_will_be() -> None:
     at_seconds, pick = 0.0, None
     while at_seconds < 8.0:
         at_seconds += 0.01
-        flown = arm.flight(at_seconds, PARK)
+        flown = arm.tick(at_seconds, PARK)
         assert flown is not None
         if flown.phase is Phase.HOLD:
             pick, elapsed = flown.position, at_seconds
@@ -367,7 +367,7 @@ def test_an_object_with_no_interception_is_missed_rather_than_chased() -> None:
     )
     goal = arm.step(queue_of(leaving), PARK, 0.0)
     assert arm.missed == (7,)
-    assert arm.flying is False
+    assert arm.active is False
     assert goal.position == PARK
     # And it is not offered again on the next capture.
     assert arm.step(queue_of(leaving), PARK, 0.5).track_id is None
@@ -376,17 +376,17 @@ def test_an_object_with_no_interception_is_missed_rather_than_chased() -> None:
 def test_a_plan_owns_the_arm_until_it_runs_out() -> None:
     """AC-MOVE-42: a plan owns the arm until it runs out.
 
-    Re-deciding mid-flight turns an interception into a chase: each fresh arc
+    Re-deciding mid-visit turns an interception into a chase: each fresh arc
     is solved against a fresh estimate and the arm never arrives.
     """
     arm = machine(profile=Profile.FULL_VISIT)
     first = candidate(1, x=0.30)
     arm.step(queue_of(first), PARK, 0.0)
-    arm.flight(0.01, PARK)
+    arm.tick(0.01, PARK)
     nearer = candidate(2, x=0.40)
     goal = arm.step(queue_of(nearer, first), PARK, 0.5)
     assert goal.track_id == 1
-    assert arm.flying is True
+    assert arm.active is True
 
 
 def test_a_refusal_tears_up_the_plan_it_was_built_on() -> None:
@@ -399,10 +399,10 @@ def test_a_refusal_tears_up_the_plan_it_was_built_on() -> None:
     arm = machine(profile=Profile.FULL_VISIT)
     only = candidate(1, x=0.30)
     arm.step(queue_of(only), PARK, 0.0)
-    assert arm.flying is True
+    assert arm.active is True
     arm.step(queue_of(only), PARK, 0.5, refusal="outside the annulus")
-    assert arm.flying is False
-    assert arm.flight(0.6, PARK) is None
+    assert arm.active is False
+    assert arm.tick(0.6, PARK) is None
     assert arm.faults == ((1, "outside the annulus"),)
 
 
@@ -424,7 +424,7 @@ def test_the_full_visit_profile_refuses_to_run_on_a_stopped_belt() -> None:
             task_settings(profile=Profile.FULL_VISIT),
             CalibrationSettings(flange_offset=(0.0, 0.0, 0.0)),
             belt_surface=BELT_SURFACE,
-            guidance=LIMITS,
+            motion=LIMITS,
         )
 
 
@@ -485,7 +485,7 @@ def test_the_shipped_configuration_builds_a_machine() -> None:
         settings.calibration,
         belt_surface=BELT_SURFACE,
         belt_speed=BELT_SPEED,
-        guidance=settings.guidance,
+        motion=settings.motion,
         effector=Effector.load(load(world)),
     )
     assert arm.step(queue_of(), PARK, 0.0).phase in {Phase.PARK, Phase.STANDBY}
@@ -505,7 +505,7 @@ def test_the_full_visit_profile_needs_the_jaw_geometry() -> None:
             CalibrationSettings(flange_offset=(0.0, 0.0, 0.0)),
             belt_surface=BELT_SURFACE,
             belt_speed=BELT_SPEED,
-            guidance=LIMITS,
+            motion=LIMITS,
         )
 
 
@@ -567,7 +567,7 @@ def test_a_grasp_pose_below_the_jaw_clearance_is_refused() -> None:
         distance_before_leaving=1.5,
     )
     goal = arm.step(queue_of(under), PARK, 0.0)
-    assert arm.flying is False
+    assert arm.active is False
     assert arm.missed == (9,)
     assert goal.position == PARK
 
@@ -588,7 +588,7 @@ def test_a_grasp_pose_at_the_jaw_clearance_is_taken() -> None:
         distance_before_leaving=1.5,
     )
     arm.step(queue_of(shortest), PARK, 0.0)
-    assert arm.flying is True
+    assert arm.active is True
     assert arm.missed == ()
 
 
@@ -623,8 +623,8 @@ def test_a_plan_is_re_aimed_while_the_arm_is_still_approaching() -> None:
         distance_before_leaving=1.5,
     )
     arm.step(queue_of(drifted), PARK, 0.50)
-    arm.flight(0.50, PARK)
-    assert arm.flying is True
+    arm.tick(0.50, PARK)
+    assert arm.active is True
     after = arm.step(queue_of(drifted), PARK, 0.51)
     assert math.dist(before.position, after.position) > 0.010
 
@@ -641,13 +641,13 @@ def test_a_pick_outside_the_trusted_region_is_never_planned() -> None:
         CalibrationSettings(flange_offset=(0.0, 0.0, 0.0)),
         belt_surface=BELT_SURFACE,
         belt_speed=BELT_SPEED,
-        guidance=LIMITS,
+        motion=LIMITS,
         effector=EFFECTOR,
         admits=lambda pose: pose == PARK,
     )
     only = candidate(1, x=0.30)
     assert arm.step(queue_of(only), PARK, 0.0).position == PARK
-    assert arm.flying is False
+    assert arm.active is False
     assert arm.missed == (1,)
 
 
@@ -666,12 +666,12 @@ def test_no_plan_is_built_from_a_pose_the_arm_should_not_be_in() -> None:
         CalibrationSettings(flange_offset=(0.0, 0.0, 0.0)),
         belt_surface=BELT_SURFACE,
         belt_speed=BELT_SPEED,
-        guidance=LIMITS,
+        motion=LIMITS,
         effector=EFFECTOR,
         admits=lambda pose: pose != outside,
     )
     goal = arm.step(queue_of(candidate(1, x=0.30)), outside, 0.0)
-    assert arm.flying is False
+    assert arm.active is False
     assert goal.position == PARK, "the arm was not sent home to recover"
     # And the candidate is not blamed: nothing is wrong with it.
     assert arm.missed == ()
@@ -684,7 +684,7 @@ def test_task_machine_accepts_custom_belt_parameters() -> None:
         CalibrationSettings(flange_offset=(0.0, 0.0, 0.0)),
         belt_surface=BELT_SURFACE,
         belt_speed=BELT_SPEED,
-        guidance=LIMITS,
+        motion=LIMITS,
         effector=EFFECTOR,
         belt_width=0.70,
         belt_center_y=0.05,
@@ -694,7 +694,7 @@ def test_task_machine_accepts_custom_belt_parameters() -> None:
 
 
 def test_reaim_refreshes_plan_yaw_in_flight() -> None:
-    """AC-MOVE-40: re-aiming an approach updates target yaw and flight commands."""
+    """AC-MOVE-40: re-aiming an approach updates target yaw and visit-tick commands."""
     arm = machine(profile=Profile.FULL_VISIT)
     first = Candidate(
         track_id=1,
@@ -704,7 +704,7 @@ def test_reaim_refreshes_plan_yaw_in_flight() -> None:
         distance_before_leaving=1.5,
     )
     arm.step(queue_of(first), PARK, 0.0)
-    initial_flight = arm.flight(0.01, PARK)
+    initial_flight = arm.tick(0.01, PARK)
     assert initial_flight is not None
 
     rotated = Candidate(
@@ -716,7 +716,7 @@ def test_reaim_refreshes_plan_yaw_in_flight() -> None:
     )
     arm.step(queue_of(rotated), PARK, 0.20)
     assert arm._plan_yaw == pytest.approx(math.pi / 4.0)
-    later_flight = arm.flight(0.20, PARK)
+    later_flight = arm.tick(0.20, PARK)
     assert later_flight is not None
     assert later_flight.yaw is not None
 
@@ -734,7 +734,7 @@ def test_a_plan_is_never_flowed_onto_an_object_that_has_moved_away() -> None:
     against its own commands.
 
     Whatever it does instead has to leave the plan aimed at the object: either
-    a plan in flight whose aim is within the tolerance of the freshest
+    a active plan whose aim is within the tolerance of the freshest
     estimate, or no plan at all with the visit recorded as given up.
     """
     arm = machine(profile=Profile.FULL_VISIT)
@@ -747,7 +747,7 @@ def test_a_plan_is_never_flowed_onto_an_object_that_has_moved_away() -> None:
         velocity_world=(BELT_SPEED, 0.0, 0.0),
     )
     arm.step(queue_of(riding), PARK, 0.0)
-    assert arm.flying is True
+    assert arm.active is True
     # Two and a half seconds later the object is barely past where it was,
     # against a plan that aimed it a belt's travel further downstream.
     dragging = Candidate(
@@ -762,7 +762,7 @@ def test_a_plan_is_never_flowed_onto_an_object_that_has_moved_away() -> None:
     assert max(refresh.drift or 0.0 for refresh in arm.refreshes) > 0.030, (
         "the object did not drift far enough from the aim to test anything"
     )
-    if arm.flying:
+    if arm.active:
         plan = arm.plan
         assert plan is not None
         fresh = arm._fresh_aim(dragging, dragging.flange, 2.50)
@@ -778,10 +778,10 @@ def test_a_plan_is_never_flowed_onto_an_object_that_has_moved_away() -> None:
         assert arm.plan is None
 
 
-def test_a_re_solved_visit_starts_from_the_guidance_state() -> None:
-    """AC-MOVE-68: a mid-flight re-solve begins at the planned pose, not the flange.
+def test_a_re_solved_visit_starts_from_the_motion_reference() -> None:
+    """AC-MOVE-68: a mid-visit re-solve begins at the planned pose, not the flange.
 
-    Guidance is model-based in the flat output. The planned end-effector state
+    Motion is model-based in the flat output. The planned end-effector state
     advances as if tracking were perfect, and the plant's lag is a control
     problem. Re-solving from the measured flange writes that lag into the next
     plan: the projected trajectory rushes off the arc the jaw was already on,
@@ -797,15 +797,15 @@ def test_a_re_solved_visit_starts_from_the_guidance_state() -> None:
         velocity_world=(BELT_SPEED, 0.0, 0.0),
     )
     arm.step(queue_of(riding), PARK, 0.0)
-    assert arm.flying is True
+    assert arm.active is True
     at = 1.00
-    guided = arm.flight(at, PARK)
+    guided = arm.tick(at, PARK)
     assert guided is not None
-    guidance = guided.position
+    reference_pose = guided.position
     # The flange has lagged sideways off the path. The object has also jumped
     # across the belt far enough that the approach arc cannot be bent onto it,
     # so the visit is solved again -- and that solve must not start at the lag.
-    lagged = (guidance[0], guidance[1] - 0.35, guidance[2])
+    lagged = (reference_pose[0], reference_pose[1] - 0.35, reference_pose[2])
     jumped = Candidate(
         track_id=1,
         anchor=(0.10, 0.45, PINCH_Z),
@@ -823,13 +823,14 @@ def test_a_re_solved_visit_starts_from_the_guidance_state() -> None:
     plan = arm.plan
     assert plan is not None
     start = plan.legs[0].segment.start.position
-    assert math.dist(start, guidance) < 0.02, (
-        f"re-solve began at {start}, {math.dist(start, guidance) * 1000:.0f} mm "
-        f"from the guidance state {guidance}, so the plant lag was written "
+    assert math.dist(start, reference_pose) < 0.02, (
+        f"re-solve began at {start}, {math.dist(start, reference_pose) * 1000:.0f} mm "
+        f"from the motion reference {reference_pose}, so the plant lag was written "
         "into the plan"
     )
     assert math.dist(start, lagged) > 0.20, (
-        f"re-solve began at the lagged flange {lagged} rather than at guidance"
+        f"re-solve began at the lagged flange {lagged} rather than at "
+        "the motion reference"
     )
 
 
@@ -837,19 +838,19 @@ def test_a_served_object_that_leaves_the_queue_abandons_the_visit() -> None:
     """AC-MOVE-57: a visit to an object that is no longer a candidate is given up.
 
     A track that retired, left the window, or was replaced in its slot has no
-    pose left to aim at, and a plan flying at the last pose it saw is a plan
+    pose left to aim at, and a plan active at the last pose it saw is a plan
     descending onto belt. The arrival time cannot be kept either: there is
     nothing scheduled against it any more.
     """
     arm = machine(profile=Profile.FULL_VISIT)
     arm.step(queue_of(candidate(1, x=0.30)), PARK, 0.0)
-    assert arm.flying is True
+    assert arm.active is True
     arm.step(queue_of(), PARK, 0.50)
-    assert arm.flying is False
+    assert arm.active is False
     assert arm.served == ()
     assert arm.abandoned == ((1, "the object is no longer a candidate"),)
     assert arm.missed == (1,)
-    # And the arm is handed something to do rather than left flying a plan
+    # And the arm is handed something to do rather than left running an active plan
     # nobody is aiming any more.
     goal = arm.step(queue_of(), PARK, 0.51)
     assert goal.phase in (Phase.STANDBY, Phase.PARK)
@@ -915,7 +916,7 @@ def _into_the_descent(arm: TaskMachine) -> float:
     edges = plan._boundaries()
     index = next(i for i, leg in enumerate(plan.legs) if leg.phase is Phase.DESCEND)
     at = plan.started_at + edges[index] + 0.05
-    flown = arm.flight(at, PARK)
+    flown = arm.tick(at, PARK)
     assert flown is not None
     assert flown.phase is Phase.DESCEND
     return at
@@ -956,7 +957,7 @@ def test_a_descent_moves_onto_where_the_object_is() -> None:
         velocity_world=(BELT_SPEED, 0.0, 0.0),
     )
     arm._reaim(queue_of(shifted), PARK, (BELT_SPEED, 0.0, 0.0), at)
-    assert arm.flying is True
+    assert arm.active is True
     assert arm.abandoned == ()
     steered = arm.plan
     assert steered is not None
@@ -1000,7 +1001,7 @@ def test_a_descent_is_not_given_up_when_the_correction_will_not_fit() -> None:
         velocity_world=(BELT_SPEED, 0.0, 0.0),
     )
     arm._reaim(queue_of(wild), PARK, (BELT_SPEED, 0.0, 0.0), at)
-    assert arm.flying is True
+    assert arm.active is True
     assert arm.abandoned == ()
     assert arm.plan is plan
 
@@ -1076,7 +1077,7 @@ def test_the_task_machine_narrates_the_visit() -> None:
         distance_before_leaving=1.5,
         channel="CH-PET",
     )
-    arm.flight(0.05, PARK)
+    arm.tick(0.05, PARK)
     arm.step(queue_of(carried), PARK, 0.20)
     assert any("fresh estimate" in line for line in lines)
     # AC-STORY-10: the same capture repeated is another refresh, not another line.
@@ -1094,7 +1095,7 @@ def test_the_task_machine_narrates_the_visit() -> None:
     at_seconds = 0.20
     while at_seconds < 8.0 and Phase.HOLD not in seen:
         at_seconds += 0.01
-        flown = arm.flight(at_seconds, PARK)
+        flown = arm.tick(at_seconds, PARK)
         assert flown is not None
         seen.add(flown.phase)
     assert Phase.DESCEND in seen
@@ -1104,7 +1105,7 @@ def test_the_task_machine_narrates_the_visit() -> None:
     story.grasp_reading(at_seconds, 1, 0.080)
     while at_seconds < 8.0 and not any("fly the release" in line for line in lines):
         at_seconds += 0.01
-        flown = arm.flight(at_seconds, PARK)
+        flown = arm.tick(at_seconds, PARK)
         if flown is None:
             break
     released = [line for line in lines if "fly the release of object 1" in line]
@@ -1116,7 +1117,7 @@ def test_the_task_machine_narrates_the_visit() -> None:
     given_story.note(1, "M-01", "CH-PET")
     giving_up = machine(profile=Profile.FULL_VISIT, story=given_story)
     giving_up.step(queue_of(only), PARK, 0.0)
-    giving_up.flight(0.05, PARK)
+    giving_up.tick(0.05, PARK)
     giving_up.step(queue_of(), PARK, 0.20)
     assert any(
         "abandon object 1" in line and line.endswith(": fail") for line in given_lines

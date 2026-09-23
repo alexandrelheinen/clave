@@ -30,7 +30,7 @@ classifiers alone. Read it before designing anything.
 | The version ladder, release criteria, and the open defects each step closes | [docs/roadmap.md](docs/roadmap.md) |
 | What a feature has to do, and the ids its tests reference | [docs/requirements/](docs/requirements/) |
 | Why an option was chosen over the ones the field actually uses | [docs/research/](docs/research/) |
-| The mathematics the arm's motion is planned with | [docs/guidance-formulation.md](docs/guidance-formulation.md) |
+| The mathematics the arm's motion is planned with | [docs/trajectory-formulation.md](docs/trajectory-formulation.md) |
 | How a waste object is described, independently of which sensor saw it | [docs/perception-contract.md](docs/perception-contract.md) |
 | Coding notes specific to CLAVE | [docs/guidelines.md](docs/guidelines.md) |
 | Guidelines, toolchain, and how to install it | [.guidelines/README.md](.guidelines/README.md) |
@@ -69,15 +69,16 @@ spent.
 ## Language
 
 **Rust** for the safety layer: collision checking, actuator limits, hardware
-interlocks, and the zero-copy bridge to neural inference. The hardened lint
+interlocks, and the process-boundary check on every proposal. The hardened lint
 tiers in [.guidelines/languages/rs.md](.guidelines/languages/rs.md) are not
 suggestions. Arithmetic overflow, casts, and unwraps fail silently in this
 domain and turn into physical faults.
 
-**Python** for policy training: imitation learning from human demonstrations,
-reinforcement learning in MuJoCo simulation via FRET, and domain
-randomization for sim-to-real transfer. Trained policies are versioned and
-deployed, never kept in training form at runtime.
+**Python** for policy training: imitation learning from a scripted expert
+today, with reinforcement learning and broader domain randomization on the
+roadmap. Trained policies are versioned and deployed, never kept in training
+form at runtime. Python proposes over a Unix datagram; Rust never loads
+weights.
 
 ## Prose
 
@@ -126,7 +127,7 @@ Crates go in `crates/<name>/` organized by responsibility:
 - Integration tests in `tests/` against simulated conveyor geometry.
 - Criterion benchmarks in `benches/` proving latency budgets.
 
-**Inference crates** (policy loading, embeddings, shared memory, action sampling):
+**Inference crates** (proposal encoding, envelope checks, decision publish):
 - Baseline lint tier.
 - Unit and integration tests for contract enforcement.
 - Benchmarks for inference latency on the development machine.

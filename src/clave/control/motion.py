@@ -2,11 +2,11 @@
 
 A phase says where it wants the flange. It does not say how to get there, and
 commanding the goal outright is how a controller asks for a jump the actuators
-answer with a lunge. Guidance is the layer in between: a straight line in task
+answer with a lunge. Motion is the layer in between: a straight line in task
 space, which is what an industrial linear move is, walked under a speed and an
 acceleration the machine actually has.
 
-**The first argument is the reference, not the measurement.** Guidance
+**The first argument is the reference, not the measurement.** Motion
 integrates its own previous output, seeded once from where the flange stood.
 Stepping from the measured flange instead looks equivalent and is not: the
 reference then never runs ahead of the plant, so every tick it restarts from
@@ -45,7 +45,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from clave.control.settings import GuidanceSettings, Point
+from clave.control.settings import MotionSettings, Point
 from clave.control.task import Goal
 from clave.control.trajectory import clip, distance
 from clave.tracker.belt_frame import carry
@@ -65,7 +65,7 @@ nothing downstream can measure.
 
 
 @dataclass(frozen=True)
-class Motion:
+class Reference:
     """Where the reference stands and how fast it is going.
 
     Attributes:
@@ -108,10 +108,10 @@ class Command:
 
 
 def toward(
-    motion: Motion,
+    reference: Reference,
     goal: Goal,
     timestep: float,
-    limits: GuidanceSettings,
+    limits: MotionSettings,
     belt_speed: float,
     at_nanos: int,
     keep_inside: Callable[[Point], Point] | None = None,
@@ -119,7 +119,7 @@ def toward(
     """Return the pose to command one tick along the way to a goal.
 
     Args:
-        motion: Where the reference stands and how fast it is going. Seed it
+        reference: Where the reference stands and how fast it is going. Seed it
             from the flange at rest once, at the start of a motion, and feed
             this function's own output back into it afterwards. Passing the
             measured flange every tick makes the reference chase the plant
@@ -141,32 +141,32 @@ def toward(
         The command.
     """
     inside = keep_inside if keep_inside is not None else _unchanged
-    aim = _intercept(motion.position, goal, limits.max_speed, belt_speed, at_nanos)
+    aim = _intercept(reference.position, goal, limits.max_speed, belt_speed, at_nanos)
 
-    remaining = distance(motion.position, aim)
-    speed = _speed(motion.speed, remaining, timestep, limits)
+    remaining = distance(reference.position, aim)
+    speed = _speed(reference.speed, remaining, timestep, limits)
     reach = speed * timestep
     if remaining <= reach or remaining == 0.0:
         # Arriving does not licence an instant stop. Bleeding the last of the
         # speed off at the same rate everything else changes is what keeps
         # the bound true on the tick that matters most, which is the last
         # one.
-        settling = max(0.0, motion.speed - limits.max_acceleration * timestep)
+        settling = max(0.0, reference.speed - limits.max_acceleration * timestep)
         return Command(position=inside(aim), speed=settling, yaw=goal.yaw, aim=aim)
 
     fraction = reach / remaining
     stepped = tuple(
         place + (wanted - place) * fraction
-        for place, wanted in zip(motion.position, aim, strict=True)
+        for place, wanted in zip(reference.position, aim, strict=True)
     )
-    heading = tuple(
+    direction = tuple(
         (wanted - place) / remaining
-        for place, wanted in zip(motion.position, aim, strict=True)
+        for place, wanted in zip(reference.position, aim, strict=True)
     )
     return Command(
         position=inside((stepped[0], stepped[1], stepped[2])),
         speed=speed,
-        velocity=(heading[0] * speed, heading[1] * speed, heading[2] * speed),
+        velocity=(direction[0] * speed, direction[1] * speed, direction[2] * speed),
         yaw=goal.yaw,
         aim=aim,
     )
@@ -209,7 +209,7 @@ def _intercept(
 
 
 def _speed(
-    speed: float, remaining: float, timestep: float, limits: GuidanceSettings
+    speed: float, remaining: float, timestep: float, limits: MotionSettings
 ) -> float:
     """Return how fast the reference may move this tick.
 

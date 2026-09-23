@@ -7,7 +7,7 @@ showing where a jaw would close on each object, and the arm ignores them: it
 runs a one-line controller that leans toward whichever reachable object comes
 first and never arrives at anything.
 
-This spec gives the arm a task layer and a guidance layer, so it goes to a
+This spec gives the arm a task layer and a motion layer, so it goes to a
 marker, holds there while the belt carries the object under it, lifts away and
 takes the next one. Nothing grasps. What is delivered is the motion, and the
 evidence that the motion reached the pose the tracker asked for.
@@ -20,7 +20,7 @@ rendering answers.
 
 **In.** Ordering the markers into a queue and holding that order steady. A
 task state machine over the phases of one visit, with a profile that runs the
-motion alone. Guidance that turns a pair of poses into
+motion alone. Motion that turns a pair of poses into
 a timed task-space path. A servo step that solves inverse kinematics and writes
 the actuators. Interception, because the target moves with the belt. The
 measurement of how close the flange got to the pose it was given.
@@ -29,7 +29,7 @@ measurement of how close the flange got to the pose it was given.
 an object. Placement and the bins. Obstacle avoidance and collision-free
 planning, because the belt is a plane under a single layer of objects and
 nothing stands between the arm and the object. Learning any part of this: the
-task layer and the guidance layer are written, not trained. The Rust safety
+task layer and the motion layer are written, not trained. The Rust safety
 layer, which already exists and gates what it is given.
 
 ## The question this spec answers first
@@ -44,7 +44,7 @@ writing anything.
 | `clave.world.arm` | `solve` and `step_toward`, already in this repository | Taken. Damped least squares on the stacked position and orientation Jacobian, with random restarts to escape local minima, warm-started tracking for a target that moves under a millimetre per step, joint limits enforced, and a refusal for anything outside the trusted annulus. A test re-sweeps the region and fails if a point it admits stops solving |
 
 So nothing is reimplemented and no solver is adopted. What is missing above
-the solver is the task layer and the guidance layer, and that is what this
+the solver is the task layer and the motion layer, and that is what this
 spec builds.
 
 **What this costs, stated plainly.** `docs/roadmap.md` puts motion planning
@@ -106,7 +106,7 @@ selection ──► the queue, head first, or empty
 task ──────► Phase, and the pose that phase wants
      │            (STANDBY, TRACK, DESCEND, HOLD, RETREAT, PARK, FAULT)
      ▼
-guidance ──► the pose to command this tick, on a bounded-speed path from
+motion ──► the pose to command this tick, on a bounded-speed path from
      │       where the flange is to where the phase wants it, with the
      │       interception offset applied for belt travel
      ▼
@@ -126,7 +126,7 @@ Four, split where the decisions differ rather than where the code is long.
 | --- | --- | --- |
 | `clave.control.selection` | The order the tracks are served in, and when that order is recomputed | Where the flange goes, or how it gets there |
 | `clave.control.task` | Which phase of a visit the arm is in, and the pose that phase wants | The path to that pose, or the joint angles |
-| `clave.control.guidance` | The pose to command this tick, bounded in speed and acceleration, with interception applied | Which object, which phase, or how joints realise a pose |
+| `clave.control.motion` | The pose to command this tick, bounded in speed and acceleration, with interception applied | Which object, which phase, or how joints realise a pose |
 | `clave.control.servo` | Joint angles for one commanded pose, and the actuator write | Anything about time, phase or target |
 
 **`selection`.** Orders the reachable markers into a queue and hands the arm
@@ -179,7 +179,7 @@ DESCEND, HOLD and RETREAT. Neither profile grasps, because no gripper exists;
 the phases a gripper would need are absent from both rather than present and
 skipped.
 
-**`guidance`.** Turns where the flange is and where the phase wants it into
+**`motion`.** Turns where the flange is and where the phase wants it into
 the single pose to command this tick. A straight line in task space, which is
 what an industrial linear move is, under a configured speed and acceleration
 bound. It also applies interception: the belt carries the object while the arm
@@ -439,19 +439,19 @@ artifacts rather than from whoever remembers typing it.
 machine can diff and in the text a reader already scans, so the figures it
 measured outlive the terminal they were printed on.
 
-`AC-MOVE-56`: When a plan in flight cannot be re-aimed onto the freshest
+`AC-MOVE-56`: When a active plan cannot be re-aimed onto the freshest
 estimate of its object and that estimate stands further than the configured
 tolerance from the pose the plan is aiming at, the system shall solve the visit
 again from the freshest estimate; and when no interception exists for it, the
 system shall abandon the visit, record the reason, record the object as missed
-and stop flying the plan, rather than fly a pose the object is not going to be
+and stop the plan, rather than command a pose the object is not going to be
 at.
 
 `AC-MOVE-57`: When the object a visit is about is no longer among the
 candidates, the system shall abandon the visit and record why, rather than
 descend onto the pose last seen.
 
-`AC-MOVE-58`: The system shall report the largest distance a plan in flight was
+`AC-MOVE-58`: The system shall report the largest distance a active plan was
 found aiming away from the freshest estimate of its object, and every visit
 given up before its descent with the reason it was given up.
 
@@ -543,13 +543,13 @@ The same jaw the other way round is not substituted for the commanded yaw:
 that pose leaves the warm start off the arm, and the command can only close
 the difference at the joint-speed cap.
 
-`AC-MOVE-65`: When a descent already in flight is moved onto a fresher
+`AC-MOVE-65`: When a descent already active is moved onto a fresher
 estimate and the whole correction breaks the speed ceiling, the system shall
 fly the largest fraction of that correction that stays under the ceiling. A
 fraction of zero is not a correction, and the system shall keep the plan
 already in hand. The acceleration ceiling does not refuse the fraction.
 
-`AC-MOVE-66`: When an approach already in flight is moved onto a fresher
+`AC-MOVE-66`: When an approach already active is moved onto a fresher
 estimate and the whole correction breaks the speed ceiling or the
 acceleration ceiling, the system shall fly the largest fraction of that
 correction that stays inside both, when that fraction lands inside the aim
@@ -563,11 +563,11 @@ clearance, over the first 0.20 s of the hold, and shall not raise it when the
 shut jaw is already clear. The retreat shall still lift its own clearance
 above where that hold finished.
 
-`AC-MOVE-68`: While a visit is in flight, the guidance state shall be the
+`AC-MOVE-68`: While a visit is active, the motion reference shall be the
 planned flange pose in task space (the flat output), advanced as if tracking
 were perfect: at time $t + \mathrm{d}t$ it is the trajectory at
 $t + \mathrm{d}t$ and the time to go shrinks by $\mathrm{d}t$. Re-aiming and
-re-solving a visit shall begin from that guidance state, not from the
+re-solving a visit shall begin from that the motion reference state, not from the
 measured flange. Lag, a collision, or any other plant disturbance is a
 control problem for the servo, and shall not be written back into the plan.
 
@@ -583,14 +583,14 @@ because the rise is one correction.
 | `AC-MOVE-65` | `test_a_descent_correction_past_the_ceiling_is_taken_part_way` |
 | `AC-MOVE-66` | `test_an_approach_correction_past_the_ceiling_is_taken_part_way` |
 | `AC-MOVE-67` | `test_the_hold_rises_while_the_jaw_closes`, `test_the_rise_leads_the_hang_the_jaw_adds_as_it_shuts`, `test_a_grasp_the_shut_jaw_can_clear_does_not_rise`, `test_a_grasp_below_the_shut_floor_rises_back_to_it` |
-| `AC-MOVE-68` | `test_a_re_solved_visit_starts_from_the_guidance_state` |
+| `AC-MOVE-68` | `test_a_re_solved_visit_starts_from_the_motion_reference` |
 | `AC-GRIP-14` | `test_the_open_jaw_is_the_configured_open_reach` |
 | `AC-MARK-17` | `test_the_grasp_plane_stands_on_the_open_jaw` |
 
-## The guidance formulation
+## The trajectory formulation
 
 The mathematics has its own document,
-[guidance-formulation.md](../guidance-formulation.md): the quintic Hermite
+[trajectory-formulation.md](../trajectory-formulation.md): the quintic Hermite
 basis and why it rather than a B-spline, the interception time as a fixed
 point and why bisection solves it, the exact condition on the descent
 duration, the two terminal velocities that have to match the object, and
@@ -627,7 +627,7 @@ makes recomputing on change rather than on a clock correct rather than merely
 cheap, and `AC-MOVE-17` is what will catch it if a future metric breaks the
 property.
 
-**Why interception is in guidance and not in selection.** Whether an object is
+**Why interception is in motion and not in selection.** Whether an object is
 worth serving depends on where it is now; where to point the flange depends on
 where it will be when the arm arrives. Those are different questions with
 different time bases, and folding them together is how a controller starts
@@ -694,13 +694,13 @@ head, and over the same run the head was swapped zero times while the track
 it replaced was still there to be served. A rebuild that keeps its head
 costs nothing.
 
-**Why the plan is not closed on the measured flange.** Guidance lives in the
+**Why the plan is not closed on the measured flange.** Motion lives in the
 flat output (the end-effector pose) and is model-based: the planned state
 advances along the trajectory under perfect tracking, and the time to go
 shrinks by the tick. The measured flange is what the servo tracks that
 reference with. Writing a lag or a collision back into the next solve makes
 the projected path rush off the arc the jaw was already on, which is how a
-control disturbance becomes a guidance problem. `AC-MOVE-68` is the rule:
+control disturbance becomes a motion problem. `AC-MOVE-68` is the rule:
 re-aim already sampled the plan, and re-solve now does too.
 
 **What interception and the bounds found.** Four more defects, and two of
@@ -708,7 +708,7 @@ them are the same mistake at different layers, which is the part worth
 remembering.
 
 Bounding a command against a *measurement* rather than against the previous
-command. Guidance did it with the reference and the traverse ran at the
+command. Motion did it with the reference and the traverse ran at the
 tracking error; the joint rate limiter then did it again one layer down.
 These are position actuators running a proportional-derivative loop, so the
 command has to lead the position to produce force, and capping that lead
@@ -748,7 +748,7 @@ the same time, because each one now tracks, descends, dwells and retreats.
 integration rather than in any one module, and none of them visible from the
 unit tests that pass on either side of them.
 
-Guidance integrating from the measured flange rather than from its own
+Motion integrating from the measured flange rather than from its own
 previous output. The reference then never leads the plant, so the effective
 speed becomes the tracking error divided by the tick. Measured: 0.11 m of
 travel in three seconds where the ceiling allows 0.71 m in less than one.
@@ -838,7 +838,7 @@ class TaskMachine:
 ```
 
 ```python
-# clave.control.guidance
+# clave.control.motion
 
 @dataclass(frozen=True)
 class Command:
@@ -848,7 +848,7 @@ class Command:
 
 def toward(
     flange: Point, goal: Goal, belt_speed: float,
-    timestep: float, limits: MotionLimits,
+    timestep: float, limits: MotionSettings,
 ) -> Command: ...
 ```
 
@@ -888,7 +888,7 @@ task:
   interception_margin: ...                 # AC-MOVE-42
   park_position_meters: [...]
   park_marker_color: [...]     # AC-MOVE-21
-guidance:
+motion:
   max_speed_meters_per_second: ...
   max_acceleration_meters_per_second_squared: ...
 servo:
@@ -905,9 +905,9 @@ calibration:
 |---|---|
 | `Selector.update` | Values. No model, no renderer: markers in, a queue out |
 | `TaskMachine.step` | Values, driving the clock rather than the world |
-| `TaskMachine.flight` | Values, advancing the clock through a whole planned visit |
+| `TaskMachine.tick` | Values, advancing the clock through a whole planned visit |
 | `pick.plan_pick` and `pick.refine` | Values, checked at the seams between arcs |
-| `guidance.toward` | Values, with the bounds checked over a swept path |
+| `motion.toward` | Values, with the bounds checked over a swept path |
 | `servo.follow` | The compiled model, which is the only place joint angles mean anything |
 | The four together | One rollout, reporting per-visit distance to the commanded pose |
 
