@@ -211,6 +211,15 @@ _STALL_TARGET = np.array([-0.823157126636458, -0.05745090470265107, 1.2838158909
 _STALL_YAW = -2.3343556939486056
 
 
+def test_cross3_matches_numpy_for_length_three_vectors() -> None:
+    """The local cross matches numpy on the three-axis case the arm uses."""
+    left = np.array([0.2, -0.5, 0.9], dtype=np.float64)
+    right = np.array([-0.3, 0.4, 0.1], dtype=np.float64)
+    out = np.empty(3, dtype=np.float64)
+    assert armmod._cross3(left, right, out=out) is out
+    assert out == pytest.approx(np.cross(left, right))
+
+
 def test_a_wrist_on_its_stop_is_not_walked_off_the_command() -> None:
     """AC-MOVE-64: a wrist on its stop is not walked off the command.
 
