@@ -123,9 +123,130 @@ _DOWN = np.array([0.0, 0.0, -1.0])
 _DAMPING = 0.06
 """Damping for the least squares solve, which keeps it stable near a singularity."""
 
+_FOLDED_ELBOW_PENALTY = 3.0
+"""Posture cost added when the elbow sits below zero after a principal wrap.
+
+A six-axis arm admits several tool-down solutions for one flange pose. The
+folded branch parks with a negative elbow and `wrist_2` near 270°; the
+extended branch keeps the forearm reaching forward. Both meet the Cartesian
+target, and this penalty is what makes [solve] prefer the extended one.
+"""
+
+_SHOULDER_OVERHEAD_PENALTY = 2.0
+"""Posture cost when shoulder lift wraps above zero (upper arm flipped over).
+
+Positive shoulder lift with a positive elbow still meets the target but
+drops the forearm toward the belt. The extended park the operator wants
+keeps shoulder lift negative.
+"""
+
+_JOINT_SPAN_WEIGHT = 0.05
+"""Small weight that prefers the principal representative of each joint."""
+
+_BRANCH_CONTINUITY = 0.35
+"""Weight on joint-space distance from the warm-start seed.
+
+Keeps a re-solve from jumping to a distant IK branch when the arm is already
+near one that works. From the zero pose the posture terms still prefer the
+extended reach.
+"""
+
 _CROSS_A = np.empty(3, dtype=np.float64)
 _CROSS_B = np.empty(3, dtype=np.float64)
 """Scratch for the two orientation-error crosses in a descent step."""
+
+
+def _principal(angle: float) -> float:
+    """Wrap an angle onto (−π, π]."""
+    return (float(angle) + math.pi) % (2.0 * math.pi) - math.pi
+
+
+def _fold_into_limits(
+    angles: NDArray[np.float64],
+    lower: NDArray[np.float64],
+    upper: NDArray[np.float64],
+) -> NDArray[np.float64]:
+    """Return equivalent joint angles inside the limits, nearest zero.
+
+    A UR10e axis travels a full turn either side of zero, so 270° and −90°
+    are the same pose. Preferring the principal value keeps the warm start
+    and the debug view from advertising a twisted wrist when the geometry
+    is already the extended one.
+    """
+    folded = np.empty(len(angles), dtype=np.float64)
+    for slot, angle in enumerate(angles):
+        base = _principal(angle)
+        best = None
+        best_span = math.inf
+        for turn in range(-2, 3):
+            candidate = base + turn * 2.0 * math.pi
+            if lower[slot] - 1e-9 <= candidate <= upper[slot] + 1e-9:
+                span = abs(candidate)
+                if span < best_span:
+                    best = candidate
+                    best_span = span
+        folded[slot] = (
+            float(np.clip(angle, lower[slot], upper[slot])) if best is None else best
+        )
+    return folded
+
+
+def _posture_cost(
+    angles: NDArray[np.float64],
+    start: NDArray[np.float64] | None = None,
+) -> float:
+    """Return a cost that is lower for the extended tool-down branch.
+
+    Args:
+        angles: Six joint angles from a converged solve.
+        start: Optional warm-start seed. When given, a distant branch pays
+            an extra continuity term so a re-solve stays near the arm.
+
+    Returns:
+        A non-negative score. Lower means a more extended reach.
+    """
+    elbow = _principal(angles[2])
+    shoulder_lift = _principal(angles[1])
+    wrist_2 = abs(_principal(angles[4]))
+    cost = abs(wrist_2 - math.pi / 2.0)
+    if elbow < 0.0:
+        cost += _FOLDED_ELBOW_PENALTY
+    if shoulder_lift > 0.0:
+        cost += _SHOULDER_OVERHEAD_PENALTY
+    cost += _JOINT_SPAN_WEIGHT * sum(abs(_principal(angle)) for angle in angles)
+    if start is not None:
+        cost += _BRANCH_CONTINUITY * float(np.linalg.norm(angles - start))
+    return cost
+
+
+def _extended_seeds(
+    arm: ArmIndices, start: NDArray[np.float64]
+) -> list[NDArray[np.float64]]:
+    """Return a few joint seeds that sit near the extended-reach basin.
+
+    Random restarts alone often land on the folded park first. Seeding once
+    near a positive elbow and a negative shoulder lift makes that branch
+    show up among the candidates [solve] ranks.
+    """
+    seeds = [
+        start,
+        np.array(
+            [
+                -0.95 * math.pi,
+                -math.pi / 2.0,
+                0.6 * math.pi,
+                -0.7 * math.pi,
+                -math.pi / 2.0,
+                0.0,
+            ],
+            dtype=np.float64,
+        ),
+        np.array(
+            [-2.5, -1.0, 2.0, -2.2, -math.pi / 2.0, -1.4],
+            dtype=np.float64,
+        ),
+    ]
+    return [np.clip(seed, arm.lower, arm.upper) for seed in seeds]
 
 
 def _cross3(
@@ -312,6 +433,12 @@ def solve(
     four-axis task wants. Restarting from random configurations is what gets
     past the local minima an iterative solve on a redundant arm falls into.
 
+    When more than one attempt converges, the extended-reach branch wins
+    (`AC-BEHAVE-04`): a positive elbow and a shoulder lift at or below the
+    horizon, with joint angles folded into (−π, π] inside the limits. The
+    folded park that leaves `wrist_2` near 270° is a valid Cartesian answer
+    and is not taken when a better branch is available.
+
     The solve does not touch `data`'s committed state: it works on a scratch
     copy and returns angles, so a caller's simulation is never advanced by
     asking a question.
@@ -373,11 +500,14 @@ def solve(
     scratch.qpos[:] = data.qpos
     start = joint_positions(model, data, arm)
     rng = np.random.default_rng(0)
+    seeds = _extended_seeds(arm, start)
+    while len(seeds) < attempts:
+        seeds.append(rng.uniform(arm.lower, arm.upper).clip(-2.8, 2.8))
+    seeds = seeds[:attempts]
 
-    for attempt in range(attempts):
-        seed = (
-            start if attempt == 0 else rng.uniform(arm.lower, arm.upper).clip(-2.8, 2.8)
-        )
+    best: NDArray[np.float64] | None = None
+    best_cost = math.inf
+    for seed in seeds:
         for slot, joint in enumerate(arm.joint_ids):
             scratch.qpos[model.jnt_qposadr[joint]] = seed[slot]
 
@@ -394,9 +524,19 @@ def solve(
                 np.linalg.norm(position_error) < 1e-3
                 and np.linalg.norm(rotation_error) < 1e-2
             ):
-                return np.array(
-                    [float(scratch.qpos[model.jnt_qposadr[j]]) for j in arm.joint_ids]
+                angles = np.array(
+                    [
+                        float(scratch.qpos[model.jnt_qposadr[joint]])
+                        for joint in arm.joint_ids
+                    ],
+                    dtype=np.float64,
                 )
+                angles = _fold_into_limits(angles, arm.lower, arm.upper)
+                cost = _posture_cost(angles, start)
+                if cost < best_cost:
+                    best = angles
+                    best_cost = cost
+                break
 
             jacp = np.zeros((3, model.nv))
             jacr = np.zeros((3, model.nv))
@@ -413,6 +553,14 @@ def solve(
             stepped = np.clip(current + 0.5 * delta, arm.lower, arm.upper)
             for slot, joint in enumerate(arm.joint_ids):
                 scratch.qpos[model.jnt_qposadr[joint]] = stepped[slot]
+
+        # An extended branch already beats every folded one; stop spending
+        # restarts once one is in hand.
+        if best is not None and best_cost < _FOLDED_ELBOW_PENALTY:
+            break
+
+    if best is not None:
+        return best
 
     raise ReachError(
         f"no solution converged for {np.round(target, 3).tolist()} with the tool "

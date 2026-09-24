@@ -49,6 +49,32 @@ def flange_of(world: Any) -> NDArray[np.float64]:
     return np.asarray(place, dtype=np.float64)
 
 
+def rested(world: Any) -> Any:
+    """Return the compiled model with a fresh arm at the configured park pose.
+
+    The module fixture shares one `MjData` across tests, and the zero home
+    pose is not how a run starts: `_park_the_arm` solves the park first. A
+    short settle from zeros toward an extended IK branch can jam the arm
+    into the belt, so arrival tests start from park the way the sim does.
+    """
+    mujoco = pytest.importorskip("mujoco")
+    from clave.control.settings import ControlSettings
+    from clave.world import arm as armmod
+
+    model, _, arm = world
+    data = mujoco.MjData(model)
+    settings = ControlSettings.load(load(ROOT / "configs" / "runtime" / "control.yml"))
+    park = np.asarray(settings.task.park_position, dtype=np.float64)
+    angles = armmod.solve(model, data, arm, park)
+    for slot, joint in enumerate(arm.joint_ids):
+        data.qpos[model.jnt_qposadr[joint]] = angles[slot]
+        data.ctrl[arm.actuator_ids[slot]] = angles[slot]
+    data.qvel[:] = 0.0
+    mujoco.mj_forward(model, data)
+    armmod._TRACKING[(id(model), id(data))] = angles.copy()
+    return model, data, arm
+
+
 def settle(world: Any, command: Command, steps: int = 400) -> Any:
     """Command one pose repeatedly and let the physics catch up."""
     mujoco = pytest.importorskip("mujoco")
@@ -81,8 +107,9 @@ def test_the_flange_arrives_inside_the_tolerance_the_task_layer_uses(
 
     settings = ControlSettings.load(load(ROOT / "configs" / "runtime" / "control.yml"))
     target = np.asarray((0.20, -0.30, 1.15), dtype=np.float64)
-    settle(world, Command(position=target, yaw=0.0), steps=1200)
-    assert math.dist(flange_of(world), target) <= settings.task.arrival_tolerance
+    arm = rested(world)
+    settle(arm, Command(position=target, yaw=0.0), steps=1200)
+    assert math.dist(flange_of(arm), target) <= settings.task.arrival_tolerance
 
 
 def test_a_pose_outside_the_annulus_is_refused_and_named(world: Any) -> None:
@@ -226,9 +253,9 @@ def test_the_arm_keeps_up_with_a_pose_moving_at_the_speed_ceiling(
     from clave.control.task import Goal
 
     settings = ControlSettings.load(load(ROOT / "configs" / "runtime" / "control.yml"))
-    model, data, arm = world
+    model, data, arm = rested(world)
     settle(
-        world,
+        (model, data, arm),
         Command(position=np.asarray((0.30, -0.30, 1.15), dtype=np.float64), yaw=0.0),
         steps=900,
     )
@@ -240,7 +267,7 @@ def test_the_arm_keeps_up_with_a_pose_moving_at_the_speed_ceiling(
         track_id=1,
         observed_at_nanos=0,
     )
-    motion = Reference(position=flange_of(world), speed=0.0)
+    motion = Reference(position=flange_of((model, data, arm)), speed=0.0)
     lag = 0.0
     for _ in range(1500):
         command = toward(motion, goal, 0.002, settings.motion, 0.0, 0)
@@ -248,8 +275,11 @@ def test_the_arm_keeps_up_with_a_pose_moving_at_the_speed_ceiling(
         step = follow(model, data, arm, command, settings.servo.gain)
         assert step.refusal is None
         mujoco.mj_step(model, data)
-        lag = max(lag, math.dist(flange_of(world), command.position))
-    assert math.dist(flange_of(world), goal.position) <= settings.task.arrival_tolerance
+        lag = max(lag, math.dist(flange_of((model, data, arm)), command.position))
+    assert (
+        math.dist(flange_of((model, data, arm)), goal.position)
+        <= settings.task.arrival_tolerance
+    )
     # Recorded rather than bounded tightly: what matters here is that the
     # solver kept converging and the flange arrived, not the exact tracking
     # error of a position-controlled arm under its own actuator dynamics.

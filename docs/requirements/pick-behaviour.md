@@ -11,9 +11,12 @@ backwards (wrist_2 near 270°) through the visit.
 
 **In.** Trying the next queue head when `plan_pick` refuses; descent retarget
 aiming without inventing lateral drift over the remaining time; choosing the
-parallel-jaw yaw (θ or θ+π) closest to the tool's current yaw.
+parallel-jaw yaw (θ or θ+π) closest to the tool's current yaw; among
+tool-down IK solutions for a target, preferring the extended reach branch
+(positive elbow, shoulder lift below the horizon) over the folded wrist.
 
-**Out.** Changing `exit_weight`, reach annulus, or rewriting IK.
+**Out.** Changing `exit_weight`, the reach annulus, or replacing the damped
+least-squares solver.
 
 ## Evidence (pre-fix, seed 0, 24 s)
 
@@ -39,6 +42,12 @@ second. A fresher object *position* may still move the end (AC-MOVE-63).
 θ+π (parallel jaw) so the commanded yaw is the one nearest the tool's
 current yaw, wrapping on (−π, π].
 
+`AC-BEHAVE-04`: When `solve` finds more than one tool-down joint solution
+for a target, it shall return the extended-reach branch (elbow angle
+positive after wrap to (−π, π], shoulder lift at or below zero) rather
+than the folded branch that parks with `wrist_2` near 270°. Returned
+angles shall be folded into (−π, π] inside the joint limits.
+
 ## Test plan
 
 | Criterion | Test |
@@ -46,3 +55,4 @@ current yaw, wrapping on (−π, π].
 | `AC-BEHAVE-01` | `test_a_missed_head_yields_to_the_next_candidate` |
 | `AC-BEHAVE-02` | `test_descent_retarget_does_not_project_lateral_drift`, existing AC-MOVE-63 |
 | `AC-BEHAVE-03` | `test_commanded_yaw_picks_the_nearer_parallel_grip` |
+| `AC-BEHAVE-04` | `test_the_solver_prefers_an_extended_reach_over_a_folded_wrist` |

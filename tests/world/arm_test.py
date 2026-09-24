@@ -156,6 +156,39 @@ def test_the_trusted_region_is_inside_what_the_arm_can_reach() -> None:
     assert not refused, f"trusted but unreachable: {refused}"
 
 
+def test_the_solver_prefers_an_extended_reach_over_a_folded_wrist() -> None:
+    """AC-BEHAVE-04: park IK prefers the extended branch over a folded wrist.
+
+    The default warm start from the zero pose lands on a negative elbow with
+    wrist_2 near 270°. Ranking converged restarts by posture cost must pick
+    the extended branch instead: elbow positive, shoulder lift at or below
+    zero, and wrist_2 near ±90° after folding into (−π, π].
+    """
+    pytest.importorskip("mujoco")
+    import math
+
+    import mujoco
+
+    model, data, indices = built()
+    park = np.array([0.72, -0.42, 1.20], dtype=np.float64)
+    solved = armmod.solve(model, data, indices, park)
+    elbow = armmod._principal(float(solved[2]))
+    shoulder_lift = armmod._principal(float(solved[1]))
+    wrist_2 = armmod._principal(float(solved[4]))
+    assert elbow > 0.0, f"elbow stayed folded: {math.degrees(elbow):.1f}°"
+    assert shoulder_lift <= 0.0, (
+        f"shoulder lift flipped overhead: {math.degrees(shoulder_lift):.1f}°"
+    )
+    assert abs(abs(wrist_2) - math.pi / 2.0) < math.radians(5.0), (
+        f"wrist_2 not near ±90°: {math.degrees(wrist_2):.1f}°"
+    )
+    assert abs(wrist_2) < math.pi, "wrist_2 was not folded into (−π, π]"
+    for joint, value in zip(indices.joint_ids, solved, strict=True):
+        data.qpos[model.jnt_qposadr[joint]] = value
+    mujoco.mj_forward(model, data)
+    assert np.linalg.norm(armmod.end_effector_position(data, indices) - park) < 2e-3
+
+
 def test_commanding_a_target_moves_the_end_effector_toward_it() -> None:
     """The point of the whole module: something writes data.ctrl."""
     pytest.importorskip("mujoco")
