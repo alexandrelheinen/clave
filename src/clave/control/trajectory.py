@@ -322,21 +322,7 @@ class Segment:
         """
         span = max(self.duration, 1e-12)
         s = np.clip(np.asarray(elapsed, dtype=np.float64) / span, 0.0, 1.0)
-        terms = np.stack(
-            [
-                self.start.position,
-                self.start.velocity * span,
-                self.start.acceleration * span * span,
-                self.end.acceleration * span * span,
-                self.end.velocity * span,
-                self.end.position,
-            ]
-        )
-        return (
-            _basis(s) @ terms,
-            (_first(s) @ terms) / span,
-            (_second(s) @ terms) / (span * span),
-        )
+        return _evaluate(self, span, s)
 
     def peaks(self, sample_count: int) -> tuple[float, float]:
         """Return the largest speed and acceleration anywhere on the segment.
@@ -346,9 +332,11 @@ class Segment:
             meters per second squared, both as the largest Euclidean norm over
             a sampling of the segment.
         """
-        _, velocity, acceleration = self.sample(
-            np.linspace(0.0, self.duration, sample_count + 1, dtype=np.float64)
-        )
+        # Normalized open grid, cached per sample count (`AC-PERF-04`). The
+        # same Hermite basis as `sample`, without a fresh linspace or a
+        # clip-and-divide on every feasibility check.
+        span = max(self.duration, 1e-12)
+        _, velocity, acceleration = _evaluate(self, span, _unit_grid(sample_count))
         return (
             float(np.linalg.norm(velocity, axis=1).max()),
             float(np.linalg.norm(acceleration, axis=1).max()),
@@ -744,17 +732,85 @@ def _second_at(s: float) -> tuple[float, ...]:
     )
 
 
-def _weights(terms: list[NDArray[np.float64]]) -> NDArray[np.float64]:
-    """Return a stack of basis weights, one row per normalized time.
+_UNIT_GRIDS: dict[int, NDArray[np.float64]] = {}
+"""Cached normalized sample grids keyed by `sample_count` (`AC-PERF-04`)."""
+
+
+def _unit_grid(sample_count: int) -> NDArray[np.float64]:
+    """Return the open unit grid used by peak searches, cached per count.
 
     Args:
-        terms: The six weights at each time, in the order the coefficient
-            vector is written.
+        sample_count: Number of intervals along the segment (samples is one
+            more, matching the previous `linspace(0, duration, count + 1)`).
 
     Returns:
-        An array of shape `(len(times), 6)`.
+        Normalized times from zero to one, shape `(sample_count + 1,)`.
     """
-    return np.stack(terms, axis=-1)
+    cached = _UNIT_GRIDS.get(sample_count)
+    if cached is None:
+        cached = np.linspace(0.0, 1.0, sample_count + 1, dtype=np.float64)
+        _UNIT_GRIDS[sample_count] = cached
+    return cached
+
+
+def _coefficient_matrix(segment: Segment, span: float) -> NDArray[np.float64]:
+    """Return the `(6, 3)` Hermite coefficient matrix for one segment.
+
+    Args:
+        segment: The arc.
+        span: Duration used to scale velocity and acceleration rows.
+
+    Returns:
+        Rows ordered as start position, start velocity, start acceleration,
+        end acceleration, end velocity, end position.
+    """
+    span2 = span * span
+    terms = np.empty((6, 3), dtype=np.float64)
+    terms[0] = segment.start.position
+    terms[1] = segment.start.velocity * span
+    terms[2] = segment.start.acceleration * span2
+    terms[3] = segment.end.acceleration * span2
+    terms[4] = segment.end.velocity * span
+    terms[5] = segment.end.position
+    return terms
+
+
+def _evaluate(
+    segment: Segment, span: float, s: NDArray[np.float64]
+) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
+    """Evaluate position, velocity and acceleration on a normalized grid.
+
+    Args:
+        segment: The arc.
+        span: Its duration, already floored away from zero.
+        s: Normalized times in `[0, 1]`.
+
+    Returns:
+        Position, velocity and acceleration, each shape `(len(s), 3)`.
+    """
+    terms = _coefficient_matrix(segment, span)
+    return (
+        _basis(s) @ terms,
+        (_first(s) @ terms) / span,
+        (_second(s) @ terms) / (span * span),
+    )
+
+
+def _fill_basis(
+    out: NDArray[np.float64], columns: list[NDArray[np.float64]]
+) -> NDArray[np.float64]:
+    """Write six basis columns into a `(n, 6)` buffer and return it.
+
+    Args:
+        out: Destination, shape `(n, 6)`.
+        columns: The six weight arrays, one per Hermite coefficient.
+
+    Returns:
+        `out`.
+    """
+    for index, column in enumerate(columns):
+        out[:, index] = column
+    return out
 
 
 def _basis(s: NDArray[np.float64]) -> NDArray[np.float64]:
@@ -769,7 +825,9 @@ def _basis(s: NDArray[np.float64]) -> NDArray[np.float64]:
         acceleration, end acceleration, end velocity, end position.
     """
     s2, s3, s4, s5 = s * s, s**3, s**4, s**5
-    return _weights(
+    out = np.empty((s.shape[0], 6), dtype=np.float64)
+    return _fill_basis(
+        out,
         [
             1 - 10 * s3 + 15 * s4 - 6 * s5,
             s - 6 * s3 + 8 * s4 - 3 * s5,
@@ -777,7 +835,7 @@ def _basis(s: NDArray[np.float64]) -> NDArray[np.float64]:
             0.5 * s3 - s4 + 0.5 * s5,
             -4 * s3 + 7 * s4 - 3 * s5,
             10 * s3 - 15 * s4 + 6 * s5,
-        ]
+        ],
     )
 
 
@@ -791,7 +849,9 @@ def _first(s: NDArray[np.float64]) -> NDArray[np.float64]:
         The six weights at each time, shape `(len(s), 6)`.
     """
     s2, s3, s4 = s * s, s**3, s**4
-    return _weights(
+    out = np.empty((s.shape[0], 6), dtype=np.float64)
+    return _fill_basis(
+        out,
         [
             -30 * s2 + 60 * s3 - 30 * s4,
             1 - 18 * s2 + 32 * s3 - 15 * s4,
@@ -799,7 +859,7 @@ def _first(s: NDArray[np.float64]) -> NDArray[np.float64]:
             1.5 * s2 - 4 * s3 + 2.5 * s4,
             -12 * s2 + 28 * s3 - 15 * s4,
             30 * s2 - 60 * s3 + 30 * s4,
-        ]
+        ],
     )
 
 
@@ -813,7 +873,9 @@ def _second(s: NDArray[np.float64]) -> NDArray[np.float64]:
         The six weights at each time, shape `(len(s), 6)`.
     """
     s2, s3 = s * s, s**3
-    return _weights(
+    out = np.empty((s.shape[0], 6), dtype=np.float64)
+    return _fill_basis(
+        out,
         [
             -60 * s + 180 * s2 - 120 * s3,
             -36 * s + 96 * s2 - 60 * s3,
@@ -821,5 +883,5 @@ def _second(s: NDArray[np.float64]) -> NDArray[np.float64]:
             3 * s - 12 * s2 + 10 * s3,
             -24 * s + 84 * s2 - 60 * s3,
             60 * s - 180 * s2 + 120 * s3,
-        ]
+        ],
     )

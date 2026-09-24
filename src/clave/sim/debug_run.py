@@ -316,9 +316,8 @@ def _jaw_collision_geoms(model: Any, arm: Any) -> tuple[int, ...]:
 _MESH_VERTS: dict[tuple[int, int], NDArray[np.float64]] = {}
 """Mesh vertices copied once per compiled model, keyed by model id and mesh id.
 
-The jaw's clearance is read every physics tick, and a mesh's vertices do not
-change. Copying them out of the model on each tick was most of the cost of
-that read.
+Used when a marker or resting height needs the mesh itself. Jaw clearance no
+longer walks these vertices (`AC-PERF-03`).
 """
 
 
@@ -342,12 +341,37 @@ def _mesh_vertices(model: Any, mesh: int) -> NDArray[np.float64]:
     return cached
 
 
+def _aabb_support_down(rotation: Any, centre: float, size: Any) -> float:
+    """Return the lowest world height of a local AABB under a rotation.
+
+    The support of an axis-aligned box along world-down is each half-extent
+    times how much of that local axis points down. Written out rather than as
+    a matrix product because this runs once per geom per physics tick.
+
+    Args:
+        rotation: The geom's 3x3 world rotation.
+        centre: The geom origin's world height, in meters.
+        size: Local half-extents along x, y, and z.
+
+    Returns:
+        The lowest world height of that box, in meters.
+    """
+    return centre - (
+        abs(float(rotation[2, 0])) * float(size[0])
+        + abs(float(rotation[2, 1])) * float(size[1])
+        + abs(float(rotation[2, 2])) * float(size[2])
+    )
+
+
 def _lowest_world_z(model: Any, data: Any, geom: int) -> float:
     """Return the lowest height of one collision geom's own volume.
 
-    Exact rather than bounded for the shapes a gripper is made of, because the
-    figure this feeds is compared against a clearance of millimetres and a
-    bounding sphere would answer a different question.
+    Exact for the primitive shapes a gripper pad is made of. Mesh geoms use
+    MuJoCo's local AABB (`geom_size` half-extents) under the same support
+    formula as a box (`AC-PERF-03`): that bound never sits above the true
+    mesh, so a clearance report never overstates how close the jaw came, and
+    it stays O(1) where walking tens of thousands of vertices per tick was
+    most of the debug-run wall.
 
     Args:
         model: The compiled model.
@@ -362,28 +386,16 @@ def _lowest_world_z(model: Any, data: Any, geom: int) -> float:
     rotation = data.geom_xmat[geom].reshape(3, 3)
     centre = float(data.geom_xpos[geom][2])
     size = model.geom_size[geom]
-    kind = model.geom_type[geom]
-    if kind == mujoco.mjtGeom.mjGEOM_BOX:
-        # The support of a box along world-down is the size of each local axis
-        # times how much of that axis points down. Written out rather than as a
-        # matrix product because this runs once per geom per physics tick.
-        return centre - (
-            abs(float(rotation[2, 0])) * float(size[0])
-            + abs(float(rotation[2, 1])) * float(size[1])
-            + abs(float(rotation[2, 2])) * float(size[2])
-        )
-    if kind == mujoco.mjtGeom.mjGEOM_SPHERE:
+    kind = int(model.geom_type[geom])
+    if kind in (int(mujoco.mjtGeom.mjGEOM_BOX), int(mujoco.mjtGeom.mjGEOM_MESH)):
+        return _aabb_support_down(rotation, centre, size)
+    if kind == int(mujoco.mjtGeom.mjGEOM_SPHERE):
         return centre - float(size[0])
-    if kind in (mujoco.mjtGeom.mjGEOM_CYLINDER, mujoco.mjtGeom.mjGEOM_CAPSULE):
+    if kind in (
+        int(mujoco.mjtGeom.mjGEOM_CYLINDER),
+        int(mujoco.mjtGeom.mjGEOM_CAPSULE),
+    ):
         return centre - abs(float(rotation[2, 2])) * float(size[1]) - float(size[0])
-    mesh = int(model.geom_dataid[geom])
-    if kind == mujoco.mjtGeom.mjGEOM_MESH and mesh >= 0:
-        # World z of a vertex is the mesh-frame vertex dotted with the third
-        # row of the rotation, plus the geom origin. That is the z column of
-        # `verts @ rotation.T + origin` without building the other two.
-        row = rotation[2]
-        origin = float(data.geom_xpos[geom][2])
-        return float((_mesh_vertices(model, mesh) @ row).min() + origin)
     return centre - float(max(size))
 
 
@@ -573,6 +585,7 @@ def run(
     render: tuple[int, int] = (640, 480),
     window: bool = True,
     video: bool = False,
+    frames: bool | None = None,
     fps: int | None = None,
     view_name: str | None = None,
     telemetry_path: Path | None = None,
@@ -595,6 +608,9 @@ def run(
         window: Open a live window when a display is available.
         video: Encode the rendered frames into a playable file beside them.
             A machine with no `ffmpeg` runs anyway and says none was written.
+        frames: Write annotated PNG captures. When None, defaults to on if a
+            window or video was asked for, and off for a headless run with
+            neither (`AC-PERF-02`).
         fps: Playback rate of that file, or None for the rate the debug
             configuration names.
         view_name: Which view in the debug configuration to film from, or
@@ -616,16 +632,18 @@ def run(
     Raises:
         DebugRunError: If the world declares no detection camera.
     """
+    write_frames = bool(window or video) if frames is None else frames
     os.environ.setdefault("MUJOCO_GL", "osmesa")
     LOGGER.debug(
         "initializing tracker debug run: root=%s out=%s seconds=%.3f seed=%d "
-        "capture_interval=%.3f ground_truth_tracker=%s",
+        "capture_interval=%.3f ground_truth_tracker=%s frames=%s",
         root,
         out,
         seconds,
         seed,
         capture_interval,
         ground_truth_tracker,
+        write_frames,
     )
     import cv2
     import mujoco
@@ -729,10 +747,17 @@ def run(
     masks = mujoco.Renderer(model, height=height, width=width)
     masks.enable_segmentation_rendering()
 
-    watching = mujoco.Renderer(
-        model,
-        height=int(config.require(view, "height", "view")),
-        width=int(config.require(view, "width", "view")),
+    opened, reason = _open_window(cv2, window)
+    # Watching RGB is only for PNG dumps, live window, or video (`AC-PERF-01`).
+    needs_rgb = write_frames or opened or video
+    watching = (
+        mujoco.Renderer(
+            model,
+            height=int(config.require(view, "height", "view")),
+            width=int(config.require(view, "width", "view")),
+        )
+        if needs_rgb
+        else None
     )
     eye = mujoco.MjvCamera()
     eye.azimuth = float(config.require(view, "azimuth_degrees", "view"))
@@ -741,7 +766,6 @@ def run(
     eye.lookat[:] = _lookat(view)
 
     out.mkdir(parents=True, exist_ok=True)
-    opened, reason = _open_window(cv2, window)
     tracker_cam = mujoco.Renderer(model, height=180, width=240) if opened else None
     start_wall = time.perf_counter()
 
@@ -790,6 +814,7 @@ def run(
                     "view": view_name or str(debug.get("default_view", "")),
                     "video": video,
                     "fps": fps,
+                    "frames": write_frames,
                     "telemetry_rate": telemetry_rate,
                     "trajectory_seconds": trajectory_seconds,
                     "ground_truth_tracker": use_ground_truth,
@@ -1223,7 +1248,11 @@ def run(
             # The video and live window render on their own cadence. The
             # capture cadence is what the tracker decides at, and watching
             # a decision rate is watching an arm teleport.
-            if (recorder is not None or opened) and data.time >= next_frame:
+            if (
+                (recorder is not None or opened)
+                and watching is not None
+                and data.time >= next_frame
+            ):
                 next_frame = data.time + movie_interval
                 frame = _painted(
                     watching,
@@ -1459,25 +1488,30 @@ def run(
             # The markers go in before the render and live only until the next
             # update_scene, so they reach this view and no other. The gate the
             # tracker reads was rendered above and carries none of them.
-            geoms = _markers_on(watching, data, eye, standing, control, surface)
-            geoms += _trajectory_on(
-                watching.scene,
-                task,
-                data.time,
-                trajectory_seconds,
-                _flange(indices, data),
-            )
-            drawn = len(standing)
-            canvas = watching.render()
+            if watching is None or not write_frames:
+                drawn = len(standing)
+                geoms = 0
+            else:
+                geoms = _markers_on(watching, data, eye, standing, control, surface)
+                geoms += _trajectory_on(
+                    watching.scene,
+                    task,
+                    data.time,
+                    trajectory_seconds,
+                    _flange(indices, data),
+                )
+                drawn = len(standing)
+                canvas = watching.render()
 
-            cv2.imwrite(
-                str(out / f"frame_{captures:04d}.png"),
-                cv2.cvtColor(canvas, cv2.COLOR_RGB2BGR),
-            )
-            written += 1
+                cv2.imwrite(
+                    str(out / f"frame_{captures:04d}.png"),
+                    cv2.cvtColor(canvas, cv2.COLOR_RGB2BGR),
+                )
+                written += 1
             _write_beliefs(believed, captures, now, records)
     finally:
-        watching.close()
+        if watching is not None:
+            watching.close()
         masks.close()
         if tracker_cam is not None:
             tracker_cam.close()
