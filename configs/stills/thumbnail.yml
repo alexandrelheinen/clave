@@ -10,59 +10,62 @@
 # from the seed below until the instant below, with the scripted expert driving
 # the arm exactly as the recorder does, and the frame is whatever the renderer
 # produced at that moment. Nothing is drawn on it afterwards.
+#
+# Lighting follows the FRET project-page stills: low headlight diffuse so the
+# floor stays off the blowout point, and form from grazing directional fills.
 
 still:
   name: thumbnail
   description: >-
-    The manipulator mid-reach over the belt with six scanned packages on it,
-    covering all four material classes the object set has.
-  # Found by sweeping 16 seeds and every 250th step of a 26 second run for a
-  # moment with five to eight packages on the belt, all four classes present,
-  # and at least three inside the arm's annulus. This one carries seven packages
-  # with six of them reachable and 275 mm between the closest pair, which was
-  # the widest spacing any qualifying moment had.
-  #
-  # A seed and instant swept against one manipulator carry no meaning under
-  # another: the previous arm's moment put a single package in reach of this
-  # one, because the annulus grew from 0.43 m of belt to 1.04 m.
+    The manipulator over the belt with three packages covering three material
+    classes the object set has.
+  # Seed 1 at 12.5 s carries three packages and three classes (HDPE, ferrous,
+  # paperboard). Wider spacings on the current line rarely put five packages
+  # in frame at once; three with three classes is the densest honest moment
+  # in the first thirty seconds of this seed.
   seed: 1
-  capture_at_seconds: 20.5
+  capture_at_seconds: 12.5
   width: 1920
   height: 1080
+  expect:
+    packages: 3
+    classes: 3
 
 lighting:
-  # A dark scene is what the release videos already look like, and it reads as
-  # a hole punched in a light web page. These values lift the whole frame into
-  # the mid-tones without blowing out the printed labels, which are the reason
-  # the objects are photographs rather than shapes.
+  quality:
+    # Shadow maps from a top-down key stripe the floor at still resolution.
+    # Form comes from the grazing fills; the map is left off.
+    shadowsize: 0
+    offsamples: 8
   headlight:
-    ambient: [0.21, 0.20, 0.19]
-    diffuse: [0.24, 0.23, 0.22]
-    specular: [0.12, 0.12, 0.12]
-  # A mid-dark grey sky rather than black, warmer at the horizon.
+    ambient: [0.26, 0.27, 0.29]
+    diffuse: [0.04, 0.04, 0.05]
+    specular: [0.28, 0.28, 0.28]
   background:
-    top: [0.30, 0.31, 0.34]
-    bottom: [0.46, 0.44, 0.42]
+    top: [0.22, 0.23, 0.26]
+    bottom: [0.40, 0.38, 0.36]
   lights:
-    # Key, from the arm's side and high, catching the manipulator's near face.
-    - position_meters: [0.30, -1.90, 3.20]
-      direction: [0.45, 0.62, -0.85]
-      diffuse: [0.58, 0.56, 0.51]
-      specular: [0.22, 0.22, 0.22]
-      cast_shadow: true
-    # Fill, opposite and lower, so the shadow side keeps a silhouette instead
-    # of merging into the background. It casts no shadow, which is what keeps
-    # a second set of shadows off the floor.
-    - position_meters: [2.70, 2.10, 2.30]
-      direction: [-0.55, -0.62, -0.56]
-      diffuse: [0.26, 0.25, 0.28]
-      specular: [0.05, 0.05, 0.05]
+    # Near-horizontal key from the arm's side. Rakes the vertical faces and
+    # barely touches the floor.
+    - position_meters: [1.40, -2.10, 1.15]
+      direction: [-0.55, 0.72, -0.30]
+      directional: true
+      diffuse: [0.82, 0.80, 0.74]
+      specular: [0.12, 0.12, 0.12]
       cast_shadow: false
-    # Warm bounce along the belt, so the packages separate from the conveyor.
-    - position_meters: [2.30, -0.90, 1.60]
-      direction: [-0.75, 0.30, -0.58]
-      diffuse: [0.26, 0.22, 0.16]
-      specular: [0.04, 0.04, 0.04]
+    # Opposite grazing fill; opens the shadow side of the castings.
+    - position_meters: [-1.70, 1.90, 1.05]
+      direction: [0.68, -0.66, -0.28]
+      directional: true
+      diffuse: [0.48, 0.50, 0.54]
+      specular: [0.06, 0.06, 0.06]
+      cast_shadow: false
+    # Warm bounce along the belt, so packages separate from the conveyor.
+    - position_meters: [2.20, -0.40, 0.95]
+      direction: [-0.80, 0.20, -0.40]
+      directional: true
+      diffuse: [0.28, 0.24, 0.18]
+      specular: [0.03, 0.03, 0.03]
       cast_shadow: false
 
 cameras:

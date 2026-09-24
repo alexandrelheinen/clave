@@ -423,8 +423,9 @@ def _still(root: Path, name: str, out: Path) -> int:
         )
         raise StillError(f"no still named {name!r}. Available: {', '.join(available)}")
     scenario = StillScenario.load(path)
+    destination = out if out.is_absolute() else root / out
     _log_output(f"  {scenario.description}")
-    written = capture(root, scenario, out)
+    written = capture(root, scenario, destination)
     _log_output(
         f"  seed            {scenario.seed}, captured at "
         f"{scenario.capture_at_seconds:.2f} simulated seconds"
@@ -707,7 +708,7 @@ def _build_parser() -> argparse.ArgumentParser:
         description=(
             "Run the sorting-line simulation. By default the tracker debug "
             "view is shown, annotating the rollout with markers and beliefs. "
-            "Use --still to capture still frames instead."
+            "Presentation stills use `clave still`."
         ),
     )
     sim.add_argument("--out", type=Path, default=Path("runs/debug/tracker"))
@@ -791,22 +792,34 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="override belt speed in meters per second (default: config value)",
     )
-    sim.add_argument(
-        "--still",
-        nargs="?",
-        const="thumbnail",
-        default=None,
-        metavar="SCENARIO",
-        help=(
-            "capture still frames instead of running the simulation. "
-            "Names a scenario under configs/stills/ (default: thumbnail)"
+
+    still = sub.add_parser(
+        "still",
+        help="capture a presentation still of the sorting line",
+        description=(
+            "Run a seeded rollout to a stated instant and write one PNG per "
+            "camera declared in a scenario under configs/stills/. Lighting is "
+            "presentation-only and never reaches the shared world file."
         ),
     )
-    sim.add_argument(
-        "--still-out",
+    still.add_argument(
+        "scenario",
+        nargs="?",
+        default="thumbnail",
+        help="scenario name under configs/stills/ (default: thumbnail)",
+    )
+    still.add_argument(
+        "--out",
         type=Path,
         default=Path("runs/stills"),
-        help="output directory for stills (used with --still)",
+        help="directory the PNGs go in (default: runs/stills)",
+    )
+    still.add_argument(
+        "--log-level",
+        dest="command_log_level",
+        choices=("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"),
+        default=None,
+        help="logging verbosity (default: INFO)",
     )
 
     return parser
@@ -860,9 +873,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "train":
             return _train(args.root, args.config, args.candidate, sync=args.sync)
         if args.command == "sim":
-            if args.still is not None:
-                return _still(args.root, args.still, args.still_out)
             return _debug_tracker(args.root, args)
+        if args.command == "still":
+            return _still(args.root, args.scenario, args.out)
         if args.command == "benchmark":
             return _benchmark(args.root, args.config, args.out, sync=args.sync)
         if args.command == "validate-run":

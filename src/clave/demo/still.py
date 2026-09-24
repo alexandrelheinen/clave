@@ -84,6 +84,19 @@ class StillCamera:
 
 
 @dataclass(frozen=True)
+class StillExpect:
+    """What the capture instant must show on the belt.
+
+    Attributes:
+        packages: How many active packages the frame must carry.
+        classes: How many distinct material classes those packages cover.
+    """
+
+    packages: int
+    classes: int
+
+
+@dataclass(frozen=True)
 class StillScenario:
     """What one still captures, and how it is lit.
 
@@ -99,6 +112,7 @@ class StillScenario:
         annotations: Explanatory geometry the scene stands up for a figure,
             passed the same way and empty by default.
         cameras: The points of view to render.
+        expect: How many packages and classes the capture instant must show.
     """
 
     name: str
@@ -110,6 +124,7 @@ class StillScenario:
     lighting: dict[str, Any]
     annotations: dict[str, Any]
     cameras: tuple[StillCamera, ...]
+    expect: StillExpect
 
     @classmethod
     def load(cls, path: Path) -> StillScenario:
@@ -129,6 +144,7 @@ class StillScenario:
         cameras = _require(raw, "cameras")
         if not isinstance(cameras, list) or not cameras:
             raise StillError("the scenario declares no camera")
+        expect_raw = _require(still, "expect", "still")
         return cls(
             name=str(_require(still, "name", "still")),
             description=str(_require(still, "description", "still")).strip(),
@@ -139,6 +155,10 @@ class StillScenario:
             lighting=dict(raw.get("lighting") or {}),
             annotations=dict(raw.get("annotations") or {}),
             cameras=tuple(_camera(entry) for entry in cameras),
+            expect=StillExpect(
+                packages=int(_require(expect_raw, "packages", "still.expect")),
+                classes=int(_require(expect_raw, "classes", "still.expect")),
+            ),
         )
 
 
@@ -237,6 +257,10 @@ def capture(root: Path, scenario: StillScenario, out: Path) -> list[Path]:
 
     Returns:
         The files written, in camera order.
+
+    Raises:
+        StillError: If the capture instant does not match the scenario's
+            package and class claim (`AC-STILL-04`).
     """
     import os
 
@@ -294,6 +318,16 @@ def capture(root: Path, scenario: StillScenario, out: Path) -> list[Path]:
             armmod.step_toward(
                 model, data, indices, np.array(chosen.position), gain=ARM_GAIN
             )
+
+    packages = len(conveyor.active)
+    classes = len({item.material_class for item in conveyor.active})
+    if packages != scenario.expect.packages or classes != scenario.expect.classes:
+        raise StillError(
+            f"capture at {scenario.capture_at_seconds:.2f} s on seed "
+            f"{scenario.seed} shows {packages} packages and {classes} classes, "
+            f"but still.expect asks for {scenario.expect.packages} packages and "
+            f"{scenario.expect.classes} classes"
+        )
 
     renderer = mujoco.Renderer(model, height=scenario.height, width=scenario.width)
     written: list[Path] = []

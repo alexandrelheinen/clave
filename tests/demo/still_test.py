@@ -186,6 +186,7 @@ def test_a_capture_writes_one_frame_per_camera(tmp_path: Path) -> None:
     raw["still"]["capture_at_seconds"] = 1.5
     raw["still"]["width"] = 160
     raw["still"]["height"] = 90
+    raw["still"]["expect"] = {"packages": 0, "classes": 0}
     path = tmp_path / "short.yml"
     path.write_text(yaml.safe_dump(raw))
 
@@ -284,3 +285,97 @@ def test_the_figures_show_the_manipulator_the_repository_simulates() -> None:
     )
     for joint in arm.ARM_JOINTS:
         assert mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, joint) >= 0, joint
+
+
+def test_presentation_lighting_suppresses_scene_lights() -> None:
+    """AC-STILL-02: only presentation lights stay active on a still build."""
+    pytest.importorskip("mujoco")
+    import mujoco
+
+    from clave.world import config, scene
+
+    raw = config.load(ROOT / "configs" / "world" / "sorting_line.yml")
+    scenario = StillScenario.load(STILLS / "thumbnail.yml")
+    model, _, _ = scene.build(
+        raw,
+        np.random.default_rng(0),
+        ROOT,
+        presentation=scenario.lighting,
+    )
+    active = []
+    for index in range(model.nlight):
+        if not model.light_active[index]:
+            continue
+        name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_LIGHT, index)
+        active.append(name)
+    assert active
+    assert all(name and name.startswith("presentation_") for name in active)
+    assert model.vis.quality.shadowsize == 0
+    assert model.vis.quality.offsamples == 8
+
+
+def test_presentation_lights_may_be_directional() -> None:
+    """AC-STILL-03: a still may declare directional fills."""
+    pytest.importorskip("mujoco")
+    import mujoco
+
+    from clave.world import config, scene
+
+    raw = config.load(ROOT / "configs" / "world" / "sorting_line.yml")
+    scenario = StillScenario.load(STILLS / "thumbnail.yml")
+    assert any(light.get("directional") for light in scenario.lighting["lights"])
+    model, _, _ = scene.build(
+        raw,
+        np.random.default_rng(0),
+        ROOT,
+        presentation=scenario.lighting,
+    )
+    types = [
+        int(model.light_type[index])
+        for index in range(model.nlight)
+        if model.light_active[index]
+    ]
+    assert int(mujoco.mjtLightType.mjLIGHT_DIRECTIONAL) in types
+
+
+def test_every_shipped_still_matches_its_belt_claim() -> None:
+    """AC-STILL-04: the capture instant matches still.expect."""
+    pytest.importorskip("mujoco")
+    import mujoco
+
+    from clave.world import belt, config, scene
+
+    for path in sorted(STILLS.glob("*.yml")):
+        scenario = StillScenario.load(path)
+        raw = config.load(ROOT / "configs" / "world" / "sorting_line.yml")
+        rng = np.random.default_rng(scenario.seed)
+        model, data, plan = scene.build(raw, rng, ROOT)
+        spawn = config.require(raw, "spawn")
+        conveyor = belt.Conveyor(
+            plan,
+            rng,
+            config.require_range(spawn, "spacing_meters", "spawn"),
+            config.require_range(spawn, "lateral_offset_meters", "spawn"),
+            config.require_range(spawn, "drop_height_meters", "spawn"),
+            entry_margin=float(config.require(spawn, "entry_margin_meters", "spawn")),
+        )
+        for _ in range(int(scenario.capture_at_seconds / plan.timestep)):
+            mujoco.mj_step(model, data)
+            conveyor.step(model, data)
+        packages = len(conveyor.active)
+        classes = len({item.material_class for item in conveyor.active})
+        assert packages == scenario.expect.packages, path.name
+        assert classes == scenario.expect.classes, path.name
+
+
+def test_still_is_its_own_subcommand() -> None:
+    """AC-STILL-01: stills are a subcommand, not a flag on sim."""
+    from clave.cli import _build_parser
+
+    parser = _build_parser()
+    still = parser.parse_args(["still", "clave", "--out", "runs/stills"])
+    assert still.command == "still"
+    assert still.scenario == "clave"
+    sim = parser.parse_args(["sim", "--seconds", "1"])
+    assert sim.command == "sim"
+    assert not hasattr(sim, "still")

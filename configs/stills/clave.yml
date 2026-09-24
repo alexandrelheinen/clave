@@ -13,16 +13,23 @@
 # class markers are geometry standing in the scene, which is why they carry
 # perspective and take shadow, and every quantity they express is read from the
 # resolved layout or from the reachability sweep the safety layer consults.
+#
+# Lighting follows the FRET project-page stills: low headlight diffuse, grazing
+# directional fills, and no shadow map.
 
 still:
   name: clave
   description: >-
     The sorting line with the reach annulus, the edges of the reachable window
     and a marker over each package in the color of the channel it routes to.
+    Three packages covering three material classes sit on the belt.
   seed: 1
-  capture_at_seconds: 20.5
+  capture_at_seconds: 12.5
   width: 1920
   height: 1080
+  expect:
+    packages: 3
+    classes: 3
 
 annotations:
   # One color per channel the object set needs. A channel the object set has
@@ -51,39 +58,43 @@ annotations:
     height_above_meters: 0.16
 
 lighting:
-  # A dark scene reads as a hole punched in a light web page. These values lift
-  # the whole frame into the mid-tones without blowing out the printed labels,
-  # which are the reason the objects are photographs rather than shapes.
+  quality:
+    shadowsize: 0
+    offsamples: 8
   headlight:
-    ambient: [0.25, 0.24, 0.23]
-    diffuse: [0.28, 0.27, 0.26]
-    specular: [0.12, 0.12, 0.12]
+    ambient: [0.26, 0.27, 0.29]
+    diffuse: [0.04, 0.04, 0.05]
+    specular: [0.28, 0.28, 0.28]
   background:
-    top: [0.30, 0.31, 0.34]
-    bottom: [0.46, 0.44, 0.42]
+    top: [0.22, 0.23, 0.26]
+    bottom: [0.40, 0.38, 0.36]
   lights:
-    - position_meters: [0.30, -1.90, 3.20]
-      direction: [0.45, 0.62, -0.85]
-      diffuse: [0.50, 0.48, 0.44]
-      specular: [0.22, 0.22, 0.22]
-      cast_shadow: true
-    - position_meters: [2.70, 2.10, 2.30]
-      direction: [-0.55, -0.62, -0.56]
-      diffuse: [0.26, 0.25, 0.28]
-      specular: [0.05, 0.05, 0.05]
+    - position_meters: [1.40, -2.10, 1.15]
+      direction: [-0.55, 0.72, -0.30]
+      directional: true
+      diffuse: [0.82, 0.80, 0.74]
+      specular: [0.12, 0.12, 0.12]
+      cast_shadow: false
+    - position_meters: [-1.70, 1.90, 1.05]
+      direction: [0.68, -0.66, -0.28]
+      directional: true
+      diffuse: [0.48, 0.50, 0.54]
+      specular: [0.06, 0.06, 0.06]
       cast_shadow: false
     # A second key from across the line. The arm-side key leaves the
     # conveyor's far face unlit, and one of the three figures is shot from
     # over there.
-    - position_meters: [-1.60, 2.40, 2.10]
-      direction: [0.45, -0.70, -0.55]
-      diffuse: [0.40, 0.39, 0.37]
-      specular: [0.10, 0.10, 0.10]
+    - position_meters: [-1.40, 2.20, 1.20]
+      direction: [0.50, -0.72, -0.35]
+      directional: true
+      diffuse: [0.42, 0.41, 0.40]
+      specular: [0.08, 0.08, 0.08]
       cast_shadow: false
-    - position_meters: [2.30, -0.90, 1.60]
-      direction: [-0.75, 0.30, -0.58]
-      diffuse: [0.26, 0.22, 0.16]
-      specular: [0.04, 0.04, 0.04]
+    - position_meters: [2.20, -0.40, 0.95]
+      direction: [-0.80, 0.20, -0.40]
+      directional: true
+      diffuse: [0.28, 0.24, 0.18]
+      specular: [0.03, 0.03, 0.03]
       cast_shadow: false
 
 cameras:

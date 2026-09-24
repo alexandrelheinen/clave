@@ -668,6 +668,10 @@ def _light_for_presentation(
     when a caller does not ask for it, so a dataset recorded from this world is
     lit by the single overhead light above and by nothing else.
 
+    The modelling follows the FRET project-page stills: headlight diffuse is
+    kept low so the floor does not blow out, and the form comes from grazing
+    directional fills rather than a top-down spot.
+
     Args:
         mujoco: The imported module.
         spec: The model spec, which owns the skybox and the headlight.
@@ -680,6 +684,13 @@ def _light_for_presentation(
             value = headlight.get(channel)
             if value is not None:
                 setattr(spec.visual.headlight, channel, [float(v) for v in value])
+
+    quality = presentation.get("quality")
+    if quality:
+        if "shadowsize" in quality:
+            spec.visual.quality.shadowsize = int(quality["shadowsize"])
+        if "offsamples" in quality:
+            spec.visual.quality.offsamples = int(quality["offsamples"])
 
     background = presentation.get("background")
     if background:
@@ -694,14 +705,39 @@ def _light_for_presentation(
         )
 
     for index, light in enumerate(presentation.get("lights", [])):
-        world.add_light(
-            name=f"presentation_light_{index}",
-            pos=[float(v) for v in require(light, "position_meters", "lights")],
-            dir=[float(v) for v in require(light, "direction", "lights")],
-            diffuse=[float(v) for v in require(light, "diffuse", "lights")],
-            specular=[float(v) for v in light.get("specular", [0.1, 0.1, 0.1])],
-            castshadow=bool(light.get("cast_shadow", True)),
-        )
+        kwargs: dict[str, Any] = {
+            "name": f"presentation_light_{index}",
+            "pos": [float(v) for v in require(light, "position_meters", "lights")],
+            "dir": [float(v) for v in require(light, "direction", "lights")],
+            "diffuse": [float(v) for v in require(light, "diffuse", "lights")],
+            "specular": [float(v) for v in light.get("specular", [0.1, 0.1, 0.1])],
+            "castshadow": bool(light.get("cast_shadow", True)),
+        }
+        if light.get("directional"):
+            kwargs["type"] = int(mujoco.mjtLightType.mjLIGHT_DIRECTIONAL)
+        ambient = light.get("ambient")
+        if ambient is not None:
+            kwargs["ambient"] = [float(v) for v in ambient]
+        world.add_light(**kwargs)
+
+
+def _finish_presentation_lights(mujoco: Any, model: Any) -> None:
+    """Leave only the presentation lights active on a compiled model.
+
+    The shared world carries a top-down key and the vendored arm carries a
+    tracking spotlight. Both suit a dataset render and flatten a project-page
+    still, so a presentation build turns them off after compile
+    (`AC-STILL-02`).
+
+    Args:
+        mujoco: The imported module.
+        model: The compiled model, modified in place.
+    """
+    for index in range(model.nlight):
+        name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_LIGHT, index)
+        if name is not None and name.startswith("presentation_"):
+            continue
+        model.light_active[index] = 0
 
 
 def _annotation_color(annotations: dict[str, Any], channel: str) -> list[float] | None:
@@ -1345,9 +1381,12 @@ def build(
     mujoco_spec.visual.global_.offheight = max(OFFSCREEN_HEIGHT, offscreen)
 
     world = mujoco_spec.worldbody
-    world.add_light(pos=[0.0, 0.0, 2.0], dir=[0.0, 0.0, -1.0])
+    # The shared overhead key stays for every dataset and benchmark. A still
+    # supplies its own lights and must not fight this one for the floor.
     if presentation:
         _light_for_presentation(mujoco, mujoco_spec, world, presentation)
+    else:
+        world.add_light(pos=[0.0, 0.0, 2.0], dir=[0.0, 0.0, -1.0])
 
     plan = replace(plan, dressed=_dress(mujoco, mujoco_spec, world, raw, root))
 
@@ -1487,6 +1526,8 @@ def build(
         mujoco_spec.attach(_armed(root, closing_torque), prefix="arm_", frame=frame)
 
     model = mujoco_spec.compile()
+    if presentation:
+        _finish_presentation_lights(mujoco, model)
     _stiffen_arm_actuators(mujoco, model)
     _check_mesh_objects_fit(
         mujoco,

@@ -2594,7 +2594,7 @@ def _without_shadows(renderer: Any) -> None:
     At the shipped frame interval a sixty second run asks for six thousand
     frames, so the difference is twenty six minutes against eight.
 
-    This is the diagnostic view, not a published figure. `clave sim --still`
+    This is the diagnostic view, not a published figure. `clave still`
     renders those and keeps its shadows, because there a frame is rendered
     once and the lighting is the point.
 
