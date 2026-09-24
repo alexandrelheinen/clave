@@ -22,6 +22,7 @@ from clave.control.settings import Phase
 from clave.sim.debug_run import (
     _jaw_collision_geoms,
     _jaw_state,
+    _lowest_world_z,
     _park_the_arm,
     _progress,
     _run_metadata,
@@ -287,6 +288,91 @@ def test_the_jaw_state_reports_a_jaw_inside_the_belt(world: Any) -> None:
             touching = True
             break
     assert touching, "the jaws are inside the belt and no contact is recorded"
+
+
+def test_mesh_jaw_clearance_uses_aabb_not_vertices(world: Any) -> None:
+    """AC-PERF-03: mesh jaw geoms report clearance from their local AABB."""
+    mujoco, model, data, plan, arm = world
+    _park_the_arm(
+        mujoco,
+        model,
+        data,
+        arm,
+        np.asarray((0.72, -0.42, 1.20), dtype=np.float64),
+    )
+    geoms = _jaw_collision_geoms(model, arm)
+    belt = int(mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "belt"))
+    surface = plan.belt.surface_height
+    meshes = [
+        geom for geom in geoms if model.geom_type[geom] == mujoco.mjtGeom.mjGEOM_MESH
+    ]
+    assert meshes, "the shipped gripper still exposes mesh collision geoms"
+    state = _jaw_state(mujoco, model, data, arm, geoms, belt, surface)
+    # Parked clear of the belt: the AABB bound must stay a real clearance, not
+    # a NaN or an inverted figure from walking vertices the wrong way.
+    assert state.clearance > 0.05
+    for geom in meshes:
+        rotation = data.geom_xmat[geom].reshape(3, 3)
+        centre = float(data.geom_xpos[geom][2])
+        size = model.geom_size[geom]
+        expected = centre - (
+            abs(float(rotation[2, 0])) * float(size[0])
+            + abs(float(rotation[2, 1])) * float(size[1])
+            + abs(float(rotation[2, 2])) * float(size[2])
+        )
+        assert _lowest_world_z(model, data, geom) == pytest.approx(expected)
+
+
+def test_headless_without_frames_skips_rgb_render(tmp_path: Path) -> None:
+    """AC-PERF-01: no window, no video, no frames means no watching RGB work."""
+    from clave.sim.debug_run import run
+
+    report = run(
+        root=ROOT,
+        out=tmp_path,
+        seconds=0.6,
+        seed=0,
+        window=False,
+        video=False,
+        frames=False,
+        ground_truth_tracker=True,
+        progress=False,
+    )
+    assert report.frames_written == 0
+    assert list(tmp_path.glob("frame_*.png")) == []
+    assert report.captures > 0
+
+
+def test_no_window_defaults_frames_off_unless_forced(tmp_path: Path) -> None:
+    """AC-PERF-02: headless without video skips PNGs; --frames forces them."""
+    from clave.sim.debug_run import run
+
+    quiet = run(
+        root=ROOT,
+        out=tmp_path / "quiet",
+        seconds=0.6,
+        seed=0,
+        window=False,
+        video=False,
+        frames=None,
+        ground_truth_tracker=True,
+        progress=False,
+    )
+    assert quiet.frames_written == 0
+
+    forced = run(
+        root=ROOT,
+        out=tmp_path / "forced",
+        seconds=0.6,
+        seed=0,
+        window=False,
+        video=False,
+        frames=True,
+        ground_truth_tracker=True,
+        progress=False,
+    )
+    assert forced.frames_written > 0
+    assert list((tmp_path / "forced").glob("frame_*.png"))
 
 
 def test_a_plan_reports_each_leg_for_its_own_duration() -> None:

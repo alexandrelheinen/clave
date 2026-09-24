@@ -64,6 +64,31 @@ def test_a_segment_meets_every_boundary_condition_it_was_given() -> None:
         assert finishes.acceleration[axis] == pytest.approx(end.acceleration[axis])
 
 
+def test_peaks_match_sampled_polynomial_on_cached_grid() -> None:
+    """AC-PERF-04: peaks on the cached unit grid match sampling the duration."""
+    arc = Segment(
+        start=State(
+            position=np.asarray((0.1, 0.2, 1.0), dtype=np.float64),
+            velocity=np.asarray((0.3, -0.1, 0.0), dtype=np.float64),
+            acceleration=np.asarray((0.5, 0.0, -0.2), dtype=np.float64),
+        ),
+        end=State(
+            position=np.asarray((0.6, 0.0, 0.9), dtype=np.float64),
+            velocity=np.asarray((0.0, 0.2, -0.25), dtype=np.float64),
+            acceleration=np.zeros(3, dtype=np.float64),
+        ),
+        duration=0.8,
+    )
+    _, velocity, acceleration = arc.sample(
+        np.linspace(0.0, arc.duration, SEGMENT_SAMPLES + 1, dtype=np.float64)
+    )
+    expected = (
+        float(np.linalg.norm(velocity, axis=1).max()),
+        float(np.linalg.norm(acceleration, axis=1).max()),
+    )
+    assert arc.peaks(SEGMENT_SAMPLES) == pytest.approx(expected, rel=0, abs=1e-12)
+
+
 def test_one_instant_matches_the_sampled_polynomial() -> None:
     """One instant matches the sampled polynomial.
 

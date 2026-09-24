@@ -70,6 +70,9 @@ def test_sim_no_progress_is_off_unless_asked() -> None:
     parser = _build_parser()
     assert parser.parse_args(["sim"]).no_progress is False
     assert parser.parse_args(["sim", "--no-progress"]).no_progress is True
+    assert parser.parse_args(["sim"]).frames is None
+    assert parser.parse_args(["sim", "--frames"]).frames is True
+    assert parser.parse_args(["sim", "--no-frames"]).frames is False
 
 
 def test_no_command_is_an_error() -> None:

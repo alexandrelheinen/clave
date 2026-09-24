@@ -716,6 +716,18 @@ def _build_parser() -> argparse.ArgumentParser:
     sim.add_argument("--no-window", action="store_true")
     sim.add_argument("--video", action="store_true")
     sim.add_argument(
+        "--frames",
+        action="store_true",
+        default=None,
+        help="force PNG capture dumps (default: on with a window or --video)",
+    )
+    sim.add_argument(
+        "--no-frames",
+        action="store_false",
+        dest="frames",
+        help="skip PNG capture dumps (default under --no-window without --video)",
+    )
+    sim.add_argument(
         "--telemetry",
         action="store_true",
         help="write PlotJuggler-compatible CSV telemetry",
@@ -879,13 +891,14 @@ def _debug_tracker(root: Path, args: Any) -> int:
 
     LOGGER.debug(
         "sim parameters: seconds=%.3f (use sim --seconds to override), seed=%d, "
-        "out=%s, video=%s, telemetry=%s, telemetry_rate=%.3f, "
+        "out=%s, video=%s, frames=%s, telemetry=%s, telemetry_rate=%.3f, "
         "trajectory_seconds=%.3f, window=%s, view=%s, ground_truth_tracker=%s, "
         "progress=%s",
         args.seconds,
         args.seed,
         args.out,
         args.video,
+        args.frames,
         args.telemetry,
         args.telemetry_rate,
         args.trajectory_seconds,
@@ -906,6 +919,7 @@ def _debug_tracker(root: Path, args: Any) -> int:
         seed=args.seed,
         window=not args.no_window,
         video=args.video,
+        frames=args.frames,
         fps=args.fps,
         view_name=args.view,
         telemetry_path=telemetry_path,
