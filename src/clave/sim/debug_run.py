@@ -1183,6 +1183,15 @@ def run(
             tick_refusal: str | None = None
             if command is not None:
                 moving = command.velocity
+                # Lead cancels lag on a moving approach. Through DESCEND/HOLD the
+                # command should already match the object; extrapolating a large
+                # lateral quintic residual (seed-0 peak |vy| ≈ 0.94 m/s) only
+                # throws the jaw past the grasp.
+                lead = (
+                    0.0
+                    if flown is not None and flown.phase in (Phase.DESCEND, Phase.HOLD)
+                    else control.servo.lead_seconds
+                )
                 stepped = follow(
                     model,
                     data,
@@ -1190,7 +1199,7 @@ def run(
                     command,
                     control.servo.gain,
                     max_joint_step=joint_step,
-                    lead_seconds=control.servo.lead_seconds,
+                    lead_seconds=lead,
                     keep_inside=keep_inside,
                 )
                 if stepped.refusal is not None:

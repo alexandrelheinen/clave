@@ -409,6 +409,25 @@ def test_an_object_with_no_interception_is_missed_rather_than_chased() -> None:
     assert arm.step(queue_of(leaving), PARK, 0.5).track_id is None
 
 
+def test_a_missed_head_yields_to_the_next_candidate() -> None:
+    """AC-BEHAVE-01: a head with no interception yields to the next candidate."""
+    arm = machine(profile=Profile.FULL_VISIT)
+    hopeless = Candidate(
+        track_id=7,
+        anchor=np.asarray((0.30, 0.0, PINCH_Z), dtype=np.float64),
+        flange=np.asarray((0.30, 0.0, PICK_Z), dtype=np.float64),
+        closing_axis=0.0,
+        distance_before_leaving=0.01,
+    )
+    reachable = candidate(3, x=0.30)
+    goal = arm.step(queue_of(hopeless, reachable), PARK, 0.0)
+    assert arm.missed == (7,)
+    assert arm.active is True
+    assert arm.plan is not None
+    assert arm.plan.track_id == 3
+    assert goal.track_id == 3
+
+
 def test_a_plan_owns_the_arm_until_it_runs_out() -> None:
     """AC-MOVE-42: a plan owns the arm until it runs out.
 

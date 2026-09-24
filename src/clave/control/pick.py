@@ -90,6 +90,31 @@ def _transport(velocity: NDArray[np.float64]) -> NDArray[np.float64]:
     return np.asarray((max(0.0, float(velocity[0])), 0.0, 0.0), dtype=np.float64)
 
 
+def nearer_parallel_yaw(target: float, reference: float) -> float:
+    """Return target or target+π, whichever is nearer reference (`AC-BEHAVE-03`).
+
+    A parallel jaw is the same grip at θ and at θ+π. Choosing the nearer one
+    keeps the wrist from slewing halfway around the tool while the visit is
+    already short on joint travel.
+
+    Args:
+        target: The yaw the grasp claims, in radians.
+        reference: The yaw the tool already holds, in radians.
+
+    Returns:
+        The chosen yaw, wrapped into (−π, π].
+    """
+    two_pi = 2.0 * math.pi
+
+    def wrap(angle: float) -> float:
+        return (angle + math.pi) % two_pi - math.pi
+
+    flipped = wrap(target + math.pi)
+    if abs(wrap(flipped - reference)) < abs(wrap(target - reference)):
+        return flipped
+    return wrap(target)
+
+
 def _drift_velocity(velocity: NDArray[np.float64]) -> NDArray[np.float64]:
     """Return the velocity used only to aim the target origin for a while.
 
@@ -903,7 +928,6 @@ def retarget_descent(
         that gates an approach does not gate this splice: the descent
         already in hand is past it.
     """
-    drift = _drift_velocity(belt_velocity)
     transport = _transport(belt_velocity)
     elapsed = at_seconds - plan.started_at
     edges = plan._boundaries()
@@ -929,13 +953,19 @@ def retarget_descent(
     # ceiling that gates an approach. What a correction can break is the
     # speed ceiling, and the part of the correction that stays under it is
     # the part that flies. None of it fitting leaves the plan already in hand.
+    #
+    # Aim with belt-axis transport only (`AC-BEHAVE-02`). Projecting lateral
+    # drift over a few hundred milliseconds of remaining descent invented the
+    # cross-belt jab measured on seed 0 (peak |vy| ≈ 0.94 m/s at grasp height).
+    # The fresher object position still moves the end (AC-MOVE-63); only the
+    # invented future lateral is dropped.
     dropping = _feasible_arc(
         start=here,
         kept=leg.segment.end,
         wanted=State(
             position=where_carried(
                 object_position,
-                drift,
+                transport,
                 remaining,
                 0.0,
                 drift_horizon,

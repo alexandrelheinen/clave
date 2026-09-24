@@ -18,6 +18,7 @@ from clave.control.pick import (
     JAW_OPEN,
     JAW_SHUT,
     Plan,
+    nearer_parallel_yaw,
     plan_pick,
     refine,
     retarget_descent,
@@ -897,3 +898,59 @@ def test_delivery_is_an_intercept_to_a_stationary_chute() -> None:
     last = delivers[-1].segment
     assert last.end.position == pytest.approx(mouth)
     assert last.end.velocity == pytest.approx((0.0, 0.0, 0.0))
+
+
+def test_commanded_yaw_picks_the_nearer_parallel_grip() -> None:
+    """AC-BEHAVE-03: θ or θ+π, whichever is nearer the tool's current yaw."""
+    assert nearer_parallel_yaw(0.0, 0.1) == pytest.approx(0.0)
+    # π and −π are the same angle after wrap.
+    assert abs(nearer_parallel_yaw(0.0, math.pi)) == pytest.approx(math.pi, abs=1e-9)
+    # Target near −π/2 while the tool sits near +π/2: flipping lands closer.
+    chosen = nearer_parallel_yaw(-math.pi / 2.0, math.pi / 2.0)
+    assert chosen == pytest.approx(math.pi / 2.0, abs=1e-9)
+
+
+def test_descent_retarget_does_not_project_lateral_drift() -> None:
+    """AC-BEHAVE-02: descent splice aims with transport, not lateral drift.
+
+    A fresher object *position* still moves the end (AC-MOVE-63). Inventing
+    future cross-belt travel over the remaining time is what produced the
+    side jab at grasp height.
+    """
+    plan = a_plan()
+    assert plan is not None
+    edges = plan._boundaries()
+    index = next(i for i, leg in enumerate(plan.legs) if leg.phase is Phase.DESCEND)
+    at = plan.started_at + edges[index] + 0.05
+    remaining = edges[index + 1] - (at - plan.started_at)
+    # Object is already at y=0.02; body velocity claims 0.5 m/s of lateral
+    # drift. Projecting that over `remaining` would move the end by ~0.1 m.
+    carried = np.asarray(
+        (OBJECT[0] + BELT[0] * at, 0.020, OBJECT[2]),
+        dtype=np.float64,
+    )
+    drifting = np.asarray((BELT[0], 0.50, 0.0), dtype=np.float64)
+    steered = retarget_descent(
+        plan=plan,
+        object_position=carried,
+        belt_velocity=drifting,
+        approach_clearance_z=CLEARANCE,
+        approach_speed=APPROACH_SPEED,
+        dwell_seconds=DWELL,
+        max_speed=1.00,
+        max_acceleration=2.50,
+        at_seconds=at,
+        drift_horizon=DRIFT_HORIZON,
+        minimum_segment_seconds=MINIMUM_SEGMENT,
+        closing_rise_seconds=CLOSING_RISE,
+        segment_sample_count=SEGMENT_SAMPLES,
+        bisection_passes=BISECTION_PASSES,
+        minimum_delivery_seconds=MINIMUM_DELIVERY,
+        correction_steps=CORRECTION_STEPS,
+    )
+    assert steered is not None
+    end = next(
+        leg.segment.end.position for leg in steered.legs if leg.phase is Phase.DESCEND
+    )
+    assert end[1] == pytest.approx(0.020, abs=1e-6)
+    assert abs(end[1] - (0.020 + 0.50 * remaining)) > 0.05

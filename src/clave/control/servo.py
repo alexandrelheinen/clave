@@ -37,6 +37,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from clave.control.motion import Command
+from clave.control.pick import nearer_parallel_yaw
 from clave.world import arm as armmod
 
 
@@ -91,6 +92,7 @@ def follow(
     if keep_inside is not None:
         led_position_world = keep_inside(led_position_world)
     target_position_world = np.asarray(led_position_world, dtype=np.float64)
+
     if not armmod.reachable(arm, target_position_world):
         # Hold, rather than write nothing. An uncommanded arm sags under
         # gravity, the sag puts the flange outside the trusted band, and from
@@ -104,8 +106,13 @@ def follow(
 
     # A goal that asked for no rotation gets the one the tool already holds,
     # which is how an unoriented footprint reaches the actuators without
-    # anybody inventing an angle for it.
-    yaw = command.yaw if command.yaw is not None else armmod.tool_yaw(data, arm)
+    # anybody inventing an angle for it. A parallel jaw is the same grip at
+    # yaw and yaw+π; take the nearer one so the wrist does not fold the long
+    # way around (`AC-BEHAVE-03`).
+    if command.yaw is None:
+        yaw = armmod.tool_yaw(data, arm)
+    else:
+        yaw = nearer_parallel_yaw(float(command.yaw), armmod.tool_yaw(data, arm))
     return Step(
         joints=armmod.step_toward(
             model,

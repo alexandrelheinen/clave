@@ -64,7 +64,14 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
-from clave.control.pick import Plan, VisitTick, plan_pick, refine, retarget_descent
+from clave.control.pick import (
+    Plan,
+    VisitTick,
+    nearer_parallel_yaw,
+    plan_pick,
+    refine,
+    retarget_descent,
+)
 from clave.control.selection import Candidate, Queue
 from clave.control.settings import (
     CalibrationSettings,
@@ -511,9 +518,24 @@ class TaskMachine:
             return self._rest(flange_pos, at_nanos)
 
         if self._settings.profile is Profile.FULL_VISIT:
-            return self._commit(
-                head, flange_pos, reference_velocity, at_seconds, at_nanos
-            )
+            # A head with no interception is recorded as missed inside
+            # `_commit` and must not park the arm while a later candidate
+            # still has belt left (`AC-BEHAVE-01`).
+            while True:
+                missed_before = len(self._missed)
+                goal = self._commit(
+                    head, flange_pos, reference_velocity, at_seconds, at_nanos
+                )
+                if self._plan is not None:
+                    return goal
+                # `_commit` parks without marking a miss when the flange itself
+                # is outside the trusted region; retrying the same head would
+                # spin forever.
+                if len(self._missed) == missed_before:
+                    return goal
+                head = self._next(queue)
+                if head is None:
+                    return goal
 
         if head.track_id != self._serving:
             self._serving, self._arrived_at = head.track_id, None
@@ -610,6 +632,7 @@ class TaskMachine:
         if yaw is None:
             yaw = self._plan_yaw
         self._last_yaw = yaw
+
         return VisitTick(
             phase=phase,
             position=state.position,
@@ -1305,6 +1328,9 @@ class TaskMachine:
             return self._rest(flange, at_nanos)
         target_yaw = self._yaw_at_pick(head, plan, at_seconds)
         initial_yaw = self._last_yaw if self._last_yaw is not None else target_yaw
+        if target_yaw is not None and initial_yaw is not None:
+            target_yaw = nearer_parallel_yaw(target_yaw, initial_yaw)
+
         self._plan = plan.with_yaw(target_yaw=target_yaw, initial_yaw=initial_yaw)
         self._plan_yaw = target_yaw
         self._serving = head.track_id
