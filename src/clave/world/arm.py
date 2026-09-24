@@ -123,6 +123,38 @@ _DOWN = np.array([0.0, 0.0, -1.0])
 _DAMPING = 0.06
 """Damping for the least squares solve, which keeps it stable near a singularity."""
 
+_CROSS_A = np.empty(3, dtype=np.float64)
+_CROSS_B = np.empty(3, dtype=np.float64)
+"""Scratch for the two orientation-error crosses in a descent step."""
+
+
+def _cross3(
+    left: NDArray[np.float64],
+    right: NDArray[np.float64],
+    out: NDArray[np.float64] | None = None,
+) -> NDArray[np.float64]:
+    """Return the cross product of two length-3 vectors.
+
+    Written for the three-axis case the Jacobian orientation error needs.
+    ``numpy.cross`` spends more time on axis bookkeeping than on the
+    arithmetic when both operands are already length three.
+
+    Args:
+        left: First operand.
+        right: Second operand.
+        out: Optional length-3 buffer to write into.
+
+    Returns:
+        The cross product. Same object as `out` when one was given.
+    """
+    result = out if out is not None else np.empty(3, dtype=np.float64)
+    lx, ly, lz = float(left[0]), float(left[1]), float(left[2])
+    rx, ry, rz = float(right[0]), float(right[1]), float(right[2])
+    result[0] = ly * rz - lz * ry
+    result[1] = lz * rx - lx * rz
+    result[2] = lx * ry - ly * rx
+    return result
+
 
 class ReachError(ClaveError):
     """A target lies outside the arm's workspace, or no solution was found."""
@@ -354,8 +386,8 @@ def solve(
             frame = scratch.site_xmat[arm.tool_site].reshape(3, 3)
             position_error = target - scratch.site_xpos[arm.tool_site]
             # Two rotation terms: put the tool axis down, then spin it to yaw.
-            axis_error = np.cross(frame[:, 2], _DOWN)
-            yaw_error = np.cross(frame[:, 0], wanted) * 0.5
+            axis_error = _cross3(frame[:, 2], _DOWN)
+            yaw_error = _cross3(frame[:, 0], wanted) * 0.5
             rotation_error = axis_error + yaw_error
 
             if (
@@ -429,38 +461,61 @@ was the whole self-time of the descent.
 """
 
 _JACOBIAN: dict[
-    int, tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]
+    int,
+    tuple[
+        NDArray[np.float64],
+        NDArray[np.float64],
+        NDArray[np.float64],
+        NDArray[np.float64],
+        NDArray[np.float64],
+        NDArray[np.float64],
+    ],
 ] = {}
-"""Jacobian buffers and the 6×6 identity, one set per compiled model."""
+"""Jacobian buffers, identity, stacked Jacobian and error, one set per model."""
 
 
 def _descent_workspace(
     model: Any,
-) -> tuple[Any, NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
-    """Return the scratch state and the Jacobian buffers for a model.
+    dof_count: int,
+) -> tuple[
+    Any,
+    NDArray[np.float64],
+    NDArray[np.float64],
+    NDArray[np.float64],
+    NDArray[np.float64],
+    NDArray[np.float64],
+    NDArray[np.float64],
+]:
+    """Return the scratch state and the reusable buffers for a model.
 
     Args:
         model: The compiled model.
+        dof_count: How many arm columns the stacked Jacobian needs.
 
     Returns:
-        The scratch `MjData`, the position Jacobian, the rotation Jacobian and
-        a 6×6 identity used by the damped normal equations.
+        The scratch `MjData`, the position Jacobian, the rotation Jacobian, a
+        6×6 identity, a `(6, dof_count)` stacked Jacobian and a length-6 error
+        vector used by the damped normal equations.
     """
     import mujoco
 
     key = id(model)
     scratch = _SCRATCH.get(key)
-    if scratch is None:
+    buffers = _JACOBIAN.get(key)
+    if scratch is None or buffers is None or buffers[3].shape[1] != dof_count:
         scratch = mujoco.MjData(model)
         buffers = (
             np.zeros((3, model.nv)),
             np.zeros((3, model.nv)),
             np.eye(6),
+            np.zeros((6, dof_count)),
+            np.zeros(6),
+            np.zeros(6),
         )
         _SCRATCH[key] = scratch
         _JACOBIAN[key] = buffers
-    jacp, jacr, eye = _JACOBIAN[key]
-    return scratch, jacp, jacr, eye
+    jacp, jacr, eye, stacked, error, angles = buffers
+    return scratch, jacp, jacr, eye, stacked, error, angles
 
 
 _TRACKING_ITERATIONS = 8
@@ -586,29 +641,71 @@ def _descend(
         rather than a solution: a caller tracking a moving target gets another
         call in two milliseconds.
     """
+    angles, _, _ = _descend_measured(model, arm, seed, target, yaw, iterations)
+    return angles
+
+
+def _descend_measured(
+    model: Any,
+    arm: ArmIndices,
+    seed: NDArray[np.float64],
+    target: NDArray[np.float64],
+    yaw: float,
+    iterations: int,
+) -> tuple[NDArray[np.float64], float, float]:
+    """Descend and report how far the tool was from the target at each end.
+
+    The start gap is read after the first forward kinematics on the seed. The
+    end gap is read after a final forward on the angles returned, so a caller
+    that only wants to know whether the step helped does not pay for two
+    more full forwards through [_tool_distance].
+
+    Args:
+        model: The compiled model.
+        arm: The arm indices.
+        seed: Joint angles to start from.
+        target: Desired flange position in world coordinates.
+        yaw: Desired tool rotation about the vertical, in radians.
+        iterations: Descent steps to take.
+
+    Returns:
+        The joint angles reached, the seed's tool distance, and the result's
+        tool distance, both in meters.
+    """
     import mujoco
 
     wanted_axis = np.array([math.cos(yaw), math.sin(yaw), 0.0], dtype=np.float64)
-    scratch, jacp, jacr, eye = _descent_workspace(model)
+    columns = np.asarray(arm.dof_indices, dtype=np.intp)
+    scratch, jacp, jacr, eye, stacked, error, angles = _descent_workspace(
+        model, len(arm.dof_indices)
+    )
     for slot, joint in enumerate(arm.joint_ids):
         scratch.qpos[model.jnt_qposadr[joint]] = seed[slot]
-    columns = list(arm.dof_indices)
 
-    for _ in range(iterations):
+    start_gap = 0.0
+    for step in range(iterations):
         mujoco.mj_forward(model, scratch)
         frame = scratch.site_xmat[arm.tool_site].reshape(3, 3)
-        position_error = target - scratch.site_xpos[arm.tool_site]
-        rotation_error = (
-            np.cross(frame[:, 2], _DOWN) + np.cross(frame[:, 0], wanted_axis) * 0.5
-        )
+        tool = scratch.site_xpos[arm.tool_site]
+        position_error = target - tool
+        if step == 0:
+            start_gap = float(np.linalg.norm(position_error))
+        _cross3(frame[:, 2], _DOWN, out=_CROSS_A)
+        _cross3(frame[:, 0], wanted_axis, out=_CROSS_B)
+        rotation_error = _CROSS_A
+        rotation_error[0] += 0.5 * _CROSS_B[0]
+        rotation_error[1] += 0.5 * _CROSS_B[1]
+        rotation_error[2] += 0.5 * _CROSS_B[2]
         if (
-            np.linalg.norm(position_error) < 1e-3
-            and np.linalg.norm(rotation_error) < 1e-2
+            float(np.linalg.norm(position_error)) < 1e-3
+            and float(np.linalg.norm(rotation_error)) < 1e-2
         ):
             break
         mujoco.mj_jacSite(model, scratch, jacp, jacr, arm.tool_site)
-        stacked = np.vstack([jacp[:, columns], jacr[:, columns]])
-        error = np.concatenate([position_error, rotation_error])
+        stacked[:3, :] = jacp[:, columns]
+        stacked[3:, :] = jacr[:, columns]
+        error[:3] = position_error
+        error[3:] = rotation_error
         wrist_2_angle = float(scratch.qpos[model.jnt_qposadr[arm.joint_ids[4]]])
         sin_w2 = abs(math.sin(wrist_2_angle))
         if sin_w2 < 0.20:
@@ -619,14 +716,17 @@ def _descend(
         square = stacked @ stacked.T + damping_sq * eye
         delta = stacked.T @ np.linalg.solve(square, error)
         delta = np.clip(delta, -0.20, 0.20)
-        here = np.array(
-            [float(scratch.qpos[model.jnt_qposadr[j]]) for j in arm.joint_ids]
-        )
-        stepped = np.clip(here + 0.5 * delta, arm.lower, arm.upper)
+        for slot, joint in enumerate(arm.joint_ids):
+            angles[slot] = float(scratch.qpos[model.jnt_qposadr[joint]])
+        stepped = np.clip(angles + 0.5 * delta, arm.lower, arm.upper)
         for slot, joint in enumerate(arm.joint_ids):
             scratch.qpos[model.jnt_qposadr[joint]] = stepped[slot]
 
-    return np.array([float(scratch.qpos[model.jnt_qposadr[j]]) for j in arm.joint_ids])
+    mujoco.mj_forward(model, scratch)
+    for slot, joint in enumerate(arm.joint_ids):
+        angles[slot] = float(scratch.qpos[model.jnt_qposadr[joint]])
+    end_gap = float(np.linalg.norm(target - scratch.site_xpos[arm.tool_site]))
+    return angles.copy(), start_gap, end_gap
 
 
 def _tool_distance(
@@ -648,7 +748,7 @@ def _tool_distance(
     """
     import mujoco
 
-    scratch, _, _, _ = _descent_workspace(model)
+    scratch, _, _, _, _, _, _ = _descent_workspace(model, len(arm.dof_indices))
     for slot, joint in enumerate(arm.joint_ids):
         scratch.qpos[model.jnt_qposadr[joint]] = angles[slot]
     mujoco.mj_forward(model, scratch)
@@ -690,10 +790,10 @@ def _track_pose(
     Returns:
         The joint angles to command next.
     """
-    wanted = _descend(model, arm, seed, target, yaw, iterations)
-    if _tool_distance(model, arm, wanted, target) > _tool_distance(
-        model, arm, seed, target
-    ):
+    wanted, start_gap, end_gap = _descend_measured(
+        model, arm, seed, target, yaw, iterations
+    )
+    if end_gap > start_gap:
         return seed
     return wanted
 
