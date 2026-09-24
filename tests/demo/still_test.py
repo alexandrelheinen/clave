@@ -379,3 +379,25 @@ def test_still_is_its_own_subcommand() -> None:
     sim = parser.parse_args(["sim", "--seconds", "1"])
     assert sim.command == "sim"
     assert not hasattr(sim, "still")
+
+
+def test_the_arm_serves_the_belt_at_capture(tmp_path: Path) -> None:
+    """AC-STILL-05: at capture the flange rides above a reachable package.
+
+    `capture` itself refuses when the arm misses the belt, so a clean write
+    is the acceptance check. The short path in the other capture test has no
+    packages yet and is allowed to stay parked.
+    """
+    pytest.importorskip("mujoco")
+    if not _rendering_available():
+        pytest.skip("no offscreen GL backend here")
+    if subprocess.run(["which", "ffmpeg"], capture_output=True).returncode != 0:
+        pytest.skip("ffmpeg is not installed here")
+
+    from clave.demo.still import capture
+
+    scenario = StillScenario.load(STILLS / "thumbnail.yml")
+    assert scenario.expect.packages >= 1
+    written = capture(ROOT, scenario, tmp_path)
+    assert written
+    assert all(path.is_file() for path in written)

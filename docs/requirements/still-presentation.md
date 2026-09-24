@@ -12,10 +12,13 @@ presentation lighting without touching that world file.
 **In.** A `clave still` subcommand; presentation lighting that matches the
 FRET project-page style (low headlight diffuse, grazing directional fills,
 scene spotlights suppressed); still scenario capture instants that match
-what their descriptions claim.
+what their descriptions claim; an arm that starts parked and rides at
+approach height over a reachable package rather than chasing object centres
+below the belt.
 
 **Out.** Changing dataset or training lighting. Post-process tonemapping,
-depth of field, or composites.
+depth of field, or composites. Replacing the scripted expert with the full
+task machine.
 
 ## Acceptance criteria
 
@@ -36,6 +39,11 @@ section may set `shadowsize` and `offsamples` on the compiled model.
 how many packages and classes are on the belt matches a capture at its
 stated seed and instant.
 
+`AC-STILL-05`: At the capture instant the flange sits above the belt surface
+inside the trusted reach annulus, and within a package's major extent of a
+reachable package in the belt plane (the arm is serving the line, not
+parked beside it or buried below the belt).
+
 ## Test plan
 
 | Criterion | Test |
@@ -44,3 +52,4 @@ stated seed and instant.
 | `AC-STILL-02` | `test_presentation_lighting_suppresses_scene_lights` |
 | `AC-STILL-03` | `test_presentation_lights_may_be_directional` |
 | `AC-STILL-04` | `test_every_shipped_still_matches_its_belt_claim` |
+| `AC-STILL-05` | `test_the_arm_serves_the_belt_at_capture` |

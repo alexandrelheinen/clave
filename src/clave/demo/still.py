@@ -2,9 +2,9 @@
 
 A still is a frame of a real rollout, chosen by when it happens rather than by
 arranging anything: the world runs from a seed with the scripted expert driving
-the arm, and the renderer is asked for a frame at a stated instant. Nothing is
-drawn on it, composited into it or corrected afterwards. The encoder writes the
-pixels the renderer produced.
+the arm at approach height from the park pose, and the renderer is asked for a
+frame at a stated instant. Nothing is drawn on it, composited into it or
+corrected afterwards. The encoder writes the pixels the renderer produced.
 
 The lighting and the camera come from the still's own file and are handed to
 the world as an argument, so `configs/world/sorting_line.yml` is the file every
@@ -13,6 +13,7 @@ dataset, training run and benchmark reads and this changes none of it.
 
 from __future__ import annotations
 
+import math
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -250,6 +251,12 @@ def write_png(frame: Any, path: Path, width: int, height: int) -> None:
 def capture(root: Path, scenario: StillScenario, out: Path) -> list[Path]:
     """Run the rollout to its instant and render every camera.
 
+    The arm starts at the configured park pose and the scripted expert drives
+    the flange at approach height over the reachable package nearest the
+    window exit (`AC-STILL-05`). Chasing the object's centre of mass buried
+    the tool under the belt and left it beside the line; the approach height
+    is what puts a figure's arm over the packages a reader expects to see.
+
     Args:
         root: Repository root.
         scenario: What to capture.
@@ -260,19 +267,24 @@ def capture(root: Path, scenario: StillScenario, out: Path) -> list[Path]:
 
     Raises:
         StillError: If the capture instant does not match the scenario's
-            package and class claim (`AC-STILL-04`).
+            package and class claim (`AC-STILL-04`), or the flange is not
+            serving the belt (`AC-STILL-05`).
     """
     import os
 
     os.environ.setdefault("MUJOCO_GL", "osmesa")
     import mujoco
 
+    from clave.control.settings import ControlSettings
     from clave.data.examples import ObjectLabel
     from clave.data.expert import decide
     from clave.world import arm as armmod
     from clave.world import belt, config, scene
 
     raw = config.load(root / "configs" / "world" / "sorting_line.yml")
+    control = ControlSettings.load(
+        config.load(root / "configs" / "runtime" / "control.yml")
+    )
     rng = np.random.default_rng(scenario.seed)
     model, data, plan = scene.build(
         raw,
@@ -294,7 +306,13 @@ def capture(root: Path, scenario: StillScenario, out: Path) -> list[Path]:
         model,
         armmod.ReachBounds(plan.reach_min, plan.reach_max, plan.tool_above_base),
     )
-    half_window = conveyor.report.window_length / 2.0
+    exit_coordinate = belt.window_exit(plan)
+    if exit_coordinate is None:
+        raise StillError(
+            "the belt never enters the arm's reach, so no still can be captured"
+        )
+    _park_the_arm(mujoco, model, data, indices, control.task.park_position)
+    approach_z = float(plan.belt.surface_height) + float(control.task.approach_height)
 
     for _ in range(int(scenario.capture_at_seconds / plan.timestep)):
         mujoco.mj_step(model, data)
@@ -313,11 +331,15 @@ def capture(root: Path, scenario: StillScenario, out: Path) -> list[Path]:
                     in_reachable_window=belt.within_reach(position, plan),
                 )
             )
-        chosen = decide(tuple(labels), half_window)
-        if chosen is not None:
-            armmod.step_toward(
-                model, data, indices, np.array(chosen.position), gain=ARM_GAIN
-            )
+        chosen = decide(tuple(labels), exit_coordinate)
+        if chosen is None:
+            continue
+        target = np.asarray(
+            (float(chosen.position[0]), float(chosen.position[1]), approach_z),
+            dtype=np.float64,
+        )
+        if armmod.reachable(indices, target):
+            armmod.step_toward(model, data, indices, target, gain=ARM_GAIN)
 
     packages = len(conveyor.active)
     classes = len({item.material_class for item in conveyor.active})
@@ -328,6 +350,7 @@ def capture(root: Path, scenario: StillScenario, out: Path) -> list[Path]:
             f"but still.expect asks for {scenario.expect.packages} packages and "
             f"{scenario.expect.classes} classes"
         )
+    _refuse_if_arm_misses_the_belt(mujoco, model, data, indices, plan, conveyor)
 
     renderer = mujoco.Renderer(model, height=scenario.height, width=scenario.width)
     written: list[Path] = []
@@ -343,3 +366,96 @@ def capture(root: Path, scenario: StillScenario, out: Path) -> list[Path]:
         write_png(renderer.render(), path, scenario.width, scenario.height)
         written.append(path)
     return written
+
+
+def _park_the_arm(
+    mujoco: Any,
+    model: Any,
+    data: Any,
+    indices: Any,
+    park: NDArray[np.float64],
+) -> None:
+    """Solve the park pose and write it into the simulation.
+
+    Args:
+        mujoco: The imported module.
+        model: The compiled model.
+        data: Its state, modified in place.
+        indices: The arm indices.
+        park: Where the arm rests.
+
+    Raises:
+        StillError: If the park pose does not solve.
+    """
+    from clave.world import arm as armmod
+
+    armmod._TRACKING.pop((id(model), id(data)), None)
+    try:
+        angles = armmod.solve(model, data, indices, np.asarray(park, dtype=float))
+    except armmod.ReachError as error:
+        raise StillError(f"the park pose does not solve: {error}") from error
+    for slot, joint in enumerate(indices.joint_ids):
+        data.qpos[model.jnt_qposadr[joint]] = angles[slot]
+        data.ctrl[indices.actuator_ids[slot]] = angles[slot]
+    mujoco.mj_forward(model, data)
+
+
+# How close the flange may sit from a reachable package in the belt plane.
+# Packages on this line are a few centimetres across; half a package away is
+# still clearly serving that object rather than standing beside the line.
+_BELT_SERVICE_RADIUS_METERS = 0.08
+
+
+def _refuse_if_arm_misses_the_belt(
+    mujoco: Any,
+    model: Any,
+    data: Any,
+    indices: Any,
+    plan: Any,
+    conveyor: Any,
+) -> None:
+    """Refuse a capture whose flange is not serving a reachable package.
+
+    Args:
+        mujoco: The imported module.
+        model: The compiled model.
+        data: Its state, with forward kinematics current.
+        indices: The arm indices.
+        plan: The resolved layout.
+        conveyor: The belt with its active packages.
+
+    Raises:
+        StillError: If the flange is below the belt, outside the annulus, or
+            farther than [_BELT_SERVICE_RADIUS_METERS] from every reachable
+            package in the belt plane (`AC-STILL-05`).
+    """
+    from clave.world import arm as armmod
+    from clave.world import belt
+
+    flange = armmod.end_effector_position(data, indices)
+    if float(flange[2]) < float(plan.belt.surface_height):
+        raise StillError(
+            f"flange sits at z={float(flange[2]):.3f} m, below the belt surface "
+            f"at {float(plan.belt.surface_height):.3f} m"
+        )
+    if not armmod.reachable(indices, flange):
+        raise StillError(
+            f"flange at {np.round(flange, 3).tolist()} is outside the trusted reach"
+        )
+    nearest = math.inf
+    for item in conveyor.active:
+        body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, item.name)
+        place = np.asarray(data.xpos[body], dtype=np.float64)
+        if not belt.within_reach(place, plan):
+            continue
+        gap = math.hypot(float(flange[0] - place[0]), float(flange[1] - place[1]))
+        nearest = min(nearest, gap)
+    if math.isinf(nearest):
+        # Nothing reachable to serve; the arm may stay parked.
+        return
+    if nearest > _BELT_SERVICE_RADIUS_METERS:
+        raise StillError(
+            f"flange is {nearest:.3f} m from the nearest reachable package in "
+            f"the belt plane, past the {_BELT_SERVICE_RADIUS_METERS:.2f} m "
+            f"service radius"
+        )
