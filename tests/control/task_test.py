@@ -13,7 +13,9 @@ import math
 from pathlib import Path
 from typing import cast
 
+import numpy as np
 import pytest
+from numpy.typing import NDArray
 
 from clave.control.selection import Candidate, Queue
 from clave.control.settings import (
@@ -26,11 +28,12 @@ from clave.control.settings import (
 )
 from clave.control.story import StoryLog
 from clave.control.task import TaskError, TaskMachine
+from clave.control.trajectory import same
 from clave.world.effector import Effector
 
 ROOT = Path(__file__).resolve().parents[2]
 BELT_SURFACE = 0.90
-PARK = (0.45, -1.00, 1.20)
+PARK = np.asarray((0.45, -1.00, 1.20), dtype=np.float64)
 BELT_SPEED = 0.314
 LIMITS = MotionSettings(
     max_speed=1.00,
@@ -106,13 +109,15 @@ def machine(**overrides: object) -> TaskMachine:
         raise TypeError("story must be a StoryLog")
     raw_chutes = overrides.pop("chutes", None)
     chutes = (
-        cast("dict[str, tuple[float, float, float]]", raw_chutes)
+        cast("dict[str, NDArray[np.float64]]", raw_chutes)
         if raw_chutes is not None
         else None
     )
     return TaskMachine(
         task_settings(**overrides),
-        CalibrationSettings(flange_offset=(0.0, 0.0, 0.0)),
+        CalibrationSettings(
+            flange_offset=np.asarray((0.0, 0.0, 0.0), dtype=np.float64),
+        ),
         belt_surface=BELT_SURFACE,
         belt_speed=BELT_SPEED,
         motion=LIMITS,
@@ -131,8 +136,8 @@ def candidate(track_id: int = 1, x: float = 0.30, y: float = 0.0) -> Candidate:
     """One candidate the arm could serve."""
     return Candidate(
         track_id=track_id,
-        anchor=(x, y, PINCH_Z),
-        flange=(x, y, PICK_Z),
+        anchor=np.asarray((x, y, PINCH_Z), dtype=np.float64),
+        flange=np.asarray((x, y, PICK_Z), dtype=np.float64),
         closing_axis=math.pi / 2.0,
         distance_before_leaving=1.5,
     )
@@ -140,19 +145,27 @@ def candidate(track_id: int = 1, x: float = 0.30, y: float = 0.0) -> Candidate:
 
 def test_an_empty_queue_sends_the_arm_to_park() -> None:
     """AC-MOVE-03: an empty queue sends the arm to park."""
-    goal = machine().step(queue_of(), flange=(0.0, 0.0, 1.30), at_seconds=0.0)
+    goal = machine().step(
+        queue_of(),
+        flange=np.asarray((0.0, 0.0, 1.30), dtype=np.float64),
+        at_seconds=0.0,
+    )
     assert goal.phase is Phase.PARK
-    assert goal.position == PARK
+    assert goal.position == pytest.approx(PARK)
     assert goal.track_id is None
 
 
 def test_arriving_at_park_settles_into_standby() -> None:
     """An empty queue, once the arm is there, settles into standby."""
     arm = machine()
-    arm.step(queue_of(), flange=(0.0, 0.0, 1.30), at_seconds=0.0)
+    arm.step(
+        queue_of(),
+        flange=np.asarray((0.0, 0.0, 1.30), dtype=np.float64),
+        at_seconds=0.0,
+    )
     goal = arm.step(queue_of(), flange=PARK, at_seconds=0.1)
     assert goal.phase is Phase.STANDBY
-    assert goal.position == PARK
+    assert goal.position == pytest.approx(PARK)
 
 
 def test_a_queue_with_a_head_puts_the_arm_in_tracking() -> None:
@@ -176,7 +189,9 @@ def test_the_goal_carries_the_calibration_offset() -> None:
     """AC-MOVE-06: the goal carries the calibration offset."""
     offset = TaskMachine(
         task_settings(),
-        CalibrationSettings(flange_offset=(0.01, -0.02, 0.03)),
+        CalibrationSettings(
+            flange_offset=np.asarray((0.01, -0.02, 0.03), dtype=np.float64),
+        ),
         belt_surface=BELT_SURFACE,
     )
     goal = offset.step(queue_of(candidate(x=0.30, y=0.10)), PARK, 0.0)
@@ -195,8 +210,8 @@ def test_an_unoriented_candidate_asks_for_no_rotation() -> None:
     """AC-MOVE-08: an unoriented candidate asks for no rotation."""
     round_one = Candidate(
         track_id=1,
-        anchor=(0.3, 0.0, PINCH_Z),
-        flange=(0.3, 0.0, PICK_Z),
+        anchor=np.asarray((0.3, 0.0, PINCH_Z), dtype=np.float64),
+        flange=np.asarray((0.3, 0.0, PICK_Z), dtype=np.float64),
         closing_axis=None,
         distance_before_leaving=1.0,
     )
@@ -207,7 +222,7 @@ def test_a_visit_is_served_after_the_dwell_and_the_arm_moves_on() -> None:
     """AC-MOVE-04: a visit is served after the dwell, and the arm moves on."""
     arm = machine()
     first, second = candidate(1, x=0.30), candidate(2, x=0.60)
-    here = (0.30, 0.0, BELT_SURFACE + 0.220)
+    here = np.asarray((0.30, 0.0, BELT_SURFACE + 0.220), dtype=np.float64)
 
     assert arm.step(queue_of(first, second), PARK, 0.0).track_id == 1
     # Arrived, but the dwell has not elapsed.
@@ -226,7 +241,7 @@ def test_a_track_still_out_of_reach_does_not_start_its_dwell() -> None:
     """
     arm = machine()
     only = candidate(1, x=0.30)
-    far = (0.0, 0.0, 1.30)
+    far = np.asarray((0.0, 0.0, 1.30), dtype=np.float64)
     for at_seconds in (0.0, 0.5, 1.0, 5.0):
         assert arm.step(queue_of(only), far, at_seconds).track_id == 1
     assert arm.served == ()
@@ -235,10 +250,10 @@ def test_a_track_still_out_of_reach_does_not_start_its_dwell() -> None:
 def test_a_refusal_faults_the_track_and_the_arm_holds_still() -> None:
     """AC-MOVE-05: a refusal faults the track and the arm holds still."""
     arm = machine()
-    here = (0.1, 0.2, 1.10)
+    here = np.asarray((0.1, 0.2, 1.10), dtype=np.float64)
     goal = arm.step(queue_of(candidate(3)), here, 0.0, refusal="outside the annulus")
     assert goal.phase is Phase.FAULT
-    assert goal.position == here
+    assert goal.position == pytest.approx(here)
     assert arm.faults == ((3, "outside the annulus"),)
 
 
@@ -341,7 +356,10 @@ def test_a_planned_visit_meets_the_object_moving_with_the_belt() -> None:
         flown = arm.tick(at_seconds, PARK)
         assert flown is not None
         if flown.phase is Phase.HOLD:
-            assert flown.velocity == pytest.approx((BELT_SPEED, 0.0, 0.0), abs=1e-9)
+            assert flown.velocity == pytest.approx(
+                np.asarray((BELT_SPEED, 0.0, 0.0), dtype=np.float64),
+                abs=1e-9,
+            )
             return
     pytest.fail("the visit never reached the object")
 
@@ -378,15 +396,15 @@ def test_an_object_with_no_interception_is_missed_rather_than_chased() -> None:
     arm = machine(profile=Profile.FULL_VISIT)
     leaving = Candidate(
         track_id=7,
-        anchor=(0.30, 0.0, PINCH_Z),
-        flange=(0.30, 0.0, PICK_Z),
+        anchor=np.asarray((0.30, 0.0, PINCH_Z), dtype=np.float64),
+        flange=np.asarray((0.30, 0.0, PICK_Z), dtype=np.float64),
         closing_axis=0.0,
         distance_before_leaving=0.01,
     )
     goal = arm.step(queue_of(leaving), PARK, 0.0)
     assert arm.missed == (7,)
     assert arm.active is False
-    assert goal.position == PARK
+    assert goal.position == pytest.approx(PARK)
     # And it is not offered again on the next capture.
     assert arm.step(queue_of(leaving), PARK, 0.5).track_id is None
 
@@ -429,7 +447,9 @@ def test_the_full_visit_profile_refuses_to_run_without_ceilings() -> None:
     with pytest.raises(TaskError, match="ceilings"):
         TaskMachine(
             task_settings(profile=Profile.FULL_VISIT),
-            CalibrationSettings(flange_offset=(0.0, 0.0, 0.0)),
+            CalibrationSettings(
+                flange_offset=np.asarray((0.0, 0.0, 0.0), dtype=np.float64),
+            ),
             belt_surface=BELT_SURFACE,
             belt_speed=BELT_SPEED,
         )
@@ -440,7 +460,9 @@ def test_the_full_visit_profile_refuses_to_run_on_a_stopped_belt() -> None:
     with pytest.raises(TaskError, match="carries nothing to intercept"):
         TaskMachine(
             task_settings(profile=Profile.FULL_VISIT),
-            CalibrationSettings(flange_offset=(0.0, 0.0, 0.0)),
+            CalibrationSettings(
+                flange_offset=np.asarray((0.0, 0.0, 0.0), dtype=np.float64),
+            ),
             belt_surface=BELT_SURFACE,
             motion=LIMITS,
         )
@@ -460,7 +482,7 @@ def test_a_completed_visit_records_how_near_the_arm_got() -> None:
     """AC-MOVE-12: a completed visit records how near the arm got."""
     arm = machine()
     only = candidate(1, x=0.30)
-    here = (0.30, 0.0, BELT_SURFACE + 0.220)
+    here = np.asarray((0.30, 0.0, BELT_SURFACE + 0.220), dtype=np.float64)
     arm.step(queue_of(only), PARK, 0.0)
     arm.step(queue_of(only), here, 0.1)
     arm.step(queue_of(only), here, 0.5)
@@ -480,11 +502,11 @@ def test_a_settling_candidate_is_served_at_the_marker_pose() -> None:
     arm = machine(profile=Profile.FULL_VISIT)
     settling = Candidate(
         track_id=1,
-        anchor=(0.30, 0.0, PINCH_Z),
-        flange=(0.30, 0.0, PICK_Z),
+        anchor=np.asarray((0.30, 0.0, PINCH_Z), dtype=np.float64),
+        flange=np.asarray((0.30, 0.0, PICK_Z), dtype=np.float64),
         closing_axis=math.pi / 2.0,
         distance_before_leaving=1.5,
-        velocity_world=(BELT_SPEED, 0.0, -0.40),
+        velocity_world=np.asarray((BELT_SPEED, 0.0, -0.40), dtype=np.float64),
     )
     arm.step(queue_of(settling), PARK, 0.0)
     assert arm.plan is not None
@@ -520,7 +542,9 @@ def test_the_full_visit_profile_needs_the_jaw_geometry() -> None:
     with pytest.raises(TaskError, match="jaw's geometry"):
         TaskMachine(
             task_settings(profile=Profile.FULL_VISIT),
-            CalibrationSettings(flange_offset=(0.0, 0.0, 0.0)),
+            CalibrationSettings(
+                flange_offset=np.asarray((0.0, 0.0, 0.0), dtype=np.float64),
+            ),
             belt_surface=BELT_SURFACE,
             belt_speed=BELT_SPEED,
             motion=LIMITS,
@@ -554,8 +578,8 @@ def test_a_grasp_below_the_shut_floor_rises_back_to_it() -> None:
     low = BELT_SURFACE + EFFECTOR.open_flange_floor
     short = Candidate(
         track_id=3,
-        anchor=(0.30, 0.0, low - EFFECTOR.finger_length),
-        flange=(0.30, 0.0, low),
+        anchor=np.asarray((0.30, 0.0, low - EFFECTOR.finger_length), dtype=np.float64),
+        flange=np.asarray((0.30, 0.0, low), dtype=np.float64),
         closing_axis=math.pi / 2.0,
         distance_before_leaving=1.5,
     )
@@ -579,15 +603,15 @@ def test_a_grasp_pose_below_the_jaw_clearance_is_refused() -> None:
     arm = machine(profile=Profile.FULL_VISIT)
     under = Candidate(
         track_id=9,
-        anchor=(0.30, 0.0, PINCH_Z),
-        flange=(0.30, 0.0, BELT_SURFACE + 0.010),
+        anchor=np.asarray((0.30, 0.0, PINCH_Z), dtype=np.float64),
+        flange=np.asarray((0.30, 0.0, BELT_SURFACE + 0.010), dtype=np.float64),
         closing_axis=math.pi / 2.0,
         distance_before_leaving=1.5,
     )
     goal = arm.step(queue_of(under), PARK, 0.0)
     assert arm.active is False
     assert arm.missed == (9,)
-    assert goal.position == PARK
+    assert goal.position == pytest.approx(PARK)
 
 
 def test_a_grasp_pose_at_the_jaw_clearance_is_taken() -> None:
@@ -600,8 +624,8 @@ def test_a_grasp_pose_at_the_jaw_clearance_is_taken() -> None:
     floor = BELT_SURFACE + EFFECTOR.open_flange_floor
     shortest = Candidate(
         track_id=3,
-        anchor=(0.30, 0.0, PINCH_Z),
-        flange=(0.30, 0.0, floor),
+        anchor=np.asarray((0.30, 0.0, PINCH_Z), dtype=np.float64),
+        flange=np.asarray((0.30, 0.0, floor), dtype=np.float64),
         closing_axis=math.pi / 2.0,
         distance_before_leaving=1.5,
     )
@@ -635,8 +659,8 @@ def test_a_plan_is_re_aimed_while_the_arm_is_still_approaching() -> None:
     before = arm.step(queue_of(first), PARK, 0.01)
     drifted = Candidate(
         track_id=1,
-        anchor=(0.34, 0.05, PINCH_Z),
-        flange=(0.34, 0.05, PICK_Z),
+        anchor=np.asarray((0.34, 0.05, PINCH_Z), dtype=np.float64),
+        flange=np.asarray((0.34, 0.05, PICK_Z), dtype=np.float64),
         closing_axis=math.pi / 2.0,
         distance_before_leaving=1.5,
     )
@@ -656,15 +680,17 @@ def test_a_pick_outside_the_trusted_region_is_never_planned() -> None:
     """
     arm = TaskMachine(
         task_settings(profile=Profile.FULL_VISIT),
-        CalibrationSettings(flange_offset=(0.0, 0.0, 0.0)),
+        CalibrationSettings(
+            flange_offset=np.asarray((0.0, 0.0, 0.0), dtype=np.float64),
+        ),
         belt_surface=BELT_SURFACE,
         belt_speed=BELT_SPEED,
         motion=LIMITS,
         effector=EFFECTOR,
-        admits=lambda pose: pose == PARK,
+        admits=lambda pose: same(pose, PARK),
     )
     only = candidate(1, x=0.30)
-    assert arm.step(queue_of(only), PARK, 0.0).position == PARK
+    assert arm.step(queue_of(only), PARK, 0.0).position == pytest.approx(PARK)
     assert arm.active is False
     assert arm.missed == (1,)
 
@@ -678,19 +704,21 @@ def test_no_plan_is_built_from_a_pose_the_arm_should_not_be_in() -> None:
     Measured on the shipped line that latched: one excursion became 46
     faults and the arm never moved again.
     """
-    outside = (0.45, -1.00, 1.48)
+    outside = np.asarray((0.45, -1.00, 1.48), dtype=np.float64)
     arm = TaskMachine(
         task_settings(profile=Profile.FULL_VISIT),
-        CalibrationSettings(flange_offset=(0.0, 0.0, 0.0)),
+        CalibrationSettings(
+            flange_offset=np.asarray((0.0, 0.0, 0.0), dtype=np.float64),
+        ),
         belt_surface=BELT_SURFACE,
         belt_speed=BELT_SPEED,
         motion=LIMITS,
         effector=EFFECTOR,
-        admits=lambda pose: pose != outside,
+        admits=lambda pose: not np.array_equal(pose, outside),
     )
     goal = arm.step(queue_of(candidate(1, x=0.30)), outside, 0.0)
     assert arm.active is False
-    assert goal.position == PARK, "the arm was not sent home to recover"
+    assert goal.position == pytest.approx(PARK), "the arm was not sent home to recover"
     # And the candidate is not blamed: nothing is wrong with it.
     assert arm.missed == ()
 
@@ -699,7 +727,9 @@ def test_task_machine_accepts_custom_belt_parameters() -> None:
     """AC-MOVE-43: TaskMachine respects custom belt dimensions and border position."""
     arm = TaskMachine(
         task_settings(profile=Profile.FULL_VISIT),
-        CalibrationSettings(flange_offset=(0.0, 0.0, 0.0)),
+        CalibrationSettings(
+            flange_offset=np.asarray((0.0, 0.0, 0.0), dtype=np.float64),
+        ),
         belt_surface=BELT_SURFACE,
         belt_speed=BELT_SPEED,
         motion=LIMITS,
@@ -716,8 +746,8 @@ def test_reaim_refreshes_plan_yaw_in_flight() -> None:
     arm = machine(profile=Profile.FULL_VISIT)
     first = Candidate(
         track_id=1,
-        anchor=(0.30, 0.0, PINCH_Z),
-        flange=(0.30, 0.0, PICK_Z),
+        anchor=np.asarray((0.30, 0.0, PINCH_Z), dtype=np.float64),
+        flange=np.asarray((0.30, 0.0, PICK_Z), dtype=np.float64),
         closing_axis=0.0,
         distance_before_leaving=1.5,
     )
@@ -727,8 +757,8 @@ def test_reaim_refreshes_plan_yaw_in_flight() -> None:
 
     rotated = Candidate(
         track_id=1,
-        anchor=(0.30, 0.0, PINCH_Z),
-        flange=(0.30, 0.0, PICK_Z),
+        anchor=np.asarray((0.30, 0.0, PINCH_Z), dtype=np.float64),
+        flange=np.asarray((0.30, 0.0, PICK_Z), dtype=np.float64),
         closing_axis=math.pi / 4.0,
         distance_before_leaving=1.5,
     )
@@ -758,11 +788,11 @@ def test_a_plan_is_never_flowed_onto_an_object_that_has_moved_away() -> None:
     arm = machine(profile=Profile.FULL_VISIT)
     riding = Candidate(
         track_id=1,
-        anchor=(0.10, 0.0, PINCH_Z),
-        flange=(0.10, 0.0, PICK_Z),
+        anchor=np.asarray((0.10, 0.0, PINCH_Z), dtype=np.float64),
+        flange=np.asarray((0.10, 0.0, PICK_Z), dtype=np.float64),
         closing_axis=math.pi / 2.0,
         distance_before_leaving=1.5,
-        velocity_world=(BELT_SPEED, 0.0, 0.0),
+        velocity_world=np.asarray((BELT_SPEED, 0.0, 0.0), dtype=np.float64),
     )
     arm.step(queue_of(riding), PARK, 0.0)
     assert arm.active is True
@@ -770,11 +800,11 @@ def test_a_plan_is_never_flowed_onto_an_object_that_has_moved_away() -> None:
     # against a plan that aimed it a belt's travel further downstream.
     dragging = Candidate(
         track_id=1,
-        anchor=(0.16, 0.0, PINCH_Z),
-        flange=(0.16, 0.0, PICK_Z),
+        anchor=np.asarray((0.16, 0.0, PINCH_Z), dtype=np.float64),
+        flange=np.asarray((0.16, 0.0, PICK_Z), dtype=np.float64),
         closing_axis=math.pi / 2.0,
         distance_before_leaving=1.5,
-        velocity_world=(0.02, 0.0, 0.0),
+        velocity_world=np.asarray((0.02, 0.0, 0.0), dtype=np.float64),
     )
     arm.step(queue_of(dragging), PARK, 2.50)
     assert max(refresh.drift or 0.0 for refresh in arm.refreshes) > 0.030, (
@@ -808,11 +838,11 @@ def test_a_re_solved_visit_starts_from_the_motion_reference() -> None:
     arm = machine(profile=Profile.FULL_VISIT)
     riding = Candidate(
         track_id=1,
-        anchor=(0.10, 0.0, PINCH_Z),
-        flange=(0.10, 0.0, PICK_Z),
+        anchor=np.asarray((0.10, 0.0, PINCH_Z), dtype=np.float64),
+        flange=np.asarray((0.10, 0.0, PICK_Z), dtype=np.float64),
         closing_axis=math.pi / 2.0,
         distance_before_leaving=1.5,
-        velocity_world=(BELT_SPEED, 0.0, 0.0),
+        velocity_world=np.asarray((BELT_SPEED, 0.0, 0.0), dtype=np.float64),
     )
     arm.step(queue_of(riding), PARK, 0.0)
     assert arm.active is True
@@ -823,14 +853,17 @@ def test_a_re_solved_visit_starts_from_the_motion_reference() -> None:
     # The flange has lagged sideways off the path. The object has also jumped
     # across the belt far enough that the approach arc cannot be bent onto it,
     # so the visit is solved again -- and that solve must not start at the lag.
-    lagged = (reference_pose[0], reference_pose[1] - 0.35, reference_pose[2])
+    lagged = np.asarray(
+        (reference_pose[0], reference_pose[1] - 0.35, reference_pose[2]),
+        dtype=np.float64,
+    )
     jumped = Candidate(
         track_id=1,
-        anchor=(0.10, 0.45, PINCH_Z),
-        flange=(0.10, 0.45, PICK_Z),
+        anchor=np.asarray((0.10, 0.45, PINCH_Z), dtype=np.float64),
+        flange=np.asarray((0.10, 0.45, PICK_Z), dtype=np.float64),
         closing_axis=math.pi / 2.0,
         distance_before_leaving=1.5,
-        velocity_world=(BELT_SPEED, 0.0, 0.0),
+        velocity_world=np.asarray((BELT_SPEED, 0.0, 0.0), dtype=np.float64),
     )
     arm.step(queue_of(jumped), lagged, at)
     solved = [refresh for refresh in arm.refreshes if refresh.action == "solved"]
@@ -886,8 +919,8 @@ def test_the_tool_is_turned_to_where_the_object_will_be_facing() -> None:
     arm = machine(profile=Profile.FULL_VISIT)
     turning = Candidate(
         track_id=1,
-        anchor=(0.30, 0.0, PINCH_Z),
-        flange=(0.30, 0.0, PICK_Z),
+        anchor=np.asarray((0.30, 0.0, PINCH_Z), dtype=np.float64),
+        flange=np.asarray((0.30, 0.0, PICK_Z), dtype=np.float64),
         closing_axis=0.20,
         distance_before_leaving=1.5,
         yaw_rate_belt=0.10,
@@ -904,8 +937,8 @@ def test_the_tool_is_turned_to_where_the_object_will_be_facing() -> None:
     # one put its jaw 106.6 mm inside the belt over 67 ticks.
     spinning = Candidate(
         track_id=3,
-        anchor=(0.30, 0.0, PINCH_Z),
-        flange=(0.30, 0.0, PICK_Z),
+        anchor=np.asarray((0.30, 0.0, PINCH_Z), dtype=np.float64),
+        flange=np.asarray((0.30, 0.0, PICK_Z), dtype=np.float64),
         closing_axis=0.20,
         distance_before_leaving=1.5,
         yaw_rate_belt=5.40,
@@ -917,8 +950,8 @@ def test_the_tool_is_turned_to_where_the_object_will_be_facing() -> None:
     # was before: the claim is all there is to go on.
     still = Candidate(
         track_id=2,
-        anchor=(0.30, 0.0, PINCH_Z),
-        flange=(0.30, 0.0, PICK_Z),
+        anchor=np.asarray((0.30, 0.0, PINCH_Z), dtype=np.float64),
+        flange=np.asarray((0.30, 0.0, PICK_Z), dtype=np.float64),
         closing_axis=0.20,
         distance_before_leaving=1.5,
     )
@@ -952,11 +985,11 @@ def test_a_descent_moves_onto_where_the_object_is() -> None:
     arm = machine(profile=Profile.FULL_VISIT)
     riding = Candidate(
         track_id=1,
-        anchor=(0.30, 0.0, PINCH_Z),
-        flange=(0.30, 0.0, PICK_Z),
+        anchor=np.asarray((0.30, 0.0, PINCH_Z), dtype=np.float64),
+        flange=np.asarray((0.30, 0.0, PICK_Z), dtype=np.float64),
         closing_axis=0.20,
         distance_before_leaving=1.5,
-        velocity_world=(BELT_SPEED, 0.0, 0.0),
+        velocity_world=np.asarray((BELT_SPEED, 0.0, 0.0), dtype=np.float64),
     )
     arm.step(queue_of(riding), PARK, 0.0)
     at = _into_the_descent(arm)
@@ -968,13 +1001,18 @@ def test_a_descent_moves_onto_where_the_object_is() -> None:
     carried = 0.30 + BELT_SPEED * at
     shifted = Candidate(
         track_id=1,
-        anchor=(carried, 0.020, PINCH_Z),
-        flange=(carried, 0.020, PICK_Z),
+        anchor=np.asarray((carried, 0.020, PINCH_Z), dtype=np.float64),
+        flange=np.asarray((carried, 0.020, PICK_Z), dtype=np.float64),
         closing_axis=0.40,
         distance_before_leaving=1.5,
-        velocity_world=(BELT_SPEED, 0.0, 0.0),
+        velocity_world=np.asarray((BELT_SPEED, 0.0, 0.0), dtype=np.float64),
     )
-    arm._reaim(queue_of(shifted), PARK, (BELT_SPEED, 0.0, 0.0), at)
+    arm._reaim(
+        queue_of(shifted),
+        PARK,
+        np.asarray((BELT_SPEED, 0.0, 0.0), dtype=np.float64),
+        at,
+    )
     assert arm.active is True
     assert arm.abandoned == ()
     steered = arm.plan
@@ -1001,24 +1039,26 @@ def test_a_descent_is_not_given_up_when_the_correction_will_not_fit() -> None:
     arm = machine(profile=Profile.FULL_VISIT)
     riding = Candidate(
         track_id=1,
-        anchor=(0.30, 0.0, PINCH_Z),
-        flange=(0.30, 0.0, PICK_Z),
+        anchor=np.asarray((0.30, 0.0, PINCH_Z), dtype=np.float64),
+        flange=np.asarray((0.30, 0.0, PICK_Z), dtype=np.float64),
         closing_axis=math.pi / 2.0,
         distance_before_leaving=1.5,
-        velocity_world=(BELT_SPEED, 0.0, 0.0),
+        velocity_world=np.asarray((BELT_SPEED, 0.0, 0.0), dtype=np.float64),
     )
     arm.step(queue_of(riding), PARK, 0.0)
     at = _into_the_descent(arm)
     plan = arm.plan
     wild = Candidate(
         track_id=1,
-        anchor=(0.30, 10.0, PINCH_Z),
-        flange=(0.30, 10.0, PICK_Z),
+        anchor=np.asarray((0.30, 10.0, PINCH_Z), dtype=np.float64),
+        flange=np.asarray((0.30, 10.0, PICK_Z), dtype=np.float64),
         closing_axis=math.pi / 2.0,
         distance_before_leaving=1.5,
-        velocity_world=(BELT_SPEED, 0.0, 0.0),
+        velocity_world=np.asarray((BELT_SPEED, 0.0, 0.0), dtype=np.float64),
     )
-    arm._reaim(queue_of(wild), PARK, (BELT_SPEED, 0.0, 0.0), at)
+    arm._reaim(
+        queue_of(wild), PARK, np.asarray((BELT_SPEED, 0.0, 0.0), dtype=np.float64), at
+    )
     assert arm.active is True
     assert arm.abandoned == ()
     assert arm.plan is plan
@@ -1034,8 +1074,8 @@ def test_reaim_ignores_calls_once_the_jaw_is_shut() -> None:
     arm = machine(profile=Profile.FULL_VISIT)
     cand = Candidate(
         track_id=1,
-        anchor=(0.30, 0.0, PINCH_Z),
-        flange=(0.30, 0.0, PICK_Z),
+        anchor=np.asarray((0.30, 0.0, PINCH_Z), dtype=np.float64),
+        flange=np.asarray((0.30, 0.0, PICK_Z), dtype=np.float64),
         closing_axis=0.20,
         distance_before_leaving=1.5,
     )
@@ -1045,12 +1085,14 @@ def test_reaim_ignores_calls_once_the_jaw_is_shut() -> None:
     arm._phase = Phase.HOLD
     changed = Candidate(
         track_id=1,
-        anchor=(0.30, 0.0, PINCH_Z),
-        flange=(0.30, 0.0, PICK_Z),
+        anchor=np.asarray((0.30, 0.0, PINCH_Z), dtype=np.float64),
+        flange=np.asarray((0.30, 0.0, PICK_Z), dtype=np.float64),
         closing_axis=0.80,
         distance_before_leaving=1.5,
     )
-    arm._reaim(queue_of(changed), PARK, (0.0, 0.0, 0.0), 0.50)
+    arm._reaim(
+        queue_of(changed), PARK, np.asarray((0.0, 0.0, 0.0), dtype=np.float64), 0.50
+    )
     assert arm._plan_yaw == pytest.approx(0.20)
 
 
@@ -1071,12 +1113,12 @@ def test_the_task_machine_narrates_the_visit() -> None:
     arm = machine(
         profile=Profile.FULL_VISIT,
         story=story,
-        chutes={"CH-PET": (0.20, -0.80, BELT_SURFACE)},
+        chutes={"CH-PET": np.asarray((0.20, -0.80, BELT_SURFACE), dtype=np.float64)},
     )
     only = Candidate(
         track_id=1,
-        anchor=(0.30, 0.0, PINCH_Z),
-        flange=(0.30, 0.0, PICK_Z),
+        anchor=np.asarray((0.30, 0.0, PINCH_Z), dtype=np.float64),
+        flange=np.asarray((0.30, 0.0, PICK_Z), dtype=np.float64),
         closing_axis=math.pi / 2.0,
         distance_before_leaving=1.5,
         channel="CH-PET",
@@ -1089,8 +1131,8 @@ def test_the_task_machine_narrates_the_visit() -> None:
 
     carried = Candidate(
         track_id=1,
-        anchor=(0.30 + BELT_SPEED * 0.20, 0.0, PINCH_Z),
-        flange=(0.30 + BELT_SPEED * 0.20, 0.0, PICK_Z),
+        anchor=np.asarray((0.30 + BELT_SPEED * 0.20, 0.0, PINCH_Z), dtype=np.float64),
+        flange=np.asarray((0.30 + BELT_SPEED * 0.20, 0.0, PICK_Z), dtype=np.float64),
         closing_axis=math.pi / 2.0,
         distance_before_leaving=1.5,
         channel="CH-PET",
@@ -1144,8 +1186,8 @@ def test_the_task_machine_narrates_the_visit() -> None:
     missed = machine(profile=Profile.FULL_VISIT, story=story)
     leaving = Candidate(
         track_id=7,
-        anchor=(0.30, 0.0, PINCH_Z),
-        flange=(0.30, 0.0, PICK_Z),
+        anchor=np.asarray((0.30, 0.0, PINCH_Z), dtype=np.float64),
+        flange=np.asarray((0.30, 0.0, PICK_Z), dtype=np.float64),
         closing_axis=0.0,
         distance_before_leaving=0.01,
         channel="CH-REJECT",
@@ -1169,8 +1211,8 @@ def test_a_motion_only_visit_narrates_the_track_and_the_arrival() -> None:
     arm = machine(story=story)
     head = Candidate(
         track_id=7,
-        anchor=(0.30, 0.0, PINCH_Z),
-        flange=(0.30, 0.0, PICK_Z),
+        anchor=np.asarray((0.30, 0.0, PINCH_Z), dtype=np.float64),
+        flange=np.asarray((0.30, 0.0, PICK_Z), dtype=np.float64),
         closing_axis=None,
         distance_before_leaving=1.5,
         channel="CH-FIBER",

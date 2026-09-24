@@ -818,8 +818,8 @@ thing, which is the anchors.
 class Candidate:
     """One marker, scored where its anchor stands."""
     track_id: int
-    anchor: Point                  # where selection scores it
-    flange: Point                  # where the marker wants the flange
+    anchor: NDArray[np.float64]    # where selection scores it
+    flange: NDArray[np.float64]    # where the marker wants the flange
     closing_axis: float | None     # None when the footprint has no axis
     distance_before_leaving: float # belt speed times the time left
 
@@ -835,7 +835,10 @@ class Queue:
 class Selector:
     """Holds the anchors. The one mutable object in the control path."""
     def update(
-        self, markers: tuple[GraspMarker, ...], flange: Point, belt_speed: float
+        self,
+        markers: tuple[GraspMarker, ...],
+        flange: NDArray[np.float64],
+        belt_speed: float,
     ) -> Queue: ...
 ```
 
@@ -859,13 +862,16 @@ class Profile(enum.Enum):
 class Goal:
     """Where the phase wants the flange, and which phase asked."""
     phase: Phase
-    position: Point
+    position: NDArray[np.float64]
     yaw: float | None             # None holds the rotation the arm has
     track_id: int | None
 
 class TaskMachine:
     def step(
-        self, queue: Queue, flange: Point, at_seconds: float,
+        self,
+        queue: Queue,
+        flange: NDArray[np.float64],
+        at_seconds: float,
         refusal: str | None = None,
     ) -> Goal: ...
 ```
@@ -876,12 +882,15 @@ class TaskMachine:
 @dataclass(frozen=True)
 class Command:
     """The pose to command this tick."""
-    position: Point
+    position: NDArray[np.float64]
     yaw: float | None
 
 def toward(
-    flange: Point, goal: Goal, belt_speed: float,
-    timestep: float, limits: MotionSettings,
+    flange: NDArray[np.float64],
+    goal: Goal,
+    belt_speed: float,
+    timestep: float,
+    limits: MotionSettings,
 ) -> Command: ...
 ```
 

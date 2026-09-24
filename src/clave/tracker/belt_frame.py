@@ -24,6 +24,9 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
+import numpy as np
+from numpy.typing import NDArray
+
 from clave.errors import ClaveError
 
 NANOS_PER_SECOND = 1_000_000_000
@@ -51,7 +54,7 @@ class Footprint:
             layer acts on it.
     """
 
-    center_belt: tuple[float, float, float]
+    center_belt: NDArray[np.float64]
     major_extent: float
     minor_extent: float
     yaw_belt: float
@@ -59,28 +62,39 @@ class Footprint:
 
     def __init__(
         self,
-        center_belt: tuple[float, float, float] | None = None,
+        center_belt: NDArray[np.float64] | None = None,
         major_extent: float = 0.0,
         minor_extent: float = 0.0,
         yaw_belt: float | None = None,
         oriented: bool = True,
         *,
-        center: tuple[float, float, float] | None = None,
+        center: NDArray[np.float64] | None = None,
         yaw: float | None = None,
     ) -> None:
         c = center_belt if center_belt is not None else center
         if c is None:
             raise TypeError("Footprint requires center_belt or center")
         y = yaw_belt if yaw_belt is not None else (0.0 if yaw is None else yaw)
-        object.__setattr__(self, "center_belt", c)
+        object.__setattr__(self, "center_belt", np.asarray(c, dtype=np.float64))
         object.__setattr__(self, "major_extent", major_extent)
         object.__setattr__(self, "minor_extent", minor_extent)
         object.__setattr__(self, "yaw_belt", y)
         object.__setattr__(self, "oriented", oriented)
         self.__post_init__()
 
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Footprint):
+            return NotImplemented
+        return (
+            bool(np.allclose(self.center_belt, other.center_belt, rtol=0.0, atol=1e-12))
+            and self.major_extent == other.major_extent
+            and self.minor_extent == other.minor_extent
+            and self.yaw_belt == other.yaw_belt
+            and self.oriented == other.oriented
+        )
+
     @property
-    def center(self) -> tuple[float, float, float]:
+    def center(self) -> NDArray[np.float64]:
         """Backwards compatibility alias for center_belt."""
         return self.center_belt
 
@@ -128,13 +142,13 @@ def elapsed_seconds(earlier_nanos: int, later_nanos: int) -> float:
 
 
 def carry(
-    position_belt: tuple[float, float, float] | None = None,
+    position_belt: NDArray[np.float64] | None = None,
     belt_speed: float = 0.0,
     observed_at_nanos: int = 0,
     to_nanos: int = 0,
     *,
-    point: tuple[float, float, float] | None = None,
-) -> tuple[float, float, float]:
+    point: NDArray[np.float64] | None = None,
+) -> NDArray[np.float64]:
     """Carry one point along the belt to a later instant.
 
     The belt drives `x` and leaves everything else to physics, and this is
@@ -165,7 +179,9 @@ def carry(
             f"nowhere describes no line this can propagate along"
         )
     travel = belt_speed * elapsed_seconds(observed_at_nanos, to_nanos)
-    return p[0] + travel, p[1], p[2]
+    result = np.asarray(p, dtype=np.float64).copy()
+    result[0] += travel
+    return result
 
 
 def propagate(

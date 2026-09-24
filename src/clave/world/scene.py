@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+from numpy.typing import NDArray
 
 from clave.world import arm
 from clave.world.config import WorldConfigError, require, require_range
@@ -158,7 +159,7 @@ class SceneLayout:
     """
 
     belt: BeltGeometry
-    arm_base: tuple[float, float, float]
+    arm_base: NDArray[np.float64]
     reach_min: float
     reach_max: float
     tool_above_base: tuple[float, float]
@@ -168,8 +169,46 @@ class SceneLayout:
     pool_size: int
     timestep: float
     takeaway: TakeawayDrive
-    chutes: dict[str, tuple[float, float, float]] = field(default_factory=dict)
+    chutes: dict[str, NDArray[np.float64]] = field(default_factory=dict)
     dressed: bool = False
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self, "arm_base", np.asarray(self.arm_base, dtype=np.float64)
+        )
+        object.__setattr__(
+            self,
+            "chutes",
+            {
+                channel: np.asarray(mouth, dtype=np.float64)
+                for channel, mouth in self.chutes.items()
+            },
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, SceneLayout):
+            return NotImplemented
+        if self.chutes.keys() != other.chutes.keys():
+            return False
+        chutes_match = all(
+            bool(np.allclose(self.chutes[key], other.chutes[key], rtol=0.0, atol=1e-12))
+            for key in self.chutes
+        )
+        return (
+            self.belt == other.belt
+            and bool(np.allclose(self.arm_base, other.arm_base, rtol=0.0, atol=1e-12))
+            and self.reach_min == other.reach_min
+            and self.reach_max == other.reach_max
+            and self.tool_above_base == other.tool_above_base
+            and self.pedestal == other.pedestal
+            and self.channels == other.channels
+            and self.objects == other.objects
+            and self.pool_size == other.pool_size
+            and self.timestep == other.timestep
+            and self.takeaway == other.takeaway
+            and chutes_match
+            and self.dressed == other.dressed
+        )
 
 
 def _arm_spec(root: Path) -> Any:
@@ -320,7 +359,9 @@ def layout(raw: dict[str, Any], rng: np.random.Generator) -> SceneLayout:
     pedestal = require(arm_cfg, "pedestal_footprint_meters", "arm")
     return SceneLayout(
         belt=belt,
-        arm_base=(float(base[0]), float(base[1]), float(base[2])),
+        arm_base=np.asarray(
+            (float(base[0]), float(base[1]), float(base[2])), dtype=np.float64
+        ),
         reach_min=float(require(arm_cfg, "reach_min_meters", "arm")),
         reach_max=float(require(arm_cfg, "reach_max_meters", "arm")),
         tool_above_base=(float(band[0]), float(band[1])),
@@ -578,7 +619,7 @@ def _refuse_over_pedestal(
 
 def _chute_mouths(
     cfg: dict[str, Any], names: tuple[str, ...], surface: float
-) -> dict[str, tuple[float, float, float]]:
+) -> dict[str, NDArray[np.float64]]:
     """Return where each channel's chute mouth stands.
 
     Args:
@@ -596,7 +637,9 @@ def _chute_mouths(
     first = float(require(cfg, "first_position_meters", "chutes"))
     spacing = float(require(cfg, "spacing_meters", "chutes"))
     return {
-        channel: (first + index * spacing, offset, surface)
+        channel: np.asarray(
+            (first + index * spacing, offset, surface), dtype=np.float64
+        )
         for index, channel in enumerate(names)
     }
 

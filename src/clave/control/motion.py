@@ -24,13 +24,14 @@ traverse. Belt speed is known here rather than estimated.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
+from numpy.typing import NDArray
 
-from clave.control.settings import MotionSettings, Point
+from clave.control.settings import MotionSettings
 from clave.control.task import Goal
-from clave.control.trajectory import clip, distance
+from clave.control.trajectory import clip, distance, same, zeros
 from clave.tracker.belt_frame import carry
 
 NANOS_PER_SECOND = 1_000_000_000
@@ -49,8 +50,13 @@ class Reference:
             in velocity every time it starts.
     """
 
-    position: Point
+    position: NDArray[np.float64]
     speed: float
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Reference):
+            return NotImplemented
+        return same(self.position, other.position) and self.speed == other.speed
 
 
 @dataclass(frozen=True)
@@ -73,11 +79,24 @@ class Command:
             which is how a caller asks for one pose and nothing else.
     """
 
-    position: Point
+    position: NDArray[np.float64]
     yaw: float | None
     speed: float = 0.0
-    velocity: Point = (0.0, 0.0, 0.0)
-    aim: Point | None = None
+    velocity: NDArray[np.float64] = field(default_factory=zeros)
+    aim: NDArray[np.float64] | None = None
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Command):
+            return NotImplemented
+        if self.yaw != other.yaw or self.speed != other.speed:
+            return False
+        if not same(self.position, other.position):
+            return False
+        if not same(self.velocity, other.velocity):
+            return False
+        if self.aim is None or other.aim is None:
+            return self.aim is other.aim
+        return same(self.aim, other.aim)
 
 
 def toward(
@@ -87,7 +106,7 @@ def toward(
     limits: MotionSettings,
     belt_speed: float,
     at_nanos: int,
-    keep_inside: Callable[[Point], Point] | None = None,
+    keep_inside: Callable[[NDArray[np.float64]], NDArray[np.float64]] | None = None,
 ) -> Command:
     """Return the pose to command one tick along the way to a goal.
 
@@ -135,31 +154,25 @@ def toward(
         return Command(position=inside(aim), speed=settling, yaw=goal.yaw, aim=aim)
 
     fraction = reach / remaining
-    stepped = tuple(
-        place + (wanted - place) * fraction
-        for place, wanted in zip(reference.position, aim, strict=True)
-    )
-    direction = tuple(
-        (wanted - place) / remaining
-        for place, wanted in zip(reference.position, aim, strict=True)
-    )
+    stepped = reference.position + (aim - reference.position) * fraction
+    direction = (aim - reference.position) / remaining
     return Command(
-        position=inside((stepped[0], stepped[1], stepped[2])),
+        position=inside(stepped),
         speed=speed,
-        velocity=(direction[0] * speed, direction[1] * speed, direction[2] * speed),
+        velocity=direction * speed,
         yaw=goal.yaw,
         aim=aim,
     )
 
 
 def _intercept(
-    reference: Point,
+    reference: NDArray[np.float64],
     goal: Goal,
     max_speed: float,
     belt_speed: float,
     at_nanos: int,
     passes: int,
-) -> Point:
+) -> NDArray[np.float64]:
     """Return where to aim, ahead of a goal the belt is carrying.
 
     Args:
@@ -224,7 +237,7 @@ def _speed(
     return max(wanted, max(0.0, speed - step))
 
 
-def _unchanged(pose: Point) -> Point:
+def _unchanged(pose: NDArray[np.float64]) -> NDArray[np.float64]:
     """Return the pose as given, for a caller that supplied no constraint.
 
     Args:

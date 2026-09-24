@@ -27,6 +27,9 @@ from __future__ import annotations
 import math
 from collections.abc import Mapping
 
+import numpy as np
+from numpy.typing import NDArray
+
 from clave.errors import ClaveError
 from clave.tracker.belt_frame import Footprint, FrameError, NadirOptics
 from clave.tracker.evidence import Detection, Evidence, PixelMask, Role
@@ -47,7 +50,7 @@ class DetectionError(ClaveError):
 def to_belt(
     column: float,
     row: float,
-    camera: tuple[float, float, float],
+    camera: NDArray[np.float64],
     optics: NadirOptics,
     surface_height: float,
     render: tuple[int, int],
@@ -74,8 +77,8 @@ def to_belt(
     except FrameError as error:
         raise DetectionError(str(error)) from error
     return (
-        camera[0] + (column - width / 2.0) * metres,
-        camera[1] - (row - height / 2.0) * metres,
+        float(camera[0]) + (column - width / 2.0) * metres,
+        float(camera[1]) - (row - height / 2.0) * metres,
     )
 
 
@@ -124,7 +127,7 @@ def detections_from_masks(
     masks: Mapping[str, PixelMask],
     source_id: str,
     observed_at_nanos: int,
-    camera: tuple[float, float, float],
+    camera: NDArray[np.float64],
     optics: NadirOptics,
     surface_height: float,
     render: tuple[int, int],
@@ -186,7 +189,7 @@ def detections_from_masks(
                 confidence=_confidence_of(mask),
                 payload=Detection(
                     footprint=Footprint(
-                        center=(x, y, surface_height),
+                        center=np.asarray((x, y, surface_height), dtype=np.float64),
                         major_extent=major * metres,
                         minor_extent=minor * metres,
                         # The row axis is inverted, so a yaw measured in image
@@ -209,7 +212,7 @@ def _along_travel(reading: Evidence) -> float:
     """Return how far along the belt one detection sits."""
     payload = reading.payload
     assert isinstance(payload, Detection)
-    return payload.footprint.center[0]
+    return float(payload.footprint.center[0])
 
 
 def _metres_per_pixel(

@@ -12,6 +12,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import numpy as np
+from numpy.typing import NDArray
+
 from clave.data.examples import ObjectLabel
 from clave.taxonomy import channel_of
 
@@ -30,7 +33,22 @@ class PickDecision:
     object_id: int
     material_class: str
     channel: str
-    position: tuple[float, float, float]
+    position: NDArray[np.float64]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self, "position", np.asarray(self.position, dtype=np.float64)
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, PickDecision):
+            return NotImplemented
+        return (
+            self.object_id == other.object_id
+            and self.material_class == other.material_class
+            and self.channel == other.channel
+            and bool(np.allclose(self.position, other.position, rtol=0.0, atol=1e-12))
+        )
 
 
 def decide(labels: tuple[ObjectLabel, ...], window_exit: float) -> PickDecision | None:

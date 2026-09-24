@@ -36,6 +36,9 @@ import math
 from dataclasses import dataclass
 from enum import Enum
 
+import numpy as np
+from numpy.typing import NDArray
+
 from clave.errors import ClaveError
 from clave.taxonomy import BY_ID, CLASS_COUNT
 from clave.tracker.belt_frame import Footprint
@@ -237,14 +240,26 @@ class GroundTruth:
 
     object_id: int
     material_class: str
-    position: tuple[float, float, float]
+    position: NDArray[np.float64]
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, GroundTruth):
+            return NotImplemented
+        return (
+            self.object_id == other.object_id
+            and self.material_class == other.material_class
+            and bool(np.allclose(self.position, other.position, rtol=0.0, atol=1e-12))
+        )
 
     def __post_init__(self) -> None:
-        """Refuse a class the taxonomy does not define.
+        """Refuse a class the taxonomy does not define, and coerce position.
 
         Raises:
             EvidenceError: If the material class is unknown, naming it.
         """
+        object.__setattr__(
+            self, "position", np.asarray(self.position, dtype=np.float64)
+        )
         if self.material_class not in BY_ID:
             raise EvidenceError(
                 f"object {self.object_id} carries material class "

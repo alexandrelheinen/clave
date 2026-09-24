@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import yaml
 
 from clave.demo.video import VideoSettings
@@ -104,7 +105,7 @@ def _video(raw: Any, path: Path) -> VideoSettings | None:
         azimuth=float(_require(raw, "azimuth_degrees", "video")),
         elevation=float(_require(raw, "elevation_degrees", "video")),
         distance=float(_require(raw, "distance_meters", "video")),
-        lookat=(lookat[0], lookat[1], lookat[2]),
+        lookat=np.asarray((lookat[0], lookat[1], lookat[2]), dtype=np.float64),
     )
 
 

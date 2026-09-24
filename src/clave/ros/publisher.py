@@ -16,6 +16,9 @@ import math
 from dataclasses import dataclass
 from typing import Any
 
+import numpy as np
+from numpy.typing import NDArray
+
 from clave.ros.decisions import NANOS_PER_SECOND, DecisionError, PublishedDecision
 from clave.ros.decisions import decode as decode_decision
 
@@ -58,9 +61,30 @@ class DetectionFields:
     class_id: str
     confidence: float
     channel_id: str
-    position: tuple[float, float, float]
+    position: NDArray[np.float64]
     orientation: tuple[float, float, float, float]
     window_seconds: float
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self, "position", np.asarray(self.position, dtype=np.float64)
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, DetectionFields):
+            return NotImplemented
+        return (
+            self.frame_id == other.frame_id
+            and self.stamp_sec == other.stamp_sec
+            and self.stamp_nanosec == other.stamp_nanosec
+            and self.object_id == other.object_id
+            and self.class_id == other.class_id
+            and self.confidence == other.confidence
+            and self.channel_id == other.channel_id
+            and bool(np.allclose(self.position, other.position, rtol=0.0, atol=1e-12))
+            and self.orientation == other.orientation
+            and self.window_seconds == other.window_seconds
+        )
 
 
 def fields_for(decision: PublishedDecision, frame_id: str) -> DetectionFields:

@@ -14,7 +14,7 @@ def label(object_id: int, material: str, x: float, reachable: bool) -> ObjectLab
         object_id=object_id,
         material_class=material,
         channel="CH-PET",
-        position=(x, 0.0, 0.4),
+        position=np.asarray((x, 0.0, 0.4), dtype=np.float64),
         in_reachable_window=reachable,
     )
 
@@ -24,7 +24,7 @@ def test_a_label_carries_class_identity_and_position() -> None:
     item = label(3, "M-05", 0.1, True)
     assert item.object_id == 3
     assert item.material_class == "M-05"
-    assert item.position == (0.1, 0.0, 0.4)
+    assert item.position == pytest.approx((0.1, 0.0, 0.4))
 
 
 def test_a_label_records_whether_the_object_was_reachable() -> None:
@@ -105,7 +105,7 @@ def test_visible_labels_excludes_objects_outside_the_frame() -> None:
         object_id=1,
         material_class="M-01",
         channel="CH-PET",
-        position=(0.0, 0.0, 0.4),
+        position=np.asarray((0.0, 0.0, 0.4), dtype=np.float64),
         in_reachable_window=True,
         bbox=(10, 20, 30, 40),
     )

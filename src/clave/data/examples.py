@@ -59,21 +59,36 @@ class ObjectLabel:
     object_id: int
     material_class: str
     channel: str
-    position: tuple[float, float, float]
+    position: NDArray[np.float64]
     in_reachable_window: bool
     bbox: tuple[int, int, int, int] | None = None
 
     def __post_init__(self) -> None:
-        """Refuse a class the taxonomy does not define.
+        """Refuse a class the taxonomy does not define, and coerce position.
 
         Raises:
             LabelError: If the material class is unknown, naming it.
         """
+        object.__setattr__(
+            self, "position", np.asarray(self.position, dtype=np.float64)
+        )
         if self.material_class not in BY_ID:
             raise LabelError(
                 f"object {self.object_id} carries material class "
                 f"{self.material_class!r}, which is not in the taxonomy"
             )
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, ObjectLabel):
+            return NotImplemented
+        return (
+            self.object_id == other.object_id
+            and self.material_class == other.material_class
+            and self.channel == other.channel
+            and bool(np.allclose(self.position, other.position, rtol=0.0, atol=1e-12))
+            and self.in_reachable_window == other.in_reachable_window
+            and self.bbox == other.bbox
+        )
 
     def as_dict(self) -> dict[str, Any]:
         """Render as plain data for the dataset index."""

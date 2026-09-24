@@ -60,10 +60,10 @@ from clave.control.motion import Command, Reference, toward
 from clave.control.pick import JAW_OPEN
 from clave.control.selection import Selector, pickable_in_belt
 from clave.control.servo import follow
-from clave.control.settings import ControlSettings, Phase, Point
+from clave.control.settings import ControlSettings, Phase
 from clave.control.story import AnomalyWatch, StoryLog
 from clave.control.task import TaskMachine
-from clave.control.trajectory import distance, norm
+from clave.control.trajectory import distance, norm, zeros
 from clave.errors import ClaveError
 from clave.taxonomy import channel_of
 from clave.tracker.adapters.detection import detections_from_masks
@@ -817,7 +817,7 @@ def run(
 
     base_xy = (float(indices.base_position[0]), float(indices.base_position[1]))
 
-    def keep_inside(pose: tuple[float, float, float]) -> tuple[float, float, float]:
+    def keep_inside(pose: NDArray[np.float64]) -> NDArray[np.float64]:
         """Push a pose back into the region the arm is trusted over.
 
         All three axes. Correcting only the horizontal ones leaves a
@@ -830,16 +830,21 @@ def run(
         Returns:
             The pose, unchanged where it was already inside.
         """
-        x, y = armmod.project_into_reach(base_xy, pose[0], pose[1], indices.reach)
-        return (
-            x,
-            y,
-            armmod.project_into_band(
-                float(indices.base_position[2]), pose[2], indices.reach
+        x, y = armmod.project_into_reach(
+            base_xy, float(pose[0]), float(pose[1]), indices.reach
+        )
+        return np.asarray(
+            (
+                x,
+                y,
+                armmod.project_into_band(
+                    float(indices.base_position[2]), float(pose[2]), indices.reach
+                ),
             ),
+            dtype=np.float64,
         )
 
-    def admits(pose: tuple[float, float, float]) -> bool:
+    def admits(pose: NDArray[np.float64]) -> bool:
         """Whether the arm is trusted at a pose.
 
         Args:
@@ -850,7 +855,7 @@ def run(
             Selection and planning ask the same question of the same
             function, so the queue cannot offer what a plan would refuse.
         """
-        return bool(armmod.reachable(indices, np.array(pose, dtype=float)))
+        return bool(armmod.reachable(indices, np.asarray(pose, dtype=float)))
 
     selector = Selector(
         control.selection,
@@ -932,7 +937,7 @@ def run(
     motion = Reference(position=_flange(indices, data), speed=0.0)
     # And which way it is going, which a plan needs so its first arc begins
     # where the motion already is instead of asking for a step in velocity.
-    moving: Point = (0.0, 0.0, 0.0)
+    moving: NDArray[np.float64] = zeros()
     # The furthest any joint may be commanded to move in one tick. Near a
     # wrist singularity the damped solve still asks for a large joint motion
     # to buy a small Cartesian one, and this is what keeps the command
@@ -1136,7 +1141,7 @@ def run(
                 lurch, climb = 0.0, 0.0
                 resting = {}
                 goal = None
-                moving = (0.0, 0.0, 0.0)
+                moving = zeros()
                 motion = Reference(position=keep_inside(place), speed=0.0)
             elif goal is not None:
                 command = toward(
@@ -1363,7 +1368,10 @@ def run(
                         payload=GroundTruth(
                             object_id=item.index,
                             material_class=item.material_class,
-                            position=(position[0], position[1], position[2]),
+                            position=np.asarray(
+                                (position[0], position[1], position[2]),
+                                dtype=np.float64,
+                            ),
                         ),
                     ),
                     at_nanos=now,
@@ -1441,7 +1449,7 @@ def run(
                 # the reference inside it is what turned one refusal into
                 # every refusal after it.
                 motion = Reference(position=keep_inside(flange), speed=0.0)
-                moving = (0.0, 0.0, 0.0)
+                moving = zeros()
             if task.active and not resting:
                 # Snapshot how high everything is lying before the arm
                 # touches anything, so a lift is measured against where the
@@ -1759,7 +1767,7 @@ def _open_window(cv2: Any, wanted: bool) -> tuple[bool, str | None]:
 
 
 def _park_the_arm(
-    mujoco: Any, model: Any, data: Any, indices: Any, park: tuple[float, ...]
+    mujoco: Any, model: Any, data: Any, indices: Any, park: NDArray[np.float64]
 ) -> None:
     """Put the arm at its park pose before the run starts.
 
@@ -1787,7 +1795,7 @@ def _park_the_arm(
     mujoco.mj_forward(model, data)
 
 
-def _pinch_position_world(indices: Any, data: Any) -> tuple[float, float, float]:
+def _pinch_position_world(indices: Any, data: Any) -> NDArray[np.float64]:
     """Return where the jaw closes, as three meters in world frame.
 
     Args:
@@ -1800,13 +1808,15 @@ def _pinch_position_world(indices: Any, data: Any) -> tuple[float, float, float]
         and this is where the object actually ends up.
     """
     place = data.site_xpos[indices.pinch_site]
-    return float(place[0]), float(place[1]), float(place[2])
+    return np.asarray(
+        (float(place[0]), float(place[1]), float(place[2])), dtype=np.float64
+    )
 
 
 _pinch = _pinch_position_world
 
 
-def _flange_position_world(indices: Any, data: Any) -> tuple[float, float, float]:
+def _flange_position_world(indices: Any, data: Any) -> NDArray[np.float64]:
     """Return where the flange stands, as three meters in world frame.
 
     Args:
@@ -1817,7 +1827,9 @@ def _flange_position_world(indices: Any, data: Any) -> tuple[float, float, float
         The position.
     """
     place = armmod.end_effector_position(data, indices)
-    return float(place[0]), float(place[1]), float(place[2])
+    return np.asarray(
+        (float(place[0]), float(place[1]), float(place[2])), dtype=np.float64
+    )
 
 
 _flange = _flange_position_world
@@ -1825,7 +1837,7 @@ _flange = _flange_position_world
 
 def _object_position_world(
     mujoco: Any, model: Any, data: Any, name: str
-) -> tuple[float, float, float]:
+) -> NDArray[np.float64]:
     """Return where one conveyor object stands, as three meters in world frame.
 
     Args:
@@ -1842,7 +1854,9 @@ def _object_position_world(
     """
     body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, name)
     place = data.xipos[body]
-    return float(place[0]), float(place[1]), float(place[2])
+    return np.asarray(
+        (float(place[0]), float(place[1]), float(place[2])), dtype=np.float64
+    )
 
 
 _object_place = _object_position_world
@@ -1853,7 +1867,7 @@ def _placed(
     model: Any,
     data: Any,
     conveyor: Any,
-    chutes: dict[str, tuple[float, float, float]],
+    chutes: dict[str, NDArray[np.float64]],
     mouth: tuple[float, float],
     surface: float,
 ) -> dict[str, str]:
@@ -1911,7 +1925,7 @@ def _resting(mujoco: Any, model: Any, data: Any, conveyor: Any) -> dict[str, flo
 
 
 def _in_the_jaw(
-    mujoco: Any, model: Any, data: Any, conveyor: Any, pinch: tuple[float, float, float]
+    mujoco: Any, model: Any, data: Any, conveyor: Any, pinch: NDArray[np.float64]
 ) -> tuple[str, float] | None:
     """Return the object the jaw is closed on, and how far off center it sits.
 
@@ -2005,7 +2019,7 @@ def _short_axis_degrees(mujoco: Any, model: Any, data: Any, name: str) -> float 
 
 def _free_velocity(
     mujoco: Any, model: Any, data: Any, name: str
-) -> tuple[Point, float] | None:
+) -> tuple[NDArray[np.float64], float] | None:
     """Return a free body's linear velocity and its spin about the belt normal.
 
     Args:
@@ -2025,10 +2039,13 @@ def _free_velocity(
     if joint < 0 or model.jnt_type[joint] != mujoco.mjtJoint.mjJNT_FREE:
         return None
     address = int(model.jnt_dofadr[joint])
-    linear = (
-        float(data.qvel[address]),
-        float(data.qvel[address + 1]),
-        float(data.qvel[address + 2]),
+    linear = np.asarray(
+        (
+            float(data.qvel[address]),
+            float(data.qvel[address + 1]),
+            float(data.qvel[address + 2]),
+        ),
+        dtype=np.float64,
     )
     geom = int(model.body_geomadr[body])
     rotation = data.geom_xmat[geom].reshape(3, 3)
@@ -2044,7 +2061,7 @@ def _log_closure(
     indices: Any,
     name: str,
     command: Command,
-    flange: Point,
+    flange: NDArray[np.float64],
 ) -> None:
     """Log where a closing jaw sat relative to the object and to its command.
 
@@ -2069,11 +2086,16 @@ def _log_closure(
     origin = _body_origin(mujoco, model, data, name)
     centroid = _geometric_center(mujoco, model, data, name)
 
-    def _offset(left: Point, right: Point) -> tuple[float, float, float]:
-        return (
-            (left[0] - right[0]) * 1000.0,
-            (left[1] - right[1]) * 1000.0,
-            (left[2] - right[2]) * 1000.0,
+    def _offset(
+        left: NDArray[np.float64], right: NDArray[np.float64]
+    ) -> NDArray[np.float64]:
+        return np.asarray(
+            (
+                (float(left[0]) - float(right[0])) * 1000.0,
+                (float(left[1]) - float(right[1])) * 1000.0,
+                (float(left[2]) - float(right[2])) * 1000.0,
+            ),
+            dtype=np.float64,
         )
 
     gap = _offset(pinch, center)
@@ -2107,7 +2129,7 @@ def _log_closure(
         velocity = f"({linear[0]:+.3f}, {linear[1]:+.3f}, {linear[2]:+.3f})"
         spin = f"{rate:+.2f}"
 
-    def _millimetres(offset: tuple[float, float, float] | None) -> str:
+    def _millimetres(offset: NDArray[np.float64] | None) -> str:
         if offset is None:
             return "n/a"
         return f"({offset[0]:+.0f}, {offset[1]:+.0f}, {offset[2]:+.0f})"
@@ -2143,7 +2165,9 @@ def _log_closure(
     )
 
 
-def _body_origin(mujoco: Any, model: Any, data: Any, name: str) -> Point | None:
+def _body_origin(
+    mujoco: Any, model: Any, data: Any, name: str
+) -> NDArray[np.float64] | None:
     """Return a body's frame origin, which is where a marker is drawn from.
 
     Args:
@@ -2161,10 +2185,14 @@ def _body_origin(mujoco: Any, model: Any, data: Any, name: str) -> Point | None:
     if body < 0:
         return None
     place = data.xpos[body]
-    return float(place[0]), float(place[1]), float(place[2])
+    return np.asarray(
+        (float(place[0]), float(place[1]), float(place[2])), dtype=np.float64
+    )
 
 
-def _geometric_center(mujoco: Any, model: Any, data: Any, name: str) -> Point | None:
+def _geometric_center(
+    mujoco: Any, model: Any, data: Any, name: str
+) -> NDArray[np.float64] | None:
     """Return the centre of an object's geometry in the world, not its origin.
 
     Args:
@@ -2196,7 +2224,9 @@ def _geometric_center(mujoco: Any, model: Any, data: Any, name: str) -> Point | 
     else:
         local = np.zeros(3)
     world = rotation @ local + origin
-    return float(world[0]), float(world[1]), float(world[2])
+    return np.asarray(
+        (float(world[0]), float(world[1]), float(world[2])), dtype=np.float64
+    )
 
 
 def _body_yaw(mujoco: Any, model: Any, data: Any, name: str) -> float | None:
@@ -2281,7 +2311,7 @@ def _view(raw: dict[str, Any], wanted: str | None) -> dict[str, Any]:
     return dict(views[name])
 
 
-def _lookat(view: dict[str, Any]) -> tuple[float, float, float]:
+def _lookat(view: dict[str, Any]) -> NDArray[np.float64]:
     """Return what the camera points at, as three meters.
 
     Args:
@@ -2299,7 +2329,7 @@ def _lookat(view: dict[str, Any]) -> tuple[float, float, float]:
             f"view.lookat_meters holds {len(values)} numbers, and a camera "
             f"target is three"
         )
-    return values[0], values[1], values[2]
+    return np.asarray((values[0], values[1], values[2]), dtype=np.float64)
 
 
 def _write_beliefs(path: Path, capture: int, at_nanos: int, records: Any) -> None:
@@ -2364,7 +2394,7 @@ def _trajectory_on(
     task: TaskMachine,
     at_seconds: float,
     horizon_seconds: float,
-    flange: Point,
+    flange: NDArray[np.float64],
 ) -> int:
     """Draw the active plan's future path and discrete pose indicators."""
     import mujoco
@@ -2379,7 +2409,7 @@ def _trajectory_on(
     if end <= start:
         return added
     count = max(2, int(math.ceil((end - start) * 12.0)) + 1)
-    samples: list[tuple[Point, tuple[float, float, float, float]]] = []
+    samples: list[tuple[NDArray[np.float64], tuple[float, float, float, float]]] = []
     for index in range(count):
         instant = start + (end - start) * index / (count - 1)
         sampled = plan.at(instant)
@@ -2417,7 +2447,7 @@ def _trajectory_color(phase: Phase) -> tuple[float, float, float, float]:
 
 def _trajectory_sphere(
     scene: Any,
-    position: Point,
+    position: NDArray[np.float64],
     radius: float,
     color: tuple[float, float, float, float],
 ) -> int:
@@ -2440,8 +2470,8 @@ def _trajectory_sphere(
 
 def _trajectory_segment(
     scene: Any,
-    start: Point,
-    end: Point,
+    start: NDArray[np.float64],
+    end: NDArray[np.float64],
     color: tuple[float, float, float, float],
 ) -> int:
     """Add a thin capsule between two future trajectory samples."""

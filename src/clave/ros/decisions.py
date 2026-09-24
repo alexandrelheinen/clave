@@ -13,6 +13,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+from numpy.typing import NDArray
+
 from clave.errors import ClaveError
 
 CONTRACT_VERSION = 1
@@ -74,11 +77,30 @@ class PublishedDecision:
     material_class: str
     channel: int
     confidence: float
-    point: tuple[float, float, float]
+    point: NDArray[np.float64]
     yaw_radians: float
     reference_time_nanos: int
     window_start_nanos: int
     window_end_nanos: int
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "point", np.asarray(self.point, dtype=np.float64))
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, PublishedDecision):
+            return NotImplemented
+        return (
+            self.version == other.version
+            and self.object_id == other.object_id
+            and self.material_class == other.material_class
+            and self.channel == other.channel
+            and self.confidence == other.confidence
+            and bool(np.allclose(self.point, other.point, rtol=0.0, atol=1e-12))
+            and self.yaw_radians == other.yaw_radians
+            and self.reference_time_nanos == other.reference_time_nanos
+            and self.window_start_nanos == other.window_start_nanos
+            and self.window_end_nanos == other.window_end_nanos
+        )
 
     @property
     def window_seconds(self) -> float:
@@ -159,10 +181,13 @@ def decode(payload: bytes) -> PublishedDecision:
             material_class=material_class,
             channel=int(_require(read, "channel")),
             confidence=float(_require(read, "confidence")),
-            point=(
-                float(_require(point, "x_meters")),
-                float(_require(point, "y_meters")),
-                float(_require(point, "z_meters")),
+            point=np.asarray(
+                (
+                    float(_require(point, "x_meters")),
+                    float(_require(point, "y_meters")),
+                    float(_require(point, "z_meters")),
+                ),
+                dtype=np.float64,
             ),
             yaw_radians=float(_require(pose, "yaw_radians")),
             reference_time_nanos=int(_require(pose, "reference_time")),

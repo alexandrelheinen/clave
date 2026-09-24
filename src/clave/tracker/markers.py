@@ -34,9 +34,6 @@ from clave.taxonomy import REJECT_CHANNEL, channel_of
 from clave.tracker.track import WasteObject
 from clave.world.effector import Effector
 
-Point = tuple[float, float, float]
-"""A position in belt frame meters, which is MuJoCo world."""
-
 SHAFT_RADIUS = 0.004
 """How thick the approach shaft is drawn, in meters.
 
@@ -115,10 +112,10 @@ class GraspMarker:
 
     track_id: int
     valid_until_nanos: int
-    pinch_position_belt: Point
-    flange_position_world: Point
-    pad_positions_belt: tuple[Point, ...]
-    pad_size: Point
+    pinch_position_belt: NDArray[np.float64]
+    flange_position_world: NDArray[np.float64]
+    pad_positions_belt: tuple[NDArray[np.float64], ...]
+    pad_size: NDArray[np.float64]
     closing_yaw_belt: float | None
     opening: float
     oriented: bool
@@ -126,17 +123,17 @@ class GraspMarker:
     extent: float
     color: tuple[float, float, float]
     channel: str = REJECT_CHANNEL
-    velocity_world: Point | None = None
+    velocity_world: NDArray[np.float64] | None = None
     yaw_rate_belt: float | None = None
 
     def __init__(
         self,
         track_id: int,
         valid_until_nanos: int,
-        pinch_position_belt: Point | None = None,
-        flange_position_world: Point | None = None,
-        pad_positions_belt: tuple[Point, ...] | None = None,
-        pad_size: Point = (0.0, 0.0, 0.0),
+        pinch_position_belt: NDArray[np.float64] | None = None,
+        flange_position_world: NDArray[np.float64] | None = None,
+        pad_positions_belt: tuple[NDArray[np.float64], ...] | None = None,
+        pad_size: NDArray[np.float64] | None = None,
         closing_yaw_belt: float | None = None,
         opening: float = 0.0,
         oriented: bool = False,
@@ -144,12 +141,12 @@ class GraspMarker:
         extent: float = 0.0,
         color: tuple[float, float, float] = (0.0, 0.0, 0.0),
         channel: str = REJECT_CHANNEL,
-        velocity_world: Point | None = None,
+        velocity_world: NDArray[np.float64] | None = None,
         yaw_rate_belt: float | None = None,
         *,
-        grasp: Point | None = None,
-        flange: Point | None = None,
-        pads: tuple[Point, ...] | None = None,
+        grasp: NDArray[np.float64] | None = None,
+        flange: NDArray[np.float64] | None = None,
+        pads: tuple[NDArray[np.float64], ...] | None = None,
         closing_axis: float | None = None,
     ) -> None:
         p_grasp = grasp if grasp is not None else pinch_position_belt
@@ -164,13 +161,22 @@ class GraspMarker:
             else (() if pad_positions_belt is None else pad_positions_belt)
         )
         axis = closing_axis if closing_axis is not None else closing_yaw_belt
+        size = pad_size if pad_size is not None else np.zeros(3, dtype=np.float64)
 
         object.__setattr__(self, "track_id", track_id)
         object.__setattr__(self, "valid_until_nanos", valid_until_nanos)
-        object.__setattr__(self, "pinch_position_belt", p_grasp)
-        object.__setattr__(self, "flange_position_world", p_flange)
-        object.__setattr__(self, "pad_positions_belt", p_pads)
-        object.__setattr__(self, "pad_size", pad_size)
+        object.__setattr__(
+            self, "pinch_position_belt", np.asarray(p_grasp, dtype=np.float64)
+        )
+        object.__setattr__(
+            self, "flange_position_world", np.asarray(p_flange, dtype=np.float64)
+        )
+        object.__setattr__(
+            self,
+            "pad_positions_belt",
+            tuple(np.asarray(pad, dtype=np.float64) for pad in p_pads),
+        )
+        object.__setattr__(self, "pad_size", np.asarray(size, dtype=np.float64))
         object.__setattr__(self, "closing_yaw_belt", axis)
         object.__setattr__(self, "opening", opening)
         object.__setattr__(self, "oriented", oriented)
@@ -178,16 +184,73 @@ class GraspMarker:
         object.__setattr__(self, "extent", extent)
         object.__setattr__(self, "color", color)
         object.__setattr__(self, "channel", channel)
-        object.__setattr__(self, "velocity_world", velocity_world)
+        object.__setattr__(
+            self,
+            "velocity_world",
+            None
+            if velocity_world is None
+            else np.asarray(velocity_world, dtype=np.float64),
+        )
         object.__setattr__(self, "yaw_rate_belt", yaw_rate_belt)
 
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, GraspMarker):
+            return NotImplemented
+        if self.velocity_world is None and other.velocity_world is None:
+            velocity_match = True
+        elif self.velocity_world is None or other.velocity_world is None:
+            velocity_match = False
+        else:
+            velocity_match = bool(
+                np.allclose(
+                    self.velocity_world, other.velocity_world, rtol=0.0, atol=1e-12
+                )
+            )
+        return (
+            self.track_id == other.track_id
+            and self.valid_until_nanos == other.valid_until_nanos
+            and bool(
+                np.allclose(
+                    self.pinch_position_belt,
+                    other.pinch_position_belt,
+                    rtol=0.0,
+                    atol=1e-12,
+                )
+            )
+            and bool(
+                np.allclose(
+                    self.flange_position_world,
+                    other.flange_position_world,
+                    rtol=0.0,
+                    atol=1e-12,
+                )
+            )
+            and len(self.pad_positions_belt) == len(other.pad_positions_belt)
+            and all(
+                bool(np.allclose(left, right, rtol=0.0, atol=1e-12))
+                for left, right in zip(
+                    self.pad_positions_belt, other.pad_positions_belt, strict=True
+                )
+            )
+            and bool(np.allclose(self.pad_size, other.pad_size, rtol=0.0, atol=1e-12))
+            and self.closing_yaw_belt == other.closing_yaw_belt
+            and self.opening == other.opening
+            and self.oriented == other.oriented
+            and self.reachable == other.reachable
+            and self.extent == other.extent
+            and self.color == other.color
+            and self.channel == other.channel
+            and velocity_match
+            and self.yaw_rate_belt == other.yaw_rate_belt
+        )
+
     @property
-    def grasp(self) -> Point:
+    def grasp(self) -> NDArray[np.float64]:
         """Backwards compatibility alias for pinch_position_belt."""
         return self.pinch_position_belt
 
     @property
-    def flange(self) -> Point:
+    def flange(self) -> NDArray[np.float64]:
         """Backwards compatibility alias for flange_position_world."""
         return self.flange_position_world
 
@@ -197,7 +260,7 @@ class GraspMarker:
         return self.closing_yaw_belt
 
     @property
-    def pads(self) -> tuple[Point, ...]:
+    def pads(self) -> tuple[NDArray[np.float64], ...]:
         """Backwards compatibility alias for pad_positions_belt."""
         return self.pad_positions_belt
 
@@ -300,7 +363,7 @@ def marker_for(
     opening = record.grasp_width
     oriented = record.footprint.oriented
 
-    pads: tuple[Point, ...] = ()
+    pads: tuple[NDArray[np.float64], ...] = ()
     axis: float | None = None
     if oriented:
         axis = record.grasp_axis
@@ -309,20 +372,25 @@ def marker_for(
         reach = opening / 2.0 + effector.pad_thickness / 2.0
         step_x, step_y = math.cos(axis) * reach, math.sin(axis) * reach
         pads = (
-            (x - step_x, y - step_y, pad_z),
-            (x + step_x, y + step_y, pad_z),
+            np.asarray((x - step_x, y - step_y, pad_z), dtype=np.float64),
+            np.asarray((x + step_x, y + step_y, pad_z), dtype=np.float64),
         )
 
     return GraspMarker(
         track_id=record.track_id,
         valid_until_nanos=record.valid_until_nanos,
-        pinch_position_belt=(x, y, pad_z),
-        flange_position_world=(x, y, pad_z + effector.finger_length),
+        pinch_position_belt=np.asarray((x, y, pad_z), dtype=np.float64),
+        flange_position_world=np.asarray(
+            (x, y, pad_z + effector.finger_length), dtype=np.float64
+        ),
         pad_positions_belt=pads,
-        pad_size=(
-            effector.pad_thickness / 2.0,
-            effector.pad_depth / 2.0,
-            effector.pad_height / 2.0,
+        pad_size=np.asarray(
+            (
+                effector.pad_thickness / 2.0,
+                effector.pad_depth / 2.0,
+                effector.pad_height / 2.0,
+            ),
+            dtype=np.float64,
         ),
         closing_yaw_belt=axis,
         opening=opening,
@@ -530,17 +598,17 @@ def ground_truth_markers(
         if closing_axis is not None:
             closing_axis = (closing_axis + math.pi) % (2.0 * math.pi) - math.pi
 
-        pads: tuple[Point, ...] = ()
+        pads: tuple[NDArray[np.float64], ...] = ()
         if oriented and closing_axis is not None:
             reach = opening / 2.0 + effector.pad_thickness / 2.0
             step_x = math.cos(closing_axis) * reach
             step_y = math.sin(closing_axis) * reach
             pads = (
-                (x - step_x, y - step_y, pad_z),
-                (x + step_x, y + step_y, pad_z),
+                np.asarray((x - step_x, y - step_y, pad_z), dtype=np.float64),
+                np.asarray((x + step_x, y + step_y, pad_z), dtype=np.float64),
             )
 
-        obj_velocity: Point | None = None
+        obj_velocity: NDArray[np.float64] | None = None
         yaw_rate: float | None = None
         # `cvel` is the com-based spatial velocity, angular then linear, in the
         # world frame. The linear half belongs to the same point `xipos` names,
@@ -549,16 +617,15 @@ def ground_truth_markers(
         # product of the spin and the origin's offset from the mass.
         if data.cvel is not None and len(data.cvel) > body:
             spatial = data.cvel[body]
-            obj_velocity = (
-                float(spatial[3]),
-                float(spatial[4]),
-                float(spatial[5]),
+            obj_velocity = np.asarray(
+                (float(spatial[3]), float(spatial[4]), float(spatial[5])),
+                dtype=np.float64,
             )
             yaw_rate = float(spatial[2])
 
         remaining = max(0.0, window_exit - x)
         effective_speed = (
-            obj_velocity[0]
+            float(obj_velocity[0])
             if obj_velocity is not None and obj_velocity[0] > 0.01
             else belt_speed
         )
@@ -572,13 +639,16 @@ def ground_truth_markers(
             GraspMarker(
                 track_id=item.serial,
                 valid_until_nanos=expires,
-                pinch_position_belt=(x, y, pad_z),
-                flange_position_world=(x, y, flange_z),
+                pinch_position_belt=np.asarray((x, y, pad_z), dtype=np.float64),
+                flange_position_world=np.asarray((x, y, flange_z), dtype=np.float64),
                 pad_positions_belt=pads,
-                pad_size=(
-                    effector.pad_thickness / 2.0,
-                    effector.pad_depth / 2.0,
-                    effector.pad_height / 2.0,
+                pad_size=np.asarray(
+                    (
+                        effector.pad_thickness / 2.0,
+                        effector.pad_depth / 2.0,
+                        effector.pad_height / 2.0,
+                    ),
+                    dtype=np.float64,
                 ),
                 closing_yaw_belt=closing_axis,
                 opening=opening,
@@ -636,11 +706,11 @@ def draw(scene: Any, markers: tuple[GraspMarker, ...]) -> int:
 
 def draw_park(
     scene: Any,
-    position_world: Point | None = None,
+    position_world: NDArray[np.float64] | None = None,
     color: tuple[float, float, float] = (1.0, 0.0, 0.0),
     belt_surface_height_world: float | None = None,
     *,
-    position: Point | None = None,
+    position: NDArray[np.float64] | None = None,
     belt_surface: float | None = None,
 ) -> int:
     """Add the park pose to a scene, and report how many geoms that took.
@@ -669,6 +739,7 @@ def draw_park(
     pos = position_world if position_world is not None else position
     if pos is None:
         raise TypeError("draw_park requires position_world or position")
+    pos = np.asarray(pos, dtype=np.float64)
     surface = (
         belt_surface_height_world
         if belt_surface_height_world is not None
@@ -676,14 +747,18 @@ def draw_park(
     )
 
     rgba = np.array([*color, OPAQUE], dtype=np.float32)
-    x, y, z = pos
+    x, y, z = float(pos[0]), float(pos[1]), float(pos[2])
     half_post = max((z - surface) / 2.0, PARK_BALL_RADIUS)
-    solids: tuple[tuple[int, Point, Point], ...] = (
-        (int(mujoco.mjtGeom.mjGEOM_SPHERE), (PARK_BALL_RADIUS, 0.0, 0.0), pos),
+    solids: tuple[tuple[int, NDArray[np.float64], NDArray[np.float64]], ...] = (
+        (
+            int(mujoco.mjtGeom.mjGEOM_SPHERE),
+            np.asarray((PARK_BALL_RADIUS, 0.0, 0.0), dtype=np.float64),
+            pos,
+        ),
         (
             int(mujoco.mjtGeom.mjGEOM_CYLINDER),
-            (PARK_POST_RADIUS, half_post, 0.0),
-            (x, y, z - half_post),
+            np.asarray((PARK_POST_RADIUS, half_post, 0.0), dtype=np.float64),
+            np.asarray((x, y, z - half_post), dtype=np.float64),
         ),
     )
     added = 0
@@ -693,8 +768,8 @@ def draw_park(
         mujoco.mjv_initGeom(
             scene.geoms[scene.ngeom],
             geom_type,
-            np.asarray(size, dtype=np.float64),
-            np.asarray(place, dtype=np.float64),
+            size,
+            place,
             _spin(0.0),
             rgba,
         )
@@ -703,7 +778,9 @@ def draw_park(
     return added
 
 
-def _solids(marker: GraspMarker) -> tuple[tuple[int, Point, Point, float], ...]:
+def _solids(
+    marker: GraspMarker,
+) -> tuple[tuple[int, NDArray[np.float64], NDArray[np.float64], float], ...]:
     """Return every solid one marker is made of.
 
     A jaw is two pads and the shaft that carries them. A pose with no axis
@@ -719,13 +796,17 @@ def _solids(marker: GraspMarker) -> tuple[tuple[int, Point, Point, float], ...]:
     """
     import mujoco
 
-    x, y, grasp_z = marker.grasp
-    half_shaft = (marker.flange[2] - grasp_z) / 2.0
-    solids: list[tuple[int, Point, Point, float]] = [
+    x, y, grasp_z = (
+        float(marker.grasp[0]),
+        float(marker.grasp[1]),
+        float(marker.grasp[2]),
+    )
+    half_shaft = (float(marker.flange[2]) - grasp_z) / 2.0
+    solids: list[tuple[int, NDArray[np.float64], NDArray[np.float64], float]] = [
         (
             int(mujoco.mjtGeom.mjGEOM_CYLINDER),
-            (SHAFT_RADIUS, half_shaft, 0.0),
-            (x, y, grasp_z + half_shaft),
+            np.asarray((SHAFT_RADIUS, half_shaft, 0.0), dtype=np.float64),
+            np.asarray((x, y, grasp_z + half_shaft), dtype=np.float64),
             0.0,
         )
     ]
@@ -734,7 +815,7 @@ def _solids(marker: GraspMarker) -> tuple[tuple[int, Point, Point, float], ...]:
     return tuple(solids)
 
 
-def _pad_places(marker: GraspMarker) -> tuple[tuple[float, Point], ...]:
+def _pad_places(marker: GraspMarker) -> tuple[tuple[float, NDArray[np.float64]], ...]:
     """Return where each pad stands and which way it faces.
 
     Args:
@@ -746,8 +827,8 @@ def _pad_places(marker: GraspMarker) -> tuple[tuple[float, Point], ...]:
     if marker.oriented and marker.closing_axis is not None:
         return tuple((marker.closing_axis, pad) for pad in marker.pads)
 
-    grasp_z = marker.grasp[2]
-    reach = marker.opening / 2.0 + marker.pad_size[0]
+    grasp_z = float(marker.grasp[2])
+    reach = marker.opening / 2.0 + float(marker.pad_size[0])
     import numpy as np
 
     # A ring of pads round the grasp, one expression rather than one per pad:
@@ -756,14 +837,14 @@ def _pad_places(marker: GraspMarker) -> tuple[tuple[float, Point], ...]:
     angles = np.linspace(0.0, 2.0 * np.pi, UNORIENTED_PADS, endpoint=False)
     centers = np.stack(
         (
-            marker.grasp[0] + np.cos(angles) * reach,
-            marker.grasp[1] + np.sin(angles) * reach,
+            float(marker.grasp[0]) + np.cos(angles) * reach,
+            float(marker.grasp[1]) + np.sin(angles) * reach,
             np.full(UNORIENTED_PADS, grasp_z),
         ),
         axis=1,
     )
     return tuple(
-        (float(angle), (float(x), float(y), float(z)))
+        (float(angle), np.asarray((x, y, z), dtype=np.float64))
         for angle, (x, y, z) in zip(angles, centers, strict=True)
     )
 

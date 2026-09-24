@@ -68,7 +68,7 @@ def settings(path: Path) -> VideoSettings:
         azimuth=150.0,
         elevation=-20.0,
         distance=2.0,
-        lookat=(0.0, 0.0, 0.4),
+        lookat=np.asarray((0.0, 0.0, 0.4), dtype=np.float64),
     )
 
 
@@ -178,7 +178,7 @@ def test_the_recorder_drains_the_encoder_rather_than_deadlocking(
             azimuth=90.0,
             elevation=-20.0,
             distance=3.0,
-            lookat=(0.0, 0.0, 1.0),
+            lookat=np.asarray((0.0, 0.0, 1.0), dtype=np.float64),
         )
     )
     if recorder is None:

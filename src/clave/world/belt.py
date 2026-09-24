@@ -37,6 +37,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
+from numpy.typing import NDArray
 
 from clave.world import arm
 from clave.world.config import Range
@@ -74,7 +75,7 @@ class ReachReport:
         return self.window_length > 0.0
 
 
-def within_reach(position: tuple[float, float, float], plan: SceneLayout) -> bool:
+def within_reach(position: NDArray[np.float64], plan: SceneLayout) -> bool:
     """Whether the tool can reach a point.
 
     The arm is trusted over an annulus about its base, within a vertical band,
@@ -95,13 +96,13 @@ def within_reach(position: tuple[float, float, float], plan: SceneLayout) -> boo
         Whether the tool can be placed on the object.
     """
     lowest, highest = plan.tool_above_base
-    above = position[2] - plan.arm_base[2]
+    above = float(position[2]) - float(plan.arm_base[2])
     if not lowest <= above <= highest:
         return False
     return arm.reaches(
-        (plan.arm_base[0], plan.arm_base[1]),
-        position[0],
-        position[1],
+        (float(plan.arm_base[0]), float(plan.arm_base[1])),
+        float(position[0]),
+        float(position[1]),
         arm.ReachBounds(plan.reach_min, plan.reach_max, plan.tool_above_base),
     )
 
@@ -422,7 +423,11 @@ class Conveyor:
                 # Drive sorted objects along the take-away conveyor away from the line.
                 data.qvel[velocity + 1] = -self.plan.takeaway.speed
             if on_belt and within_reach(
-                (float(position[0]), float(position[1]), float(position[2])), self.plan
+                np.asarray(
+                    (float(position[0]), float(position[1]), float(position[2])),
+                    dtype=np.float64,
+                ),
+                self.plan,
             ):
                 item.entered_window = True
 

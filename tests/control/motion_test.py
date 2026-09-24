@@ -5,7 +5,9 @@ from __future__ import annotations
 import math
 from pathlib import Path
 
+import numpy as np
 import pytest
+from numpy.typing import NDArray
 
 from clave.control.motion import Reference, toward
 from clave.control.settings import MotionSettings, Phase
@@ -49,7 +51,7 @@ def goal_at(
     """A tracking goal at one place."""
     return Goal(
         phase=Phase.TRACK,
-        position=(x, y, z),
+        position=np.asarray((x, y, z), dtype=np.float64),
         yaw=yaw,
         track_id=1,
         observed_at_nanos=observed_at_nanos,
@@ -57,13 +59,16 @@ def goal_at(
     )
 
 
-def at(position: tuple[float, float, float], speed: float = 0.0) -> Reference:
+def at(
+    position: tuple[float, float, float] | NDArray[np.float64],
+    speed: float = 0.0,
+) -> Reference:
     """The reference, standing somewhere at some speed."""
-    return Reference(position=position, speed=speed)
+    return Reference(position=np.asarray(position, dtype=np.float64), speed=speed)
 
 
 def run(
-    start: tuple[float, float, float],
+    start: tuple[float, float, float] | NDArray[np.float64],
     goal: Goal,
     ticks: int,
     belt_speed: float = 0.0,
@@ -182,7 +187,7 @@ def test_the_step_runs_straight_at_the_goal() -> None:
     A straight line in task space is what an industrial linear move is, and
     it is what makes a descent a descent rather than an arc.
     """
-    flange = (0.0, 0.0, 1.12)
+    flange = np.asarray((0.0, 0.0, 1.12), dtype=np.float64)
     goal = goal_at(0.60, y=0.80, z=1.12)
     command = toward(at(flange, speed=LIMITS.max_speed), goal, TIMESTEP, LIMITS, 0.0, 0)
     travelled = [command.position[axis] - flange[axis] for axis in range(3)]
@@ -214,7 +219,7 @@ def test_a_fault_goal_commands_no_motion() -> None:
     The task machine holds the flange where it is by asking for the pose it
     already has, and motion has to honour that rather than step toward it.
     """
-    flange = (0.11, -0.22, 1.09)
+    flange = np.asarray((0.11, -0.22, 1.09), dtype=np.float64)
     held = Goal(
         phase=Phase.FAULT, position=flange, yaw=None, track_id=3, observed_at_nanos=0
     )
@@ -233,7 +238,7 @@ def test_a_longer_tick_travels_further() -> None:
     The bound is a speed and not a step length, so the distance covered has
     to scale with the tick it was given.
     """
-    flange = (0.0, 0.0, 1.12)
+    flange = np.asarray((0.0, 0.0, 1.12), dtype=np.float64)
     goal = goal_at(2.0)
     moving = at(flange, speed=LIMITS.max_speed)
     short = toward(moving, goal, 0.002, LIMITS, 0.0, 0)
@@ -246,12 +251,12 @@ def test_a_longer_tick_travels_further() -> None:
 INNER = BOUNDS.reach_min
 
 
-def keep_inside(pose: tuple[float, float, float]) -> tuple[float, float, float]:
+def keep_inside(pose: NDArray[np.float64]) -> NDArray[np.float64]:
     """The shipped projection, over the shipped arm base."""
     from clave.world.arm import project_into_reach
 
-    x, y = project_into_reach(BASE_XY, pose[0], pose[1], BOUNDS)
-    return x, y, pose[2]
+    x, y = project_into_reach(BASE_XY, float(pose[0]), float(pose[1]), BOUNDS)
+    return np.asarray((x, y, float(pose[2])), dtype=np.float64)
 
 
 def test_a_path_between_two_admitted_poses_stays_out_of_the_hole() -> None:
@@ -263,8 +268,8 @@ def test_a_path_between_two_admitted_poses_stays_out_of_the_hole() -> None:
     far side of the belt passed within 0.10 m of a base the arm is not
     trusted inside 0.25 m of, and every pose along that stretch was refused.
     """
-    park = (0.45, -1.00, 1.20)
-    across = (-0.50, 0.42, 1.12)
+    park = np.asarray((0.45, -1.00, 1.20), dtype=np.float64)
+    across = np.asarray((-0.50, 0.42, 1.12), dtype=np.float64)
     goal = Goal(
         phase=Phase.TRACK,
         position=across,
@@ -294,7 +299,7 @@ def test_the_projection_leaves_a_pose_outside_the_hole_alone() -> None:
     It is a constraint and not a filter: everywhere the arm is trusted, the
     path is the straight line and nothing rounds it off.
     """
-    outside = (0.60, -0.20, 1.12)
+    outside = np.asarray((0.60, -0.20, 1.12), dtype=np.float64)
     assert keep_inside(outside) == pytest.approx(outside)
 
 
@@ -304,7 +309,9 @@ def test_the_projection_keeps_the_height_it_was_given() -> None:
     The hole is a cylinder about the base, so leaving it is a horizontal
     move. Changing the height here would quietly undo a descent.
     """
-    assert keep_inside((0.0, -0.68, 1.07))[2] == pytest.approx(1.07)
+    assert keep_inside(np.asarray((0.0, -0.68, 1.07), dtype=np.float64))[
+        2
+    ] == pytest.approx(1.07)
 
 
 BELT = 0.31
@@ -355,7 +362,7 @@ def test_a_standing_goal_is_aimed_at_itself() -> None:
     """
     park = Goal(
         phase=Phase.PARK,
-        position=(0.45, -1.00, 1.20),
+        position=np.asarray((0.45, -1.00, 1.20), dtype=np.float64),
         yaw=None,
         track_id=None,
         observed_at_nanos=0,
@@ -389,8 +396,8 @@ def test_interception_closes_the_lag_a_chasing_command_leaves() -> None:
     the belt carries the object 157 mm. Refreshing the goal every tick would
     hide the effect this exists to fix.
     """
-    start = (-0.40, 0.0, 1.12)
-    origin = (0.60, 0.0, 1.12)
+    start = np.asarray((-0.40, 0.0, 1.12), dtype=np.float64)
+    origin = np.asarray((0.60, 0.0, 1.12), dtype=np.float64)
 
     def lag(rides_belt: bool) -> float:
         motion = at(start)
@@ -398,7 +405,10 @@ def test_interception_closes_the_lag_a_chasing_command_leaves() -> None:
         for tick in range(3000):
             now = int(tick * TIMESTEP * 1_000_000_000)
             if tick % CAPTURE_TICKS == 0:
-                seen = (origin[0] + BELT * tick * TIMESTEP, origin[1], origin[2])
+                seen = np.asarray(
+                    (origin[0] + BELT * tick * TIMESTEP, origin[1], origin[2]),
+                    dtype=np.float64,
+                )
                 goal = Goal(
                     phase=Phase.TRACK,
                     position=seen,
@@ -410,7 +420,10 @@ def test_interception_closes_the_lag_a_chasing_command_leaves() -> None:
             assert goal is not None
             command = toward(motion, goal, TIMESTEP, LIMITS, BELT, now)
             motion = Reference(position=command.position, speed=command.speed)
-            live = (origin[0] + BELT * tick * TIMESTEP, origin[1], origin[2])
+            live = np.asarray(
+                (origin[0] + BELT * tick * TIMESTEP, origin[1], origin[2]),
+                dtype=np.float64,
+            )
             if tick > CAPTURE_TICKS * 4:
                 return math.dist(motion.position, live)
         raise AssertionError("the run never settled")
@@ -429,7 +442,7 @@ def test_an_intercept_beyond_reach_is_pulled_back_to_the_edge() -> None:
     at 1.266 m to 1.287 m against a 1.25 m limit.
     """
 
-    far = (BASE_XY[0] + 1.40, BASE_XY[1], 1.12)
+    far = np.asarray((BASE_XY[0] + 1.40, BASE_XY[1], 1.12), dtype=np.float64)
     pulled = keep_inside(far)
     assert math.dist(pulled[:2], BASE_XY) <= BOUNDS.reach_max
     assert pulled[2] == pytest.approx(1.12)
@@ -442,5 +455,5 @@ def test_a_pose_inside_the_annulus_is_left_alone() -> None:
     trusted, the path is the straight line and nothing rounds it off.
     """
     for radius in (0.30, 0.70, 1.20):
-        pose = (BASE_XY[0] + radius, BASE_XY[1], 1.12)
+        pose = np.asarray((BASE_XY[0] + radius, BASE_XY[1], 1.12), dtype=np.float64)
         assert keep_inside(pose) == pytest.approx(pose)

@@ -168,10 +168,17 @@ of which physical body is moving, omit `who`:
 
 ```python
 # Generic trajectory interpolation: works for flange, object, or camera
-def interpolate(start_position_world: Point, end_position_world: Point, fraction: float) -> Point: ...
+def interpolate(
+    start_position_world: NDArray[np.float64],
+    end_position_world: NDArray[np.float64],
+    fraction: float,
+) -> NDArray[np.float64]: ...
 
 # Frame transformation: works for any body
-def to_camera_frame(position_world: Point, camera_pose_world: Pose) -> Point: ...
+def to_camera_frame(
+    position_world: NDArray[np.float64],
+    camera_pose_world: Pose,
+) -> NDArray[np.float64]: ...
 ```
 
 ### 2. Omitting `where` (Frame Abstraction)

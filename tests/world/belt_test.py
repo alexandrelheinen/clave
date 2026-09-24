@@ -37,7 +37,7 @@ def layout(speed: float, offset: float) -> SceneLayout:
             speed=speed,
             height_tolerance=0.05,
         ),
-        arm_base=(0.0, offset, 0.90),
+        arm_base=np.asarray((0.0, offset, 0.90), dtype=np.float64),
         reach_min=_REACH_MIN,
         reach_max=_REACH_MAX,
         tool_above_base=_TOOL_ABOVE,

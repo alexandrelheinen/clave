@@ -18,6 +18,7 @@ from __future__ import annotations
 import dataclasses
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from clave.tracker.association import Association, Cue, TrackSummary
@@ -73,7 +74,7 @@ def detection_from(source_id: str) -> Evidence:
         confidence=0.9,
         payload=Detection(
             footprint=Footprint(
-                center=(-1.0, 0.0, 0.93),
+                center=np.asarray((-1.0, 0.0, 0.93), dtype=np.float64),
                 major_extent=0.10,
                 minor_extent=0.06,
                 yaw=0.0,

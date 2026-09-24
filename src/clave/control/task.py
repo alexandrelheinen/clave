@@ -62,6 +62,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 import numpy as np
+from numpy.typing import NDArray
 
 from clave.control.pick import Plan, VisitTick, plan_pick, refine, retarget_descent
 from clave.control.selection import Candidate, Queue
@@ -69,12 +70,11 @@ from clave.control.settings import (
     CalibrationSettings,
     MotionSettings,
     Phase,
-    Point,
     Profile,
     TaskSettings,
 )
 from clave.control.story import StoryLog
-from clave.control.trajectory import State, as_point, as_vector, distance, where_carried
+from clave.control.trajectory import State, distance, same, where_carried, zeros
 from clave.errors import ClaveError
 from clave.world.effector import Effector
 
@@ -122,7 +122,7 @@ class Reaim:
     action: str
 
 
-def _aim_of(plan: Plan) -> Point:
+def _aim_of(plan: Plan) -> NDArray[np.float64]:
     """Return the pose a plan descends onto, which is the pose it is aiming at.
 
     Args:
@@ -156,7 +156,7 @@ class Goal:
     """
 
     phase: Phase
-    target_position_world: Point
+    target_position_world: NDArray[np.float64]
     target_yaw_world: float | None = None
     track_id: int | None = None
     observed_at_nanos: int = 0
@@ -165,13 +165,13 @@ class Goal:
     def __init__(
         self,
         phase: Phase,
-        target_position_world: Point | None = None,
+        target_position_world: NDArray[np.float64] | None = None,
         target_yaw_world: float | None = None,
         track_id: int | None = None,
         observed_at_nanos: int = 0,
         rides_belt: bool = False,
         *,
-        position: Point | None = None,
+        position: NDArray[np.float64] | None = None,
         yaw: float | None = None,
     ) -> None:
         pos = target_position_world if target_position_world is not None else position
@@ -186,7 +186,7 @@ class Goal:
         object.__setattr__(self, "rides_belt", rides_belt)
 
     @property
-    def position(self) -> Point:
+    def position(self) -> NDArray[np.float64]:
         """Backwards compatibility alias for target_position_world."""
         return self.target_position_world
 
@@ -194,6 +194,18 @@ class Goal:
     def yaw(self) -> float | None:
         """Backwards compatibility alias for target_yaw_world."""
         return self.target_yaw_world
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Goal):
+            return NotImplemented
+        return (
+            self.phase is other.phase
+            and same(self.target_position_world, other.target_position_world)
+            and self.target_yaw_world == other.target_yaw_world
+            and self.track_id == other.track_id
+            and self.observed_at_nanos == other.observed_at_nanos
+            and self.rides_belt == other.rides_belt
+        )
 
 
 class TaskMachine:
@@ -211,8 +223,8 @@ class TaskMachine:
         belt_surface_height_world: float | None = None,
         belt_speed: float = 0.0,
         motion: MotionSettings | None = None,
-        admits: Callable[[Point], bool] | None = None,
-        chutes: dict[str, Point] | None = None,
+        admits: Callable[[NDArray[np.float64]], bool] | None = None,
+        chutes: dict[str, NDArray[np.float64]] | None = None,
         belt_width: float = 0.50,
         belt_center_y: float = 0.0,
         belt_border_y: float | None = None,
@@ -443,12 +455,12 @@ class TaskMachine:
     def step(
         self,
         queue: Queue,
-        flange_position_world: Point | None = None,
+        flange_position_world: NDArray[np.float64] | None = None,
         at_seconds: float = 0.0,
         refusal: str | None = None,
-        reference_velocity: Point = (0.0, 0.0, 0.0),
+        reference_velocity: NDArray[np.float64] | None = None,
         *,
-        flange: Point | None = None,
+        flange: NDArray[np.float64] | None = None,
     ) -> Goal:
         """Decide what the arm is doing, and say where it wants the flange.
 
@@ -477,6 +489,8 @@ class TaskMachine:
         if flange_pos is None:
             raise TypeError("step requires flange_position_world or flange")
         at_nanos = int(at_seconds * NANOS_PER_SECOND)
+        if reference_velocity is None:
+            reference_velocity = zeros()
         if refusal is not None:
             return self._fault(queue, flange_pos, refusal, at_nanos)
 
@@ -550,9 +564,9 @@ class TaskMachine:
     def tick(
         self,
         at_seconds: float,
-        flange_position_world: Point | None = None,
+        flange_position_world: NDArray[np.float64] | None = None,
         *,
-        flange: Point | None = None,
+        flange: NDArray[np.float64] | None = None,
     ) -> VisitTick | None:
         """Drive one tick of a planned visit, or report that none is active.
 
@@ -657,7 +671,7 @@ class TaskMachine:
                     channel=chute,
                 )
 
-    def _takes(self, pose: Point) -> bool:
+    def _takes(self, pose: NDArray[np.float64]) -> bool:
         """Whether the arm may be commanded to a pose at all.
 
         Two questions, and both have to pass. The first is whether the arm is
@@ -681,7 +695,7 @@ class TaskMachine:
         """
         return self._admits(pose) and pose[2] >= self._grasp_floor_world - 1e-9
 
-    def _grasp_pose(self, head: Candidate) -> Point:
+    def _grasp_pose(self, head: Candidate) -> NDArray[np.float64]:
         """Return where the flange has to sit to grasp a candidate.
 
         Args:
@@ -692,10 +706,7 @@ class TaskMachine:
             which is the pose a plan aims at and the pose a stepped visit
             descends to. One place, so the two cannot disagree.
         """
-        return as_point(
-            as_vector(head.flange_position_world)
-            + as_vector(self._calibration.flange_offset)
-        )
+        return head.flange_position_world + self._calibration.flange_offset
 
     def _narrate_reaim(
         self,
@@ -733,8 +744,8 @@ class TaskMachine:
     def _reaim(
         self,
         queue: Queue,
-        flange: Point,
-        velocity: Point,
+        flange: NDArray[np.float64],
+        velocity: NDArray[np.float64],
         at_seconds: float,
     ) -> None:
         """Point the active plan at a fresher estimate of its object, or give it up.
@@ -900,7 +911,12 @@ class TaskMachine:
             solved.duration,
         )
 
-    def _steer_descent(self, head: Candidate, target: Point, at_seconds: float) -> None:
+    def _steer_descent(
+        self,
+        head: Candidate,
+        target: NDArray[np.float64],
+        at_seconds: float,
+    ) -> None:
         """Move the end of a descent onto the freshest estimate, or leave it.
 
         The approach is over, so there is no arc left to bend, and solving the
@@ -922,7 +938,14 @@ class TaskMachine:
             self._settings.grasp_clearance, transit_height_world - target[2]
         )
         chute = self._chutes.get(head.channel)
-        over = (chute[0], chute[1], transit_height_world) if chute is not None else None
+        over = (
+            np.asarray(
+                (chute[0], chute[1], transit_height_world),
+                dtype=np.float64,
+            )
+            if chute is not None
+            else None
+        )
         steered = retarget_descent(
             plan=self._plan,
             object_position=target,
@@ -1052,7 +1075,7 @@ class TaskMachine:
                     return False
         return True
 
-    def _object_velocity(self, head: Candidate) -> Point:
+    def _object_velocity(self, head: Candidate) -> NDArray[np.float64]:
         """Return how the belt is carrying this candidate, with no vertical guess.
 
         One place, because three callers predict the object forward with it --
@@ -1071,13 +1094,21 @@ class TaskMachine:
         obj_vel = (
             head.velocity_world
             if head.velocity_world is not None
-            else (self._belt_speed, 0.0, 0.0)
+            else np.asarray((self._belt_speed, 0.0, 0.0), dtype=np.float64)
         )
         # A floor on one component only: `max` names that, and `np.clip` over a
         # per-component bound would hide which axis carries it.
-        return (max(0.0, obj_vel[0]), obj_vel[1], obj_vel[2])
+        return np.asarray(
+            (max(0.0, float(obj_vel[0])), float(obj_vel[1]), float(obj_vel[2])),
+            dtype=np.float64,
+        )
 
-    def _fresh_aim(self, head: Candidate, target: Point, at_seconds: float) -> Point:
+    def _fresh_aim(
+        self,
+        head: Candidate,
+        target: NDArray[np.float64],
+        at_seconds: float,
+    ) -> NDArray[np.float64]:
         """Return where the freshest estimate puts the object at the pick instant.
 
         The same model the arcs are solved against, evaluated from this
@@ -1106,7 +1137,7 @@ class TaskMachine:
         )
 
     def _refinement(
-        self, head: Candidate, target: Point, at_seconds: float
+        self, head: Candidate, target: NDArray[np.float64], at_seconds: float
     ) -> Plan | None:
         """Return the active plan rebuilt around a fresh aim, or None.
 
@@ -1131,7 +1162,14 @@ class TaskMachine:
             self._settings.grasp_clearance, transit_height_world - target[2]
         )
         chute = self._chutes.get(head.channel)
-        over = (chute[0], chute[1], transit_height_world) if chute is not None else None
+        over = (
+            np.asarray(
+                (chute[0], chute[1], transit_height_world),
+                dtype=np.float64,
+            )
+            if chute is not None
+            else None
+        )
         return refine(
             plan=self._plan,
             object_position=target,
@@ -1207,8 +1245,8 @@ class TaskMachine:
     def _commit(
         self,
         head: Candidate,
-        flange: Point,
-        velocity: Point,
+        flange: NDArray[np.float64],
+        velocity: NDArray[np.float64],
         at_seconds: float,
         at_nanos: int,
     ) -> Goal:
@@ -1302,8 +1340,8 @@ class TaskMachine:
     def _resolve(
         self,
         head: Candidate,
-        flange: Point,
-        velocity: Point,
+        flange: NDArray[np.float64],
+        velocity: NDArray[np.float64],
         at_seconds: float,
     ) -> Plan | None:
         """Solve one whole visit for a candidate, or report that none exists.
@@ -1338,7 +1376,14 @@ class TaskMachine:
             self._settings.grasp_clearance, transit_height_world - target[2]
         )
         chute = self._chutes.get(head.channel)
-        over = (chute[0], chute[1], transit_height_world) if chute is not None else None
+        over = (
+            np.asarray(
+                (chute[0], chute[1], transit_height_world),
+                dtype=np.float64,
+            )
+            if chute is not None
+            else None
+        )
         # An interception is worth planning only inside what the object has
         # left on the belt, whichever of the two limits binds first.
         clamped_vel = self._object_velocity(head)
@@ -1352,9 +1397,7 @@ class TaskMachine:
         jaw_in_the_belt: float | None = None
         for margin in (self._settings.interception_margin, 1.0):
             attempt = plan_pick(
-                flange=State(
-                    position=flange, velocity=velocity, acceleration=(0.0, 0.0, 0.0)
-                ),
+                flange=State(position=flange, velocity=velocity, acceleration=zeros()),
                 track_id=head.track_id,
                 object_position=target,
                 belt_velocity=clamped_vel,
@@ -1449,7 +1492,7 @@ class TaskMachine:
             observed_at_nanos=at_nanos,
         )
 
-    def _finish(self, flange: Point, at_seconds: float) -> None:
+    def _finish(self, flange: NDArray[np.float64], at_seconds: float) -> None:
         """Close a planned visit that has run out of arcs.
 
         Args:
@@ -1529,22 +1572,23 @@ class TaskMachine:
         return Goal(
             phase=phase,
             rides_belt=True,
-            target_position_world=as_point(
+            target_position_world=(
                 np.asarray(
                     [
                         head.flange_position_world[0],
                         head.flange_position_world[1],
                         self._belt_surface_height_world + above,
-                    ]
+                    ],
+                    dtype=np.float64,
                 )
-                + as_vector(offset)
+                + offset
             ),
             target_yaw_world=head.closing_yaw_belt,
             track_id=head.track_id,
             observed_at_nanos=at_nanos,
         )
 
-    def _rest(self, flange: Point, at_nanos: int) -> Goal:
+    def _rest(self, flange: NDArray[np.float64], at_nanos: int) -> Goal:
         """Return the goal for an arm with nothing to serve.
 
         Args:
@@ -1565,7 +1609,13 @@ class TaskMachine:
             observed_at_nanos=at_nanos,
         )
 
-    def _fault(self, queue: Queue, flange: Point, refusal: str, at_nanos: int) -> Goal:
+    def _fault(
+        self,
+        queue: Queue,
+        flange: NDArray[np.float64],
+        refusal: str,
+        at_nanos: int,
+    ) -> Goal:
         """Record a refusal and hold the arm where it is.
 
         A refusal is about the pose commanded on the previous tick, so the
@@ -1635,7 +1685,7 @@ def _visit_manner(plan: Plan) -> str:
     return ", ".join(names)
 
 
-def _anywhere(pose: Point) -> bool:
+def _anywhere(pose: NDArray[np.float64]) -> bool:
     """Admit any pose, for a caller that supplied no region.
 
     Args:

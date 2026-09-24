@@ -6,7 +6,9 @@ import math
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pytest
+from numpy.typing import NDArray
 
 from clave.tracker.belt_frame import Footprint
 from clave.tracker.evidence import Role
@@ -36,13 +38,15 @@ def effector() -> Effector:
 
 def record(
     track_id: int = 1,
-    center: tuple[float, float, float] = (0.2, 0.1, 0.95),
+    center: NDArray[np.float64] | None = None,
     major: float = 0.12,
     minor: float = 0.06,
     yaw: float = 0.0,
     oriented: bool = True,
 ) -> WasteObject:
     """One settled record, with only the fields a marker reads set."""
+    if center is None:
+        center = np.asarray((0.2, 0.1, 0.95), dtype=np.float64)
     return WasteObject(
         track_id=track_id,
         observed_at_nanos=0,
@@ -67,7 +71,11 @@ def record(
 
 def test_the_pads_sit_over_the_records_grasp_point() -> None:
     """AC-MARK-02: the pads sit over the record's grasp point."""
-    marker = marker_for(record(center=(0.35, -0.12, 0.95)), effector(), BELT_SURFACE)
+    marker = marker_for(
+        record(center=np.asarray((0.35, -0.12, 0.95), dtype=np.float64)),
+        effector(),
+        BELT_SURFACE,
+    )
     left, right = marker.pads
     assert (left[0] + right[0]) / 2.0 == pytest.approx(0.35)
     assert (left[1] + right[1]) / 2.0 == pytest.approx(-0.12)

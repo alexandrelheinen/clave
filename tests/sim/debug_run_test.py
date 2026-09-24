@@ -14,6 +14,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+import numpy as np
 import pytest
 
 from clave.control.motion import Command
@@ -183,7 +184,13 @@ def test_a_telemetry_row_carries_the_command_and_the_jaw(
     old row said which of the two was anywhere near the belt.
     """
     mujoco, model, data, plan, arm = world
-    _park_the_arm(mujoco, model, data, arm, (0.72, -0.42, 1.20))
+    _park_the_arm(
+        mujoco,
+        model,
+        data,
+        arm,
+        np.asarray((0.72, -0.42, 1.20), dtype=np.float64),
+    )
     geoms = _jaw_collision_geoms(model, arm)
     belt = int(mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "belt"))
     surface = plan.belt.surface_height
@@ -191,11 +198,11 @@ def test_a_telemetry_row_carries_the_command_and_the_jaw(
     path = tmp_path / "telemetry.csv"
     writer = _TelemetryWriter(path, model, plan.pool_size, 100.0)
     command = Command(
-        position=(0.50, 0.10, 1.20),
+        position=np.asarray((0.50, 0.10, 1.20), dtype=np.float64),
         yaw=0.25,
         speed=0.0,
-        velocity=(0.0, 0.0, 0.0),
-        aim=(0.50, 0.10, 1.20),
+        velocity=np.asarray((0.0, 0.0, 0.0), dtype=np.float64),
+        aim=np.asarray((0.50, 0.10, 1.20), dtype=np.float64),
     )
     writer.write(
         model,
@@ -249,7 +256,13 @@ def test_the_jaw_state_reports_a_jaw_inside_the_belt(world: Any) -> None:
     geoms = _jaw_collision_geoms(model, arm)
     belt = int(mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "belt"))
 
-    _park_the_arm(mujoco, model, data, arm, (0.72, -0.42, 1.20))
+    _park_the_arm(
+        mujoco,
+        model,
+        data,
+        arm,
+        np.asarray((0.72, -0.42, 1.20), dtype=np.float64),
+    )
     parked = _jaw_state(mujoco, model, data, arm, geoms, belt, surface)
     assert parked.clearance > 0.0
     assert parked.contact is False
@@ -288,10 +301,10 @@ def test_a_plan_reports_each_leg_for_its_own_duration() -> None:
     from clave.control.trajectory import State
 
     plan = plan_pick(
-        flange=State.at_rest((0.45, -1.00, 1.20)),
+        flange=State.at_rest(np.asarray((0.45, -1.00, 1.20), dtype=np.float64)),
         track_id=1,
-        object_position=(0.30, 0.0, 1.035),
-        belt_velocity=(0.314, 0.0, 0.0),
+        object_position=np.asarray((0.30, 0.0, 1.035), dtype=np.float64),
+        belt_velocity=np.asarray((0.314, 0.0, 0.0), dtype=np.float64),
         z_offset=0.050,
         approach_speed=0.25,
         dwell_seconds=0.30,

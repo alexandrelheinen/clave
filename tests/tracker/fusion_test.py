@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 import clave.tracker.evidence as evidence_module
@@ -77,7 +78,10 @@ def a_detection() -> Detection:
     """A box on the belt, which says nothing about material."""
     return Detection(
         footprint=Footprint(
-            center=(-1.0, 0.0, 0.93), major_extent=0.10, minor_extent=0.06, yaw=0.0
+            center=np.asarray((-1.0, 0.0, 0.93), dtype=np.float64),
+            major_extent=0.10,
+            minor_extent=0.06,
+            yaw=0.0,
         ),
         mask=PixelMask(width=64, height=64, runs=((10, 20, 10),)),
         height=0.06,
@@ -244,7 +248,11 @@ def test_a_height_is_recognized_and_argues_no_material() -> None:
 def test_the_simulator_label_moves_the_belief_to_its_class() -> None:
     """Ground truth travels the fusion path like anything else."""
     config = settings()
-    label = GroundTruth(object_id=3, material_class="M-06", position=(-1.0, 0.0, 0.93))
+    label = GroundTruth(
+        object_id=3,
+        material_class="M-06",
+        position=np.asarray((-1.0, 0.0, 0.93), dtype=np.float64),
+    )
     result = fold(
         Posterior.uniform(),
         reading(label, Role.GROUND_TRUTH, "simulator", confidence=1.0),

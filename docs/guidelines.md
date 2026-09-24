@@ -75,7 +75,9 @@ specific bodies or frames. Omit segments when an abstraction does not need them:
    `object_position_world`.
    ```python
    # Generic frame transformation: works for any body
-   def to_camera_frame(position_world: Point) -> Point: ...
+   def to_camera_frame(
+       position_world: NDArray[np.float64],
+   ) -> NDArray[np.float64]: ...
    ```
 
 2. **Omitting `where` (Frame abstraction)**:
@@ -97,9 +99,9 @@ specific bodies or frames. Omit segments when an abstraction does not need them:
    # Pure trajectory segment: uncoupled from body and frame
    @dataclass(frozen=True)
    class State:
-       position: Point
-       velocity: Point
-       acceleration: Point
+       position: NDArray[np.float64]
+       velocity: NDArray[np.float64]
+       acceleration: NDArray[np.float64]
    ```
 
 ### Counts and collections
@@ -138,7 +140,7 @@ declared once in `clave.control.trajectory` and imported from there:
 
 | Primitive | Use it for |
 |---|---|
-| `as_vector`, `as_point` | Crossing the tuple/array seam, once at each end |
+| `same` | Whether two spatial vectors agree within a tolerance |
 | `norm`, `distance` | A length or a separation, never written longhand |
 | `clip` | A value held between zero and a ceiling |
 | `bisect_feasible` | The smallest input satisfying a monotone boolean predicate |
@@ -148,13 +150,15 @@ A second copy of any of these in a caller is a second place for the tolerance,
 the floor or the frame to be wrong. If a caller needs a variant, it belongs in
 `trajectory.py` where the first one is tested.
 
-### Vectors, tuples and the seam
+### Spatial vectors
 
-- **A vector crossing a seam is a tuple; between seams it is an array.** The
-  public dataclasses (`Point`, `Candidate`, `GraspMarker`, `State`) carry plain
-  three-tuples because that is what a reader of an interface wants to see.
-  Anywhere the code does arithmetic, convert once at the top with `as_vector`
-  and back once at the bottom with `as_point`, and say at the seam why.
+- **A spatial 3-vector is `NDArray[np.float64]` end to end.** Public
+  dataclasses (`Candidate`, `GraspMarker`, `State`) and function signatures
+  carry arrays, not tuples. Construct with
+  `np.asarray((x, y, z), dtype=np.float64)` or
+  `np.zeros(3, dtype=np.float64)`. Compare with `same` (or `np.allclose`),
+  never with bare `==`, which is element-wise and ambiguous as a boolean.
+  RGB and other non-spatial triples stay plain `tuple[float, float, float]`.
 - **Broadcast instead of looping.** Evaluating a trajectory at 65 instants is
   one matrix product over the samples, not 65 evaluations of a scalar function:
   `np.linspace` samples, `np.stack` assembles, `axis=` selects. A `for` loop

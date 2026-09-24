@@ -45,7 +45,20 @@ class Prediction:
     object_id: int
     material_class: str
     confidence: float
-    point: tuple[float, float, float]
+    point: NDArray[np.float64]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "point", np.asarray(self.point, dtype=np.float64))
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Prediction):
+            return NotImplemented
+        return (
+            self.object_id == other.object_id
+            and self.material_class == other.material_class
+            and self.confidence == other.confidence
+            and bool(np.allclose(self.point, other.point, rtol=0.0, atol=1e-12))
+        )
 
 
 class Predictor(Protocol):
@@ -76,7 +89,7 @@ class Predictor(Protocol):
 
 
 def associate(
-    point: tuple[float, float, float],
+    point: NDArray[np.float64],
     labels: tuple[ObjectLabel, ...],
     radius: float,
 ) -> ObjectLabel | None:
@@ -207,7 +220,9 @@ class CheckpointPredictor:
                 return None
             action = self._act(image, state)[:3]
 
-        point = (float(action[0]), float(action[1]), float(action[2]))
+        point = np.asarray(
+            (float(action[0]), float(action[1]), float(action[2])), dtype=np.float64
+        )
         associated = associate(point, labels, self._association_radius)
         if associated is None:
             return None

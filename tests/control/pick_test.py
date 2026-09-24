@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import math
 
+import numpy as np
 import pytest
+from numpy.typing import NDArray
 
 from clave.control.pick import (
     JAW_OPEN,
@@ -23,12 +25,12 @@ from clave.control.pick import (
 from clave.control.settings import Phase
 from clave.control.trajectory import State
 
-BELT = (0.314, 0.0, 0.0)
+BELT = np.asarray((0.314, 0.0, 0.0), dtype=np.float64)
 CLEARANCE = 0.050
 APPROACH_SPEED = 0.25
 DWELL = 0.30
-PARK = (0.45, -1.00, 1.20)
-OBJECT = (0.30, 0.0, 1.035)
+PARK = np.asarray((0.45, -1.00, 1.20), dtype=np.float64)
+OBJECT = np.asarray((0.30, 0.0, 1.035), dtype=np.float64)
 DRIFT_HORIZON = 0.30
 MINIMUM_SEGMENT = 0.50
 CLOSING_RISE = 0.20
@@ -156,7 +158,7 @@ def test_the_retreat_is_the_descent_reversed() -> None:
     assert retreat.end.position[2] - descend.end.position[2] == pytest.approx(CLEARANCE)
     assert retreat.start.velocity == pytest.approx(descend.end.velocity)
     assert retreat.end.velocity == pytest.approx(
-        (BELT[0], BELT[1], BELT[2] + APPROACH_SPEED)
+        np.asarray((BELT[0], BELT[1], BELT[2] + APPROACH_SPEED), dtype=np.float64)
     )
     # Vertical in the frame the object lives in: the belt carries the travel
     # and the belt's normal carries the lift, and nothing else moves.
@@ -175,7 +177,9 @@ def test_a_vertical_velocity_does_not_move_the_grasp_plane() -> None:
     belt itself, which is what the replay of a recorded run found.
     """
     still = a_plan()
-    settling = a_plan(belt_velocity=(BELT[0], BELT[1], -0.40))
+    settling = a_plan(
+        belt_velocity=np.asarray((BELT[0], BELT[1], -0.40), dtype=np.float64),
+    )
     assert still is not None and settling is not None
     quiet = next(leg for leg in still.legs if leg.phase is Phase.DESCEND).segment
     sinking = next(leg for leg in settling.legs if leg.phase is Phase.DESCEND).segment
@@ -206,7 +210,7 @@ def test_a_lateral_velocity_carries_the_object_only_while_it_lasts() -> None:
         )
     ).task.drift_horizon
 
-    drifting = a_plan(belt_velocity=(BELT[0], 0.05, 0.0))
+    drifting = a_plan(belt_velocity=np.asarray((BELT[0], 0.05, 0.0), dtype=np.float64))
     assert drifting is not None
     across = next(leg for leg in drifting.legs if leg.phase is Phase.DESCEND).segment
     carried = across.end.position[1] - OBJECT[1]
@@ -226,7 +230,7 @@ def test_a_descent_is_retargeted_only_while_it_is_underway() -> None:
     plan = a_plan()
     assert plan is not None
 
-    def steer(position: tuple[float, float, float], at: float) -> Plan | None:
+    def steer(position: NDArray[np.float64], at: float) -> Plan | None:
         return retarget_descent(
             plan=plan,
             object_position=position,
@@ -253,10 +257,13 @@ def test_a_descent_is_retargeted_only_while_it_is_underway() -> None:
     # Where the belt has carried the object by this instant, plus 20 mm across
     # it. Handing the position from the start of the visit asks the descent to
     # run back up the belt, which is the correction the speed ceiling refuses.
-    carried = (
-        OBJECT[0] + BELT[0] * at,
-        OBJECT[1] + 0.020,
-        OBJECT[2],
+    carried = np.asarray(
+        (
+            OBJECT[0] + BELT[0] * at,
+            OBJECT[1] + 0.020,
+            OBJECT[2],
+        ),
+        dtype=np.float64,
     )
     steered = steer(carried, at)
     assert steered is not None
@@ -315,7 +322,10 @@ def test_re_aiming_keeps_the_arrival_time_and_moves_the_target() -> None:
     """
     plan = a_plan(margin=1.15)
     assert plan is not None
-    drifted = (OBJECT[0] + BELT[0] * 0.5, OBJECT[1] + 0.040, OBJECT[2])
+    drifted = np.asarray(
+        (OBJECT[0] + BELT[0] * 0.5, OBJECT[1] + 0.040, OBJECT[2]),
+        dtype=np.float64,
+    )
     again = refine(
         plan=plan,
         object_position=drifted,
@@ -426,7 +436,10 @@ def test_a_margin_widens_the_correction_an_arc_will_accept() -> None:
         return (
             refine(
                 plan=plan,
-                object_position=(OBJECT[0], OBJECT[1] + sideways, OBJECT[2]),
+                object_position=np.asarray(
+                    (OBJECT[0], OBJECT[1] + sideways, OBJECT[2]),
+                    dtype=np.float64,
+                ),
                 belt_velocity=BELT,
                 z_offset=CLEARANCE,
                 approach_speed=APPROACH_SPEED,
@@ -713,7 +726,10 @@ def test_an_approach_correction_past_the_ceiling_is_taken_part_way() -> None:
     assert plan is not None
     track = next(leg.segment for leg in plan.legs if leg.phase is Phase.TRACK)
     at = track.duration - 0.30
-    wild = (OBJECT[0] + BELT[0] * at, OBJECT[1] + 1.10, OBJECT[2])
+    wild = np.asarray(
+        (OBJECT[0] + BELT[0] * at, OBJECT[1] + 1.10, OBJECT[2]),
+        dtype=np.float64,
+    )
     again = refine(
         plan=plan,
         object_position=wild,
@@ -776,10 +792,12 @@ def test_matching_transport_drops_lateral_velocity() -> None:
     """
     from clave.control.pick import _drift_velocity, _transport
 
-    measured = (0.314, 0.50, -0.10)
+    measured = np.asarray((0.314, 0.50, -0.10), dtype=np.float64)
     assert _transport(measured) == pytest.approx((0.314, 0.0, 0.0))
     assert _drift_velocity(measured) == pytest.approx((0.314, 0.50, 0.0))
-    assert _transport((-0.20, 0.10, 0.0)) == pytest.approx((0.0, 0.0, 0.0))
+    assert _transport(
+        np.asarray((-0.20, 0.10, 0.0), dtype=np.float64)
+    ) == pytest.approx((0.0, 0.0, 0.0))
 
 
 def test_hold_and_retreat_are_vertical_in_the_object_frame() -> None:
@@ -789,10 +807,10 @@ def test_hold_and_retreat_are_vertical_in_the_object_frame() -> None:
     with the local arc. Subtracting transport * t leaves pure vertical retreat
     and no horizontal hold speed.
     """
-    plan = a_plan(belt_velocity=(BELT[0], 0.40, 0.0))
+    plan = a_plan(belt_velocity=np.asarray((BELT[0], 0.40, 0.0), dtype=np.float64))
     assert plan is not None
     transport = plan.transport_velocity
-    assert transport == pytest.approx((BELT[0], 0.0, 0.0))
+    assert transport == pytest.approx(np.asarray((BELT[0], 0.0, 0.0), dtype=np.float64))
 
     hold = next(leg for leg in plan.legs if leg.phase is Phase.HOLD).segment
     for step in range(11):
@@ -827,10 +845,13 @@ def test_a_spiked_lateral_velocity_does_not_rewrite_hold_or_retreat() -> None:
     edges = plan._boundaries()
     index = next(i for i, leg in enumerate(plan.legs) if leg.phase is Phase.DESCEND)
     at = plan.started_at + edges[index] + 0.05
-    spiked = (BELT[0], 0.50, 0.0)
+    spiked = np.asarray((BELT[0], 0.50, 0.0), dtype=np.float64)
     steered = retarget_descent(
         plan=plan,
-        object_position=(OBJECT[0] + 0.02, OBJECT[1] + 0.03, OBJECT[2]),
+        object_position=np.asarray(
+            (OBJECT[0] + 0.02, OBJECT[1] + 0.03, OBJECT[2]),
+            dtype=np.float64,
+        ),
         belt_velocity=spiked,
         approach_clearance_z=CLEARANCE,
         approach_speed=APPROACH_SPEED,
@@ -847,7 +868,9 @@ def test_a_spiked_lateral_velocity_does_not_rewrite_hold_or_retreat() -> None:
         correction_steps=CORRECTION_STEPS,
     )
     assert steered is not None
-    assert steered.transport_velocity == pytest.approx((BELT[0], 0.0, 0.0))
+    assert steered.transport_velocity == pytest.approx(
+        np.asarray((BELT[0], 0.0, 0.0), dtype=np.float64),
+    )
     hold = next(leg for leg in steered.legs if leg.phase is Phase.HOLD).segment
     assert hold.start.velocity[1] == pytest.approx(0.0, abs=1e-9)
     assert abs(hold.start.velocity[1]) < 0.05

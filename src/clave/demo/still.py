@@ -20,6 +20,7 @@ from typing import Any
 
 import numpy as np
 import yaml
+from numpy.typing import NDArray
 
 from clave.errors import ClaveError
 
@@ -63,8 +64,23 @@ class StillCamera:
     azimuth: float
     elevation: float
     distance: float
-    lookat: tuple[float, float, float]
+    lookat: NDArray[np.float64]
     fovy: float
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "lookat", np.asarray(self.lookat, dtype=np.float64))
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, StillCamera):
+            return NotImplemented
+        return (
+            self.name == other.name
+            and self.azimuth == other.azimuth
+            and self.elevation == other.elevation
+            and self.distance == other.distance
+            and bool(np.allclose(self.lookat, other.lookat, rtol=0.0, atol=1e-12))
+            and self.fovy == other.fovy
+        )
 
 
 @dataclass(frozen=True)
@@ -137,7 +153,7 @@ def _camera(entry: Any) -> StillCamera:
         azimuth=float(_require(entry, "azimuth_degrees", name)),
         elevation=float(_require(entry, "elevation_degrees", name)),
         distance=float(_require(entry, "distance_meters", name)),
-        lookat=(lookat[0], lookat[1], lookat[2]),
+        lookat=np.asarray((lookat[0], lookat[1], lookat[2]), dtype=np.float64),
         fovy=float(_require(entry, "fovy_degrees", name)),
     )
 
@@ -263,12 +279,7 @@ def capture(root: Path, scenario: StillScenario, out: Path) -> list[Path]:
         for item in conveyor.active:
             body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, item.name)
             address = model.jnt_qposadr[model.body_jntadr[body]]
-            raw_position = data.qpos[address : address + 3]
-            position = (
-                float(raw_position[0]),
-                float(raw_position[1]),
-                float(raw_position[2]),
-            )
+            position = np.asarray(data.qpos[address : address + 3], dtype=np.float64)
             labels.append(
                 ObjectLabel(
                     object_id=item.index,

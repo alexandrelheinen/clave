@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import dataclasses
 
+import numpy as np
 import pytest
 
 from clave.taxonomy import MATERIAL_CLASSES
@@ -37,7 +38,10 @@ OUTCOME_COUNT = len(MATERIAL_CLASSES) + 1
 def a_footprint() -> Footprint:
     """A box resting on the belt surface."""
     return Footprint(
-        center=(-1.0, 0.0, 0.93), major_extent=0.10, minor_extent=0.06, yaw=0.0
+        center=np.asarray((-1.0, 0.0, 0.93), dtype=np.float64),
+        major_extent=0.10,
+        minor_extent=0.06,
+        yaw=0.0,
     )
 
 
@@ -124,7 +128,11 @@ def test_every_variant_has_a_role_it_belongs_to() -> None:
         (Code(symbology="UPC_A", digits="037600138727", quad=()), Role.CODE),
         (Height(top_surface=0.96), Role.DEPTH),
         (
-            GroundTruth(object_id=3, material_class="M-06", position=(-1.0, 0.0, 0.93)),
+            GroundTruth(
+                object_id=3,
+                material_class="M-06",
+                position=np.asarray((-1.0, 0.0, 0.93), dtype=np.float64),
+            ),
             Role.GROUND_TRUTH,
         ),
     ]
@@ -152,7 +160,11 @@ def test_a_material_posterior_spans_the_taxonomy_plus_reject() -> None:
 def test_a_ground_truth_label_names_a_class_the_taxonomy_defines() -> None:
     """The simulator's label is still a taxonomy label."""
     with pytest.raises(EvidenceError, match="taxonomy"):
-        GroundTruth(object_id=1, material_class="M-99", position=(0.0, 0.0, 0.93))
+        GroundTruth(
+            object_id=1,
+            material_class="M-99",
+            position=np.asarray((0.0, 0.0, 0.93), dtype=np.float64),
+        )
 
 
 def test_a_code_whose_check_digit_fails_is_not_a_code() -> None:
