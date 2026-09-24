@@ -13,6 +13,8 @@ import math
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 from clave.cli import _build_parser
 from clave.control.selection import Selector
 from clave.control.settings import SelectionSettings
@@ -42,13 +44,16 @@ def minimal_plan() -> SceneLayout:
             speed=0.31,
             height_tolerance=0.05,
         ),
-        arm_base=(0.0, -0.45, 0.90),
+        arm_base=np.asarray((0.0, -0.45, 0.90), dtype=np.float64),
         reach_min=0.30,
         reach_max=1.30,
         tool_above_base=(-0.20, 0.60),
         pedestal=(0.20, 0.20),
         channels=("chute_a", "chute_b"),
-        chutes={"chute_a": (0.0, -0.70, 0.40), "chute_b": (0.3, -0.70, 0.40)},
+        chutes={
+            "chute_a": np.asarray((0.0, -0.70, 0.40), dtype=np.float64),
+            "chute_b": np.asarray((0.3, -0.70, 0.40), dtype=np.float64),
+        },
         objects=(),
         pool_size=4,
         timestep=0.002,
@@ -228,7 +233,7 @@ def test_ground_truth_selector_and_task_planning_ac_gt_04() -> None:
         admits=lambda p: True,
     )
 
-    flange = (0.0, 0.0, 1.20)
+    flange = np.asarray((0.0, 0.0, 1.20), dtype=np.float64)
     queue = selector.update(markers, flange, belt_speed=0.31, at_nanos=now)
     assert len(queue.order) == 1
     assert queue.order[0].track_id == 0

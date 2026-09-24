@@ -13,6 +13,7 @@ import math
 import re
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from clave.tracker.belt_frame import (
@@ -33,7 +34,7 @@ NANOS_PER_SECOND = 1_000_000_000
 def a_footprint(x: float = 0.0, y: float = 0.0) -> Footprint:
     """A footprint on the belt surface, oriented along travel."""
     return Footprint(
-        center=(x, y, 0.93),
+        center=np.asarray((x, y, 0.93), dtype=np.float64),
         major_extent=0.10,
         minor_extent=0.06,
         yaw=0.0,
@@ -109,7 +110,10 @@ def test_a_footprint_refuses_a_minor_extent_wider_than_its_major() -> None:
     """The axes are named, so they cannot be swapped silently."""
     with pytest.raises(FrameError, match="minor extent"):
         Footprint(
-            center=(0.0, 0.0, 0.93), major_extent=0.05, minor_extent=0.09, yaw=0.0
+            center=np.asarray((0.0, 0.0, 0.93), dtype=np.float64),
+            major_extent=0.05,
+            minor_extent=0.09,
+            yaw=0.0,
         )
 
 
@@ -121,7 +125,7 @@ def test_a_footprint_that_declines_to_state_a_yaw_says_so() -> None:
     acts on it.
     """
     circular = Footprint(
-        center=(0.0, 0.0, 0.93),
+        center=np.asarray((0.0, 0.0, 0.93), dtype=np.float64),
         major_extent=0.07,
         minor_extent=0.07,
         yaw=0.0,

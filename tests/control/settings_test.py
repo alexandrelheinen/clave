@@ -6,6 +6,7 @@ import math
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pytest
 
 from clave.control.settings import ControlSettings, Profile
@@ -129,7 +130,9 @@ def test_the_calibration_offset_is_zero_until_something_measures_it() -> None:
     mounting that does not exist. This fails when one appears without the
     measurement that justifies it.
     """
-    assert shipped().calibration.flange_offset == (0.0, 0.0, 0.0)
+    assert shipped().calibration.flange_offset == pytest.approx(
+        np.zeros(3, dtype=np.float64),
+    )
 
 
 def test_the_park_pose_lies_inside_the_region_the_arm_is_trusted_over() -> None:

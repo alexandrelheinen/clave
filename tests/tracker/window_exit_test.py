@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from clave.world import belt, config
@@ -38,7 +39,7 @@ def layout(arm_x: float) -> SceneLayout:
             speed=0.31,
             height_tolerance=0.05,
         ),
-        arm_base=(arm_x, -0.70, 0.90),
+        arm_base=np.asarray((arm_x, -0.70, 0.90), dtype=np.float64),
         reach_min=_REACH_MIN,
         reach_max=_REACH_MAX,
         tool_above_base=_TOOL_ABOVE,
@@ -80,7 +81,7 @@ def test_a_belt_that_never_enters_reach_reports_no_exit() -> None:
     # Push the belt far past the outer radius.
     plan = SceneLayout(
         belt=plan.belt,
-        arm_base=(0.0, -(_REACH_MAX + 0.5), 0.90),
+        arm_base=np.asarray((0.0, -(_REACH_MAX + 0.5), 0.90), dtype=np.float64),
         reach_min=_REACH_MIN,
         reach_max=_REACH_MAX,
         tool_above_base=_TOOL_ABOVE,

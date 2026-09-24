@@ -6,6 +6,7 @@ import math
 
 import numpy as np
 import pytest
+from numpy.typing import NDArray
 
 from clave.control.trajectory import (
     Segment,
@@ -17,7 +18,7 @@ from clave.control.trajectory import (
     soonest_feasible,
 )
 
-BELT = (0.314, 0.0, 0.0)
+BELT = np.asarray((0.314, 0.0, 0.0), dtype=np.float64)
 MAX_SPEED = 1.00
 MAX_ACCELERATION = 2.50
 Z_OFFSET = 0.05
@@ -25,12 +26,12 @@ DRIFT_HORIZON = 0.30
 SEGMENT_SAMPLES = 64
 BISECTION_PASSES = 40
 APPROACH_SPEED = 0.25
-PARK = (0.45, -1.00, 1.20)
+PARK = np.asarray((0.45, -1.00, 1.20), dtype=np.float64)
 
 
-def moving(position: tuple[float, float, float]) -> State:
+def moving(position: NDArray[np.float64]) -> State:
     """A state standing still somewhere."""
-    return State.at_rest(position)
+    return State.at_rest(np.asarray(position, dtype=np.float64))
 
 
 def test_a_segment_meets_every_boundary_condition_it_was_given() -> None:
@@ -42,14 +43,14 @@ def test_a_segment_meets_every_boundary_condition_it_was_given() -> None:
     approached, chaining two arcs would jerk.
     """
     start = State(
-        position=(0.1, 0.2, 1.0),
-        velocity=(0.3, -0.1, 0.0),
-        acceleration=(0.5, 0.0, -0.2),
+        position=np.asarray((0.1, 0.2, 1.0), dtype=np.float64),
+        velocity=np.asarray((0.3, -0.1, 0.0), dtype=np.float64),
+        acceleration=np.asarray((0.5, 0.0, -0.2), dtype=np.float64),
     )
     end = State(
-        position=(0.6, 0.0, 0.9),
-        velocity=(0.0, 0.2, -0.25),
-        acceleration=(0.0, 0.0, 0.0),
+        position=np.asarray((0.6, 0.0, 0.9), dtype=np.float64),
+        velocity=np.asarray((0.0, 0.2, -0.25), dtype=np.float64),
+        acceleration=np.zeros(3, dtype=np.float64),
     )
     arc = Segment(start=start, end=end, duration=0.8)
 
@@ -72,14 +73,14 @@ def test_one_instant_matches_the_sampled_polynomial() -> None:
     """
     arc = Segment(
         start=State(
-            position=(0.1, 0.2, 1.0),
-            velocity=(0.3, -0.1, 0.0),
-            acceleration=(0.5, 0.0, -0.2),
+            position=np.asarray((0.1, 0.2, 1.0), dtype=np.float64),
+            velocity=np.asarray((0.3, -0.1, 0.0), dtype=np.float64),
+            acceleration=np.asarray((0.5, 0.0, -0.2), dtype=np.float64),
         ),
         end=State(
-            position=(0.6, 0.0, 0.9),
-            velocity=(0.0, 0.2, -0.25),
-            acceleration=(0.0, 0.0, 0.0),
+            position=np.asarray((0.6, 0.0, 0.9), dtype=np.float64),
+            velocity=np.asarray((0.0, 0.2, -0.25), dtype=np.float64),
+            acceleration=np.zeros(3, dtype=np.float64),
         ),
         duration=0.8,
     )
@@ -99,8 +100,8 @@ def test_asking_past_the_end_returns_the_end() -> None:
     tick late should hold rather than be thrown across the cell.
     """
     arc = Segment(
-        start=State.at_rest((0.0, 0.0, 1.0)),
-        end=State.at_rest((0.5, 0.0, 1.0)),
+        start=State.at_rest(np.asarray((0.0, 0.0, 1.0), dtype=np.float64)),
+        end=State.at_rest(np.asarray((0.5, 0.0, 1.0), dtype=np.float64)),
         duration=0.5,
     )
     assert arc.at(9.0).position == pytest.approx(arc.at(0.5).position)
@@ -120,23 +121,26 @@ def test_the_dip_starts_exactly_where_the_algebra_says() -> None:
     boundary = descent_limit_seconds(clearance, speed)
     assert boundary == pytest.approx(0.50)
 
-    top = (0.0, 0.0, 1.00)
+    top = np.asarray((0.0, 0.0, 1.00), dtype=np.float64)
     for span, dips in ((boundary * 0.98, False), (boundary * 1.10, True)):
         arc = Segment(
             start=State(
                 position=top,
-                velocity=(BELT[0], 0.0, -speed),
-                acceleration=(0.0, 0.0, 0.0),
+                velocity=np.asarray((BELT[0], 0.0, -speed), dtype=np.float64),
+                acceleration=np.zeros(3, dtype=np.float64),
             ),
             end=State(
-                position=(BELT[0] * span, 0.0, top[2] - clearance),
+                position=np.asarray(
+                    (BELT[0] * span, 0.0, top[2] - clearance),
+                    dtype=np.float64,
+                ),
                 velocity=BELT,
-                acceleration=(0.0, 0.0, 0.0),
+                acceleration=np.zeros(3, dtype=np.float64),
             ),
             duration=span,
         )
-        lowest = min(arc.at(span * i / 400).position[2] for i in range(401))
-        under = (top[2] - clearance) - lowest
+        lowest = min(float(arc.at(span * i / 400).position[2]) for i in range(401))
+        under = float(top[2] - clearance) - lowest
         assert (under > 1e-6) is dips, f"{span:.3f} s dipped {under * 1000:.3f} mm"
 
 
@@ -157,24 +161,27 @@ def test_the_chosen_descent_never_dips() -> None:
     """The chosen descent never dips."""
     clearance, speed = 0.05, 0.25
     exact = descent_seconds(clearance, speed)
-    top = (0.0, 0.0, 1.00)
+    top = np.asarray((0.0, 0.0, 1.00), dtype=np.float64)
     for stretch, dips in ((1.0, False),):
         span = exact * stretch
         arc = Segment(
             start=State(
                 position=top,
-                velocity=(BELT[0], 0.0, -speed),
-                acceleration=(0.0, 0.0, 0.0),
+                velocity=np.asarray((BELT[0], 0.0, -speed), dtype=np.float64),
+                acceleration=np.zeros(3, dtype=np.float64),
             ),
             end=State(
-                position=(BELT[0] * span, 0.0, top[2] - clearance),
+                position=np.asarray(
+                    (BELT[0] * span, 0.0, top[2] - clearance),
+                    dtype=np.float64,
+                ),
                 velocity=BELT,
-                acceleration=(0.0, 0.0, 0.0),
+                acceleration=np.zeros(3, dtype=np.float64),
             ),
             duration=span,
         )
-        lowest = min(arc.at(span * i / 200).position[2] for i in range(201))
-        under = (top[2] - clearance) - lowest
+        lowest = min(float(arc.at(span * i / 200).position[2]) for i in range(201))
+        under = float(top[2] - clearance) - lowest
         assert (under > 1e-5) is dips, f"stretch {stretch} dipped {under * 1000:.2f} mm"
 
 
@@ -188,18 +195,22 @@ def test_a_descent_that_matches_the_object_costs_far_less_acceleration() -> None
     """
     span = descent_seconds(Z_OFFSET, APPROACH_SPEED)
     top = State(
-        position=(0.0, 0.0, 1.00),
-        velocity=(BELT[0], 0.0, -APPROACH_SPEED),
-        acceleration=(0.0, 0.0, 0.0),
+        position=np.asarray((0.0, 0.0, 1.00), dtype=np.float64),
+        velocity=np.asarray((BELT[0], 0.0, -APPROACH_SPEED), dtype=np.float64),
+        acceleration=np.zeros(3, dtype=np.float64),
     )
-    landing = (BELT[0] * span, 0.0, 0.95)
+    landing = np.asarray((BELT[0] * span, 0.0, 0.95), dtype=np.float64)
 
     stopping = Segment(top, State.at_rest(landing), span).peak_acceleration(
         SEGMENT_SAMPLES
     )
     matching = Segment(
         top,
-        State(position=landing, velocity=BELT, acceleration=(0.0, 0.0, 0.0)),
+        State(
+            position=landing,
+            velocity=BELT,
+            acceleration=np.zeros(3, dtype=np.float64),
+        ),
         span,
     ).peak_acceleration(SEGMENT_SAMPLES)
     assert matching < 0.35 * stopping
@@ -212,7 +223,7 @@ def test_the_approach_ends_above_where_the_object_will_be() -> None:
     sits one clearance above the object's position at the instant the
     descent that follows will finish.
     """
-    now = (-0.40, 0.10, 0.95)
+    now = np.asarray((-0.40, 0.10, 0.95), dtype=np.float64)
     arc = approach(
         moving(PARK),
         now,
@@ -241,7 +252,7 @@ def test_the_approach_arrives_already_descending_and_moving_with_the_belt() -> N
     """
     arc = approach(
         moving(PARK),
-        (-0.40, 0.10, 0.95),
+        np.asarray((-0.40, 0.10, 0.95), dtype=np.float64),
         BELT,
         Z_OFFSET,
         APPROACH_SPEED,
@@ -261,7 +272,7 @@ def test_the_approach_respects_both_ceilings_over_its_whole_length() -> None:
     """AC-MOVE-09: the approach respects both ceilings over its whole length."""
     arc = approach(
         moving(PARK),
-        (-0.40, 0.10, 0.95),
+        np.asarray((-0.40, 0.10, 0.95), dtype=np.float64),
         BELT,
         Z_OFFSET,
         APPROACH_SPEED,
@@ -286,7 +297,7 @@ def test_the_interception_found_is_the_soonest_feasible_one() -> None:
     """
     arc = approach(
         moving(PARK),
-        (-0.40, 0.10, 0.95),
+        np.asarray((-0.40, 0.10, 0.95), dtype=np.float64),
         BELT,
         Z_OFFSET,
         APPROACH_SPEED,
@@ -340,7 +351,7 @@ def test_an_object_that_cannot_be_reached_in_time_is_refused() -> None:
     assert (
         approach(
             moving(PARK),
-            (-0.40, 0.10, 0.95),
+            np.asarray((-0.40, 0.10, 0.95), dtype=np.float64),
             BELT,
             Z_OFFSET,
             APPROACH_SPEED,
@@ -361,7 +372,7 @@ def test_the_descent_starts_exactly_where_the_approach_ended() -> None:
     Position, velocity and acceleration all carried across, which is what
     makes the pair one motion rather than two with a stop between them.
     """
-    now = (-0.40, 0.10, 0.95)
+    now = np.asarray((-0.40, 0.10, 0.95), dtype=np.float64)
     first = approach(
         moving(PARK),
         now,
@@ -389,7 +400,7 @@ def test_the_descent_starts_exactly_where_the_approach_ended() -> None:
 
 def test_the_descent_lands_on_the_object_moving_with_it() -> None:
     """AC-MOVE-10: the descent lands on the object, moving with it."""
-    now = (-0.40, 0.10, 0.95)
+    now = np.asarray((-0.40, 0.10, 0.95), dtype=np.float64)
     first = approach(
         moving(PARK),
         now,
@@ -425,7 +436,7 @@ def test_the_pair_never_stops_between_the_two_arcs() -> None:
     happens to be moving at the waypoint and stalls either side of it is
     still an arm that goes, stops and goes.
     """
-    now = (-0.40, 0.10, 0.95)
+    now = np.asarray((-0.40, 0.10, 0.95), dtype=np.float64)
     first = approach(
         moving(PARK),
         now,
@@ -461,11 +472,11 @@ def test_a_belt_the_arm_cannot_outrun_refuses_every_interception() -> None:
     that multiple of the belt speed before any interception exists. This
     fails if that margin is ever quietly assumed away.
     """
-    quick = (0.9, 0.0, 0.0)
+    quick = np.asarray((0.9, 0.0, 0.0), dtype=np.float64)
     assert (
         approach(
             moving(PARK),
-            (-0.40, 0.10, 0.95),
+            np.asarray((-0.40, 0.10, 0.95), dtype=np.float64),
             quick,
             Z_OFFSET,
             APPROACH_SPEED,

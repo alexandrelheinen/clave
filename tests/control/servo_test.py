@@ -6,7 +6,9 @@ import math
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pytest
+from numpy.typing import NDArray
 
 from clave.control.motion import Command
 from clave.control.servo import follow
@@ -37,14 +39,14 @@ def world() -> Any:
     )
 
 
-def flange_of(world: Any) -> tuple[float, float, float]:
+def flange_of(world: Any) -> NDArray[np.float64]:
     """Where the flange stands right now."""
     from clave.world import arm as armmod
 
     model, data, arm = world
     del model
     place = armmod.end_effector_position(data, arm)
-    return float(place[0]), float(place[1]), float(place[2])
+    return np.asarray(place, dtype=np.float64)
 
 
 def settle(world: Any, command: Command, steps: int = 400) -> Any:
@@ -60,7 +62,7 @@ def settle(world: Any, command: Command, steps: int = 400) -> Any:
 
 def test_a_reachable_pose_moves_the_flange_toward_it(world: Any) -> None:
     """AC-MOVE-04: a reachable pose moves the flange toward it."""
-    target = (0.30, -0.20, 1.12)
+    target = np.asarray((0.30, -0.20, 1.12), dtype=np.float64)
     before = math.dist(flange_of(world), target)
     settle(world, Command(position=target, yaw=0.0))
     assert math.dist(flange_of(world), target) < before
@@ -78,7 +80,7 @@ def test_the_flange_arrives_inside_the_tolerance_the_task_layer_uses(
     from clave.control.settings import ControlSettings
 
     settings = ControlSettings.load(load(ROOT / "configs" / "runtime" / "control.yml"))
-    target = (0.20, -0.30, 1.15)
+    target = np.asarray((0.20, -0.30, 1.15), dtype=np.float64)
     settle(world, Command(position=target, yaw=0.0), steps=1200)
     assert math.dist(flange_of(world), target) <= settings.task.arrival_tolerance
 
@@ -86,7 +88,13 @@ def test_the_flange_arrives_inside_the_tolerance_the_task_layer_uses(
 def test_a_pose_outside_the_annulus_is_refused_and_named(world: Any) -> None:
     """AC-MOVE-05: a pose outside the annulus is refused and named."""
     model, data, arm = world
-    step = follow(model, data, arm, Command(position=(3.0, 0.0, 1.10), yaw=0.0), GAIN)
+    step = follow(
+        model,
+        data,
+        arm,
+        Command(position=np.asarray((3.0, 0.0, 1.10), dtype=np.float64), yaw=0.0),
+        GAIN,
+    )
     assert step.refusal is not None
     assert "annulus" in step.refusal
 
@@ -95,7 +103,11 @@ def test_a_pose_outside_the_vertical_band_is_refused_and_named(world: Any) -> No
     """AC-MOVE-05: a pose outside the vertical band is refused and named."""
     model, data, arm = world
     step = follow(
-        model, data, arm, Command(position=(0.30, -0.30, 2.40), yaw=0.0), GAIN
+        model,
+        data,
+        arm,
+        Command(position=np.asarray((0.30, -0.30, 2.40), dtype=np.float64), yaw=0.0),
+        GAIN,
     )
     assert step.refusal is not None
     assert "band" in step.refusal
@@ -113,7 +125,13 @@ def test_a_refused_pose_commands_a_hold_rather_than_the_pose(world: Any) -> None
     from clave.world import arm as armmod
 
     model, data, arm = world
-    step = follow(model, data, arm, Command(position=(3.0, 0.0, 1.10), yaw=0.0), GAIN)
+    step = follow(
+        model,
+        data,
+        arm,
+        Command(position=np.asarray((3.0, 0.0, 1.10), dtype=np.float64), yaw=0.0),
+        GAIN,
+    )
     assert step.refusal is not None
     held = armmod.joint_positions(model, data, arm)
     for slot, actuator in enumerate(arm.actuator_ids):
@@ -133,9 +151,19 @@ def test_an_arm_left_refusing_does_not_sag_out_of_its_own_workspace(
     from clave.world import arm as armmod
 
     model, data, arm = world
-    settle(world, Command(position=(0.30, -0.30, 1.15), yaw=0.0), steps=900)
+    settle(
+        world,
+        Command(position=np.asarray((0.30, -0.30, 1.15), dtype=np.float64), yaw=0.0),
+        steps=900,
+    )
     for _ in range(200):
-        follow(model, data, arm, Command(position=(3.0, 0.0, 1.10), yaw=0.0), GAIN)
+        follow(
+            model,
+            data,
+            arm,
+            Command(position=np.asarray((3.0, 0.0, 1.10), dtype=np.float64), yaw=0.0),
+            GAIN,
+        )
         mujoco.mj_step(model, data)
     import numpy
 
@@ -151,9 +179,17 @@ def test_a_command_with_no_yaw_holds_the_rotation_the_arm_has(world: Any) -> Non
     from clave.world import arm as armmod
 
     model, data, arm = world
-    settle(world, Command(position=(0.30, -0.25, 1.15), yaw=1.0), steps=900)
+    settle(
+        world,
+        Command(position=np.asarray((0.30, -0.25, 1.15), dtype=np.float64), yaw=1.0),
+        steps=900,
+    )
     held = armmod.tool_yaw(data, arm)
-    settle(world, Command(position=(0.32, -0.25, 1.15), yaw=None), steps=300)
+    settle(
+        world,
+        Command(position=np.asarray((0.32, -0.25, 1.15), dtype=np.float64), yaw=None),
+        steps=300,
+    )
     assert armmod.tool_yaw(data, arm) == pytest.approx(held, abs=0.15)
 
 
@@ -161,7 +197,11 @@ def test_the_commanded_joints_stay_inside_their_limits(world: Any) -> None:
     """The commanded joints stay inside their limits."""
     model, data, arm = world
     step = follow(
-        model, data, arm, Command(position=(0.40, -0.40, 1.05), yaw=0.3), GAIN
+        model,
+        data,
+        arm,
+        Command(position=np.asarray((0.40, -0.40, 1.05), dtype=np.float64), yaw=0.3),
+        GAIN,
     )
     assert step.refusal is None
     for angle, low, high in zip(step.joints, arm.lower, arm.upper, strict=True):
@@ -187,11 +227,15 @@ def test_the_arm_keeps_up_with_a_pose_moving_at_the_speed_ceiling(
 
     settings = ControlSettings.load(load(ROOT / "configs" / "runtime" / "control.yml"))
     model, data, arm = world
-    settle(world, Command(position=(0.30, -0.30, 1.15), yaw=0.0), steps=900)
+    settle(
+        world,
+        Command(position=np.asarray((0.30, -0.30, 1.15), dtype=np.float64), yaw=0.0),
+        steps=900,
+    )
 
     goal = Goal(
         phase=Phase.TRACK,
-        position=(-0.40, -0.20, 1.15),
+        position=np.asarray((-0.40, -0.20, 1.15), dtype=np.float64),
         yaw=0.0,
         track_id=1,
         observed_at_nanos=0,
@@ -228,11 +272,15 @@ def test_stepping_motion_from_the_measurement_crawls(world: Any) -> None:
 
     settings = ControlSettings.load(load(ROOT / "configs" / "runtime" / "control.yml"))
     model, data, arm = world
-    settle(world, Command(position=(0.30, -0.30, 1.15), yaw=0.0), steps=900)
+    settle(
+        world,
+        Command(position=np.asarray((0.30, -0.30, 1.15), dtype=np.float64), yaw=0.0),
+        steps=900,
+    )
 
     goal = Goal(
         phase=Phase.TRACK,
-        position=(-0.40, -0.20, 1.15),
+        position=np.asarray((-0.40, -0.20, 1.15), dtype=np.float64),
         yaw=0.0,
         track_id=1,
         observed_at_nanos=0,
@@ -299,7 +347,7 @@ def test_a_wrist_singularity_bounds_the_joint_command_rather_than_the_pose(
     # A small move across the degenerate direction, which is what asks the
     # wrist for a large turn.
     here = flange_of(world)
-    nudged = (here[0] + 0.004, here[1] + 0.004, here[2])
+    nudged = np.asarray((here[0] + 0.004, here[1] + 0.004, here[2]), dtype=np.float64)
     step = follow(
         model, data, arm, Command(position=nudged, yaw=0.0), 1.0, max_joint_step=cap
     )
@@ -333,7 +381,12 @@ def test_without_the_cap_that_command_can_run_away(world: Any) -> None:
         model,
         data,
         arm,
-        Command(position=(here[0] + 0.004, here[1] + 0.004, here[2]), yaw=0.0),
+        Command(
+            position=np.asarray(
+                (here[0] + 0.004, here[1] + 0.004, here[2]), dtype=np.float64
+            ),
+            yaw=0.0,
+        ),
         1.0,
     )
     assert step.refusal is None, step.refusal
@@ -355,13 +408,17 @@ def test_the_cap_is_measured_against_the_previous_command(world: Any) -> None:
     from clave.world import arm as armmod
 
     model, data, arm = world
-    settle(world, Command(position=(0.30, -0.30, 1.15), yaw=0.0), steps=900)
+    settle(
+        world,
+        Command(position=np.asarray((0.30, -0.30, 1.15), dtype=np.float64), yaw=0.0),
+        steps=900,
+    )
     cap = 2.09 * 0.002
 
     # Hold the arm still while the command walks away from it, then confirm
     # the command kept moving at the cap rather than stalling against the
     # frozen measurement.
-    target = (0.30, -0.30, 1.15)
+    target = np.asarray((0.30, -0.30, 1.15), dtype=np.float64)
     for _ in range(50):
         follow(model, data, arm, Command(position=target, yaw=0.0), 1.0, cap)
     walked = [float(data.ctrl[actuator]) for actuator in arm.actuator_ids]
@@ -370,7 +427,9 @@ def test_the_cap_is_measured_against_the_previous_command(world: Any) -> None:
             model,
             data,
             arm,
-            Command(position=(0.10, -0.40, 1.20), yaw=0.0),
+            Command(
+                position=np.asarray((0.10, -0.40, 1.20), dtype=np.float64), yaw=0.0
+            ),
             1.0,
             cap,
         )
@@ -416,9 +475,11 @@ def track(world: Any, speed: float, lead: float) -> float:
             data,
             arm,
             Command(
-                position=(target[0], target[1], target[2]),
+                position=np.asarray(
+                    (target[0], target[1], target[2]), dtype=np.float64
+                ),
                 yaw=0.0,
-                velocity=(speed, 0.0, 0.0),
+                velocity=np.asarray((speed, 0.0, 0.0), dtype=np.float64),
             ),
             1.0,
             lead_seconds=lead,
@@ -487,16 +548,25 @@ def test_a_lead_at_the_edge_of_reach_is_projected_rather_than_refused(
     model, data, arm = world
     base = (float(arm.base_position[0]), float(arm.base_position[1]))
 
-    def keep_inside(pose: tuple[float, float, float]) -> tuple[float, float, float]:
-        x, y = armmod.project_into_reach(base, pose[0], pose[1], arm.reach)
-        return x, y, pose[2]
+    def keep_inside(pose: NDArray[np.float64]) -> NDArray[np.float64]:
+        x, y = armmod.project_into_reach(
+            base, float(pose[0]), float(pose[1]), arm.reach
+        )
+        return np.asarray((x, y, float(pose[2])), dtype=np.float64)
 
-    edge = (base[0] + arm.reach.reach_max - 0.005, base[1], 1.15)
+    edge = np.asarray(
+        (base[0] + arm.reach.reach_max - 0.005, base[1], 1.15),
+        dtype=np.float64,
+    )
     step = follow(
         model,
         data,
         arm,
-        Command(position=edge, yaw=0.0, velocity=(2.0, 0.0, 0.0)),
+        Command(
+            position=edge,
+            yaw=0.0,
+            velocity=np.asarray((2.0, 0.0, 0.0), dtype=np.float64),
+        ),
         1.0,
         lead_seconds=0.033,
         keep_inside=keep_inside,

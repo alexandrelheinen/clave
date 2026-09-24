@@ -15,6 +15,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import numpy as np
+from numpy.typing import NDArray
+
 from clave.errors import ClaveError
 from clave.tracker.belt_frame import NadirOptics
 from clave.tracker.evidence import Role
@@ -44,9 +47,25 @@ class SensorSpec:
 
     source_id: str
     role: Role
-    position: tuple[float, float, float]
+    position: NDArray[np.float64]
     optics: NadirOptics
     pixels: tuple[int, int]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self, "position", np.asarray(self.position, dtype=np.float64)
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, SensorSpec):
+            return NotImplemented
+        return (
+            self.source_id == other.source_id
+            and self.role == other.role
+            and bool(np.allclose(self.position, other.position, rtol=0.0, atol=1e-12))
+            and self.optics == other.optics
+            and self.pixels == other.pixels
+        )
 
 
 def load_sensors(raw: dict[str, object]) -> tuple[SensorSpec, ...]:
@@ -94,7 +113,9 @@ def load_sensors(raw: dict[str, object]) -> tuple[SensorSpec, ...]:
             SensorSpec(
                 source_id=source_id,
                 role=roles[named],
-                position=(position[0], position[1], position[2]),
+                position=np.asarray(
+                    (position[0], position[1], position[2]), dtype=np.float64
+                ),
                 optics=NadirOptics(
                     camera_height=position[2],
                     fovy_degrees=field_of_view(entry, *catalogs),

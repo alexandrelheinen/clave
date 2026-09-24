@@ -28,22 +28,23 @@ carry is the same object as every other arc rather than a special case.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
+from numpy.typing import NDArray
 
-from clave.control.settings import Phase, Point
+from clave.control.settings import Phase
 from clave.control.trajectory import (
     Segment,
     State,
     approach,
-    as_point,
-    as_vector,
     descend,
     descent_seconds,
     distance,
+    same,
     soonest_feasible,
     where_carried,
+    zeros,
 )
 
 JAW_OPEN = 0.0
@@ -70,7 +71,7 @@ cannot be handed a zero.
 """
 
 
-def _transport(velocity: Point) -> Point:
+def _transport(velocity: NDArray[np.float64]) -> NDArray[np.float64]:
     r"""Return the belt-axis model transport the jaw matches ($\mathbf{v}_T$).
 
     The arcs are planned in the target frame. For the object target, transport
@@ -86,10 +87,10 @@ def _transport(velocity: Point) -> Point:
         $(\max(0, v_x), 0, 0)$: no reverse travel along the belt, and no
         lateral or vertical matching.
     """
-    return (max(0.0, float(velocity[0])), 0.0, 0.0)
+    return np.asarray((max(0.0, float(velocity[0])), 0.0, 0.0), dtype=np.float64)
 
 
-def _drift_velocity(velocity: Point) -> Point:
+def _drift_velocity(velocity: NDArray[np.float64]) -> NDArray[np.float64]:
     """Return the velocity used only to aim the target origin for a while.
 
     Across the belt nothing drives the object, so this component is carried
@@ -102,7 +103,7 @@ def _drift_velocity(velocity: Point) -> Point:
     Returns:
         The same velocity with no component along the belt normal.
     """
-    return (float(velocity[0]), float(velocity[1]), 0.0)
+    return np.asarray((float(velocity[0]), float(velocity[1]), 0.0), dtype=np.float64)
 
 
 def _fit_segment(
@@ -164,10 +165,21 @@ class VisitTick:
     """
 
     phase: Phase
-    position: Point
-    velocity: Point
+    position: NDArray[np.float64]
+    velocity: NDArray[np.float64]
     yaw: float | None
     grip: float
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, VisitTick):
+            return NotImplemented
+        return (
+            self.phase is other.phase
+            and same(self.position, other.position)
+            and same(self.velocity, other.velocity)
+            and self.yaw == other.yaw
+            and self.grip == other.grip
+        )
 
 
 @dataclass(frozen=True)
@@ -208,7 +220,20 @@ class Plan:
     pick_at: float
     target_yaw: float | None = None
     initial_yaw: float | None = None
-    transport_velocity: Point = (0.0, 0.0, 0.0)
+    transport_velocity: NDArray[np.float64] = field(default_factory=zeros)
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Plan):
+            return NotImplemented
+        return (
+            self.track_id == other.track_id
+            and self.legs == other.legs
+            and self.started_at == other.started_at
+            and self.pick_at == other.pick_at
+            and self.target_yaw == other.target_yaw
+            and self.initial_yaw == other.initial_yaw
+            and same(self.transport_velocity, other.transport_velocity)
+        )
 
     @property
     def duration(self) -> float:
@@ -298,8 +323,8 @@ class Plan:
 def plan_pick(
     flange: State,
     track_id: int,
-    object_position_belt: Point | None = None,
-    belt_velocity_world: Point | None = None,
+    object_position_belt: NDArray[np.float64] | None = None,
+    belt_velocity_world: NDArray[np.float64] | None = None,
     approach_clearance_z: float | None = None,
     approach_speed: float = 0.0,
     dwell_seconds: float = 0.0,
@@ -308,7 +333,7 @@ def plan_pick(
     latest: float = 0.0,
     at_seconds: float = 0.0,
     margin: float = 1.0,
-    target_position_world: Point | None = None,
+    target_position_world: NDArray[np.float64] | None = None,
     retreat_lift: float | None = None,
     *,
     drift_horizon: float,
@@ -318,10 +343,10 @@ def plan_pick(
     bisection_passes: int,
     minimum_delivery_seconds: float,
     correction_steps: int,
-    object_position: Point | None = None,
-    belt_velocity: Point | None = None,
+    object_position: NDArray[np.float64] | None = None,
+    belt_velocity: NDArray[np.float64] | None = None,
     z_offset: float | None = None,
-    over: Point | None = None,
+    over: NDArray[np.float64] | None = None,
     belt_width: float = 0.50,
     belt_center_y: float = 0.0,
     belt_border_y: float | None = None,
@@ -409,9 +434,12 @@ def plan_pick(
         else:
             safe_height = max(target_pos[2], flange.position[2])
         border_approach = State(
-            position=(target_pos[0], border_y, safe_height),
-            velocity=(0.0, cross_v, 0.0),
-            acceleration=(0.0, 0.0, 0.0),
+            position=np.asarray(
+                (target_pos[0], border_y, safe_height),
+                dtype=np.float64,
+            ),
+            velocity=np.asarray((0.0, cross_v, 0.0), dtype=np.float64),
+            acceleration=zeros(),
         )
         entry_arc = _fit_segment(
             flange,
@@ -428,9 +456,11 @@ def plan_pick(
         # Along the belt only. The border waypoint stands upstream of the pick
         # and the arc that follows it carries the drift across from there, so
         # extrapolating the lateral component here as well would count it twice.
-        obj_pos_at_border = as_point(
-            as_vector(obj_pos)
-            + as_vector(transport) * np.asarray([1.0, 0.0, 0.0]) * entry_arc.duration
+        obj_pos_at_border = (
+            obj_pos
+            + transport
+            * np.asarray([1.0, 0.0, 0.0], dtype=np.float64)
+            * entry_arc.duration
         )
         reaching = approach(
             border_approach,
@@ -497,15 +527,15 @@ def plan_pick(
 
 def refine(
     plan: Plan,
-    object_position_belt: Point | None = None,
-    belt_velocity_world: Point | None = None,
+    object_position_belt: NDArray[np.float64] | None = None,
+    belt_velocity_world: NDArray[np.float64] | None = None,
     approach_clearance_z: float | None = None,
     approach_speed: float = 0.0,
     dwell_seconds: float = 0.0,
     max_speed: float = 0.0,
     max_acceleration: float = 0.0,
     at_seconds: float = 0.0,
-    target_position_world: Point | None = None,
+    target_position_world: NDArray[np.float64] | None = None,
     retreat_lift: float | None = None,
     *,
     drift_horizon: float,
@@ -515,10 +545,10 @@ def refine(
     bisection_passes: int,
     minimum_delivery_seconds: float,
     correction_steps: int,
-    object_position: Point | None = None,
-    belt_velocity: Point | None = None,
+    object_position: NDArray[np.float64] | None = None,
+    belt_velocity: NDArray[np.float64] | None = None,
     z_offset: float | None = None,
-    over: Point | None = None,
+    over: NDArray[np.float64] | None = None,
     belt_width: float = 0.50,
     belt_center_y: float = 0.0,
     belt_border_y: float | None = None,
@@ -605,9 +635,9 @@ def refine(
             if not new_entry_arc.fits(max_speed, max_accel, segment_sample_count):
                 return None
             # Along the belt only, for the same reason as the entry waypoint.
-            obj_pos_at_border = as_point(
-                as_vector(obj_pos)
-                + as_vector(transport) * np.asarray([1.0, 0.0, 0.0]) * rem_entry
+            obj_pos_at_border = (
+                obj_pos
+                + transport * np.asarray([1.0, 0.0, 0.0], dtype=np.float64) * rem_entry
             )
             new_track_arc = _feasible_arc(
                 start=entry_leg.end,
@@ -620,12 +650,15 @@ def refine(
                         clearance,
                         drift_horizon,
                     ),
-                    velocity=(
-                        transport[0],
-                        transport[1],
-                        transport[2] - approach_speed,
+                    velocity=np.asarray(
+                        (
+                            transport[0],
+                            transport[1],
+                            transport[2] - approach_speed,
+                        ),
+                        dtype=np.float64,
                     ),
-                    acceleration=(0.0, 0.0, 0.0),
+                    acceleration=zeros(),
                 ),
                 duration=track_leg.duration,
                 max_speed=max_speed,
@@ -685,12 +718,15 @@ def refine(
                         clearance,
                         drift_horizon,
                     ),
-                    velocity=(
-                        transport[0],
-                        transport[1],
-                        transport[2] - approach_speed,
+                    velocity=np.asarray(
+                        (
+                            transport[0],
+                            transport[1],
+                            transport[2] - approach_speed,
+                        ),
+                        dtype=np.float64,
                     ),
-                    acceleration=(0.0, 0.0, 0.0),
+                    acceleration=zeros(),
                 ),
                 duration=rem_track,
                 max_speed=max_speed,
@@ -751,12 +787,15 @@ def refine(
                 clearance,
                 drift_horizon,
             ),
-            velocity=(
-                transport[0],
-                transport[1],
-                transport[2] - approach_speed,
+            velocity=np.asarray(
+                (
+                    transport[0],
+                    transport[1],
+                    transport[2] - approach_speed,
+                ),
+                dtype=np.float64,
             ),
-            acceleration=(0.0, 0.0, 0.0),
+            acceleration=zeros(),
         ),
         duration=remaining,
         max_speed=max_speed,
@@ -800,8 +839,8 @@ def refine(
 
 def retarget_descent(
     plan: Plan,
-    object_position: Point,
-    belt_velocity: Point,
+    object_position: NDArray[np.float64],
+    belt_velocity: NDArray[np.float64],
     approach_clearance_z: float,
     approach_speed: float,
     dwell_seconds: float,
@@ -809,7 +848,7 @@ def retarget_descent(
     max_acceleration: float,
     at_seconds: float,
     retreat_lift: float | None = None,
-    over: Point | None = None,
+    over: NDArray[np.float64] | None = None,
     belt_border_y: float | None = None,
     safe_height_world: float | None = None,
     cross_speed: float | None = None,
@@ -902,7 +941,7 @@ def retarget_descent(
                 drift_horizon,
             ),
             velocity=transport,
-            acceleration=(0.0, 0.0, 0.0),
+            acceleration=zeros(),
         ),
         duration=remaining,
         max_speed=max_speed,
@@ -939,14 +978,17 @@ def retarget_descent(
         )
         legs.append(Leg(Phase.RETREAT, climbing, JAW_SHUT))
         border = State(
-            position=(over[0], belt_border_y, safe_height),
-            velocity=(0.0, -cross_v, 0.0),
-            acceleration=(0.0, 0.0, 0.0),
+            position=np.asarray(
+                (over[0], belt_border_y, safe_height),
+                dtype=np.float64,
+            ),
+            velocity=np.asarray((0.0, -cross_v, 0.0), dtype=np.float64),
+            acceleration=zeros(),
         )
         chute = State(
             position=over,
-            velocity=(0.0, 0.0, 0.0),
-            acceleration=(0.0, 0.0, 0.0),
+            velocity=zeros(),
+            acceleration=zeros(),
         )
         legs.append(
             Leg(
@@ -991,7 +1033,7 @@ def retarget_descent(
 
 def _deliver(
     start: State,
-    target_position_world: Point,
+    target_position_world: NDArray[np.float64],
     max_speed: float,
     *,
     minimum_delivery_seconds: float,
@@ -1012,8 +1054,8 @@ def _deliver(
         start=start,
         end=State(
             position=target_position_world,
-            velocity=(0.0, 0.0, 0.0),
-            acceleration=(0.0, 0.0, 0.0),
+            velocity=zeros(),
+            acceleration=zeros(),
         ),
         duration=seconds,
     )
@@ -1022,14 +1064,14 @@ def _deliver(
 def _assemble(
     reaching: Segment,
     track_id: int,
-    object_position_belt: Point,
-    aim_velocity: Point,
-    transport_velocity: Point,
+    object_position_belt: NDArray[np.float64],
+    aim_velocity: NDArray[np.float64],
+    transport_velocity: NDArray[np.float64],
     approach_clearance_z: float,
     approach_speed: float,
     dwell_seconds: float,
     at_seconds: float,
-    target_position_world: Point | None = None,
+    target_position_world: NDArray[np.float64] | None = None,
     max_speed: float = 1.0,
     retreat_lift: float | None = None,
     *,
@@ -1082,7 +1124,7 @@ def _assemble(
         approach_speed,
         drift_horizon=drift_horizon,
     )
-    if dropping.end.velocity != transport_velocity:
+    if not same(dropping.end.velocity, transport_velocity):
         dropping = Segment(
             start=dropping.start,
             end=State(
@@ -1129,14 +1171,16 @@ def _assemble(
         )
         legs.append(Leg(Phase.RETREAT, climbing, JAW_SHUT))
         border_retreat = State(
-            position=(target_position_world[0], belt_border_y, safe_height),
-            velocity=(0.0, -cross_v, 0.0),
-            acceleration=(0.0, 0.0, 0.0),
+            position=np.asarray(
+                (target_position_world[0], belt_border_y, safe_height), dtype=np.float64
+            ),
+            velocity=np.asarray((0.0, -cross_v, 0.0), dtype=np.float64),
+            acceleration=zeros(),
         )
         chute_target = State(
             position=target_position_world,
-            velocity=(0.0, 0.0, 0.0),
-            acceleration=(0.0, 0.0, 0.0),
+            velocity=zeros(),
+            acceleration=zeros(),
         )
         seg_to_border = _fit_segment(
             climbing.end,
@@ -1169,12 +1213,12 @@ def _assemble(
 
 
 def _object_under(
-    end: Point,
-    velocity: Point,
+    end: NDArray[np.float64],
+    velocity: NDArray[np.float64],
     seconds: float,
     clearance: float,
     drift_horizon: float,
-) -> Point:
+) -> NDArray[np.float64]:
     """Return the object a carried aim at `end` was predicted from.
 
     This is `where_carried` run backwards over `seconds` at `clearance`. A
@@ -1195,20 +1239,23 @@ def _object_under(
         The object position the arc is aiming at, at the arc's own start.
     """
     across = min(seconds, drift_horizon)
-    return (
-        end[0] - velocity[0] * seconds,
-        end[1] - velocity[1] * across,
-        end[2] - clearance,
+    return np.asarray(
+        (
+            end[0] - velocity[0] * seconds,
+            end[1] - velocity[1] * across,
+            end[2] - clearance,
+        ),
+        dtype=np.float64,
     )
 
 
-def _mix(left: Point, right: Point, alpha: float) -> Point:
+def _mix(
+    left: NDArray[np.float64],
+    right: NDArray[np.float64],
+    alpha: float,
+) -> NDArray[np.float64]:
     """Return the point `alpha` of the way from `left` to `right`."""
-    return (
-        (1.0 - alpha) * left[0] + alpha * right[0],
-        (1.0 - alpha) * left[1] + alpha * right[1],
-        (1.0 - alpha) * left[2] + alpha * right[2],
-    )
+    return (1.0 - alpha) * left + alpha * right
 
 
 def _blend(left: State, right: State, alpha: float) -> State:
@@ -1269,7 +1316,12 @@ def _feasible_arc(
     return best
 
 
-def _rise(start: State, seconds: float, belt_velocity: Point, lift: float) -> Segment:
+def _rise(
+    start: State,
+    seconds: float,
+    belt_velocity: NDArray[np.float64],
+    lift: float,
+) -> Segment:
     """Return the arc that raises the flange while the jaw is closing.
 
     Args:
@@ -1286,13 +1338,13 @@ def _rise(start: State, seconds: float, belt_velocity: Point, lift: float) -> Se
     return Segment(
         start=start,
         end=State(
-            position=as_point(
-                as_vector(start.position)
-                + as_vector(belt_velocity) * seconds
-                + np.asarray([0.0, 0.0, lift])
+            position=(
+                start.position
+                + belt_velocity * seconds
+                + np.asarray([0.0, 0.0, lift], dtype=np.float64)
             ),
             velocity=belt_velocity,
-            acceleration=(0.0, 0.0, 0.0),
+            acceleration=zeros(),
         ),
         duration=seconds,
     )
@@ -1322,7 +1374,7 @@ def _closing_rise(
 def _hold(
     start: State,
     seconds: float,
-    belt_velocity: Point,
+    belt_velocity: NDArray[np.float64],
     lift: float,
     closing_rise_seconds: float,
 ) -> tuple[Leg, ...]:
@@ -1350,7 +1402,7 @@ def _hold(
     return tuple(legs)
 
 
-def _carry(start: State, seconds: float, belt_velocity: Point) -> Segment:
+def _carry(start: State, seconds: float, belt_velocity: NDArray[np.float64]) -> Segment:
     """Return the arc that rides along with the belt while the jaw closes.
 
     Args:
@@ -1366,18 +1418,19 @@ def _carry(start: State, seconds: float, belt_velocity: Point) -> Segment:
     return Segment(
         start=start,
         end=State(
-            position=as_point(
-                as_vector(start.position) + as_vector(belt_velocity) * seconds
-            ),
+            position=start.position + belt_velocity * seconds,
             velocity=belt_velocity,
-            acceleration=(0.0, 0.0, 0.0),
+            acceleration=zeros(),
         ),
         duration=seconds,
     )
 
 
 def _retreat(
-    start: State, z_offset: float, approach_speed: float, belt_velocity: Point
+    start: State,
+    z_offset: float,
+    approach_speed: float,
+    belt_velocity: NDArray[np.float64],
 ) -> Segment:
     """Return the descent read backwards: the arc that leaves the object.
 
@@ -1407,15 +1460,14 @@ def _retreat(
     return Segment(
         start=start,
         end=State(
-            position=as_point(
-                as_vector(start.position)
-                + as_vector(belt_velocity) * seconds
-                + np.asarray([0.0, 0.0, z_offset])
+            position=(
+                start.position
+                + belt_velocity * seconds
+                + np.asarray([0.0, 0.0, z_offset], dtype=np.float64)
             ),
-            velocity=as_point(
-                as_vector(belt_velocity) + np.asarray([0.0, 0.0, approach_speed])
-            ),
-            acceleration=(0.0, 0.0, 0.0),
+            velocity=belt_velocity
+            + np.asarray([0.0, 0.0, approach_speed], dtype=np.float64),
+            acceleration=zeros(),
         ),
         duration=seconds,
     )
@@ -1424,7 +1476,7 @@ def _retreat(
 def _climb(
     start: State,
     target_z: float,
-    belt_velocity: Point,
+    belt_velocity: NDArray[np.float64],
     max_speed: float,
     max_acceleration: float,
     *,
@@ -1458,25 +1510,25 @@ def _climb(
         bisection rather than a step over a range.
     """
     ceiling = max(max_speed, 1e-6)
-    level = np.asarray([start.position[0], start.position[1], target_z])
-    span = float(np.linalg.norm(level - as_vector(start.position)))
+    level = np.asarray(
+        [start.position[0], start.position[1], target_z],
+        dtype=np.float64,
+    )
+    span = float(np.linalg.norm(level - start.position))
     lower = max(PEAK_OVER_MEAN * span / ceiling, minimum_delivery_seconds)
 
     def arc(seconds: float) -> Segment:
         return Segment(
             start=start,
             end=State(
-                position=as_point(
-                    np.concatenate(
-                        (
-                            as_vector(start.position)[:2]
-                            + as_vector(belt_velocity)[:2] * seconds,
-                            np.asarray([target_z]),
-                        )
+                position=np.concatenate(
+                    (
+                        start.position[:2] + belt_velocity[:2] * seconds,
+                        np.asarray([target_z], dtype=np.float64),
                     )
                 ),
                 velocity=belt_velocity,
-                acceleration=(0.0, 0.0, 0.0),
+                acceleration=zeros(),
             ),
             duration=seconds,
         )

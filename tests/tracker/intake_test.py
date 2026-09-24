@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from clave.tracker.belt_frame import Footprint
@@ -45,7 +46,7 @@ def a_detection(source: str = "gate_wide") -> Evidence:
         confidence=0.9,
         payload=Detection(
             footprint=Footprint(
-                center=(-1.0, 0.0, 0.93),
+                center=np.asarray((-1.0, 0.0, 0.93), dtype=np.float64),
                 major_extent=0.10,
                 minor_extent=0.06,
                 yaw=0.0,
@@ -63,7 +64,9 @@ def a_label(source: str = "simulator") -> Evidence:
         observed_at_nanos=1_000,
         confidence=1.0,
         payload=GroundTruth(
-            object_id=3, material_class="M-06", position=(-1.0, 0.0, 0.93)
+            object_id=3,
+            material_class="M-06",
+            position=np.asarray((-1.0, 0.0, 0.93), dtype=np.float64),
         ),
     )
 

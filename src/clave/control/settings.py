@@ -17,10 +17,10 @@ import enum
 from dataclasses import dataclass
 from typing import Any
 
-from clave.world.config import WorldConfigError, require
+import numpy as np
+from numpy.typing import NDArray
 
-Point = tuple[float, float, float]
-"""A position in belt frame meters, which is MuJoCo world."""
+from clave.world.config import WorldConfigError, require
 
 
 class Phase(enum.Enum):
@@ -142,8 +142,8 @@ class TaskSettings:
     approach_speed: float
     interception_limit: float
     interception_margin: float
-    park_position_world: Point
-    park_marker_color: Point
+    park_position_world: NDArray[np.float64]
+    park_marker_color: tuple[float, float, float]
     aim_tolerance: float
     drift_horizon: float
     closing_rise_seconds: float
@@ -160,15 +160,15 @@ class TaskSettings:
         approach_speed: float,
         interception_limit: float,
         interception_margin: float,
-        park_position_world: Point | None = None,
-        park_marker_color: Point = (0.0, 0.0, 0.0),
+        park_position_world: NDArray[np.float64] | None = None,
+        park_marker_color: tuple[float, float, float] = (0.0, 0.0, 0.0),
         safe_clearance: float | None = None,
         aim_tolerance: float | None = None,
         drift_horizon: float | None = None,
         closing_rise_seconds: float | None = None,
         leg_samples: int | None = None,
         *,
-        park_position: Point | None = None,
+        park_position: NDArray[np.float64] | None = None,
     ) -> None:
         pos = park_position_world if park_position_world is not None else park_position
         if pos is None:
@@ -191,7 +191,9 @@ class TaskSettings:
         object.__setattr__(self, "approach_speed", approach_speed)
         object.__setattr__(self, "interception_limit", interception_limit)
         object.__setattr__(self, "interception_margin", interception_margin)
-        object.__setattr__(self, "park_position_world", pos)
+        object.__setattr__(
+            self, "park_position_world", np.asarray(pos, dtype=np.float64)
+        )
         object.__setattr__(self, "park_marker_color", park_marker_color)
         object.__setattr__(
             self,
@@ -203,8 +205,36 @@ class TaskSettings:
         object.__setattr__(self, "closing_rise_seconds", closing_rise_seconds)
         object.__setattr__(self, "leg_samples", leg_samples)
 
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, TaskSettings):
+            return NotImplemented
+        return (
+            self.profile == other.profile
+            and self.approach_height == other.approach_height
+            and self.arrival_tolerance == other.arrival_tolerance
+            and self.dwell_seconds == other.dwell_seconds
+            and self.grasp_clearance == other.grasp_clearance
+            and self.approach_speed == other.approach_speed
+            and self.interception_limit == other.interception_limit
+            and self.interception_margin == other.interception_margin
+            and bool(
+                np.allclose(
+                    self.park_position_world,
+                    other.park_position_world,
+                    rtol=0.0,
+                    atol=1e-12,
+                )
+            )
+            and self.park_marker_color == other.park_marker_color
+            and self.safe_clearance == other.safe_clearance
+            and self.aim_tolerance == other.aim_tolerance
+            and self.drift_horizon == other.drift_horizon
+            and self.closing_rise_seconds == other.closing_rise_seconds
+            and self.leg_samples == other.leg_samples
+        )
+
     @property
-    def park_position(self) -> Point:
+    def park_position(self) -> NDArray[np.float64]:
         """Backwards compatibility alias for park_position_world."""
         return self.park_position_world
 
@@ -265,7 +295,19 @@ class CalibrationSettings:
         flange_offset: The offset, in meters.
     """
 
-    flange_offset: Point
+    flange_offset: NDArray[np.float64]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self, "flange_offset", np.asarray(self.flange_offset, dtype=np.float64)
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, CalibrationSettings):
+            return NotImplemented
+        return bool(
+            np.allclose(self.flange_offset, other.flange_offset, rtol=0.0, atol=1e-12)
+        )
 
 
 @dataclass(frozen=True)
@@ -326,7 +368,7 @@ class ControlSettings:
                 ),
                 interception_margin=_positive(task, "interception_margin", "task"),
                 park_position_world=_point(task, "park_position_meters", "task"),
-                park_marker_color=_point(task, "park_marker_color", "task"),
+                park_marker_color=_color(task, "park_marker_color", "task"),
                 safe_clearance=(
                     _positive(task, "safe_clearance_meters", "task")
                     if "safe_clearance_meters" in task
@@ -419,8 +461,8 @@ def _positive(block: dict[str, Any], key: str, path: str) -> float:
     return value
 
 
-def _point(block: dict[str, Any], key: str, path: str) -> Point:
-    """Read three numbers.
+def _point(block: dict[str, Any], key: str, path: str) -> NDArray[np.float64]:
+    """Read three numbers as a spatial vector.
 
     Args:
         block: The block to read from.
@@ -428,7 +470,29 @@ def _point(block: dict[str, Any], key: str, path: str) -> Point:
         path: Dotted path of the block, for the message.
 
     Returns:
-        The point.
+        The point as a float64 array.
+
+    Raises:
+        WorldConfigError: If the key is absent or does not hold three numbers.
+    """
+    values = [float(value) for value in require(block, key, path)]
+    if len(values) != 3:
+        raise WorldConfigError(
+            f"{path}.{key} holds {len(values)} numbers, and this is three"
+        )
+    return np.asarray(values, dtype=np.float64)
+
+
+def _color(block: dict[str, Any], key: str, path: str) -> tuple[float, float, float]:
+    """Read three numbers as red, green and blue in the unit range.
+
+    Args:
+        block: The block to read from.
+        key: The key required.
+        path: Dotted path of the block, for the message.
+
+    Returns:
+        The color as a plain three-tuple.
 
     Raises:
         WorldConfigError: If the key is absent or does not hold three numbers.

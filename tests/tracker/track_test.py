@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from clave.tracker.association import (
@@ -54,7 +55,12 @@ def settings() -> FusionSettings:
 
 def a_footprint(x: float = -1.0, y: float = 0.0) -> Footprint:
     """A box resting on the belt."""
-    return Footprint(center=(x, y, 0.93), major_extent=0.10, minor_extent=0.06, yaw=0.0)
+    return Footprint(
+        center=np.asarray((x, y, 0.93), dtype=np.float64),
+        major_extent=0.10,
+        minor_extent=0.06,
+        yaw=0.0,
+    )
 
 
 class StubAssociator:
@@ -114,7 +120,9 @@ def label(at: int = SECOND, object_id: int = 3, class_id: str = "M-06") -> Evide
         observed_at_nanos=at,
         confidence=1.0,
         payload=GroundTruth(
-            object_id=object_id, material_class=class_id, position=(-1.0, 0.0, 0.93)
+            object_id=object_id,
+            material_class=class_id,
+            position=np.asarray((-1.0, 0.0, 0.93), dtype=np.float64),
         ),
     )
 
@@ -253,7 +261,7 @@ def test_grasp_geometry_is_computed_from_the_footprint() -> None:
     record = held.settle(at_nanos=SECOND)[0]
     assert record.grasp_width == pytest.approx(record.footprint.minor_extent)
     assert record.grasp_point[0] == pytest.approx(record.footprint.center[0])
-    assert record.surface_normal == (0.0, 0.0, 1.0)
+    assert record.surface_normal == pytest.approx((0.0, 0.0, 1.0))
 
 
 def test_the_record_discloses_what_came_from_the_simulator() -> None:

@@ -15,6 +15,7 @@ from __future__ import annotations
 import math
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from clave.tracker.adapters.detection import (
@@ -27,7 +28,7 @@ from clave.tracker.belt_frame import Footprint, NadirOptics
 from clave.tracker.evidence import Detection, Evidence, PixelMask, Role
 
 WIDE = NadirOptics(camera_height=1.942, fovy_degrees=55.65)
-CAMERA = (-1.0, 0.0, 1.942)
+CAMERA = np.asarray((-1.0, 0.0, 1.942), dtype=np.float64)
 SURFACE = 0.90
 
 
@@ -391,7 +392,7 @@ def test_a_mask_too_small_to_have_a_size_is_dropped() -> None:
             {"1": sliver},
             source_id="gate_wide",
             observed_at_nanos=0,
-            camera=(0.0, 0.0, 1.942),
+            camera=np.asarray((0.0, 0.0, 1.942), dtype=np.float64),
             optics=WIDE,
             surface_height=0.95,
             render=(640, 480),

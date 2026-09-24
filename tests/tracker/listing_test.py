@@ -11,6 +11,8 @@ from __future__ import annotations
 import dataclasses
 from pathlib import Path
 
+import numpy as np
+
 from clave.tracker.belt_frame import Footprint
 from clave.tracker.evidence import Role
 from clave.tracker.listing import described_fields
@@ -27,7 +29,10 @@ def a_record(track_id: int = 1, **overrides: object) -> WasteObject:
         "observed_at_nanos": 1_000_000_000,
         "valid_until_nanos": 4_000_000_000,
         "footprint": Footprint(
-            center=(-1.0, 0.0, 0.93), major_extent=0.10, minor_extent=0.06, yaw=0.3
+            center=np.asarray((-1.0, 0.0, 0.93), dtype=np.float64),
+            major_extent=0.10,
+            minor_extent=0.06,
+            yaw=0.3,
         ),
         "height": 0.06,
         "material": "M-06",
@@ -74,7 +79,7 @@ def test_an_unoriented_footprint_claims_no_yaw() -> None:
     the record declined to make.
     """
     round_box = Footprint(
-        center=(-1.0, 0.0, 0.93),
+        center=np.asarray((-1.0, 0.0, 0.93), dtype=np.float64),
         major_extent=0.07,
         minor_extent=0.07,
         yaw=0.0,

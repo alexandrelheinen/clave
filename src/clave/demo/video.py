@@ -64,7 +64,25 @@ class VideoSettings:
     azimuth: float
     elevation: float
     distance: float
-    lookat: tuple[float, float, float]
+    lookat: NDArray[np.float64]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "lookat", np.asarray(self.lookat, dtype=np.float64))
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, VideoSettings):
+            return NotImplemented
+        return (
+            self.path == other.path
+            and self.width == other.width
+            and self.height == other.height
+            and self.frames_per_second == other.frames_per_second
+            and self.interval_seconds == other.interval_seconds
+            and self.azimuth == other.azimuth
+            and self.elevation == other.elevation
+            and self.distance == other.distance
+            and bool(np.allclose(self.lookat, other.lookat, rtol=0.0, atol=1e-12))
+        )
 
     @property
     def speed(self) -> float:

@@ -20,7 +20,7 @@ def example(classes: tuple[str, ...], visible: bool) -> Example:
             object_id=index,
             material_class=material,
             channel="CH-PET",
-            position=(0.0, 0.0, 0.4),
+            position=np.asarray((0.0, 0.0, 0.4), dtype=np.float64),
             in_reachable_window=True,
             bbox=(10, 10, 30, 30) if visible else None,
         )

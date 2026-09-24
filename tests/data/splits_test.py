@@ -19,7 +19,13 @@ def rollout(rollout_id: str, classes: tuple[str, ...]) -> Rollout:
     """Build a rollout whose single example carries the given classes."""
 
     labels = tuple(
-        ObjectLabel(index, material, "CH-PET", (0.0, 0.0, 0.4), True)
+        ObjectLabel(
+            index,
+            material,
+            "CH-PET",
+            np.asarray((0.0, 0.0, 0.4), dtype=np.float64),
+            True,
+        )
         for index, material in enumerate(classes)
     )
     example = Example(

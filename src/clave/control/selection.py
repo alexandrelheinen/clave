@@ -43,8 +43,11 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from clave.control.settings import Point, SelectionSettings
-from clave.control.trajectory import distance
+import numpy as np
+from numpy.typing import NDArray
+
+from clave.control.settings import SelectionSettings
+from clave.control.trajectory import distance, same
 from clave.tracker.belt_frame import carry
 from clave.tracker.markers import GraspMarker
 
@@ -61,7 +64,7 @@ def pickable_in_belt(length: float, width: float) -> PickabilityRule:
 
     def rule(marker: GraspMarker) -> bool:
         x, y, _ = marker.grasp
-        return abs(x) <= half_length and abs(y) <= half_width
+        return bool(abs(float(x)) <= half_length and abs(float(y)) <= half_width)
 
     return rule
 
@@ -98,27 +101,27 @@ class Candidate:
     """
 
     track_id: int
-    anchor_position_belt: Point
-    flange_position_world: Point
+    anchor_position_belt: NDArray[np.float64]
+    flange_position_world: NDArray[np.float64]
     closing_yaw_belt: float | None
     distance_before_leaving: float
     channel: str = ""
-    velocity_world: Point | None = None
+    velocity_world: NDArray[np.float64] | None = None
     yaw_rate_belt: float | None = None
 
     def __init__(
         self,
         track_id: int,
-        anchor_position_belt: Point | None = None,
-        flange_position_world: Point | None = None,
+        anchor_position_belt: NDArray[np.float64] | None = None,
+        flange_position_world: NDArray[np.float64] | None = None,
         closing_yaw_belt: float | None = None,
         distance_before_leaving: float = 0.0,
         channel: str = "",
-        velocity_world: Point | None = None,
+        velocity_world: NDArray[np.float64] | None = None,
         yaw_rate_belt: float | None = None,
         *,
-        anchor: Point | None = None,
-        flange: Point | None = None,
+        anchor: NDArray[np.float64] | None = None,
+        flange: NDArray[np.float64] | None = None,
         closing_axis: float | None = None,
     ) -> None:
         p_anchor = anchor if anchor is not None else anchor_position_belt
@@ -138,13 +141,32 @@ class Candidate:
         object.__setattr__(self, "velocity_world", velocity_world)
         object.__setattr__(self, "yaw_rate_belt", yaw_rate_belt)
 
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Candidate):
+            return NotImplemented
+        if (
+            self.track_id != other.track_id
+            or self.closing_yaw_belt != other.closing_yaw_belt
+            or self.distance_before_leaving != other.distance_before_leaving
+            or self.channel != other.channel
+            or self.yaw_rate_belt != other.yaw_rate_belt
+        ):
+            return False
+        if not same(self.anchor_position_belt, other.anchor_position_belt):
+            return False
+        if not same(self.flange_position_world, other.flange_position_world):
+            return False
+        if self.velocity_world is None or other.velocity_world is None:
+            return self.velocity_world is other.velocity_world
+        return same(self.velocity_world, other.velocity_world)
+
     @property
-    def anchor(self) -> Point:
+    def anchor(self) -> NDArray[np.float64]:
         """Alias for anchor_position_belt."""
         return self.anchor_position_belt
 
     @property
-    def flange(self) -> Point:
+    def flange(self) -> NDArray[np.float64]:
         """Alias for flange_position_world."""
         return self.flange_position_world
 
@@ -189,11 +211,18 @@ class _Anchor:
             before the anchor is compared to anything.
     """
 
-    position_belt: Point
+    position_belt: NDArray[np.float64]
     at_nanos: int
 
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, _Anchor):
+            return NotImplemented
+        return same(self.position_belt, other.position_belt) and (
+            self.at_nanos == other.at_nanos
+        )
+
     @property
-    def position(self) -> Point:
+    def position(self) -> NDArray[np.float64]:
         """Alias for position_belt."""
         return self.position_belt
 
@@ -208,7 +237,7 @@ class Selector:
     def __init__(
         self,
         settings: SelectionSettings,
-        admits: Callable[[Point], bool],
+        admits: Callable[[NDArray[np.float64]], bool],
         pickability: PickabilityRule | None = None,
     ) -> None:
         """Hold the settings the ordering reads and the region it aims inside.
@@ -239,7 +268,7 @@ class Selector:
     def update(
         self,
         markers: tuple[GraspMarker, ...],
-        flange: Point,
+        flange: NDArray[np.float64],
         belt_speed: float,
         at_nanos: int,
     ) -> Queue:
@@ -327,7 +356,9 @@ class Selector:
                 moved = True
         return moved
 
-    def _carried(self, track_id: int, speed: float, at_nanos: int) -> Point:
+    def _carried(
+        self, track_id: int, speed: float, at_nanos: int
+    ) -> NDArray[np.float64]:
         """Return a track's anchor, carried to now.
 
         Args:
@@ -344,7 +375,7 @@ class Selector:
     def _sorted(
         self,
         live: dict[int, GraspMarker],
-        flange: Point,
+        flange: NDArray[np.float64],
         belt_speed: float,
         at_nanos: int,
     ) -> tuple[int, ...]:
@@ -412,7 +443,7 @@ class Selector:
             return False
         return self._pickability(marker)
 
-    def _cost(self, candidate: Candidate, flange: Point) -> float:
+    def _cost(self, candidate: Candidate, flange: NDArray[np.float64]) -> float:
         """Return what serving this candidate from here costs.
 
         Args:
@@ -429,7 +460,7 @@ class Selector:
 
 def _candidate(
     marker: GraspMarker,
-    anchor_position_belt: Point,
+    anchor_position_belt: NDArray[np.float64],
     belt_speed: float,
     at_nanos: int,
 ) -> Candidate:

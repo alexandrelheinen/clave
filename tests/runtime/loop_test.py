@@ -8,6 +8,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import numpy as np
 import pytest
 import yaml
 
@@ -124,12 +125,18 @@ def test_a_prediction_matching_no_object_is_associated_with_nothing() -> None:
         object_id=3,
         material_class="M-01",
         channel="CH-PET",
-        position=(0.0, 0.0, 0.36),
+        position=np.asarray((0.0, 0.0, 0.36), dtype=np.float64),
         in_reachable_window=True,
     )
-    assert associate((0.01, 0.0, 0.36), (label,), 0.30) is label
-    assert associate((5.0, 0.0, 0.36), (label,), 0.30) is None
-    assert associate((0.0, 0.0, 0.0), (), 0.30) is None
+    assert (
+        associate(np.asarray((0.01, 0.0, 0.36), dtype=np.float64), (label,), 0.30)
+        is label
+    )
+    assert (
+        associate(np.asarray((5.0, 0.0, 0.36), dtype=np.float64), (label,), 0.30)
+        is None
+    )
+    assert associate(np.asarray((0.0, 0.0, 0.0), dtype=np.float64), (), 0.30) is None
 
 
 def test_the_loop_runs_end_to_end_and_reports_what_it_did(

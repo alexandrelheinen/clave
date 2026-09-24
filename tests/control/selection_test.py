@@ -10,7 +10,9 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
+import numpy as np
 import pytest
+from numpy.typing import NDArray
 
 from clave.control.selection import (
     PickabilityRule,
@@ -18,7 +20,7 @@ from clave.control.selection import (
     all_pickability_rules,
     pickable_in_belt,
 )
-from clave.control.settings import ControlSettings, Point, SelectionSettings
+from clave.control.settings import ControlSettings, SelectionSettings
 from clave.tracker.markers import GraspMarker, color_for
 from clave.world.config import load
 
@@ -27,14 +29,14 @@ NANOS_PER_SECOND = 1_000_000_000
 BELT_SPEED = 0.30
 
 
-def everywhere(_: Point) -> bool:
+def everywhere(_: NDArray[np.float64]) -> bool:
     """An arm trusted over the whole world, for tests about ordering."""
     return True
 
 
 def selector(
     exit_weight: float = 1.0,
-    admits: Callable[[Point], bool] | None = None,
+    admits: Callable[[NDArray[np.float64]], bool] | None = None,
     pickability: PickabilityRule | None = None,
 ) -> Selector:
     """A selector with the weight under test."""
@@ -65,10 +67,17 @@ def marker(
     return GraspMarker(
         track_id=track_id,
         valid_until_nanos=int(leaves_in_seconds * NANOS_PER_SECOND),
-        grasp=(x, y, 0.945),
-        flange=(x, y, 1.035),
-        pads=((x, y - 0.03, 0.945), (x, y + 0.03, 0.945)) if oriented else (),
-        pad_size=(0.006, 0.02, 0.025),
+        grasp=np.asarray((x, y, 0.945), dtype=np.float64),
+        flange=np.asarray((x, y, 1.035), dtype=np.float64),
+        pads=(
+            (
+                np.asarray((x, y - 0.03, 0.945), dtype=np.float64),
+                np.asarray((x, y + 0.03, 0.945), dtype=np.float64),
+            )
+            if oriented
+            else ()
+        ),
+        pad_size=np.asarray((0.006, 0.02, 0.025), dtype=np.float64),
         closing_axis=1.5708 if oriented else None,
         opening=0.06,
         oriented=oriented,
@@ -80,7 +89,12 @@ def marker(
 
 def test_an_empty_belt_produces_an_empty_queue() -> None:
     """An empty belt produces an empty queue."""
-    queue = selector().update((), (0.0, 0.0, 1.2), BELT_SPEED, 0)
+    queue = selector().update(
+        (),
+        np.asarray((0.0, 0.0, 1.2), dtype=np.float64),
+        BELT_SPEED,
+        0,
+    )
     assert queue.order == ()
     assert queue.head is None
 
@@ -89,7 +103,12 @@ def test_the_nearer_of_two_equally_urgent_markers_comes_first() -> None:
     """AC-MOVE-01: the nearer of two equally urgent markers comes first."""
     near = marker(1, x=0.10, leaves_in_seconds=5.0)
     far = marker(2, x=0.80, leaves_in_seconds=5.0)
-    queue = selector().update((far, near), (0.0, 0.0, 1.035), BELT_SPEED, 0)
+    queue = selector().update(
+        (far, near),
+        np.asarray((0.0, 0.0, 1.035), dtype=np.float64),
+        BELT_SPEED,
+        0,
+    )
     assert queue.head is not None
     assert queue.head.track_id == 1
 
@@ -102,7 +121,12 @@ def test_the_more_urgent_of_two_equally_near_markers_comes_first() -> None:
     """
     leaving = marker(1, x=0.30, y=0.20, leaves_in_seconds=0.5)
     staying = marker(2, x=0.30, y=-0.20, leaves_in_seconds=6.0)
-    queue = selector().update((staying, leaving), (0.30, 0.0, 1.035), BELT_SPEED, 0)
+    queue = selector().update(
+        (staying, leaving),
+        np.asarray((0.30, 0.0, 1.035), dtype=np.float64),
+        BELT_SPEED,
+        0,
+    )
     assert queue.head is not None
     assert queue.head.track_id == 1
 
@@ -117,7 +141,7 @@ def test_urgency_can_outrank_distance_and_the_weight_says_by_how_much() -> None:
     urgent_and_far = marker(1, x=0.90, leaves_in_seconds=0.2)
     idle_and_near = marker(2, x=0.10, leaves_in_seconds=8.0)
     pair = (urgent_and_far, idle_and_near)
-    flange = (0.0, 0.0, 1.035)
+    flange = np.asarray((0.0, 0.0, 1.035), dtype=np.float64)
 
     ignoring = selector(exit_weight=0.0).update(pair, flange, BELT_SPEED, 0)
     assert ignoring.head is not None
@@ -141,7 +165,12 @@ def test_the_order_is_built_from_where_the_flange_will_be() -> None:
         marker(3, x=1.00, leaves_in_seconds=9.0),
         marker(2, x=0.60, leaves_in_seconds=9.0),
     )
-    queue = selector(exit_weight=0.0).update(chain, (0.0, 0.0, 1.035), BELT_SPEED, 0)
+    queue = selector(exit_weight=0.0).update(
+        chain,
+        np.asarray((0.0, 0.0, 1.035), dtype=np.float64),
+        BELT_SPEED,
+        0,
+    )
     assert tuple(item.track_id for item in queue.order) == (1, 2, 3)
 
 
@@ -153,7 +182,12 @@ def test_a_marker_the_effector_cannot_open_to_is_left_out() -> None:
     take.
     """
     wide = marker(1, x=0.10, reachable=False)
-    queue = selector().update((wide,), (0.0, 0.0, 1.035), BELT_SPEED, 0)
+    queue = selector().update(
+        (wide,),
+        np.asarray((0.0, 0.0, 1.035), dtype=np.float64),
+        BELT_SPEED,
+        0,
+    )
     assert queue.order == ()
 
 
@@ -162,7 +196,12 @@ def test_a_marker_outside_the_belt_is_left_out() -> None:
     outside_x = marker(1, x=1.51)
     outside_y = marker(2, x=0.20, y=0.26)
     instance = selector(pickability=pickable_in_belt(length=3.0, width=0.5))
-    queue = instance.update((outside_x, outside_y), (0.0, 0.0, 1.035), BELT_SPEED, 0)
+    queue = instance.update(
+        (outside_x, outside_y),
+        np.asarray((0.0, 0.0, 1.035), dtype=np.float64),
+        BELT_SPEED,
+        0,
+    )
     assert queue.order == ()
 
 
@@ -191,7 +230,10 @@ def test_pickability_rules_compose_inside_selector() -> None:
     outside_even = marker(4, x=1.60)
 
     queue = instance.update(
-        (valid_even, valid_odd, outside_even), (0.0, 0.0, 1.035), BELT_SPEED, 0
+        (valid_even, valid_odd, outside_even),
+        np.asarray((0.0, 0.0, 1.035), dtype=np.float64),
+        BELT_SPEED,
+        0,
     )
     assert [c.track_id for c in queue.order] == [2]
 
@@ -204,7 +246,10 @@ def test_a_marker_already_past_the_window_is_left_out() -> None:
     """
     gone = marker(1, x=0.10, leaves_in_seconds=1.0)
     queue = selector().update(
-        (gone,), (0.0, 0.0, 1.035), BELT_SPEED, at_nanos=2 * NANOS_PER_SECOND
+        (gone,),
+        np.asarray((0.0, 0.0, 1.035), dtype=np.float64),
+        BELT_SPEED,
+        at_nanos=2 * NANOS_PER_SECOND,
     )
     assert queue.order == ()
 
@@ -216,12 +261,17 @@ def test_a_candidate_carries_what_the_task_layer_needs() -> None:
     task machine never has to go back to the marker list to find them.
     """
     queue = selector().update(
-        (marker(4, x=0.25, y=0.10),), (0.0, 0.0, 1.035), BELT_SPEED, 0
+        (marker(4, x=0.25, y=0.10),),
+        np.asarray((0.0, 0.0, 1.035), dtype=np.float64),
+        BELT_SPEED,
+        0,
     )
     head = queue.head
     assert head is not None
     assert head.track_id == 4
-    assert head.flange == (0.25, 0.10, 1.035)
+    assert head.flange == pytest.approx(
+        np.asarray((0.25, 0.10, 1.035), dtype=np.float64),
+    )
     assert head.closing_axis == pytest.approx(1.5708)
     assert head.distance_before_leaving == pytest.approx(5.0 * BELT_SPEED)
 
@@ -229,7 +279,10 @@ def test_a_candidate_carries_what_the_task_layer_needs() -> None:
 def test_an_unoriented_marker_carries_no_closing_axis() -> None:
     """AC-MOVE-08: an unoriented marker carries no closing axis."""
     queue = selector().update(
-        (marker(1, x=0.25, oriented=False),), (0.0, 0.0, 1.035), BELT_SPEED, 0
+        (marker(1, x=0.25, oriented=False),),
+        np.asarray((0.0, 0.0, 1.035), dtype=np.float64),
+        BELT_SPEED,
+        0,
     )
     assert queue.head is not None
     assert queue.head.closing_axis is None
@@ -246,7 +299,12 @@ def test_a_stopped_belt_leaves_nothing_urgent() -> None:
         marker(1, x=0.90, leaves_in_seconds=0.2),
         marker(2, x=0.10, leaves_in_seconds=8.0),
     )
-    queue = selector().update(pair, (0.0, 0.0, 1.035), 0.0, 0)
+    queue = selector().update(
+        pair,
+        np.asarray((0.0, 0.0, 1.035), dtype=np.float64),
+        0.0,
+        0,
+    )
     assert queue.head is not None
     assert queue.head.track_id == 2
 
@@ -262,11 +320,11 @@ def test_a_pose_the_arm_is_not_trusted_over_is_left_out() -> None:
     upstream = marker(1, x=-1.00)
     near = marker(2, x=0.30)
 
-    def inside_the_annulus(pose: Point) -> bool:
-        return abs(pose[0]) <= 0.80
+    def inside_the_annulus(pose: NDArray[np.float64]) -> bool:
+        return bool(abs(float(pose[0])) <= 0.80)
 
     queue = selector(admits=inside_the_annulus).update(
-        (upstream, near), (0.0, 0.0, 1.035), BELT_SPEED, 0
+        (upstream, near), np.asarray((0.0, 0.0, 1.035), dtype=np.float64), BELT_SPEED, 0
     )
     assert tuple(item.track_id for item in queue.order) == (2,)
 
@@ -282,15 +340,21 @@ def travelled(base: GraspMarker, seconds: float, speed: float) -> GraspMarker:
     shift = speed * seconds
     return dataclasses.replace(
         base,
-        pinch_position_belt=(
-            base.pinch_position_belt[0] + shift,
-            base.pinch_position_belt[1],
-            base.pinch_position_belt[2],
+        pinch_position_belt=np.asarray(
+            (
+                base.pinch_position_belt[0] + shift,
+                base.pinch_position_belt[1],
+                base.pinch_position_belt[2],
+            ),
+            dtype=np.float64,
         ),
-        flange_position_world=(
-            base.flange_position_world[0] + shift,
-            base.flange_position_world[1],
-            base.flange_position_world[2],
+        flange_position_world=np.asarray(
+            (
+                base.flange_position_world[0] + shift,
+                base.flange_position_world[1],
+                base.flange_position_world[2],
+            ),
+            dtype=np.float64,
         ),
     )
 
@@ -301,15 +365,21 @@ def nudged(base: GraspMarker, by: float) -> GraspMarker:
 
     return dataclasses.replace(
         base,
-        pinch_position_belt=(
-            base.pinch_position_belt[0],
-            base.pinch_position_belt[1] + by,
-            base.pinch_position_belt[2],
+        pinch_position_belt=np.asarray(
+            (
+                base.pinch_position_belt[0],
+                base.pinch_position_belt[1] + by,
+                base.pinch_position_belt[2],
+            ),
+            dtype=np.float64,
         ),
-        flange_position_world=(
-            base.flange_position_world[0],
-            base.flange_position_world[1] + by,
-            base.flange_position_world[2],
+        flange_position_world=np.asarray(
+            (
+                base.flange_position_world[0],
+                base.flange_position_world[1] + by,
+                base.flange_position_world[2],
+            ),
+            dtype=np.float64,
         ),
     )
 
@@ -317,7 +387,10 @@ def nudged(base: GraspMarker, by: float) -> GraspMarker:
 def test_the_first_call_builds_an_order() -> None:
     """AC-MOVE-17: the first call builds an order."""
     queue = selector().update(
-        (marker(1, x=0.20), marker(2, x=0.60)), (0.0, 0.0, 1.035), BELT_SPEED, 0
+        (marker(1, x=0.20), marker(2, x=0.60)),
+        np.asarray((0.0, 0.0, 1.035), dtype=np.float64),
+        BELT_SPEED,
+        0,
     )
     assert queue.recomputed is True
     assert len(queue.order) == 2
@@ -336,7 +409,12 @@ def test_belt_travel_alone_does_not_reorder_the_queue() -> None:
         marker(2, x=0.60, leaves_in_seconds=9.0),
     )
     one = selector()
-    first = one.update(pair, (0.0, 0.0, 1.035), BELT_SPEED, 0)
+    first = one.update(
+        pair,
+        np.asarray((0.0, 0.0, 1.035), dtype=np.float64),
+        BELT_SPEED,
+        0,
+    )
     assert first.recomputed is True
 
     for tick in range(1, 12):
@@ -344,7 +422,7 @@ def test_belt_travel_alone_does_not_reorder_the_queue() -> None:
         carried = tuple(travelled(item, seconds, BELT_SPEED) for item in pair)
         later = one.update(
             carried,
-            (0.0, 0.0, 1.035),
+            np.asarray((0.0, 0.0, 1.035), dtype=np.float64),
             BELT_SPEED,
             at_nanos=int(seconds * NANOS_PER_SECOND),
         )
@@ -356,7 +434,12 @@ def test_an_estimate_jittering_under_the_radius_does_not_reorder() -> None:
     """AC-MOVE-16: an estimate jittering under the radius does not reorder."""
     pair = (marker(1, x=0.20), marker(2, x=0.60))
     one = selector()
-    one.update(pair, (0.0, 0.0, 1.035), BELT_SPEED, 0)
+    one.update(
+        pair,
+        np.asarray((0.0, 0.0, 1.035), dtype=np.float64),
+        BELT_SPEED,
+        0,
+    )
 
     radius = settings().anchor_radius
     for tick, sign in enumerate((1, -1, 1, -1), start=1):
@@ -364,7 +447,7 @@ def test_an_estimate_jittering_under_the_radius_does_not_reorder() -> None:
         carried = tuple(travelled(item, tick * 0.1, BELT_SPEED) for item in jittered)
         later = one.update(
             carried,
-            (0.0, 0.0, 1.035),
+            np.asarray((0.0, 0.0, 1.035), dtype=np.float64),
             BELT_SPEED,
             at_nanos=int(tick * 0.1 * NANOS_PER_SECOND),
         )
@@ -375,19 +458,37 @@ def test_an_estimate_moving_past_the_radius_reorders() -> None:
     """AC-MOVE-16: an estimate moving past the radius reorders."""
     pair = (marker(1, x=0.20), marker(2, x=0.60))
     one = selector()
-    one.update(pair, (0.0, 0.0, 1.035), BELT_SPEED, 0)
+    one.update(
+        pair,
+        np.asarray((0.0, 0.0, 1.035), dtype=np.float64),
+        BELT_SPEED,
+        0,
+    )
 
     moved = (nudged(pair[0], settings().anchor_radius * 3.0), pair[1])
-    later = one.update(moved, (0.0, 0.0, 1.035), BELT_SPEED, 0)
+    later = one.update(
+        moved,
+        np.asarray((0.0, 0.0, 1.035), dtype=np.float64),
+        BELT_SPEED,
+        0,
+    )
     assert later.recomputed is True
 
 
 def test_a_track_appearing_reorders() -> None:
     """AC-MOVE-17: a track appearing reorders."""
     one = selector()
-    one.update((marker(1, x=0.20),), (0.0, 0.0, 1.035), BELT_SPEED, 0)
+    one.update(
+        (marker(1, x=0.20),),
+        np.asarray((0.0, 0.0, 1.035), dtype=np.float64),
+        BELT_SPEED,
+        0,
+    )
     later = one.update(
-        (marker(1, x=0.20), marker(2, x=0.10)), (0.0, 0.0, 1.035), BELT_SPEED, 0
+        (marker(1, x=0.20), marker(2, x=0.10)),
+        np.asarray((0.0, 0.0, 1.035), dtype=np.float64),
+        BELT_SPEED,
+        0,
     )
     assert later.recomputed is True
     assert tuple(item.track_id for item in later.order) == (2, 1)
@@ -397,8 +498,18 @@ def test_a_track_retiring_reorders() -> None:
     """AC-MOVE-17: a track retiring reorders."""
     one = selector()
     pair = (marker(1, x=0.20), marker(2, x=0.60))
-    one.update(pair, (0.0, 0.0, 1.035), BELT_SPEED, 0)
-    later = one.update((pair[1],), (0.0, 0.0, 1.035), BELT_SPEED, 0)
+    one.update(
+        pair,
+        np.asarray((0.0, 0.0, 1.035), dtype=np.float64),
+        BELT_SPEED,
+        0,
+    )
+    later = one.update(
+        (pair[1],),
+        np.asarray((0.0, 0.0, 1.035), dtype=np.float64),
+        BELT_SPEED,
+        0,
+    )
     assert later.recomputed is True
     assert tuple(item.track_id for item in later.order) == (2,)
 
@@ -412,8 +523,18 @@ def test_the_arm_moving_does_not_reorder_the_queue() -> None:
     """
     one = selector()
     pair = (marker(1, x=0.20), marker(2, x=0.60))
-    one.update(pair, (0.0, 0.0, 1.035), BELT_SPEED, 0)
-    later = one.update(pair, (0.55, 0.0, 1.035), BELT_SPEED, 0)
+    one.update(
+        pair,
+        np.asarray((0.0, 0.0, 1.035), dtype=np.float64),
+        BELT_SPEED,
+        0,
+    )
+    later = one.update(
+        pair,
+        np.asarray((0.55, 0.0, 1.035), dtype=np.float64),
+        BELT_SPEED,
+        0,
+    )
     assert later.recomputed is False
     assert tuple(item.track_id for item in later.order) == (1, 2)
 
@@ -427,10 +548,20 @@ def test_a_candidate_carries_the_live_pose_and_the_anchor_apart() -> None:
     """
     one = selector()
     base = marker(1, x=0.20)
-    one.update((base,), (0.0, 0.0, 1.035), BELT_SPEED, 0)
+    one.update(
+        (base,),
+        np.asarray((0.0, 0.0, 1.035), dtype=np.float64),
+        BELT_SPEED,
+        0,
+    )
 
     radius = settings().anchor_radius
-    later = one.update((nudged(base, radius * 0.4),), (0.0, 0.0, 1.035), BELT_SPEED, 0)
+    later = one.update(
+        (nudged(base, radius * 0.4),),
+        np.asarray((0.0, 0.0, 1.035), dtype=np.float64),
+        BELT_SPEED,
+        0,
+    )
     head = later.order[0]
     assert head.flange[1] == pytest.approx(radius * 0.4)
     assert head.anchor[1] == pytest.approx(0.0)
@@ -443,8 +574,18 @@ def test_an_anchor_is_forgotten_when_its_track_goes() -> None:
     object stood, and the selector would grow for the length of a run.
     """
     one = selector()
-    one.update((marker(1, x=0.20),), (0.0, 0.0, 1.035), BELT_SPEED, 0)
-    one.update((), (0.0, 0.0, 1.035), BELT_SPEED, 0)
+    one.update(
+        (marker(1, x=0.20),),
+        np.asarray((0.0, 0.0, 1.035), dtype=np.float64),
+        BELT_SPEED,
+        0,
+    )
+    one.update(
+        (),
+        np.asarray((0.0, 0.0, 1.035), dtype=np.float64),
+        BELT_SPEED,
+        0,
+    )
     assert one.anchor_count == 0
 
 
@@ -459,12 +600,22 @@ def test_a_rebuild_behind_the_head_leaves_the_head_alone() -> None:
     one = selector()
     head = marker(1, x=0.10, leaves_in_seconds=1.0)
     tail = marker(2, x=0.90, leaves_in_seconds=9.0)
-    first = one.update((head, tail), (0.0, 0.0, 1.035), BELT_SPEED, 0)
+    first = one.update(
+        (head, tail),
+        np.asarray((0.0, 0.0, 1.035), dtype=np.float64),
+        BELT_SPEED,
+        0,
+    )
     assert first.head is not None
     assert first.head.track_id == 1
 
     shifted = nudged(tail, settings().anchor_radius * 4.0)
-    later = one.update((head, shifted), (0.0, 0.0, 1.035), BELT_SPEED, 0)
+    later = one.update(
+        (head, shifted),
+        np.asarray((0.0, 0.0, 1.035), dtype=np.float64),
+        BELT_SPEED,
+        0,
+    )
     assert later.reasons == frozenset({"anchor"})
     assert later.head is not None
     assert later.head.track_id == 1
@@ -478,10 +629,20 @@ def test_the_reasons_say_which_trigger_fired() -> None:
     an anchor moved is the estimate having genuinely shifted.
     """
     one = selector()
-    first = one.update((marker(1, x=0.20),), (0.0, 0.0, 1.035), BELT_SPEED, 0)
+    first = one.update(
+        (marker(1, x=0.20),),
+        np.asarray((0.0, 0.0, 1.035), dtype=np.float64),
+        BELT_SPEED,
+        0,
+    )
     assert first.reasons == frozenset({"appeared"})
 
-    gone = one.update((), (0.0, 0.0, 1.035), BELT_SPEED, 0)
+    gone = one.update(
+        (),
+        np.asarray((0.0, 0.0, 1.035), dtype=np.float64),
+        BELT_SPEED,
+        0,
+    )
     assert gone.reasons == frozenset({"retired"})
 
 
@@ -502,10 +663,15 @@ def test_selector_carries_candidate_with_instantaneous_velocity() -> None:
         extent=base.extent,
         color=base.color,
         channel=base.channel,
-        velocity_world=(0.10, 0.0, 0.0),
+        velocity_world=np.asarray((0.10, 0.0, 0.0), dtype=np.float64),
     )
     one = selector()
-    first = one.update((slow,), (0.0, 0.0, 1.035), BELT_SPEED, at_nanos=0)
+    first = one.update(
+        (slow,),
+        np.asarray((0.0, 0.0, 1.035), dtype=np.float64),
+        BELT_SPEED,
+        at_nanos=0,
+    )
     assert first.head is not None
     assert first.head.flange_position_world[0] == pytest.approx(0.20)
 
@@ -515,11 +681,11 @@ def test_selector_carries_candidate_with_instantaneous_velocity() -> None:
 
     moved_slow = dataclasses.replace(
         base_advanced,
-        velocity_world=(0.10, 0.0, 0.0),
+        velocity_world=np.asarray((0.10, 0.0, 0.0), dtype=np.float64),
     )
     later = one.update(
         (moved_slow,),
-        (0.0, 0.0, 1.035),
+        np.asarray((0.0, 0.0, 1.035), dtype=np.float64),
         BELT_SPEED,
         at_nanos=1_000_000_000,
     )

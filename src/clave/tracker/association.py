@@ -35,6 +35,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 import numpy as np
+from numpy.typing import NDArray
 
 from clave.tracker.belt_frame import Footprint
 
@@ -88,9 +89,35 @@ class Cue:
     observed_at_nanos: int
     footprint: Footprint | None = None
     digits: str | None = None
-    pick_point: tuple[float, float, float] | None = None
+    pick_point: NDArray[np.float64] | None = None
     height: float | None = None
     label: int | None = None
+
+    def __post_init__(self) -> None:
+        if self.pick_point is not None:
+            object.__setattr__(
+                self, "pick_point", np.asarray(self.pick_point, dtype=np.float64)
+            )
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Cue):
+            return NotImplemented
+        if self.pick_point is None and other.pick_point is None:
+            points_match = True
+        elif self.pick_point is None or other.pick_point is None:
+            points_match = False
+        else:
+            points_match = bool(
+                np.allclose(self.pick_point, other.pick_point, rtol=0.0, atol=1e-12)
+            )
+        return (
+            self.observed_at_nanos == other.observed_at_nanos
+            and self.footprint == other.footprint
+            and self.digits == other.digits
+            and points_match
+            and self.height == other.height
+            and self.label == other.label
+        )
 
 
 @dataclass(frozen=True)

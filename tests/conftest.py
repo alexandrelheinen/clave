@@ -14,6 +14,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pytest
 
 from clave.runtime.bridge import BridgeError, locate_binary
@@ -82,7 +83,7 @@ def make_proposal() -> Callable[[float, float, float, float], Proposal]:
             object_id=7,
             material_class="M-01",
             confidence=confidence,
-            point=(x, y, z),
+            point=np.asarray((x, y, z), dtype=np.float64),
             yaw_radians=0.0,
             reference_time_nanos=1_000,
             window_start_nanos=1_000,

@@ -37,8 +37,6 @@ import numpy as np
 from numpy.typing import NDArray
 
 from clave.control.motion import Command
-from clave.control.settings import Point
-from clave.control.trajectory import as_point, as_vector
 from clave.world import arm as armmod
 
 
@@ -63,7 +61,7 @@ def follow(
     gain: float,
     max_joint_step: float | None = None,
     lead_seconds: float = 0.0,
-    keep_inside: Callable[[Point], Point] | None = None,
+    keep_inside: Callable[[NDArray[np.float64]], NDArray[np.float64]] | None = None,
 ) -> Step:
     """Command one pose and report whether the arm could take it.
 
@@ -89,9 +87,7 @@ def follow(
         The step. A refused pose writes no actuator command, so the arm holds
         whatever it was last told.
     """
-    led_position_world = as_point(
-        as_vector(command.position) + as_vector(command.velocity) * lead_seconds
-    )
+    led_position_world = command.position + command.velocity * lead_seconds
     if keep_inside is not None:
         led_position_world = keep_inside(led_position_world)
     target_position_world = np.asarray(led_position_world, dtype=np.float64)

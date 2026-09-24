@@ -24,6 +24,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 
+import numpy as np
+from numpy.typing import NDArray
+
 from clave.tracker.association import Associator, Cue, TrackSummary
 from clave.tracker.belt_frame import Footprint, elapsed_seconds, propagate
 from clave.tracker.evidence import Code, Detection, Evidence, GroundTruth, Height, Role
@@ -97,7 +100,12 @@ class Track:
                 self.footprint, belt_speed, self.observed_at_nanos, at_nanos
             )
         x, y = self.motion.at(at_nanos / NANOS_PER_SECOND)
-        return replace(self.footprint, center_belt=(x, y, self.footprint.center[2]))
+        return replace(
+            self.footprint,
+            center_belt=np.asarray(
+                (x, y, float(self.footprint.center[2])), dtype=np.float64
+            ),
+        )
 
     def summarize(self, at_nanos: int, belt_speed: float) -> TrackSummary:
         """Return this track as an associator is allowed to see it.
@@ -158,7 +166,7 @@ class WasteObject:
     simulated: frozenset[str]
 
     @property
-    def grasp_point(self) -> tuple[float, float, float]:
+    def grasp_point(self) -> NDArray[np.float64]:
         """Where the end effector should meet the object.
 
         Computed rather than stored: a stored grasp point can disagree with the
@@ -177,14 +185,14 @@ class WasteObject:
         return self.footprint.minor_extent
 
     @property
-    def surface_normal(self) -> tuple[float, float, float]:
+    def surface_normal(self) -> NDArray[np.float64]:
         """Where a suction cup should point.
 
         Vertical, because objects travel in a single layer on a flat belt and
         nothing here measures a surface orientation. Stating it as vertical is
         honest; deriving a tilt from a footprint would not be.
         """
-        return (0.0, 0.0, 1.0)
+        return np.asarray((0.0, 0.0, 1.0), dtype=np.float64)
 
 
 @dataclass
@@ -307,7 +315,10 @@ class Tracker:
         """
         extent = self._extent()
         return Footprint(
-            center=(0.0, 0.0, 0.0), major_extent=extent, minor_extent=extent, yaw=0.0
+            center=np.asarray((0.0, 0.0, 0.0), dtype=np.float64),
+            major_extent=extent,
+            minor_extent=extent,
+            yaw=0.0,
         )
 
     def _open(self, cue: Cue, at_nanos: int) -> Track:
@@ -364,7 +375,9 @@ class Tracker:
             filtered = track.motion.position
             track.footprint = replace(
                 payload.footprint,
-                center_belt=(filtered[0], filtered[1], seen[2]),
+                center_belt=np.asarray(
+                    (filtered[0], filtered[1], float(seen[2])), dtype=np.float64
+                ),
             )
             track.observed_at_nanos = evidence.observed_at_nanos
             if payload.height is not None:
@@ -377,7 +390,12 @@ class Tracker:
         elif isinstance(payload, GroundTruth):
             track.label = payload.object_id
             track.simulated |= {"material"}
-            if track.footprint.center == self._unmeasured().center:
+            if np.allclose(
+                track.footprint.center,
+                self._unmeasured().center,
+                rtol=0.0,
+                atol=1e-12,
+            ):
                 track.footprint = replace(track.footprint, center_belt=payload.position)
                 track.observed_at_nanos = evidence.observed_at_nanos
 

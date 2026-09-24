@@ -630,16 +630,14 @@ def _labels(
     for item in conveyor.active:
         body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, item.name)
         address = model.jnt_qposadr[model.body_jntadr[body]]
-        position = tuple(float(value) for value in data.qpos[address : address + 3])
+        position = np.asarray(data.qpos[address : address + 3], dtype=np.float64)
         labels.append(
             ObjectLabel(
                 object_id=item.index,
                 material_class=item.material_class,
                 channel=item.channel,
-                position=(position[0], position[1], position[2]),
-                in_reachable_window=belt.within_reach(
-                    (position[0], position[1], position[2]), conveyor.plan
-                ),
+                position=position,
+                in_reachable_window=belt.within_reach(position, conveyor.plan),
             )
         )
     return tuple(labels)

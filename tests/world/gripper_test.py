@@ -278,6 +278,7 @@ def test_the_rise_leads_the_hang_the_jaw_adds_as_it_shuts(world: Any) -> None:
     covers that sample. Past the rise the hold is already at the full climb.
     """
     import mujoco
+    import numpy as np
 
     from clave.control.trajectory import Segment, State
     from clave.world import arm as armmod
@@ -288,8 +289,8 @@ def test_the_rise_leads_the_hang_the_jaw_adds_as_it_shuts(world: Any) -> None:
     model, data, _, arm = world
     armmod.hold(data, arm, closed=1.0)
     rise = Segment(
-        start=State.at_rest((0.0, 0.0, 0.0)),
-        end=State.at_rest((0.0, 0.0, jaw.closing_drop)),
+        start=State.at_rest(np.zeros(3, dtype=np.float64)),
+        end=State.at_rest(np.asarray((0.0, 0.0, jaw.closing_drop), dtype=np.float64)),
         duration=0.20,
     )
     step = float(model.opt.timestep)

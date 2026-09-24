@@ -10,13 +10,20 @@ Adding a clause here is a change to the seam and should be read as one.
 
 from __future__ import annotations
 
+import numpy as np
+
 from clave.tracker.association import Association, Associator, Cue
 from clave.tracker.belt_frame import Footprint
 
 
 def a_footprint(x: float = -1.0, y: float = 0.0) -> Footprint:
     """A box resting on the belt."""
-    return Footprint(center=(x, y, 0.93), major_extent=0.10, minor_extent=0.06, yaw=0.0)
+    return Footprint(
+        center=np.asarray((x, y, 0.93), dtype=np.float64),
+        major_extent=0.10,
+        minor_extent=0.06,
+        yaw=0.0,
+    )
 
 
 def check_an_associator(associator: Associator) -> None:

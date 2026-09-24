@@ -61,46 +61,42 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
-from clave.control.settings import Point
-
 LOGGER = logging.getLogger(__name__)
 
-Vector = NDArray[np.float64]
-"""A three-component vector in belt frame meters.
-
-The arithmetic in this module is numpy's. A position crossing a public seam is
-the plain three-tuple `Point`; between the seam and the result it is an array,
-so a norm is `np.linalg.norm` and a clamp is `np.clip` rather than a square root
-written out longhand and a pair of nested `min` and `max` calls.
-"""
+_ZERO = np.zeros(3, dtype=np.float64)
+"""Three zeros, used only as a template for `zeros()` copies."""
 
 
-def as_vector(vector: Point) -> Vector:
-    """Return a tuple of three numbers as the array the arithmetic uses.
-
-    Args:
-        vector: The position, velocity or acceleration.
+def zeros() -> NDArray[np.float64]:
+    """Return a fresh three-component zero vector.
 
     Returns:
-        A three-element float array.
+        A new array, never a shared mutable default.
     """
-    return np.asarray(vector, dtype=np.float64)
+    return _ZERO.copy()
 
 
-def as_point(vector: Vector) -> Point:
-    """Return an array as the three-tuple the dataclasses carry.
+def same(
+    one: NDArray[np.float64],
+    other: NDArray[np.float64],
+    *,
+    atol: float = 1e-12,
+) -> bool:
+    """Report whether two spatial vectors agree within a tolerance.
 
     Args:
-        vector: The array.
+        one: A vector.
+        other: Another.
+        atol: Absolute tolerance, in the same units as the components.
 
     Returns:
-        The tuple, with Python floats rather than numpy scalars, so a value
-        crossing the seam compares and serialises like any other number.
+        Whether every component agrees within `atol`. Bare `==` on arrays is
+        element-wise and ambiguous as a boolean, so callers use this instead.
     """
-    return (float(vector[0]), float(vector[1]), float(vector[2]))
+    return bool(np.allclose(one, other, rtol=0.0, atol=atol))
 
 
-def norm(vector: Point) -> float:
+def norm(vector: NDArray[np.float64]) -> float:
     """Return the length of a vector.
 
     Args:
@@ -109,10 +105,10 @@ def norm(vector: Point) -> float:
     Returns:
         Its Euclidean norm, as a Python float.
     """
-    return float(np.linalg.norm(as_vector(vector)))
+    return float(np.linalg.norm(vector))
 
 
-def distance(one: Point, other: Point) -> float:
+def distance(one: NDArray[np.float64], other: NDArray[np.float64]) -> float:
     """Return the distance between two positions.
 
     Args:
@@ -122,7 +118,7 @@ def distance(one: Point, other: Point) -> float:
     Returns:
         The Euclidean distance between them, as a Python float.
     """
-    return float(np.linalg.norm(as_vector(one) - as_vector(other)))
+    return float(np.linalg.norm(one - other))
 
 
 def clip(value: float, ceiling: float) -> float:
@@ -226,12 +222,21 @@ class State:
         acceleration: In meters per second squared.
     """
 
-    position: Point
-    velocity: Point
-    acceleration: Point
+    position: NDArray[np.float64]
+    velocity: NDArray[np.float64]
+    acceleration: NDArray[np.float64]
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, State):
+            return NotImplemented
+        return (
+            same(self.position, other.position)
+            and same(self.velocity, other.velocity)
+            and same(self.acceleration, other.acceleration)
+        )
 
     @classmethod
-    def at_rest(cls, position: Point) -> State:
+    def at_rest(cls, position: NDArray[np.float64]) -> State:
         """Return a state standing still at a position.
 
         Args:
@@ -240,9 +245,7 @@ class State:
         Returns:
             The state, with no velocity and no acceleration.
         """
-        return cls(
-            position=position, velocity=(0.0, 0.0, 0.0), acceleration=(0.0, 0.0, 0.0)
-        )
+        return cls(position=position, velocity=zeros(), acceleration=zeros())
 
 
 @dataclass(frozen=True)
@@ -280,19 +283,23 @@ class Segment:
         weights = _basis_at(s)
         d_weights = _first_at(s)
         dd_weights = _second_at(s)
-        position, velocity, acceleration = [], [], []
+        position = np.empty(3, dtype=np.float64)
+        velocity = np.empty(3, dtype=np.float64)
+        acceleration = np.empty(3, dtype=np.float64)
         for axis in range(3):
             terms = _axis_terms(self, axis, span)
-            position.append(_dot(weights, terms))
-            velocity.append(_dot(d_weights, terms) / span)
-            acceleration.append(_dot(dd_weights, terms) / (span * span))
+            position[axis] = _dot(weights, terms)
+            velocity[axis] = _dot(d_weights, terms) / span
+            acceleration[axis] = _dot(dd_weights, terms) / (span * span)
         return State(
-            position=(position[0], position[1], position[2]),
-            velocity=(velocity[0], velocity[1], velocity[2]),
-            acceleration=(acceleration[0], acceleration[1], acceleration[2]),
+            position=position,
+            velocity=velocity,
+            acceleration=acceleration,
         )
 
-    def sample(self, elapsed: Vector) -> tuple[Vector, Vector, Vector]:
+    def sample(
+        self, elapsed: NDArray[np.float64]
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
         """Return the state at each of many instants, in one pass.
 
         The five boundary conditions of a quintic Hermite arc are six terms per
@@ -317,12 +324,12 @@ class Segment:
         s = np.clip(np.asarray(elapsed, dtype=np.float64) / span, 0.0, 1.0)
         terms = np.stack(
             [
-                as_vector(self.start.position),
-                as_vector(self.start.velocity) * span,
-                as_vector(self.start.acceleration) * span * span,
-                as_vector(self.end.acceleration) * span * span,
-                as_vector(self.end.velocity) * span,
-                as_vector(self.end.position),
+                self.start.position,
+                self.start.velocity * span,
+                self.start.acceleration * span * span,
+                self.end.acceleration * span * span,
+                self.end.velocity * span,
+                self.end.position,
             ]
         )
         return (
@@ -415,8 +422,8 @@ def descent_limit_seconds(z_offset: float, approach_speed: float) -> float:
 
 def approach(
     flange: State,
-    object_position_belt: Point | None = None,
-    object_velocity_world: Point | None = None,
+    object_position_belt: NDArray[np.float64] | None = None,
+    object_velocity_world: NDArray[np.float64] | None = None,
     approach_clearance_z: float | None = None,
     approach_speed: float = 0.0,
     max_speed: float = 0.0,
@@ -427,8 +434,8 @@ def approach(
     drift_horizon: float,
     segment_sample_count: int,
     bisection_passes: int,
-    object_position: Point | None = None,
-    object_velocity: Point | None = None,
+    object_position: NDArray[np.float64] | None = None,
+    object_velocity: NDArray[np.float64] | None = None,
     z_offset: float | None = None,
 ) -> Segment | None:
     """Return the soonest feasible arc onto the point above a moving object.
@@ -480,9 +487,11 @@ def approach(
     # Aim positions carry lateral drift for a horizon; matching velocity is
     # belt-axis only (AC-MOVE-71). The world image of object-frame rest at the
     # pick is transport, not contact-disturbed cvel.
-    match = (max(0.0, float(obj_vel[0])), 0.0, 0.0)
+    match = np.asarray([max(0.0, float(obj_vel[0])), 0.0, 0.0], dtype=np.float64)
 
     def arc(seconds: float) -> Segment:
+        end_velocity = match.copy()
+        end_velocity[2] -= approach_speed
         return Segment(
             start=flange,
             end=State(
@@ -493,12 +502,8 @@ def approach(
                     clearance,
                     drift_horizon,
                 ),
-                velocity=(
-                    match[0],
-                    match[1],
-                    match[2] - approach_speed,
-                ),
-                acceleration=(0.0, 0.0, 0.0),
+                velocity=end_velocity,
+                acceleration=zeros(),
             ),
             duration=seconds,
         )
@@ -521,14 +526,14 @@ def approach(
 
 def descend(
     approach_arc: Segment,
-    object_position_belt: Point | None = None,
-    object_velocity_world: Point | None = None,
+    object_position_belt: NDArray[np.float64] | None = None,
+    object_velocity_world: NDArray[np.float64] | None = None,
     approach_clearance_z: float | None = None,
     approach_speed: float = 0.0,
     *,
     drift_horizon: float,
-    object_position: Point | None = None,
-    object_velocity: Point | None = None,
+    object_position: NDArray[np.float64] | None = None,
+    object_velocity: NDArray[np.float64] | None = None,
     z_offset: float | None = None,
 ) -> Segment:
     """Return the arc from the approach point down onto the object.
@@ -564,19 +569,24 @@ def descend(
 
     dt = descent_seconds(clearance, approach_speed)
     arrival = approach_arc.duration + dt
-    match = (max(0.0, float(obj_vel[0])), 0.0, 0.0)
+    match = np.asarray([max(0.0, float(obj_vel[0])), 0.0, 0.0], dtype=np.float64)
     return Segment(
         start=approach_arc.end,
         end=State(
             position=where_carried(obj_pos, obj_vel, arrival, 0.0, drift_horizon),
             velocity=match,
-            acceleration=(0.0, 0.0, 0.0),
+            acceleration=zeros(),
         ),
         duration=dt,
     )
 
 
-def where(position: Point, velocity: Point, seconds: float, lift: float) -> Point:
+def where(
+    position: NDArray[np.float64],
+    velocity: NDArray[np.float64],
+    seconds: float,
+    lift: float,
+) -> NDArray[np.float64]:
     """Return where a point carried at a constant velocity will be.
 
     Public because the sequence in [clave.control.pick] predicts against the
@@ -592,20 +602,19 @@ def where(position: Point, velocity: Point, seconds: float, lift: float) -> Poin
     Returns:
         The predicted position.
     """
-    return as_point(
-        as_vector(position)
-        + as_vector(velocity) * seconds
-        + np.asarray([0.0, 0.0, lift])
+    return np.asarray(
+        position + velocity * seconds + np.asarray([0.0, 0.0, lift]),
+        dtype=np.float64,
     )
 
 
 def where_carried(
-    position: Point,
-    velocity: Point,
+    position: NDArray[np.float64],
+    velocity: NDArray[np.float64],
     seconds: float,
     lift: float,
     drift_horizon: float,
-) -> Point:
+) -> NDArray[np.float64]:
     """Return where an object will be, carrying its drift across the belt for a while.
 
     The two horizontal axes are not the same process. Along the belt the object
@@ -630,10 +639,9 @@ def where_carried(
     # whole interval, the axis across it only for as long as the drift is
     # remembered, and the vertical axis is not carried at all.
     carried = np.asarray([seconds, min(seconds, drift_horizon), 0.0])
-    return as_point(
-        as_vector(position)
-        + as_vector(velocity) * carried
-        + np.asarray([0.0, 0.0, lift])
+    return np.asarray(
+        position + velocity * carried + np.asarray([0.0, 0.0, lift]),
+        dtype=np.float64,
     )
 
 
@@ -736,7 +744,7 @@ def _second_at(s: float) -> tuple[float, ...]:
     )
 
 
-def _weights(terms: list[Vector]) -> NDArray[np.float64]:
+def _weights(terms: list[NDArray[np.float64]]) -> NDArray[np.float64]:
     """Return a stack of basis weights, one row per normalized time.
 
     Args:
@@ -749,7 +757,7 @@ def _weights(terms: list[Vector]) -> NDArray[np.float64]:
     return np.stack(terms, axis=-1)
 
 
-def _basis(s: Vector) -> NDArray[np.float64]:
+def _basis(s: NDArray[np.float64]) -> NDArray[np.float64]:
     """Return the quintic Hermite basis at each normalized time.
 
     Args:
@@ -773,7 +781,7 @@ def _basis(s: Vector) -> NDArray[np.float64]:
     )
 
 
-def _first(s: Vector) -> NDArray[np.float64]:
+def _first(s: NDArray[np.float64]) -> NDArray[np.float64]:
     """Return the basis differentiated once with respect to normalized time.
 
     Args:
@@ -795,7 +803,7 @@ def _first(s: Vector) -> NDArray[np.float64]:
     )
 
 
-def _second(s: Vector) -> NDArray[np.float64]:
+def _second(s: NDArray[np.float64]) -> NDArray[np.float64]:
     """Return the basis differentiated twice with respect to normalized time.
 
     Args:

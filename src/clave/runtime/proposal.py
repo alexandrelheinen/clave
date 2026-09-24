@@ -12,6 +12,9 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
+import numpy as np
+from numpy.typing import NDArray
+
 from clave.errors import ClaveError
 from clave.taxonomy import BY_ID
 
@@ -48,18 +51,19 @@ class Proposal:
     object_id: int
     material_class: str
     confidence: float
-    point: tuple[float, float, float]
+    point: NDArray[np.float64]
     yaw_radians: float
     reference_time_nanos: int
     window_start_nanos: int
     window_end_nanos: int
 
     def __post_init__(self) -> None:
-        """Refuse a proposal the runtime would refuse.
+        """Refuse a proposal the runtime would refuse, and coerce the point.
 
         Raises:
             ProposalError: Naming the field that is wrong.
         """
+        object.__setattr__(self, "point", np.asarray(self.point, dtype=np.float64))
         if self.material_class not in BY_ID:
             raise ProposalError(
                 f"material class {self.material_class!r} is not in the taxonomy"
@@ -82,13 +86,27 @@ class Proposal:
                 f"reference time {self.reference_time_nanos} falls outside the window"
             )
 
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Proposal):
+            return NotImplemented
+        return (
+            self.object_id == other.object_id
+            and self.material_class == other.material_class
+            and self.confidence == other.confidence
+            and bool(np.allclose(self.point, other.point, rtol=0.0, atol=1e-12))
+            and self.yaw_radians == other.yaw_radians
+            and self.reference_time_nanos == other.reference_time_nanos
+            and self.window_start_nanos == other.window_start_nanos
+            and self.window_end_nanos == other.window_end_nanos
+        )
+
     def encode(self) -> bytes:
         """Render as one datagram.
 
         Returns:
             The UTF-8 JSON the runtime reads.
         """
-        x, y, z = self.point
+        x, y, z = (float(self.point[0]), float(self.point[1]), float(self.point[2]))
         return json.dumps(
             {
                 "version": PROPOSAL_VERSION,

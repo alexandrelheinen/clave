@@ -195,7 +195,7 @@ def load_split(root: Path, part: str) -> tuple[Rollout, ...]:
                         object_id=item["object_id"],
                         material_class=item["material_class"],
                         channel=item["channel"],
-                        position=tuple(item["position"]),
+                        position=np.asarray(item["position"], dtype=np.float64),
                         in_reachable_window=item["in_reachable_window"],
                         bbox=tuple(item["bbox"]) if item.get("bbox") else None,
                     )
