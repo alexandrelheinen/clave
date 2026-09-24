@@ -17,18 +17,17 @@
 still:
   name: thumbnail
   description: >-
-    The manipulator over the belt with three packages covering three material
-    classes the object set has.
-  # Seed 1 at 12.5 s carries three packages and three classes (HDPE, ferrous,
-  # paperboard). Wider spacings on the current line rarely put five packages
-  # in frame at once; three with three classes is the densest honest moment
-  # in the first thirty seconds of this seed.
-  seed: 1
-  capture_at_seconds: 12.5
+    The manipulator mid-reach over the belt with four packages covering three
+    material classes the object set has.
+  # Seed 11 at 28.75 s: four packages, three classes, three reachable, flange
+  # near the belt centreline at approach height with a bent elbow rather than
+  # a stretched outer reach.
+  seed: 11
+  capture_at_seconds: 28.75
   width: 1920
   height: 1080
   expect:
-    packages: 3
+    packages: 4
     classes: 3
 
 lighting:

@@ -22,13 +22,15 @@ still:
   description: >-
     The sorting line with the reach annulus, the edges of the reachable window
     and a marker over each package in the color of the channel it routes to.
-    Three packages covering three material classes sit on the belt.
-  seed: 1
-  capture_at_seconds: 12.5
+    Four packages covering three material classes sit on the belt while the
+    arm rides approach height over one of them.
+  # Same moment as the thumbnail: denser belt, arm over the centreline.
+  seed: 11
+  capture_at_seconds: 28.75
   width: 1920
   height: 1080
   expect:
-    packages: 3
+    packages: 4
     classes: 3
 
 annotations:
