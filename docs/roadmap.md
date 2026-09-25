@@ -162,6 +162,14 @@ object leaves the belt, so a rate the line holds is not a rate it holds
 until the pool is spent. No part of the loop reads perception, proved by a
 test rather than by a comment.
 
+## Perception weights
+
+The ladder above records identity, motion, and the line. The weights that
+name a material follow [training-pipeline.md](training-pipeline.md). A tag
+on this ladder means those release criteria hold. The checkpoint a runtime
+loads is chosen by that procedure, on a validation digest held out of the
+training half.
+
 ## Seams to watch
 
 - The material taxonomy is consumed by the asset tagging, the label mapping,
