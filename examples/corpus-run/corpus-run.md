@@ -47,9 +47,12 @@ Ten epochs. Each frame is resized to 224 pixels on a side before the model
 sees it, and the batch holds 1 frame. The proof-of-concept budget in
 `configs/training/memory.yml` stops the run if the process resident set goes
 over 1.25 GiB. A ResNet-50 step on this machine retains about 1.06 GiB, and
-the full-resolution frames are released after each batch. A progress bar
-counts frames in the current epoch and shows the running mean loss and the
-resident set. The log line
+the full-resolution frames are released after each batch. One progress bar
+per epoch counts that epoch's frames and, when the terminal is interactive,
+shows the running mean loss, the resident set, and the clock time the whole
+run should finish. The same count is written as a log line either way, so a
+captured log still has the rate, the time remaining, and that clock time.
+The line `epoch 1/10` is only the start of the epoch. The line
 `epoch 1 loss ...` is written when the epoch finishes, and that is when
 `runs/debug/corpus/checkpoints/resnet50-baseline.pt` exists.
 
@@ -68,8 +71,9 @@ continues at the next epoch.
 ## 3. Train Faster R-CNN
 
 Only after the previous command has exited with code 0. Five epochs, with
-the same 224 pixel side and a batch of 1. The bar again shows frames, the
-running mean loss, and the resident set. The checkpoint is
+the same 224 pixel side and a batch of 1. The count line again shows frames,
+the running mean loss, the resident set, and the time remaining. The
+checkpoint is
 `runs/debug/corpus/checkpoints/faster-rcnn-mobilenetv3.pt`.
 
 ```bash
@@ -78,8 +82,9 @@ MUJOCO_GL=osmesa .venv/bin/clave --log-level INFO train --config examples/corpus
 
 ## 4. Validate and publish each model
 
-Each command reads the validation half. A progress bar counts frames and shows
-the running agreement. The detector bar also shows mean IoU. When the command
+Each command reads the validation half. A count line shows frames done, the
+running agreement, the time remaining, and the clock time it should finish.
+The detector line also shows mean IoU. When the command
 finishes it prints the score and writes the `models` row: name, architecture
 (`candidate`), path of the `.pt`, train and validation digests, date, epochs,
 loss, and the metrics.

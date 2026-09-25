@@ -1,6 +1,10 @@
 """The frame bar used while training and validating."""
 
+import logging
+from datetime import datetime
+
 import numpy as np
+import pytest
 
 from clave.data.dataset import DatasetDescription, DatasetFile
 from clave.progress import Progress, examples_in, frame_total
@@ -50,6 +54,45 @@ def test_examples_in_reads_a_tensor_a_list_and_an_action_chunk() -> None:
     assert examples_in((images, None)) == 4
     assert examples_in((["a", "b"], None)) == 2
     assert examples_in({"observation.image": images}) == 4
+
+
+def test_the_count_line_names_frames_done_and_time_remaining(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A run that is not a terminal still gets a count and a remaining time.
+
+    A second update inside the quiet window does not add another line. The
+    next line appears once that window has passed, and it counts the whole
+    run, not only the epoch on screen.
+    """
+    clock = {"now": 1000.0}
+    monkeypatch.setattr("clave.progress.time.monotonic", lambda: clock["now"])
+    monkeypatch.setattr(
+        "clave.progress._wall_now",
+        lambda: datetime(2026, 9, 25, 22, 43, 30),
+    )
+    expected = (
+        "epoch 1/10  10/100 frame  loss 0.5000  rss 900 MiB  "
+        "1.00 frame/s  epoch 1m 30s remaining  run 16m 30s remaining  "
+        "finishes 2026-09-25 23:00"
+    )
+    with (
+        caplog.at_level(logging.INFO, logger="clave.progress"),
+        Progress(100, "epoch 1/10", "frame", repeats=10, repeat_index=0) as bar,
+    ):
+        clock["now"] = 1010.0
+        bar.update(10, loss=0.5, rss_mib=900.0)
+        clock["now"] = 1011.0
+        bar.update(1, loss=0.4, rss_mib=901.0)
+        messages = [record.getMessage() for record in caplog.records]
+        assert messages == [expected]
+        clock["now"] = 1025.0
+        bar.update(5, loss=0.25, rss_mib=800.0)
+        messages = [record.getMessage() for record in caplog.records]
+    assert len(messages) == 2
+    assert "16/100" in messages[-1]
+    assert "run " in messages[-1]
 
 
 def test_the_bar_keeps_the_latest_metric_and_closes() -> None:

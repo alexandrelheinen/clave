@@ -170,7 +170,13 @@ def train(
         model.train()
         began = time.perf_counter()
         total, batches = 0.0, 0
-        with Progress(frames, f"epoch {epoch + 1}/{config.epochs}", "frame") as bar:
+        with Progress(
+            frames,
+            f"epoch {epoch + 1}/{config.epochs}",
+            "frame",
+            repeats=config.epochs,
+            repeat_index=epoch,
+        ) as bar:
             for rollout in _training_rollouts(config.dataset):
                 pending = list(rollout.examples)
                 del rollout
