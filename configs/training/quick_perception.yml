@@ -5,7 +5,7 @@ training:
   dataset: datasets/synthetic
   checkpoints: runs
   epochs: 5
-  batch_size: 4
+  batch_size: 1
   learning_rate: 0.0003
   seed: 0
   window_exit_meters: 1.034

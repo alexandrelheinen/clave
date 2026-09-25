@@ -8,7 +8,7 @@ training:
   dataset: datasets/synthetic
   checkpoints: runs
   epochs: 150
-  batch_size: 4
+  batch_size: 1
   learning_rate: 0.0003
   seed: 0
   # Where the arm's reachable window ends, in belt frame meters. The scripted

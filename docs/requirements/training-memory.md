@@ -55,7 +55,9 @@ resize validation images to the stored side.
 
 The numbers live in `configs/training/memory.yml`. One gibibyte is
 `1073741824` bytes. The proof-of-concept side is 224 pixels, the input
-ResNet-50 was built for.
+ResNet-50 was built for. A batch of 4 frames at that side was measured at
+1.5 GiB resident on this machine, so the training files use one frame per
+batch until the ceiling is raised.
 
 ## Follow-up
 

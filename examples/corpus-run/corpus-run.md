@@ -44,7 +44,8 @@ them is in the YAML files beside this one.
 ## 2. Train ResNet-50
 
 Ten epochs. Each frame is resized to 224 pixels on a side before the model
-sees it, and the batch holds 4 frames. That is the proof-of-concept budget in
+sees it, and the batch holds 1 frame. A batch of 4 reached 1.5 GiB on this
+machine, which is over the proof-of-concept budget in
 `configs/training/memory.yml`: the run stops itself if the process resident
 set goes over 1 GiB. A progress bar counts frames in the current epoch and
 shows the running mean loss and the resident set. The log line
@@ -66,7 +67,7 @@ continues at the next epoch.
 ## 3. Train Faster R-CNN
 
 Only after the previous command has exited with code 0. Five epochs, with
-the same 224 pixel side and a batch of 2. The bar again shows frames, the
+the same 224 pixel side and a batch of 1. The bar again shows frames, the
 running mean loss, and the resident set. The checkpoint is
 `runs/debug/corpus/checkpoints/faster-rcnn-mobilenetv3.pt`.
 
