@@ -4,8 +4,9 @@
 
 The decoder runs against a committed fixture, so a zero rendered yield reads
 as a property of the optics rather than as breakage. The
-fixture is a symbol on a pinned submodule texture: `docs/guidelines.md` says no
-binary lands in git, and a submodule pin is a reference rather than a binary.
+fixture is a symbol on a pinned object texture: `docs/guidelines.md` says no
+binary lands in git, and the manifest in `configs/assets/objects.yml` is a
+reference rather than a binary.
 
 Generating the symbol instead was tried and abandoned. OpenCV detects before it
 decodes and will not detect a synthetic symbol at any module width, quiet zone

@@ -5,8 +5,9 @@
 # after the repository is checked out and must stay idempotent: a second run
 # against a warm machine reinstalls nothing it can detect is already present.
 # It installs the headless OpenGL stack MuJoCo renders through, the uv-managed
-# Python environment, every pinned submodule (including the 2 GB scanned-object
-# meshes the world is built from), the cargo tools the quality gate calls, and
+# Python environment, the pinned submodules, the object meshes named by the
+# world (fetched by digest rather than as the full collections), the cargo
+# tools the quality gate calls, and
 # the release safety-layer binary the runtime bridge loads.
 set -euo pipefail
 
@@ -42,9 +43,9 @@ fi
 export PATH="${HOME}/.local/bin:${PATH}"
 command -v uv >/dev/null 2>&1 || fail "uv is not on PATH after install"
 
-step "Pinned submodules (guidelines, arm, warehouse, YCB and scanned objects)"
-# The scanned-object meshes are about 2 GB and the world refuses to build
-# without them, so the full recursive fetch is part of a usable environment.
+step "Pinned submodules (guidelines, UR10e vendor, warehouse props)"
+# Object meshes are not submodules. The collections are gigabytes and the
+# world uses a few files, fetched by digest after the Python environment exists.
 git submodule update --init --recursive || fail "submodule checkout failed"
 
 step "Python environment with the dev and world extras"
@@ -55,6 +56,10 @@ fi
 # decoders the gate exercises on every run.
 uv pip install --python .venv/bin/python -e ".[dev,world]" \
   || fail "python dependency install failed"
+
+step "Object meshes named by the world"
+python scripts/import_scene_assets.py --objects \
+  || fail "object asset download failed"
 
 step "Cargo tools the quality gate runs"
 # cargo install is a no-op that exits zero when the pinned tool is already

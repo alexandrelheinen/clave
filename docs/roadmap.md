@@ -361,7 +361,7 @@ sixth was found by the branch that closed the first four.
 | Source | What CLAVE takes | Where it lives |
 | --- | --- | --- |
 | FRET | MuJoCo physics SITL, gate cameras, the robot-agnostic `PickPlaceFSM`, the YAML configuration policy, and the asset submodule convention | `src/fret/` in the FRET repository |
-| FRET submodule | OpenMANIPULATOR-X, 4 revolute joints plus a parallel gripper, and OpenMANIPULATOR-Y, 6 revolute joints | `third_party/robotis_mujoco_menagerie` |
+| FRET | OpenMANIPULATOR-X and OpenMANIPULATOR-Y, kept in FRET. CLAVE does not vendor them | FRET repository |
 | FRET submodule | Warehouse props and textures, including bucket and clutter meshes | `third_party/aws-robomaker-small-warehouse-world`, MIT-0 |
 | ARCO | Joint-space planning and `JointSpaceMPC`, reached through FRET's planner nodes | ARCO repository, Python library |
 | BOSSA | The telemetry contract for a later hardware era, out of scope for v1.x | BOSSA repository, C++20 |

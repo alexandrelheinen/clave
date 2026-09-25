@@ -181,16 +181,57 @@ def import_conveyor() -> tuple[float, float, float] | None:
     return (extents[0], extents[1], extents[2])
 
 
-def main() -> int:
-    """Convert every mesh and copy every texture.
+def _fetch_objects() -> int:
+    """Download the pinned object files. Returns a process exit code."""
+    import sys
+
+    sys.path.insert(0, str(ROOT / "src"))
+    from clave.assets.fetch import fetch_objects
+
+    manifest = ROOT / "configs" / "assets" / "objects.yml"
+    downloaded, present = fetch_objects(ROOT, manifest)
+    _log_output(
+        f"  objects         {downloaded} downloaded, {present} already matched"
+    )
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Convert warehouse meshes and fetch the pinned object files.
+
+    Args:
+        argv: Arguments, defaulting to the process arguments. `--objects`
+            fetches only the pinned meshes. `--warehouse` converts only the
+            warehouse props. With neither, both run.
 
     Returns:
         A process exit code.
     """
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Import scene assets")
+    parser.add_argument(
+        "--objects",
+        action="store_true",
+        help="download the pinned object meshes and textures",
+    )
+    parser.add_argument(
+        "--warehouse",
+        action="store_true",
+        help="convert the warehouse props and the conveyor module",
+    )
+    args = parser.parse_args(argv)
+    objects = args.objects or not args.warehouse
+    warehouse = args.warehouse or not args.objects
+
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+    if objects and _fetch_objects() != 0:
+        return 1
+    if not warehouse:
+        return 0
     LOGGER.debug("initializing asset importer: source=%s output=%s", SOURCE, OUT)
     if not SOURCE.is_dir():
         _log_output(
