@@ -71,8 +71,9 @@ class Progress:
 
     One bar covers the epoch on screen: its description is the epoch, and its
     counter is the frames of that epoch. The bar is drawn when standard error
-    is a terminal. A count line is written either way, with the rate, the time
-    left, and the local clock time the whole run should finish.
+    is a terminal, and it carries the rate, the time left, and the local clock
+    time the whole run should finish. A count line carries those same facts
+    when the bar is not drawn. The line and the bar are never written together.
 
     Attributes:
         completed: Frames reported so far.
@@ -119,26 +120,32 @@ class Progress:
         self.completed += n
         if metrics:
             self.metrics = dict(metrics)
-        self._report_count()
-        if self._bar is None:
+        elapsed = time.monotonic() - self._started
+        if _is_drawn(self._bar):
+            postfix = _bar_postfix(
+                self.completed,
+                self._total,
+                self._unit,
+                elapsed,
+                self.metrics,
+                repeats=self._repeats,
+                repeat_index=self._repeat_index,
+                now=_wall_now(),
+            )
+            if postfix:
+                self._bar.set_postfix(postfix, refresh=n == 0)
+            if n:
+                self._bar.update(n)
             return
-        postfix = {key: f"{value:.4f}" for key, value in self.metrics.items()}
-        remaining = _run_remaining_seconds(
-            self.completed,
-            self._total,
-            time.monotonic() - self._started,
-            repeats=self._repeats,
-            repeat_index=self._repeat_index,
-        )
-        if remaining is not None:
-            postfix["finishes"] = _finish_text(remaining, _wall_now())
-        if postfix:
-            self._bar.set_postfix(postfix, refresh=n == 0)
-        if n:
+        self._report_count()
+        if self._bar is not None and n:
             self._bar.update(n)
 
     def _report_count(self) -> None:
-        """Write one count line when the quiet window has elapsed."""
+        """Write one count line when no bar is drawn.
+
+        The quiet window still applies, so a captured log is not a line per frame.
+        """
         if self.completed <= 0:
             return
         now = time.monotonic()
@@ -238,6 +245,68 @@ def _finish_text(remaining_seconds: float, now: datetime) -> str:
     moment = now + timedelta(seconds=remaining_seconds)
     rounded = (moment + timedelta(seconds=30)).replace(second=0, microsecond=0)
     return rounded.strftime("%Y-%m-%d %H:%M")
+
+
+def _is_drawn(bar: Any) -> bool:
+    """Whether the bar is painting a line that a log would scroll away."""
+    return bar is not None and not bool(getattr(bar, "disable", False))
+
+
+def _bar_postfix(
+    completed: int,
+    total: int | None,
+    unit: str,
+    elapsed_seconds: float,
+    metrics: dict[str, float],
+    *,
+    repeats: int,
+    repeat_index: int,
+    now: datetime,
+) -> dict[str, str]:
+    """The estimate shown on the bar, in place of a count line.
+
+    Args:
+        completed: Frames finished in this repeat.
+        total: Frames expected in one repeat, or None when unknown.
+        unit: What one step is, usually a frame.
+        elapsed_seconds: Seconds since this repeat started.
+        metrics: Latest named values.
+        repeats: How many times this length is walked.
+        repeat_index: Which repeat is on screen, starting at zero.
+        now: Local time the finish clock is added to.
+
+    Returns:
+        Postfix fields. The time fields are absent until a rate exists.
+    """
+    postfix: dict[str, str] = {}
+    for key, value in metrics.items():
+        if key == "rss_mib":
+            postfix["rss"] = f"{value:.0f} MiB"
+        else:
+            postfix[key] = f"{value:.4f}"
+    if elapsed_seconds <= 0 or completed <= 0:
+        return postfix
+    rate = completed / elapsed_seconds
+    postfix["rate"] = f"{rate:.2f} {unit}/s"
+    remaining = _run_remaining_seconds(
+        completed,
+        total,
+        elapsed_seconds,
+        repeats=repeats,
+        repeat_index=repeat_index,
+    )
+    if remaining is None or total is None:
+        return postfix
+    left = (total - completed) / rate
+    if repeats > 1:
+        postfix["epoch"] = _span(left)
+        later = repeats - repeat_index - 1
+        if later > 0:
+            postfix["run"] = _span(remaining)
+    else:
+        postfix["left"] = _span(remaining)
+    postfix["finishes"] = _finish_text(remaining, now)
+    return postfix
 
 
 def _format_progress(

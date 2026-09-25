@@ -67,6 +67,7 @@ def test_the_count_line_names_frames_done_and_time_remaining(
     run, not only the epoch on screen.
     """
     clock = {"now": 1000.0}
+    monkeypatch.setattr("clave.progress._open_bar", lambda *_args: None)
     monkeypatch.setattr("clave.progress.time.monotonic", lambda: clock["now"])
     monkeypatch.setattr(
         "clave.progress._wall_now",
@@ -93,6 +94,59 @@ def test_the_count_line_names_frames_done_and_time_remaining(
     assert len(messages) == 2
     assert "16/100" in messages[-1]
     assert "run " in messages[-1]
+
+
+def test_a_live_bar_keeps_the_estimate_and_does_not_log(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A drawn bar holds the finish clock, and the count line stays quiet."""
+    clock = {"now": 1000.0}
+    drawn = _DrawnBar()
+    monkeypatch.setattr("clave.progress.time.monotonic", lambda: clock["now"])
+    monkeypatch.setattr(
+        "clave.progress._wall_now",
+        lambda: datetime(2026, 9, 25, 22, 43, 30),
+    )
+    monkeypatch.setattr("clave.progress._open_bar", lambda *_args: drawn)
+    with (
+        caplog.at_level(logging.INFO, logger="clave.progress"),
+        Progress(100, "epoch 1/10", "frame", repeats=10, repeat_index=0) as bar,
+    ):
+        clock["now"] = 1010.0
+        bar.update(10, loss=0.5, rss_mib=900.0)
+        assert drawn.postfix["finishes"] == "2026-09-25 23:00"
+        assert "1m 30s" in drawn.postfix["epoch"]
+        assert "16m 30s" in drawn.postfix["run"]
+        clock["now"] = 1025.0
+        bar.update(5, loss=0.25, rss_mib=800.0)
+    assert caplog.records == []
+    assert drawn.n == 15
+
+
+class _DrawnBar:
+    """A bar that stays on one line, so a test can read its postfix."""
+
+    def __init__(self) -> None:
+        """Start empty."""
+        self.disable = False
+        self.n = 0
+        self.total: int | None = 100
+        self.postfix: dict[str, str] = {}
+
+    def set_postfix(self, postfix: dict[str, str], refresh: bool = True) -> None:
+        """Remember the latest postfix."""
+        self.postfix = dict(postfix)
+
+    def update(self, n: int) -> None:
+        """Advance the counter."""
+        self.n += n
+
+    def refresh(self) -> None:
+        """Stay put."""
+
+    def close(self) -> None:
+        """Leave the last postfix readable."""
 
 
 def test_the_bar_keeps_the_latest_metric_and_closes() -> None:
