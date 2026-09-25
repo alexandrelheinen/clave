@@ -248,27 +248,20 @@ def write_png(frame: Any, path: Path, width: int, height: int) -> None:
         raise StillError(f"{ENCODER} refused the frame: {error.stderr!r}") from error
 
 
-def capture(root: Path, scenario: StillScenario, out: Path) -> list[Path]:
-    """Run the rollout to its instant and render every camera.
-
-    The arm starts at the configured park pose and the scripted expert drives
-    the flange at approach height over the reachable package nearest the
-    window exit (`AC-STILL-05`). Chasing the object's centre of mass buried
-    the tool under the belt and left it beside the line; the approach height
-    is what puts a figure's arm over the packages a reader expects to see.
+def _simulate(
+    root: Path, scenario: StillScenario
+) -> tuple[Any, Any, Any, Any, Any, Any]:
+    """Run the world to the capture instant with the arm posed, not colliding.
 
     Args:
         root: Repository root.
-        scenario: What to capture.
-        out: Directory the PNGs go in.
+        scenario: What to advance.
 
     Returns:
-        The files written, in camera order.
+        The MuJoCo module, model, data, plan, conveyor and arm indices.
 
     Raises:
-        StillError: If the capture instant does not match the scenario's
-            package and class claim (`AC-STILL-04`), or the flange is not
-            serving the belt (`AC-STILL-05`).
+        StillError: If the belt never enters the arm's reach.
     """
     import os
 
@@ -341,7 +334,32 @@ def capture(root: Path, scenario: StillScenario, out: Path) -> list[Path]:
         )
         if armmod.reachable(indices, target):
             armmod.step_toward(model, data, indices, target, gain=ARM_GAIN)
+    return mujoco, model, data, plan, conveyor, indices
 
+
+def capture(root: Path, scenario: StillScenario, out: Path) -> list[Path]:
+    """Run the rollout to its instant and render every camera.
+
+    The arm starts at the configured park pose and the scripted expert drives
+    the flange at approach height over the reachable package nearest the
+    window exit (`AC-STILL-05`). Chasing the object's centre of mass buried
+    the tool under the belt and left it beside the line; the approach height
+    is what puts a figure's arm over the packages a reader expects to see.
+
+    Args:
+        root: Repository root.
+        scenario: What to capture.
+        out: Directory the PNGs go in.
+
+    Returns:
+        The files written, in camera order.
+
+    Raises:
+        StillError: If the capture instant does not match the scenario's
+            package and class claim (`AC-STILL-04`), or the flange is not
+            serving the belt (`AC-STILL-05`).
+    """
+    mujoco, model, data, plan, conveyor, indices = _simulate(root, scenario)
     packages = len(conveyor.active)
     classes = len({item.material_class for item in conveyor.active})
     if packages != scenario.expect.packages or classes != scenario.expect.classes:
@@ -383,8 +401,16 @@ def _let_the_arm_pass_through(mujoco: Any, model: Any) -> None:
         model: The compiled model, modified in place.
     """
     for geom in range(model.ngeom):
+        # The link meshes ship without a geom name. The body name is what
+        # marks them as the arm; a named pad is the other case.
+        body = mujoco.mj_id2name(
+            model, mujoco.mjtObj.mjOBJ_BODY, int(model.geom_bodyid[geom])
+        )
         name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, geom)
-        if name is not None and name.startswith("arm_"):
+        belongs = (body is not None and body.startswith("arm_")) or (
+            name is not None and name.startswith("arm_")
+        )
+        if belongs:
             model.geom_contype[geom] = 0
             model.geom_conaffinity[geom] = 0
 

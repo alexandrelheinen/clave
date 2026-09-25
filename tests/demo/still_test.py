@@ -346,27 +346,12 @@ def test_presentation_lights_may_be_directional() -> None:
 def test_every_shipped_still_matches_its_belt_claim() -> None:
     """AC-STILL-04: the capture instant matches still.expect."""
     pytest.importorskip("mujoco")
-    import mujoco
 
-    from clave.world import belt, config, scene
+    from clave.demo.still import _simulate
 
     for path in sorted(STILLS.glob("*.yml")):
         scenario = StillScenario.load(path)
-        raw = config.load(ROOT / "configs" / "world" / "sorting_line.yml")
-        rng = np.random.default_rng(scenario.seed)
-        model, data, plan = scene.build(raw, rng, ROOT)
-        spawn = config.require(raw, "spawn")
-        conveyor = belt.Conveyor(
-            plan,
-            rng,
-            config.require_range(spawn, "spacing_meters", "spawn"),
-            config.require_range(spawn, "lateral_offset_meters", "spawn"),
-            config.require_range(spawn, "drop_height_meters", "spawn"),
-            entry_margin=float(config.require(spawn, "entry_margin_meters", "spawn")),
-        )
-        for _ in range(int(scenario.capture_at_seconds / plan.timestep)):
-            mujoco.mj_step(model, data)
-            conveyor.step(model, data)
+        _mujoco, _model, _data, _plan, conveyor, _indices = _simulate(ROOT, scenario)
         packages = len(conveyor.active)
         classes = len({item.material_class for item in conveyor.active})
         assert packages == scenario.expect.packages, path.name
@@ -395,20 +380,26 @@ def test_the_posed_arm_does_not_collide_with_the_belt() -> None:
 
     raw = config.load(ROOT / "configs" / "world" / "sorting_line.yml")
     model, _, _ = scene.build(raw, np.random.default_rng(0), ROOT)
-    colliding = [
-        mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, geom)
-        for geom in range(model.ngeom)
-        if (name := mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, geom))
-        and name.startswith("arm_")
-        and int(model.geom_contype[geom]) != 0
-    ]
-    assert colliding
-    _let_the_arm_pass_through(mujoco, model)
-    for geom in range(model.ngeom):
+
+    def _is_arm(geom: int) -> bool:
+        body = mujoco.mj_id2name(
+            model, mujoco.mjtObj.mjOBJ_BODY, int(model.geom_bodyid[geom])
+        )
         name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, geom)
-        if name is not None and name.startswith("arm_"):
-            assert int(model.geom_contype[geom]) == 0
-            assert int(model.geom_conaffinity[geom]) == 0
+        return (body is not None and body.startswith("arm_")) or (
+            name is not None and name.startswith("arm_")
+        )
+
+    colliding = [geom for geom in range(model.ngeom) if _is_arm(geom)]
+    assert colliding
+    assert any(
+        mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, geom) is None
+        for geom in colliding
+    )
+    _let_the_arm_pass_through(mujoco, model)
+    for geom in colliding:
+        assert int(model.geom_contype[geom]) == 0
+        assert int(model.geom_conaffinity[geom]) == 0
 
 
 def test_the_arm_serves_the_belt_at_capture(tmp_path: Path) -> None:
