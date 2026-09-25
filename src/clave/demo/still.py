@@ -312,6 +312,7 @@ def capture(root: Path, scenario: StillScenario, out: Path) -> list[Path]:
             "the belt never enters the arm's reach, so no still can be captured"
         )
     _park_the_arm(mujoco, model, data, indices, control.task.park_position)
+    _let_the_arm_pass_through(mujoco, model)
     approach_z = float(plan.belt.surface_height) + float(control.task.approach_height)
 
     for _ in range(int(scenario.capture_at_seconds / plan.timestep)):
@@ -366,6 +367,26 @@ def capture(root: Path, scenario: StillScenario, out: Path) -> list[Path]:
         write_png(renderer.render(), path, scenario.width, scenario.height)
         written.append(path)
     return written
+
+
+def _let_the_arm_pass_through(mujoco: Any, model: Any) -> None:
+    """Keep the posed arm from sweeping packages off the belt.
+
+    The still commands the flange through the packages it is photographing.
+    Contact resolution is not the same on every machine, so a colliding arm
+    ejects a different number of them and the belt claim stops matching the
+    capture. The arm is scenery here: it has to be seen over a package, not
+    to move one.
+
+    Args:
+        mujoco: The imported module.
+        model: The compiled model, modified in place.
+    """
+    for geom in range(model.ngeom):
+        name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, geom)
+        if name is not None and name.startswith("arm_"):
+            model.geom_contype[geom] = 0
+            model.geom_conaffinity[geom] = 0
 
 
 def _park_the_arm(

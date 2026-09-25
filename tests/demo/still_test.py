@@ -12,7 +12,12 @@ import numpy as np
 import pytest
 import yaml
 
-from clave.demo.still import StillError, StillScenario, write_png
+from clave.demo.still import (
+    StillError,
+    StillScenario,
+    _let_the_arm_pass_through,
+    write_png,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 STILLS = ROOT / "configs" / "stills"
@@ -379,6 +384,31 @@ def test_still_is_its_own_subcommand() -> None:
     sim = parser.parse_args(["sim", "--seconds", "1"])
     assert sim.command == "sim"
     assert not hasattr(sim, "still")
+
+
+def test_the_posed_arm_does_not_collide_with_the_belt() -> None:
+    """A still's arm is scenery, so it cannot eject the packages it photographs."""
+    pytest.importorskip("mujoco")
+    import mujoco
+
+    from clave.world import config, scene
+
+    raw = config.load(ROOT / "configs" / "world" / "sorting_line.yml")
+    model, _, _ = scene.build(raw, np.random.default_rng(0), ROOT)
+    colliding = [
+        mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, geom)
+        for geom in range(model.ngeom)
+        if (name := mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, geom))
+        and name.startswith("arm_")
+        and int(model.geom_contype[geom]) != 0
+    ]
+    assert colliding
+    _let_the_arm_pass_through(mujoco, model)
+    for geom in range(model.ngeom):
+        name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, geom)
+        if name is not None and name.startswith("arm_"):
+            assert int(model.geom_contype[geom]) == 0
+            assert int(model.geom_conaffinity[geom]) == 0
 
 
 def test_the_arm_serves_the_belt_at_capture(tmp_path: Path) -> None:
