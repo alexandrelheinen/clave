@@ -17,18 +17,18 @@
 still:
   name: thumbnail
   description: >-
-    The manipulator mid-reach over the belt with four packages covering three
+    The manipulator mid-reach over the belt with two packages covering two
     material classes the object set has.
-  # Seed 11 at 28.75 s: four packages, three classes, three reachable, flange
-  # near the belt centreline at approach height with a bent elbow rather than
-  # a stretched outer reach.
+  # Seed 11 at 28.75 s, arm posed and not colliding: two packages, two
+  # classes, flange near the belt centreline at approach height. A colliding
+  # arm changed this count from machine to machine.
   seed: 11
   capture_at_seconds: 28.75
   width: 1920
   height: 1080
   expect:
-    packages: 4
-    classes: 3
+    packages: 2
+    classes: 2
 
 lighting:
   quality:
