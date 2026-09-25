@@ -77,3 +77,9 @@ runs/
 # world at all. A rule about one generated directory must not reach into
 # third_party/.
 /assets/
+
+# Object meshes fetched by scripts/import_scene_assets.py --objects.
+# The commits and digests live in configs/assets/objects.yml. The full
+# collections are not submodules.
+/third_party/scanned_objects/
+/third_party/ycb_sim/

@@ -26,6 +26,15 @@ else
   git submodule update --init --recursive
 fi
 
+echo "==> Object meshes"
+if [[ -f third_party/scanned_objects/models/JarroSil_Activated_Silicon/model.obj ]]; then
+  echo "  ok      pinned object files present"
+else
+  printf '  MISSING object meshes. Fetch them with:\n'
+  printf '            python scripts/import_scene_assets.py --objects\n'
+  missing=1
+fi
+
 echo "==> Toolchain"
 report git "install from your package manager"
 report cargo "install a stable Rust toolchain from https://rustup.rs"

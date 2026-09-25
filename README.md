@@ -65,9 +65,12 @@ uv venv .venv && . .venv/bin/activate
 uv pip install -e ".[dev,world]"    # Python deps, MuJoCo, dev tooling
 cargo build --release -p clave-sitl # Rust safety layer
 
+# Object meshes the world spawns. A few megabytes, checked by digest.
+python scripts/import_scene_assets.py --objects
+
 # Optional: scene dressing (shelves, pallets, trash cans).
 # Without it the belt uses a plain box on legs and the floor a gray plane.
-uv pip install -e ".[assets]" && python scripts/import_scene_assets.py
+uv pip install -e ".[assets]" && python scripts/import_scene_assets.py --warehouse
 ```
 
 ## Running it
@@ -103,7 +106,9 @@ specified in
 ```bash
 clave benchmark       # compare every configuration in one table
 clave record-dataset  # record labeled rollouts for training
+clave corpus          # record the train and validation corpora and publish them
 clave train --candidate <name>          # train one candidate
+clave validate --dataset <digest> --candidate <name> --checkpoint <file>
 clave validate-run --outcomes <file>    # score against gates
 ```
 
@@ -182,14 +187,15 @@ classes need a new asset source rather than a wider effector.
 
 ### Submodule sizes
 
-`git submodule update --init --recursive` fetches about **2 GB**, almost all of
-it the scanned objects.
+`git submodule update --init --recursive` fetches the guidelines, the warehouse
+props and nothing else from those collections. The object meshes are a few
+megabytes, downloaded by `python scripts/import_scene_assets.py --objects`
+from the commits recorded in `configs/assets/objects.yml`.
 
 | Submodule | Checked out | What it supplies |
 | --- | --- | --- |
-| `third_party/scanned_objects` | 2.0 GB | 1,030 scanned household objects, 11 used |
-| `third_party/robotis_mujoco_menagerie` | 185 MB | Sibling ROBOTIS arms, kept for comparison |
-| `third_party/ycb_sim` | 24 MB | 10 YCB packages, 4 used |
+| `third_party/scanned_objects` | about 15 MB fetched | The meshes the world spawns, by digest, not the 2 GB collection |
+| `third_party/ycb_sim` | included above | The YCB meshes the world and the barcode fixtures name |
 | `third_party/aws-robomaker-small-warehouse-world` | 17 MB | Warehouse props and textures |
 | `.guidelines` | Under 10 MB | The shared guidelines |
 
@@ -265,7 +271,7 @@ outside the v1.x line. What CLAVE takes from each sibling is itemized in the
 | `crates/` | The decision contract, the routing policy, the publisher, the safety layer, the runtime |
 | `src/clave/` | The world, the data pipeline, training, validation, the runtime, the benchmark, the demos |
 | `configs/` | Every tunable. Nothing in Python or MJCF carries a numeric default |
-| `third_party/` | Pinned submodules: the ROBOTIS arm, the AWS warehouse props, the YCB objects |
+| `third_party/` | Vendored UR10e and gripper, the warehouse submodule, and object meshes fetched by digest |
 | [docs/requirements/](docs/requirements/) | One document per feature: intent, scope, acceptance criteria, and the ids its tests reference |
 | `scripts/` | Toolchain setup and the local quality gate |
 

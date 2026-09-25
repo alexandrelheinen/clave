@@ -1,0 +1,80 @@
+# Object meshes the world actually loads.
+#
+# The full scanned-object collection is about 2 GB and the full YCB checkout
+# carries packages this line does not spawn. These entries are the files named
+# by configs/world/sorting_line.yml and by the barcode fixtures, at the commits
+# the submodules used to pin. `scripts/import_scene_assets.py --objects`
+# downloads each one and refuses a file whose bytes do not match.
+
+sources:
+  scanned_objects:
+    repository: kevinzakka/mujoco_scanned_objects
+    commit: 6ff8d275cebfd5b47e49685e3cfbe64b20e49a3c
+  ycb_sim:
+    repository: vikashplus/YCB_sim
+    commit: 57546b87f4724c947eadd4241a7892473febb88d
+
+files:
+  - path: third_party/scanned_objects/models/JarroSil_Activated_Silicon/model.obj
+    source: scanned_objects
+    sha256: bf055d82ba59fffcd6cce344c10c8c44a6e8488b5b32a08c1ce5b77000feace3
+  - path: third_party/scanned_objects/models/JarroSil_Activated_Silicon/texture.png
+    source: scanned_objects
+    sha256: 9909683b88630732de3a0ecc97797966acc4a0c0208cc003465b6d2c6514b544
+  - path: third_party/scanned_objects/models/CoQ10/model.obj
+    source: scanned_objects
+    sha256: 836dea1c2870f4bfb3374f502b0b26ccc92893727c09d382c14be8caca513513
+  - path: third_party/scanned_objects/models/CoQ10/texture.png
+    source: scanned_objects
+    sha256: c4b582188962eda8ee40e67cbdcc5ea5ffb8a26b7a469e50e0b9c4b8e828932f
+  - path: third_party/scanned_objects/models/Wilton_Pearlized_Sugar_Sprinkles_525_oz_Gold/model.obj
+    source: scanned_objects
+    sha256: 1de31d8b32798299634ab09bb4cab579af0570f4b9471b303edbf7c79c885d1b
+  - path: third_party/scanned_objects/models/Wilton_Pearlized_Sugar_Sprinkles_525_oz_Gold/texture.png
+    source: scanned_objects
+    sha256: b52dbb2ca5b232c9036eaffba1bf394653bbf066c6497e367bbb1e51e46132d4
+  - path: third_party/scanned_objects/models/Nestle_Candy_19_oz_Butterfinger_Singles_116567/model.obj
+    source: scanned_objects
+    sha256: ecb2c79cbb83d5a0eaad0e822a7f57cd240de65ea2fbf6c2d4cec59c4724107f
+  - path: third_party/scanned_objects/models/Nestle_Candy_19_oz_Butterfinger_Singles_116567/texture.png
+    source: scanned_objects
+    sha256: 902f7a1d9970a88106f08f1fce8968b8791f1c724a60b26493164d4a7f1703b6
+  - path: third_party/scanned_objects/models/Folic_Acid/model.obj
+    source: scanned_objects
+    sha256: d31de298c54e9c1deb596e192eee4888459b5b366bbb6c7d0a27c30f774c2175
+  - path: third_party/scanned_objects/models/Folic_Acid/texture.png
+    source: scanned_objects
+    sha256: 6eb5d565d97954e392fd4cc5a2c838445988cb8d22b737be6268e69b8ef7df2c
+  - path: third_party/scanned_objects/models/Just_For_Men_Shampoo_In_Haircolor_Darkest_Brown_50/model.obj
+    source: scanned_objects
+    sha256: 4d3932d05fb408478fed90f3fdae7ca25af54ea5691321e457e954884c1b983f
+  - path: third_party/scanned_objects/models/Just_For_Men_Shampoo_In_Haircolor_Darkest_Brown_50/texture.png
+    source: scanned_objects
+    sha256: 833eacda4a5ed0c421517cbdfa4d5d012aa09963cc1b39823e55e7d6b905d45e
+  - path: third_party/scanned_objects/models/Phillips_Caplets_Size_24/model.obj
+    source: scanned_objects
+    sha256: 17c9032359e98a3d8bb579f043a1550f0ee8035cc0054fdc6aa849910e5e552c
+  - path: third_party/scanned_objects/models/Phillips_Caplets_Size_24/texture.png
+    source: scanned_objects
+    sha256: 7bd6b095deba4fba7c4f52b9435c4657a6b53a0abbf706e03e2738ce480aa99b
+  - path: third_party/scanned_objects/models/NESCAFE_NESCAFE_TC_STKS_DECAF_6_CT/model.obj
+    source: scanned_objects
+    sha256: 768d45860b3befebd76694c960ba701653023c597bd3c5f22d34dd940f724fd6
+  - path: third_party/scanned_objects/models/NESCAFE_NESCAFE_TC_STKS_DECAF_6_CT/texture.png
+    source: scanned_objects
+    sha256: 401fe65db4c3d4130123ab878c94adae67769dfeaa104ff092c9a3df22e2fec5
+  - path: third_party/ycb_sim/meshes/009_gelatin_box.msh
+    source: ycb_sim
+    sha256: fa66367efe3834f02ef501bafd848bc10c65ccb052dc8e1a3d54486bb5883dd0
+  - path: third_party/ycb_sim/textures/009_gelatin_box.png
+    source: ycb_sim
+    sha256: a564ccb288e63caa05b14d6a7fa5a7e4ace818c1430173418dd91cf4e0c52f6e
+  - path: third_party/ycb_sim/meshes/005_tomato_soup_can.msh
+    source: ycb_sim
+    sha256: 072a1f21d32a0b57be88796d4b18bc1aeaa0d24f0965457a4e5cf364514514b7
+  - path: third_party/ycb_sim/textures/005_tomato_soup_can.png
+    source: ycb_sim
+    sha256: c00ca6011e335bf039ec455b0c7944edd367f167564a889972e4abc8557d098a
+  - path: third_party/ycb_sim/textures/008_pudding_box.png
+    source: ycb_sim
+    sha256: 159ad8522c7e3b7d6764c5290602111c054fcfc8e78f7b6605821be18d0f1c95
