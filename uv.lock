@@ -279,6 +279,7 @@ source = { editable = "." }
 dependencies = [
     { name = "numpy" },
     { name = "pyyaml" },
+    { name = "tqdm" },
 ]
 
 [package.optional-dependencies]
@@ -338,6 +339,7 @@ requires-dist = [
     { name = "torch", marker = "extra == 'torch'", specifier = ">=2.2" },
     { name = "torchvision", marker = "extra == 'candidates'", specifier = ">=0.17" },
     { name = "torchvision", marker = "extra == 'torch'", specifier = ">=0.17" },
+    { name = "tqdm", specifier = ">=4.66" },
     { name = "trimesh", marker = "extra == 'assets'", specifier = ">=4.0" },
 ]
 provides-extras = ["torch", "candidates", "world", "ros", "assets", "dev"]
