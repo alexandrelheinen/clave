@@ -452,25 +452,36 @@ def iter_split(root: Path, part: str, camera: str | None = None) -> Iterator[Rol
 
     file_by_name = {item.name: item for item in description.files}
     for rollout_id in description.parts[part]:
-        archive = np.load(root / f"{rollout_id}.npz", allow_pickle=False)
-        try:
-            if description.format_version >= FORMAT_CORPUS:
-                examples = _examples_from_corpus(archive, description, camera)
-            else:
-                examples = _examples_from_legacy(archive, description)
-            owned = tuple(_owned_frame(item) for item in examples)
-        finally:
-            archive.close()
-        recorded = file_by_name.get(f"{rollout_id}.npz")
-        yield Rollout(
-            rollout_id=rollout_id,
-            seed=recorded.seed if recorded is not None else description.seed,
-            examples=owned,
-            belt_speed=None
-            if recorded is None
-            else recorded.belt_speed_meters_per_second,
-            spacing_meters=None if recorded is None else recorded.spacing_meters,
-        )
+        # Load in a function so the archive and the second camera die before
+        # this generator suspends. A suspended frame would keep both.
+        yield _load_rollout(root, description, file_by_name, rollout_id, camera)
+
+
+def _load_rollout(
+    root: Path,
+    description: DatasetDescription,
+    file_by_name: dict[str, DatasetFile],
+    rollout_id: str,
+    camera: str | None,
+) -> Rollout:
+    """Load one archive and return owned frames, releasing the rest."""
+    archive = np.load(root / f"{rollout_id}.npz", allow_pickle=False)
+    try:
+        if description.format_version >= FORMAT_CORPUS:
+            examples = _examples_from_corpus(archive, description, camera)
+        else:
+            examples = _examples_from_legacy(archive, description)
+        owned = tuple(_owned_frame(item) for item in examples)
+    finally:
+        archive.close()
+    recorded = file_by_name.get(f"{rollout_id}.npz")
+    return Rollout(
+        rollout_id=rollout_id,
+        seed=recorded.seed if recorded is not None else description.seed,
+        examples=owned,
+        belt_speed=None if recorded is None else recorded.belt_speed_meters_per_second,
+        spacing_meters=None if recorded is None else recorded.spacing_meters,
+    )
 
 
 def _owned_frame(example: Example) -> Example:
