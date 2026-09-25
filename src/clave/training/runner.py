@@ -21,6 +21,7 @@ from clave.candidates.bench import _machine
 from clave.candidates.registry import REGISTRY
 from clave.experiment.run import environment
 from clave.experiment.seeding import seed_everything
+from clave.progress import Progress, examples_in, frame_total
 from clave.training.config import TrainingConfig
 from clave.training.objectives import OBJECTIVES, batches_for
 
@@ -104,7 +105,9 @@ def train(config: TrainingConfig, window_exit: float) -> TrainingRun:
     from clave.data.dataset import read as read_dataset
 
     machine, threads = _machine()
-    dataset_digest = read_dataset(config.dataset).digest
+    description = read_dataset(config.dataset)
+    dataset_digest = description.digest
+    frames = frame_total(description, "train")
     run = TrainingRun(
         candidate=config.candidate,
         seed=config.seed,
@@ -154,23 +157,25 @@ def train(config: TrainingConfig, window_exit: float) -> TrainingRun:
         model.train()
         began = time.perf_counter()
         total, batches = 0.0, 0
-        for rollout in _training_rollouts(config.dataset):
-            for batch in batches_for(
-                config.candidate,
-                rollout.examples,
-                config.batch_size,
-                window_exit,
-                config.act_chunk_size,
-                augment=True,
-            ):
-                optimizer.zero_grad()
-                loss = objective(model, batch)
-                loss.backward()
-                optimizer.step()
-                total += float(loss.detach())
-                batches += 1
-            del rollout
-            gc.collect()
+        with Progress(frames, f"epoch {epoch + 1}/{config.epochs}", "frame") as bar:
+            for rollout in _training_rollouts(config.dataset):
+                for batch in batches_for(
+                    config.candidate,
+                    rollout.examples,
+                    config.batch_size,
+                    window_exit,
+                    config.act_chunk_size,
+                    augment=True,
+                ):
+                    optimizer.zero_grad()
+                    loss = objective(model, batch)
+                    loss.backward()
+                    optimizer.step()
+                    total += float(loss.detach())
+                    batches += 1
+                    bar.update(examples_in(batch), loss=total / batches)
+                del rollout
+                gc.collect()
         scheduler.step()
         run.epochs.append(
             EpochRecord(

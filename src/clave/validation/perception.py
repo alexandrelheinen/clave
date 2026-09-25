@@ -20,6 +20,7 @@ from clave.candidates.base import Stage
 from clave.candidates.registry import REGISTRY
 from clave.data.examples import Example
 from clave.errors import ClaveError
+from clave.progress import Progress, frame_total
 from clave.taxonomy import MATERIAL_CLASSES
 from clave.training.adapters import CLASS_INDEX
 
@@ -92,6 +93,29 @@ class PerceptionScore:
     frames: int
     overall_agreement: float
     mean_iou: float | None
+
+
+def bit_counts(
+    predicted: NDArray[np.bool_],
+    truth: NDArray[np.bool_],
+) -> tuple[int, int]:
+    """Class bits that match, and how many bits were compared.
+
+    Args:
+        predicted: Present or absent for one batch, shape (frames, classes).
+        truth: The same shape, from the labels.
+
+    Returns:
+        Matching bits and compared bits. Both are zero when the arrays cannot
+        be lined up.
+    """
+    if predicted.ndim != 2 or truth.ndim != 2 or predicted.shape[1] != truth.shape[1]:
+        return 0, 0
+    width = min(len(predicted), len(truth))
+    if width == 0:
+        return 0, 0
+    compared = predicted[:width] == truth[:width]
+    return int(np.sum(compared)), int(compared.size)
 
 
 def presence_agreement(
@@ -253,30 +277,50 @@ def score_candidate(
             f"{candidate} has no corpus scorer; the known ones are "
             "resnet50-baseline and faster-rcnn-mobilenetv3"
         )
-    for rollout in iter_split(dataset, part):
-        examples = rollout.examples
-        frames += len(examples)
+    live_bits = _RunningBits()
+    live_boxes = _RunningBoxes()
+    agreement = 0.0
+    mean_iou: float | None = None
+    bar = Progress(frame_total(description, part), f"validate {candidate}", "frame")
+    try:
+        for rollout in iter_split(dataset, part):
+            examples = rollout.examples
+            frames += len(examples)
+            if candidate == "faster-rcnn-mobilenetv3":
+                mean_iou, agreement, count = _score_detector(
+                    model,
+                    examples,
+                    thresholds,
+                    detection_batches,
+                    bar,
+                    live_boxes,
+                )
+                overlap_sum += mean_iou * count
+                overlap_count += count
+                matched_boxes += int(round(agreement * count))
+            else:
+                equal, total = _score_classifier(
+                    model,
+                    examples,
+                    thresholds,
+                    classification_batches,
+                    bar,
+                    live_bits,
+                )
+                bits_equal += equal
+                bits += total
+            del rollout
+            gc.collect()
         if candidate == "faster-rcnn-mobilenetv3":
-            mean_iou, agreement, count = _score_detector(
-                model, examples, thresholds, detection_batches
-            )
-            overlap_sum += mean_iou * count
-            overlap_count += count
-            matched_boxes += int(round(agreement * count))
+            agreement = matched_boxes / overlap_count if overlap_count else 0.0
+            mean_iou = overlap_sum / overlap_count if overlap_count else 0.0
+            bar.update(0, agreement=agreement, iou=mean_iou)
         else:
-            equal, total = _score_classifier(
-                model, examples, thresholds, classification_batches
-            )
-            bits_equal += equal
-            bits += total
-        del rollout
-        gc.collect()
-    if candidate == "faster-rcnn-mobilenetv3":
-        agreement = matched_boxes / overlap_count if overlap_count else 0.0
-        mean_iou = overlap_sum / overlap_count if overlap_count else 0.0
-    else:
-        agreement = bits_equal / bits if bits else 0.0
-        mean_iou = None
+            agreement = bits_equal / bits if bits else 0.0
+            mean_iou = None
+            bar.update(0, agreement=agreement)
+    finally:
+        bar.close()
     return PerceptionScore(
         candidate=candidate,
         dataset_digest=description.digest,
@@ -284,6 +328,52 @@ def score_candidate(
         overall_agreement=agreement,
         mean_iou=mean_iou,
     )
+
+
+@dataclass
+class _RunningBits:
+    """Class bits scored so far, across rollouts."""
+
+    equal: int = 0
+    total: int = 0
+
+    def add(self, equal: int, total: int) -> None:
+        """Add one batch."""
+        self.equal += equal
+        self.total += total
+
+    @property
+    def agreement(self) -> float:
+        """Fraction of class bits that matched."""
+        if self.total == 0:
+            return 0.0
+        return self.equal / self.total
+
+
+@dataclass
+class _RunningBoxes:
+    """Box overlaps scored so far, across rollouts.
+
+    The posted agreement rounds each batch the same way the finished score
+    rounds a rollout, so the bar can move before the rollout is done. The
+    number printed at the end is still the rollout-level score.
+    """
+
+    overlap_sum: float = 0.0
+    count: int = 0
+    matched: int = 0
+
+    def add(self, mean_iou: float, agreement: float, count: int) -> None:
+        """Add one batch of boxes."""
+        self.overlap_sum += mean_iou * count
+        self.count += count
+        self.matched += int(round(agreement * count))
+
+    def metrics(self) -> tuple[float, float]:
+        """Running agreement and mean overlap."""
+        if self.count == 0:
+            return 0.0, 0.0
+        return self.matched / self.count, self.overlap_sum / self.count
 
 
 def _spec(name: str) -> Any:
@@ -299,6 +389,8 @@ def _score_classifier(
     examples: tuple[Example, ...],
     thresholds: ScoreThresholds,
     batches: Any,
+    bar: Progress,
+    live: _RunningBits,
 ) -> tuple[int, int]:
     """Agreement of a multi-label head with visible classes.
 
@@ -310,18 +402,22 @@ def _score_classifier(
     truth = truth_presence(examples)
     if len(examples) == 0:
         return 0, 0
-    predicted_rows: list[NDArray[np.bool_]] = []
+    equal_bits = 0
+    total_bits = 0
+    cursor = 0
     with torch.no_grad():
         for images, _targets in batches(examples, batch_size=1, augment=False):
             logits = model(images)
             present = torch.sigmoid(logits) >= thresholds.decision_threshold
-            predicted_rows.append(present.detach().cpu().numpy().astype(np.bool_))
-    if not predicted_rows:
-        return 0, 0
-    predicted = np.concatenate(predicted_rows, axis=0)
-    width = min(len(predicted), len(truth))
-    compared = predicted[:width] == truth[:width]
-    return int(np.sum(compared)), int(compared.size)
+            predicted = present.detach().cpu().numpy().astype(np.bool_)
+            width = int(predicted.shape[0])
+            matched, compared = bit_counts(predicted, truth[cursor : cursor + width])
+            cursor += width
+            equal_bits += matched
+            total_bits += compared
+            live.add(matched, compared)
+            bar.update(width, agreement=live.agreement)
+    return equal_bits, total_bits
 
 
 def _score_detector(
@@ -329,6 +425,8 @@ def _score_detector(
     examples: tuple[Example, ...],
     thresholds: ScoreThresholds,
     batches: Any,
+    bar: Progress,
+    live: _RunningBoxes,
 ) -> tuple[float, float, int]:
     """Overlap of predicted boxes with the ground-truth boxes.
 
@@ -341,13 +439,26 @@ def _score_detector(
     usable = tuple(item for item in examples if item.visible_labels)
     gold = truth_boxes(usable)
     predicted: list[NDArray[np.float64]] = []
+    cursor = 0
     model.eval()
     with torch.no_grad():
         for images, _targets in batches(usable, batch_size=1, augment=False):
             outputs = model(images)
+            batch: list[NDArray[np.float64]] = []
             for output in outputs:
                 boxes = output["boxes"].detach().cpu().numpy()
-                predicted.append(np.asarray(boxes, dtype=np.float64).reshape(-1, 4))
+                drawn = np.asarray(boxes, dtype=np.float64).reshape(-1, 4)
+                batch.append(drawn)
+                predicted.append(drawn)
+            batch_gold = gold[cursor : cursor + len(batch)]
+            cursor += len(batch)
+            batch_iou, batch_found = mean_best_iou(
+                batch, batch_gold, thresholds.match_iou
+            )
+            batch_count = sum(len(boxes) for boxes in batch_gold)
+            live.add(batch_iou, batch_found, batch_count)
+            shown = live.metrics()
+            bar.update(len(batch), agreement=shown[0], iou=shown[1])
     while len(predicted) < len(gold):
         predicted.append(np.zeros((0, 4), dtype=np.float64))
     kept = predicted[: len(gold)]

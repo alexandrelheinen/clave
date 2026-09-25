@@ -1,0 +1,13 @@
+# ResNet-50 on the corpus training half. Same schedule as
+# configs/training/classification_full.yml, pointed at this run's archives.
+
+training:
+  candidate: resnet50-baseline
+  dataset: datasets/corpus/train
+  checkpoints: runs/debug/corpus/checkpoints
+  epochs: 10
+  batch_size: 16
+  learning_rate: 0.0001
+  seed: 0
+  window_exit_meters: 1.034
+  act_chunk_size: 10

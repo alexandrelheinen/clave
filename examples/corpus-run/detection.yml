@@ -1,0 +1,13 @@
+# Faster R-CNN on the corpus training half. Same schedule as
+# configs/training/detection_full.yml, pointed at this run's archives.
+
+training:
+  candidate: faster-rcnn-mobilenetv3
+  dataset: datasets/corpus/train
+  checkpoints: runs/debug/corpus/checkpoints
+  epochs: 5
+  batch_size: 4
+  learning_rate: 0.0001
+  seed: 0
+  window_exit_meters: 1.034
+  act_chunk_size: 10
