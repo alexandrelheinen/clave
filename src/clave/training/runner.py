@@ -12,6 +12,7 @@ from __future__ import annotations
 import gc
 import json
 import logging
+import random
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -29,6 +30,12 @@ from clave.training.memory import (
     require_within_budget,
 )
 from clave.training.objectives import OBJECTIVES, batches_for
+from clave.training.sample import (
+    FrameSample,
+    SampleError,
+    build_frame_sample,
+    capture_interval_seconds,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -65,6 +72,7 @@ class TrainingRun:
     environment: dict[str, str]
     input_side_pixels: int
     resident_limit_bytes: int
+    sample_digest: str = ""
     epochs: list[EpochRecord] = field(default_factory=list)
     completed: bool = False
     unavailable_reason: str | None = None
@@ -91,7 +99,11 @@ def _candidate_for(name: str) -> Any:
 
 
 def train(
-    config: TrainingConfig, window_exit: float, *, budget: MemoryBudget
+    config: TrainingConfig,
+    window_exit: float,
+    *,
+    budget: MemoryBudget,
+    world: Path,
 ) -> TrainingRun:
     """Train one candidate, checkpointing and measuring each epoch.
 
@@ -100,6 +112,8 @@ def train(
         window_exit: Belt coordinate where the reachable window ends, used by
             the policy adapter to replay the expert.
         budget: Resident-memory ceiling and the image side the step resizes to.
+        world: Sorting-line configuration. The sample reads the detection
+            camera's along-travel footprint from it.
 
     Returns:
         The run record, whether it trained or reported the candidate
@@ -118,7 +132,6 @@ def train(
     description = read_dataset(config.dataset)
     release_freed_pages()
     dataset_digest = description.digest
-    frames = frame_total(description, "train")
     run = TrainingRun(
         candidate=config.candidate,
         seed=config.seed,
@@ -155,7 +168,19 @@ def train(
     objective = OBJECTIVES[config.candidate]
     optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
 
-    start_epoch = _resume(config, model, optimizer)
+    start_epoch, sample = _resume(config, model, optimizer)
+    if sample is None:
+        sample = _draw_sample(config, description, world)
+        sample.write(_sample_path(config))
+    run.sample_digest = sample.digest
+    catalogued = frame_total(description, "train")
+    LOGGER.info(
+        "sample %s of %s frames, %s per crossing, %s",
+        sample.frame_count,
+        catalogued if catalogued is not None else "unknown",
+        config.samples_per_crossing,
+        sample.digest[:16],
+    )
     for param_group in optimizer.param_groups:
         param_group.setdefault("initial_lr", config.learning_rate)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
@@ -171,17 +196,22 @@ def train(
         began = time.perf_counter()
         total, batches = 0.0, 0
         with Progress(
-            frames,
+            sample.frame_count,
             f"epoch {epoch + 1}/{config.epochs}",
             "frame",
             repeats=config.epochs,
             repeat_index=epoch,
         ) as bar:
             for rollout in _training_rollouts(config.dataset):
-                pending = list(rollout.examples)
+                rollout_id = rollout.rollout_id
+                indexes = sample.picks.get(rollout_id)
+                if indexes is None:
+                    raise SampleError(f"sample has no pick for rollout {rollout_id}")
+                pending = [rollout.examples[index] for index in indexes]
                 del rollout
                 gc.collect()
                 release_freed_pages()
+                random.Random(f"{config.seed}:{epoch}:{rollout_id}").shuffle(pending)
                 while pending:
                     chunk = tuple(pending[: config.batch_size])
                     del pending[: config.batch_size]
@@ -219,7 +249,7 @@ def train(
                 seconds=time.perf_counter() - began,
             )
         )
-        _checkpoint(config, model, optimizer, epoch, budget.input_side_pixels)
+        _checkpoint(config, model, optimizer, epoch, budget.input_side_pixels, sample)
         run.write(run_record_path(config.checkpoints, config.candidate))
         LOGGER.info(
             "epoch %s loss %.4f in %.1fs",
@@ -238,12 +268,42 @@ def _checkpoint_path(config: TrainingConfig) -> Path:
     return config.checkpoints / f"{config.candidate}.pt"
 
 
+def _sample_path(config: TrainingConfig) -> Path:
+    """Where the stored pick for a candidate lives."""
+    return config.checkpoints / f"{config.candidate}.sample.json"
+
+
+def _draw_sample(config: TrainingConfig, description: Any, world: Path) -> FrameSample:
+    """Draw a pick from the camera footprint and the rollout belt speeds."""
+    from clave.world.config import load as load_world
+    from clave.world.scene import detection_along_travel_meters
+
+    along = detection_along_travel_meters(load_world(world))
+    members = description.parts.get("train", ())
+    by_name = {item.name: item for item in description.files}
+    interval = 0.0
+    for rollout_id in members:
+        recorded = by_name.get(f"{rollout_id}.npz")
+        speed = None if recorded is None else recorded.belt_speed_meters_per_second
+        if speed is not None and speed > 0.0:
+            interval = capture_interval_seconds(config.dataset, rollout_id)
+            break
+    return build_frame_sample(
+        description,
+        along_travel_meters=along,
+        capture_interval_seconds=interval,
+        samples_per_crossing=config.samples_per_crossing,
+        seed=config.seed,
+    )
+
+
 def _checkpoint(
     config: TrainingConfig,
     model: Any,
     optimizer: Any,
     epoch: int,
     input_side_pixels: int,
+    sample: FrameSample,
 ) -> None:
     """Write a checkpoint from which training can continue."""
     import torch
@@ -261,28 +321,48 @@ def _checkpoint(
             # reader that guesses the same number.
             "act_chunk_size": config.act_chunk_size,
             "input_side_pixels": input_side_pixels,
+            "sample": sample.payload(),
         },
         _checkpoint_path(config),
     )
 
 
-def _resume(config: TrainingConfig, model: Any, optimizer: Any) -> int:
-    """Restore a checkpoint if one exists, returning the epoch to start at.
+def _resume(
+    config: TrainingConfig, model: Any, optimizer: Any
+) -> tuple[int, FrameSample | None]:
+    """Restore a checkpoint if one exists.
 
-    A checkpoint written by a different candidate is refused rather than loaded,
-    since restoring mismatched weights would fail confusingly much later.
+    A checkpoint written by a different candidate is refused, since restoring
+    mismatched weights would fail much later. A checkpoint that has weights
+    and no stored pick is refused too: those weights saw every frame, and a
+    new draw would train them on a different set.
+
+    Returns:
+        The epoch to start at, and the stored pick. The pick is None only
+        when no checkpoint file exists.
     """
     import torch
 
+    from clave.training.sample import resolve_stored_sample
+
     path = _checkpoint_path(config)
     if not path.is_file():
-        return 0
+        return 0, None
     state = torch.load(path, weights_only=False)
     if state.get("candidate") != config.candidate:
         raise ValueError(
             f"{path} holds a checkpoint for {state.get('candidate')!r}, "
             f"not {config.candidate!r}"
         )
+    raw = state.get("sample")
+    stored = FrameSample.from_payload(raw) if isinstance(raw, dict) else None
+    sample = resolve_stored_sample(
+        stored,
+        checkpoint=True,
+        samples_per_crossing=config.samples_per_crossing,
+    )
     model.load_state_dict(state["model"])
     optimizer.load_state_dict(state["optimizer"])
-    return int(state["epoch"]) + 1
+    if sample is None:
+        raise SampleError(f"{path} produced no frame sample")
+    return int(state["epoch"]) + 1, sample

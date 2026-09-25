@@ -8,5 +8,6 @@ training:
   batch_size: 4
   learning_rate: 0.001
   seed: 42
+  samples_per_crossing: 3
   window_exit_meters: 1.034
   act_chunk_size: 10
