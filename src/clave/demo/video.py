@@ -90,10 +90,30 @@ class VideoSettings:
         return self.frames_per_second * self.interval_seconds
 
 
+@dataclass(frozen=True)
+class StreamSettings:
+    """Where a sequence of already-rendered frames should be encoded.
+
+    The free-camera pose on `VideoSettings` is for a demonstration that chooses
+    its own viewpoint. A corpus preview already has the pixels.
+
+    Attributes:
+        path: Where the video goes.
+        width: Frame width in pixels.
+        height: Frame height in pixels.
+        frames_per_second: Playback rate.
+    """
+
+    path: Path
+    width: int
+    height: int
+    frames_per_second: int
+
+
 class VideoRecorder:
     """An open encoder, taking one frame at a time."""
 
-    def __init__(self, settings: VideoSettings) -> None:
+    def __init__(self, settings: VideoSettings | StreamSettings) -> None:
         """Start the encoder.
 
         Args:
@@ -196,6 +216,20 @@ class VideoRecorder:
 def available() -> bool:
     """Whether an encoder is installed here."""
     return shutil.which(ENCODER) is not None
+
+
+def open_stream(settings: StreamSettings) -> VideoRecorder | None:
+    """Start encoding already-rendered frames, or say there is no encoder.
+
+    Args:
+        settings: Path, size and playback rate.
+
+    Returns:
+        The recorder, or None when `ffmpeg` is absent.
+    """
+    if not available():
+        return None
+    return VideoRecorder(settings)
 
 
 def open_recorder(settings: VideoSettings) -> VideoRecorder | None:

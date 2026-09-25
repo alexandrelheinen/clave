@@ -1,0 +1,9 @@
+# Cuts applied when a perception checkpoint is scored on a validation corpus.
+#
+# decision_threshold is one half: a class counts as present when the logit is
+# positive. match_iou is the overlap at which a predicted box counts as the
+# ground-truth box.
+
+validation:
+  decision_threshold: 0.5
+  match_iou: 0.5
