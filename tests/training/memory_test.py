@@ -14,10 +14,10 @@ from clave.training.memory import (
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_the_configured_budget_is_one_gibibyte_at_224() -> None:
+def test_the_configured_budget_is_one_and_a_quarter_gibibyte_at_224() -> None:
     """The proof of concept is the file the training command loads."""
     budget = MemoryBudget.load(ROOT / "configs" / "training" / "memory.yml")
-    assert budget.resident_limit_bytes == 1073741824
+    assert budget.resident_limit_bytes == 1342177280
     assert budget.input_side_pixels == 224
 
 

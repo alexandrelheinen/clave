@@ -7,7 +7,7 @@ Status: draft
 A proof-of-concept training run has to finish on the development machine.
 That machine's virtual machine is capped at 7806 MB, and a full-resolution
 batch killed the process three times. The training step keeps a resident
-budget of 1 GiB so the run stops itself instead of taking the machine down.
+budget of 1.25 GiB so the run stops itself instead of taking the machine down.
 
 ## Scope
 
@@ -53,11 +53,11 @@ resize validation images to the stored side.
 
 ## Constraints
 
-The numbers live in `configs/training/memory.yml`. One gibibyte is
-`1073741824` bytes. The proof-of-concept side is 224 pixels, the input
-ResNet-50 was built for. A batch of 4 frames at that side was measured at
-1.5 GiB resident on this machine, so the training files use one frame per
-batch until the ceiling is raised.
+The numbers live in `configs/training/memory.yml`. The ceiling is 1.25 GiB
+(`1342177280` bytes). A ResNet-50 step on this machine retains about 1.06 GiB
+before any extra frames are counted, so a strict 1.00 GiB ceiling stops a
+healthy step. The proof-of-concept side is 224 pixels. Full-resolution frames
+are dropped after the batch that uses them.
 
 ## Follow-up
 

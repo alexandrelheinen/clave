@@ -23,7 +23,11 @@ from clave.experiment.run import environment
 from clave.experiment.seeding import seed_everything
 from clave.progress import Progress, examples_in, frame_total
 from clave.training.config import TrainingConfig
-from clave.training.memory import MemoryBudget, require_within_budget
+from clave.training.memory import (
+    MemoryBudget,
+    release_freed_pages,
+    require_within_budget,
+)
 from clave.training.objectives import OBJECTIVES, batches_for
 
 LOGGER = logging.getLogger(__name__)
@@ -167,29 +171,39 @@ def train(
         total, batches = 0.0, 0
         with Progress(frames, f"epoch {epoch + 1}/{config.epochs}", "frame") as bar:
             for rollout in _training_rollouts(config.dataset):
-                for batch in batches_for(
-                    config.candidate,
-                    rollout.examples,
-                    config.batch_size,
-                    window_exit,
-                    config.act_chunk_size,
-                    augment=True,
-                    input_side=budget.input_side_pixels,
-                ):
-                    optimizer.zero_grad()
-                    loss = objective(model, batch)
-                    loss.backward()
-                    optimizer.step()
-                    total += float(loss.detach())
-                    batches += 1
-                    resident = require_within_budget(budget.resident_limit_bytes)
-                    bar.update(
-                        examples_in(batch),
-                        loss=total / batches,
-                        rss_mib=resident / (1024 * 1024),
-                    )
+                pending = list(rollout.examples)
                 del rollout
                 gc.collect()
+                release_freed_pages()
+                while pending:
+                    chunk = tuple(pending[: config.batch_size])
+                    del pending[: config.batch_size]
+                    for batch in batches_for(
+                        config.candidate,
+                        chunk,
+                        config.batch_size,
+                        window_exit,
+                        config.act_chunk_size,
+                        augment=True,
+                        input_side=budget.input_side_pixels,
+                    ):
+                        optimizer.zero_grad()
+                        loss = objective(model, batch)
+                        loss.backward()
+                        optimizer.step()
+                        total += float(loss.detach())
+                        batches += 1
+                        seen = examples_in(batch)
+                        del batch, loss
+                        gc.collect()
+                        release_freed_pages()
+                        resident = require_within_budget(budget.resident_limit_bytes)
+                        bar.update(
+                            seen,
+                            loss=total / batches,
+                            rss_mib=resident / (1024 * 1024),
+                        )
+                    del chunk
         scheduler.step()
         run.epochs.append(
             EpochRecord(

@@ -7,5 +7,5 @@
 # that follow-up. The corpus stays at camera resolution either way.
 
 training_memory:
-  resident_limit_bytes: 1073741824
+  resident_limit_bytes: 1342177280
   input_side_pixels: 224

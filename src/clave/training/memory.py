@@ -87,6 +87,18 @@ def current_resident_bytes() -> int:
     return parse_resident_bytes(Path("/proc/self/status").read_text())
 
 
+def release_freed_pages() -> None:
+    """Return freed heap pages to the operating system.
+
+    CPython frees an array and glibc keeps the arena. A rollout's camera
+    frames are that arena, and leaving them resident pushes the process over
+    the proof-of-concept ceiling.
+    """
+    import ctypes
+
+    ctypes.CDLL("libc.so.6").malloc_trim(0)
+
+
 def require_within_budget(limit_bytes: int) -> int:
     """Stop the run when the resident set is over the ceiling.
 
