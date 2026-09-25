@@ -440,6 +440,7 @@ def test_ac_data_08_offline_train_and_benchmark(
             patch(
                 "clave.training.config.TrainingConfig.load", return_value=MagicMock()
             ),
+            patch("clave.training.memory.MemoryBudget.load"),
             caplog.at_level(logging.WARNING),
         ):
             code = _train(tmp_path, Path("config.yml"), None, sync=True)

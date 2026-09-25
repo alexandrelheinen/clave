@@ -79,6 +79,7 @@ def batches_for(
     window_exit: float,
     act_chunk_size: int = 10,
     augment: bool = False,
+    input_side: int | None = None,
 ) -> Iterator[Any]:
     """Select the batch shape a candidate's objective expects.
 
@@ -89,6 +90,9 @@ def batches_for(
         window_exit: Belt coordinate where the reachable window ends.
         act_chunk_size: Actions predicted per observation for ACT.
         augment: Whether to apply data augmentations to perception batches.
+        input_side: Square side each image is resized to. None keeps the
+            camera resolution. Action chunking already resizes to its own
+            input, which is smaller than this side.
 
     Returns:
         An iterator of batches.
@@ -100,11 +104,17 @@ def batches_for(
     from clave.training import adapters
 
     if candidate == "faster-rcnn-mobilenetv3":
-        return adapters.detection_batches(examples, batch_size, augment=augment)
+        return adapters.detection_batches(
+            examples, batch_size, augment=augment, input_side=input_side
+        )
     if candidate == "resnet50-baseline":
-        return adapters.classification_batches(examples, batch_size, augment=augment)
+        return adapters.classification_batches(
+            examples, batch_size, augment=augment, input_side=input_side
+        )
     if candidate == "act":
         return adapters.act_batches(examples, batch_size, window_exit, act_chunk_size)
     if candidate == "behavior-cloning-baseline":
-        return adapters.policy_batches(examples, batch_size, window_exit)
+        return adapters.policy_batches(
+            examples, batch_size, window_exit, input_side=input_side
+        )
     raise KeyError(candidate)

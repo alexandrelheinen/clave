@@ -49,6 +49,60 @@ def _as_chw(frame: NDArray[np.uint8]) -> NDArray[np.float32]:
     return converted
 
 
+def _image_tensor(frame: NDArray[np.uint8], input_side: int | None) -> Any:
+    """Channel-first float image, resized to the configured square side.
+
+    Args:
+        frame: Height-width-channel uint8 image.
+        input_side: Square side in pixels. None keeps the camera resolution.
+
+    Returns:
+        A tensor of shape (3, side, side), or the native shape when no side
+        is configured.
+    """
+    import torch
+    import torch.nn.functional as functional
+
+    image = torch.from_numpy(_as_chw(frame))
+    if input_side is None:
+        return image
+    return functional.interpolate(
+        image.unsqueeze(0),
+        size=(input_side, input_side),
+        mode="bilinear",
+        align_corners=False,
+    ).squeeze(0)
+
+
+def _scale_box(
+    box: tuple[int, int, int, int],
+    frame_shape: tuple[int, ...],
+    input_side: int | None,
+) -> list[float]:
+    """Scale a pixel box into the resized image.
+
+    Args:
+        box: x_min, y_min, x_max, y_max in the camera frame.
+        frame_shape: Height, width, and channels of that frame.
+        input_side: Square side the image was resized to. None leaves the box.
+
+    Returns:
+        The box in the resized pixel grid.
+    """
+    x_min, y_min, x_max, y_max = box
+    if input_side is None:
+        return [float(x_min), float(y_min), float(x_max), float(y_max)]
+    height, width = int(frame_shape[0]), int(frame_shape[1])
+    scale_y = input_side / float(height)
+    scale_x = input_side / float(width)
+    return [
+        float(x_min) * scale_x,
+        float(y_min) * scale_y,
+        float(x_max) * scale_x,
+        float(y_max) * scale_y,
+    ]
+
+
 def _augment_image(image: Any) -> Any:
     """Apply random flips and mild brightness jitter to an image tensor (C, H, W)."""
     import torch
@@ -63,7 +117,10 @@ def _augment_image(image: Any) -> Any:
 
 
 def classification_batches(
-    examples: tuple[Example, ...], batch_size: int, augment: bool = False
+    examples: tuple[Example, ...],
+    batch_size: int,
+    augment: bool = False,
+    input_side: int | None = None,
 ) -> Iterator[tuple[Any, Any]]:
     """Yield image batches with multi-label presence targets.
 
@@ -74,6 +131,8 @@ def classification_batches(
         examples: Training examples.
         batch_size: Examples per batch.
         augment: Whether to apply random image augmentations.
+        input_side: Square side each image is resized to. None keeps the
+            camera resolution.
 
     Yields:
         Image tensor and target tensor pairs.
@@ -83,9 +142,9 @@ def classification_batches(
     for start in range(0, len(examples), batch_size):
         chunk = examples[start : start + batch_size]
         processed = [
-            _augment_image(torch.from_numpy(_as_chw(item.frame)))
+            _augment_image(_image_tensor(item.frame, input_side))
             if augment
-            else torch.from_numpy(_as_chw(item.frame))
+            else _image_tensor(item.frame, input_side)
             for item in chunk
         ]
         images = torch.stack(processed)
@@ -97,7 +156,10 @@ def classification_batches(
 
 
 def detection_batches(
-    examples: tuple[Example, ...], batch_size: int, augment: bool = False
+    examples: tuple[Example, ...],
+    batch_size: int,
+    augment: bool = False,
+    input_side: int | None = None,
 ) -> Iterator[tuple[Any, Any]]:
     """Yield image batches with boxes, using visible labels alone.
 
@@ -110,6 +172,8 @@ def detection_batches(
         examples: Training examples.
         batch_size: Examples per batch.
         augment: Whether to apply random image augmentations.
+        input_side: Square side each image is resized to. Boxes scale with it.
+            None keeps the camera resolution.
 
     Yields:
         A list of images and a list of target dictionaries, which is the shape
@@ -123,7 +187,7 @@ def detection_batches(
         images = []
         targets = []
         for item in chunk:
-            img = torch.from_numpy(_as_chw(item.frame))
+            img = _image_tensor(item.frame, input_side)
             boxes, labels = [], []
             for label in item.visible_labels:
                 x_min, y_min, x_max, y_max = label.bbox or (0, 0, 0, 0)
@@ -131,7 +195,11 @@ def detection_batches(
                 # at the frame edge produces one.
                 if x_max <= x_min or y_max <= y_min:
                     continue
-                boxes.append([float(x_min), float(y_min), float(x_max), float(y_max)])
+                boxes.append(
+                    _scale_box(
+                        (x_min, y_min, x_max, y_max), item.frame.shape, input_side
+                    )
+                )
                 labels.append(CLASS_INDEX[label.material_class] + 1)
             if not boxes:
                 continue
@@ -139,7 +207,7 @@ def detection_batches(
             if augment:
                 if torch.rand(1).item() > 0.5:
                     img = torch.flip(img, dims=[-1])
-                    width = float(item.frame.shape[1])
+                    width = float(img.shape[-1])
                     boxes = [[width - b[2], b[1], width - b[0], b[3]] for b in boxes]
                 factor = 0.85 + 0.30 * torch.rand(1).item()
                 img = torch.clamp(img * factor, 0.0, 1.0)
@@ -156,7 +224,10 @@ def detection_batches(
 
 
 def policy_batches(
-    examples: tuple[Example, ...], batch_size: int, window_exit: float
+    examples: tuple[Example, ...],
+    batch_size: int,
+    window_exit: float,
+    input_side: int | None = None,
 ) -> Iterator[tuple[Any, Any, Any]]:
     """Yield observation batches paired with the expert's decision.
 
@@ -167,6 +238,9 @@ def policy_batches(
         examples: Training examples.
         batch_size: Examples per batch.
         window_exit: Belt coordinate where the reachable window ends.
+        input_side: Square side each image is resized to. None keeps the
+            camera resolution. The expert's position is in meters and is not
+            scaled.
 
     Since v0.6.2 the observation carries the manipulator's joint angles, so the
     policy can see where its own arm is. An example recorded before that, or any
@@ -186,7 +260,9 @@ def policy_batches(
 
     for start in range(0, len(demonstrated), batch_size):
         chunk = demonstrated[start : start + batch_size]
-        images = torch.from_numpy(np.stack([_as_chw(item.frame) for item, _ in chunk]))
+        images = torch.stack(
+            [_image_tensor(item.frame, input_side) for item, _ in chunk]
+        )
         actions = torch.tensor(
             [list(decision.position) for _, decision in chunk], dtype=torch.float32
         )

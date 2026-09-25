@@ -1,0 +1,11 @@
+# Proof-of-concept ceiling for clave train.
+#
+# The development virtual machine is capped at 7806 MB. A full-resolution
+# batch of 16 frames reached about 7 GB and the kernel killed the process.
+# Raise these two values, and the batch sizes in the training files, when a
+# larger machine is available. docs/requirements/training-memory.md records
+# that follow-up. The corpus stays at camera resolution either way.
+
+training_memory:
+  resident_limit_bytes: 1073741824
+  input_side_pixels: 224

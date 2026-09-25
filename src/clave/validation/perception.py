@@ -261,6 +261,8 @@ def score_candidate(
     model: Any = loaded.model
     model.load_state_dict(state["model"])
     model.eval()
+    stored_side = state.get("input_side_pixels")
+    input_side = int(stored_side) if stored_side is not None else None
 
     description = read_dataset(dataset)
     part = description.role or "validation"
@@ -294,6 +296,7 @@ def score_candidate(
                     detection_batches,
                     bar,
                     live_boxes,
+                    input_side,
                 )
                 overlap_sum += mean_iou * count
                 overlap_count += count
@@ -306,6 +309,7 @@ def score_candidate(
                     classification_batches,
                     bar,
                     live_bits,
+                    input_side,
                 )
                 bits_equal += equal
                 bits += total
@@ -391,6 +395,7 @@ def _score_classifier(
     batches: Any,
     bar: Progress,
     live: _RunningBits,
+    input_side: int | None,
 ) -> tuple[int, int]:
     """Agreement of a multi-label head with visible classes.
 
@@ -406,7 +411,9 @@ def _score_classifier(
     total_bits = 0
     cursor = 0
     with torch.no_grad():
-        for images, _targets in batches(examples, batch_size=1, augment=False):
+        for images, _targets in batches(
+            examples, batch_size=1, augment=False, input_side=input_side
+        ):
             logits = model(images)
             present = torch.sigmoid(logits) >= thresholds.decision_threshold
             predicted = present.detach().cpu().numpy().astype(np.bool_)
@@ -427,6 +434,7 @@ def _score_detector(
     batches: Any,
     bar: Progress,
     live: _RunningBoxes,
+    input_side: int | None,
 ) -> tuple[float, float, int]:
     """Overlap of predicted boxes with the ground-truth boxes.
 
@@ -442,7 +450,9 @@ def _score_detector(
     cursor = 0
     model.eval()
     with torch.no_grad():
-        for images, _targets in batches(usable, batch_size=1, augment=False):
+        for images, _targets in batches(
+            usable, batch_size=1, augment=False, input_side=input_side
+        ):
             outputs = model(images)
             batch: list[NDArray[np.float64]] = []
             for output in outputs:

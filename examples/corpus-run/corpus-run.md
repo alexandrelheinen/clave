@@ -43,9 +43,12 @@ them is in the YAML files beside this one.
 
 ## 2. Train ResNet-50
 
-Ten epochs. A progress bar counts frames in the current epoch and shows the
-running mean loss. The log line `epoch 1 loss ...` is written when the epoch
-finishes, and that is when
+Ten epochs. Each frame is resized to 224 pixels on a side before the model
+sees it, and the batch holds 4 frames. That is the proof-of-concept budget in
+`configs/training/memory.yml`: the run stops itself if the process resident
+set goes over 1 GiB. A progress bar counts frames in the current epoch and
+shows the running mean loss and the resident set. The log line
+`epoch 1 loss ...` is written when the epoch finishes, and that is when
 `runs/debug/corpus/checkpoints/resnet50-baseline.pt` exists.
 
 ```bash
@@ -62,8 +65,9 @@ continues at the next epoch.
 
 ## 3. Train Faster R-CNN
 
-Only after the previous command has exited with code 0. Five epochs. The bar
-again shows frames and the running mean loss. The checkpoint is
+Only after the previous command has exited with code 0. Five epochs, with
+the same 224 pixel side and a batch of 2. The bar again shows frames, the
+running mean loss, and the resident set. The checkpoint is
 `runs/debug/corpus/checkpoints/faster-rcnn-mobilenetv3.pt`.
 
 ```bash

@@ -23,6 +23,7 @@ from clave.experiment.run import environment
 from clave.experiment.seeding import seed_everything
 from clave.progress import Progress, examples_in, frame_total
 from clave.training.config import TrainingConfig
+from clave.training.memory import MemoryBudget, require_within_budget
 from clave.training.objectives import OBJECTIVES, batches_for
 
 LOGGER = logging.getLogger(__name__)
@@ -58,6 +59,8 @@ class TrainingRun:
     machine: str
     threads: int
     environment: dict[str, str]
+    input_side_pixels: int
+    resident_limit_bytes: int
     epochs: list[EpochRecord] = field(default_factory=list)
     completed: bool = False
     unavailable_reason: str | None = None
@@ -83,13 +86,16 @@ def _candidate_for(name: str) -> Any:
     raise KeyError(f"no candidate named {name!r} in the registry")
 
 
-def train(config: TrainingConfig, window_exit: float) -> TrainingRun:
+def train(
+    config: TrainingConfig, window_exit: float, *, budget: MemoryBudget
+) -> TrainingRun:
     """Train one candidate, checkpointing and measuring each epoch.
 
     Args:
         config: The run settings.
         window_exit: Belt coordinate where the reachable window ends, used by
             the policy adapter to replay the expert.
+        budget: Resident-memory ceiling and the image side the step resizes to.
 
     Returns:
         The run record, whether it trained or reported the candidate
@@ -116,6 +122,8 @@ def train(config: TrainingConfig, window_exit: float) -> TrainingRun:
         machine=machine,
         threads=threads,
         environment=environment(),
+        input_side_pixels=budget.input_side_pixels,
+        resident_limit_bytes=budget.resident_limit_bytes,
     )
 
     # Seed before the model is constructed, not after. Weight initialization
@@ -166,6 +174,7 @@ def train(config: TrainingConfig, window_exit: float) -> TrainingRun:
                     window_exit,
                     config.act_chunk_size,
                     augment=True,
+                    input_side=budget.input_side_pixels,
                 ):
                     optimizer.zero_grad()
                     loss = objective(model, batch)
@@ -173,7 +182,12 @@ def train(config: TrainingConfig, window_exit: float) -> TrainingRun:
                     optimizer.step()
                     total += float(loss.detach())
                     batches += 1
-                    bar.update(examples_in(batch), loss=total / batches)
+                    resident = require_within_budget(budget.resident_limit_bytes)
+                    bar.update(
+                        examples_in(batch),
+                        loss=total / batches,
+                        rss_mib=resident / (1024 * 1024),
+                    )
                 del rollout
                 gc.collect()
         scheduler.step()
@@ -184,7 +198,7 @@ def train(config: TrainingConfig, window_exit: float) -> TrainingRun:
                 seconds=time.perf_counter() - began,
             )
         )
-        _checkpoint(config, model, optimizer, epoch)
+        _checkpoint(config, model, optimizer, epoch, budget.input_side_pixels)
         run.write(run_record_path(config.checkpoints, config.candidate))
         LOGGER.info(
             "epoch %s loss %.4f in %.1fs",
@@ -203,7 +217,13 @@ def _checkpoint_path(config: TrainingConfig) -> Path:
     return config.checkpoints / f"{config.candidate}.pt"
 
 
-def _checkpoint(config: TrainingConfig, model: Any, optimizer: Any, epoch: int) -> None:
+def _checkpoint(
+    config: TrainingConfig,
+    model: Any,
+    optimizer: Any,
+    epoch: int,
+    input_side_pixels: int,
+) -> None:
     """Write a checkpoint from which training can continue."""
     import torch
 
@@ -219,6 +239,7 @@ def _checkpoint(config: TrainingConfig, model: Any, optimizer: Any, epoch: int) 
             # and a checkpoint that does not carry it can only be loaded by a
             # reader that guesses the same number.
             "act_chunk_size": config.act_chunk_size,
+            "input_side_pixels": input_side_pixels,
         },
         _checkpoint_path(config),
     )

@@ -76,6 +76,25 @@ def test_policy_batches_carry_a_zeroed_state() -> None:
     assert actions.shape == (1, 3)
 
 
+def test_ac_mem_01_a_batch_is_resized_to_the_configured_side() -> None:
+    """AC-MEM-01: the model sees the configured square, not the camera frame."""
+    pytest.importorskip("torch")
+    images, _targets = next(
+        classification_batches((example(("M-01",), True),), 1, input_side=8)
+    )
+    assert tuple(images.shape) == (1, 3, 8, 8)
+
+
+def test_ac_mem_02_boxes_scale_with_the_image() -> None:
+    """AC-MEM-02: a box moves by the same factors as the resized frame."""
+    pytest.importorskip("torch")
+    batches = list(detection_batches((example(("M-01",), True),), 1, input_side=16))
+    images, targets = batches[0]
+    assert tuple(images[0].shape) == (3, 16, 16)
+    box = [float(value) for value in targets[0]["boxes"][0]]
+    assert box == pytest.approx([5.0, 5.0, 15.0, 15.0])
+
+
 def test_classification_batches_with_augmentation() -> None:
     """Augmented classification batches preserve shapes and targets."""
     pytest.importorskip("torch")

@@ -420,6 +420,7 @@ def _train(
 
     from clave.data.locate import resolve_dataset
     from clave.training.config import TrainingConfig
+    from clave.training.memory import MemoryBudget, MemoryBudgetError
     from clave.training.runner import train
 
     config = TrainingConfig.load(root / config_path, candidate)
@@ -427,7 +428,12 @@ def _train(
         config = replace(
             config, dataset=resolve_dataset(root, config.dataset, role="train")
         )
-    run = train(config, config.window_exit_meters)
+    budget = MemoryBudget.load(root / "configs" / "training" / "memory.yml")
+    try:
+        run = train(config, config.window_exit_meters, budget=budget)
+    except MemoryBudgetError as err:
+        _log_output(f"  STOPPED  {err}")
+        return 1
     if run.unavailable_reason is not None:
         _log_output(f"  UNAVAILABLE  {config.candidate}: {run.unavailable_reason}")
         return 1
