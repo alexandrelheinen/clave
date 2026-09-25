@@ -93,6 +93,28 @@ Records candidate training convergence and links to weights in R2:
 - `checkpoint_r2_key` (TEXT): Object key of the `.pt` weights in R2.
 - `created_at` (TIMESTAMP DEFAULT CURRENT_TIMESTAMP).
 
+### `models`
+One row per published checkpoint. The primary key is the SHA-256 of the `.pt`
+bytes, so a new training that changes the weights is a new row and a repeated
+upload of the same file is the same row.
+- `model_id` (TEXT, PRIMARY KEY): SHA-256 of the checkpoint file.
+- `name` (TEXT): Label given when the checkpoint is scored. Defaults to the architecture name.
+- `candidate` (TEXT): Architecture name from the candidate registry.
+- `format` (TEXT): `pt`. The file is a PyTorch checkpoint, not an ONNX graph.
+- `checkpoint_r2_key` (TEXT): Object key of the `.pt` in R2.
+- `train_dataset_digest` (TEXT): Digest of the dataset the weights were trained on.
+- `validation_dataset_digest` (TEXT): Digest of the corpus the weights were scored on. Empty until `clave validate --sync`.
+- `config_digest` (TEXT): Hyperparameter digest.
+- `campaign_id` (TEXT): Campaign that paired the two corpora, when the training set recorded one.
+- `trained_at` (TEXT): UTC time the checkpoint was published.
+- `epochs` (INTEGER): Epochs completed.
+- `final_loss` (REAL): Loss of the last epoch.
+- `frames_scored` (INTEGER): Validation frames scored. Empty until a score is attached.
+- `overall_agreement` (REAL): Fraction of class bits, or of ground-truth boxes, that matched.
+- `mean_iou` (REAL): Mean best box overlap. Empty for a classifier.
+- `machine` (TEXT): Hardware identifier and CPU thread count.
+- `created_at` (TIMESTAMP DEFAULT CURRENT_TIMESTAMP).
+
 ### `benchmarks`
 Records validation gate evaluations:
 - `benchmark_id` (TEXT, PRIMARY KEY).
@@ -152,6 +174,17 @@ render a formatted table of historical training runs and benchmark scores.
 `AC-DATA-08`: When network connectivity is lost during training or simulation,
 the system shall log a warning, retain all records and checkpoints locally, and
 exit with zero if the local operation succeeded.
+
+`AC-DATA-09`: When `clave validate --sync` scores a checkpoint, the system
+shall insert a `models` row for that result, keyed by the SHA-256 of the `.pt`
+bytes. The row records the name, the architecture, the R2 key, the training
+dataset digest, the validation dataset digest, the config digest, the campaign
+id when known, the epoch count, the final loss, the machine, the UTC training
+time, the frames scored, the agreement, and the mean intersection over union
+when the candidate predicts boxes.
+
+`AC-DATA-10`: When `clave validate --sync` is given `--name`, the system shall
+store that label. When the flag is absent, the name shall be the architecture.
 
 A perception corpus adds `campaigns`, `dataset_files` and `corpus_evaluations`,
 and two columns on `datasets`. That index is specified in

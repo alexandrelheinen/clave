@@ -266,6 +266,79 @@ def test_ac_data_05_push_training_run(tmp_path: Path) -> None:
     assert kwargs["config_digest"] == "cfg111"
     assert kwargs["epochs"] == 1
     assert kwargs["final_loss"] == 0.05
+    d1_mock.record_model.assert_not_called()
+
+
+def test_ac_data_09_a_score_records_the_model(tmp_path: Path) -> None:
+    """AC-DATA-09: scoring a checkpoint records the model and its result."""
+    from clave.storage.sync import index_scored_model
+
+    checkpoint = tmp_path / "resnet50-baseline.pt"
+    checkpoint.write_bytes(b"weights")
+    (tmp_path / "resnet50-baseline.run.json").write_text(
+        json.dumps(
+            {
+                "candidate": "resnet50-baseline",
+                "config_digest": "cfg",
+                "dataset_digest": "traindigest",
+                "machine": "x86_64, 8 threads",
+                "epochs": [{"index": 0, "loss": 0.2, "seconds": 1.0}],
+            }
+        )
+    )
+    r2_mock = MagicMock(spec=R2Client)
+    d1_mock = MagicMock(spec=D1Client)
+    key = index_scored_model(
+        checkpoint,
+        candidate="resnet50-baseline",
+        name="gate classifier",
+        validation_dataset_digest="valdigest",
+        campaign_id="campaign",
+        overall_agreement=0.81,
+        mean_iou=None,
+        frames_scored=12,
+        r2=r2_mock,
+        d1=d1_mock,
+    )
+    assert key == ("checkpoints/resnet50-baseline/cfg_traindigest/resnet50-baseline.pt")
+    scored = d1_mock.record_model_score.call_args.kwargs
+    assert scored["name"] == "gate classifier"
+    assert scored["candidate"] == "resnet50-baseline"
+    assert scored["validation_dataset_digest"] == "valdigest"
+    assert scored["overall_agreement"] == 0.81
+    assert scored["mean_iou"] is None
+    assert scored["frames_scored"] == 12
+    assert scored["checkpoint_r2_key"] == key
+    trained = d1_mock.record_model.call_args.kwargs
+    assert trained["name"] == "gate classifier"
+    assert trained["candidate"] == "resnet50-baseline"
+    assert trained["campaign_id"] == "campaign"
+    assert trained["train_dataset_digest"] == "traindigest"
+
+
+def test_recording_a_model_leaves_the_score_columns_in_place() -> None:
+    """AC-DATA-09: republishing weights does not clear a validation score."""
+    from clave.storage.d1 import D1Client
+
+    client = D1Client.__new__(D1Client)
+    with patch.object(D1Client, "execute", return_value=[]) as execute:
+        client.record_model(
+            model_id="a" * 64,
+            name="gate classifier",
+            candidate="resnet50-baseline",
+            format="pt",
+            checkpoint_r2_key="checkpoints/resnet50-baseline/cfg_data/model.pt",
+            train_dataset_digest="data",
+            config_digest="cfg",
+            campaign_id="campaign",
+            trained_at="2026-09-25T16:00:00Z",
+            epochs=10,
+            final_loss=0.1,
+            machine="x86_64, 8 threads",
+        )
+    update = execute.call_args.args[0].split("DO UPDATE SET", maxsplit=1)[1]
+    assert "overall_agreement" not in update
+    assert "validation_dataset_digest" not in update
 
 
 def test_ac_data_06_push_benchmark(tmp_path: Path) -> None:

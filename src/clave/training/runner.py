@@ -9,7 +9,9 @@ that a loss curve here describes optimization on a toy.
 
 from __future__ import annotations
 
+import gc
 import json
+import logging
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -19,9 +21,10 @@ from clave.candidates.bench import _machine
 from clave.candidates.registry import REGISTRY
 from clave.experiment.run import environment
 from clave.experiment.seeding import seed_everything
-from clave.training.adapters import training_examples
 from clave.training.config import TrainingConfig
 from clave.training.objectives import OBJECTIVES, batches_for
+
+LOGGER = logging.getLogger(__name__)
 
 
 def run_record_path(checkpoints: Path, candidate: str) -> Path:
@@ -62,6 +65,13 @@ class TrainingRun:
         """Write the run as JSON a later tool can read without this package."""
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(asdict(self), indent=2, sort_keys=True) + "\n")
+
+
+def _training_rollouts(dataset: Path) -> Any:
+    """Yield one training rollout at a time so an epoch does not hold the corpus."""
+    from clave.data.dataset import iter_split
+
+    return iter_split(dataset, "train")
 
 
 def _candidate_for(name: str) -> Any:
@@ -128,7 +138,6 @@ def train(config: TrainingConfig, window_exit: float) -> TrainingRun:
     model: Any = loaded.model
     objective = OBJECTIVES[config.candidate]
     optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
-    examples = training_examples(config.dataset)
 
     start_epoch = _resume(config, model, optimizer)
     for param_group in optimizer.param_groups:
@@ -141,23 +150,27 @@ def train(config: TrainingConfig, window_exit: float) -> TrainingRun:
     )
 
     for epoch in range(start_epoch, config.epochs):
+        LOGGER.info("epoch %s/%s", epoch + 1, config.epochs)
         model.train()
         began = time.perf_counter()
         total, batches = 0.0, 0
-        for batch in batches_for(
-            config.candidate,
-            examples,
-            config.batch_size,
-            window_exit,
-            config.act_chunk_size,
-            augment=True,
-        ):
-            optimizer.zero_grad()
-            loss = objective(model, batch)
-            loss.backward()
-            optimizer.step()
-            total += float(loss.detach())
-            batches += 1
+        for rollout in _training_rollouts(config.dataset):
+            for batch in batches_for(
+                config.candidate,
+                rollout.examples,
+                config.batch_size,
+                window_exit,
+                config.act_chunk_size,
+                augment=True,
+            ):
+                optimizer.zero_grad()
+                loss = objective(model, batch)
+                loss.backward()
+                optimizer.step()
+                total += float(loss.detach())
+                batches += 1
+            del rollout
+            gc.collect()
         scheduler.step()
         run.epochs.append(
             EpochRecord(
@@ -168,6 +181,12 @@ def train(config: TrainingConfig, window_exit: float) -> TrainingRun:
         )
         _checkpoint(config, model, optimizer, epoch)
         run.write(run_record_path(config.checkpoints, config.candidate))
+        LOGGER.info(
+            "epoch %s loss %.4f in %.1fs",
+            epoch + 1,
+            run.epochs[-1].loss,
+            run.epochs[-1].seconds,
+        )
 
     run.completed = True
     run.write(run_record_path(config.checkpoints, config.candidate))

@@ -256,17 +256,61 @@ def record(
     renderer = mujoco.Renderer(model, height=height, width=width)
     segmenter = mujoco.Renderer(model, height=height, width=width)
     segmenter.enable_segmentation_rendering()
+    try:
+        return _capture_rollout(
+            model,
+            data,
+            conveyor,
+            indices,
+            renderer,
+            segmenter,
+            seconds=seconds,
+            capture_interval_seconds=capture_interval_seconds,
+            seed=seed,
+            config_digest=config_digest,
+            camera_ids=camera_ids,
+            store_all=store_all,
+            drive_arm=drive_arm,
+            exit_coordinate=exit_coordinate,
+            rollout_id=rollout_id,
+            spacing_meters=spacing_meters,
+            timestep=plan.timestep,
+        )
+    finally:
+        renderer.close()
+        segmenter.close()
+
+
+def _capture_rollout(
+    model: Any,
+    data: Any,
+    conveyor: Any,
+    indices: Any,
+    renderer: Any,
+    segmenter: Any,
+    *,
+    seconds: float,
+    capture_interval_seconds: float,
+    seed: int,
+    config_digest: str,
+    camera_ids: tuple[str, ...],
+    store_all: bool,
+    drive_arm: bool,
+    exit_coordinate: float,
+    rollout_id: str,
+    spacing_meters: float | None,
+    timestep: float,
+) -> Rollout:
+    """Step one rollout and return its labeled frames."""
+    import mujoco
+
     examples: list[Example] = []
     next_capture = 0.0
-    for _ in range(int(seconds / plan.timestep)):
+    for _ in range(int(seconds / timestep)):
         mujoco.mj_step(model, data)
         conveyor.step(model, data)
-
-        # Drive the arm toward whatever the scripted expert would pick. Without
-        # this the manipulator never moves, its joint angles are constant, and
-        # the proprioception recorded below carries no information at all.
-        # A corpus leaves it parked: the frames are the stream, and the arm's
-        # speed is a later problem.
+        # A corpus leaves the arm parked. Driving it here would record the
+        # expert's motion, which this dataset is not.
         if drive_arm:
             labels_now = _labels_for(model, data, conveyor, {})
             chosen = decide(labels_now, exit_coordinate)
@@ -274,7 +318,6 @@ def record(
                 armmod.step_toward(
                     model, data, indices, np.array(chosen.position), gain=ARM_GAIN
                 )
-
         if data.time < next_capture:
             continue
         serials = {item.name: item.serial for item in conveyor.active}

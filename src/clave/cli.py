@@ -331,16 +331,30 @@ def _validate_corpus(root: Path, args: Any) -> int:
     else:
         _log_output(f"  mean iou        {score.mean_iou:.4f}")
     if args.sync:
-        _publish_score(root, score)
+        _publish_score(root, score, checkpoint, args.name, _campaign_of(dataset))
     return 0
 
 
-def _publish_score(root: Path, score: Any) -> None:
+def _campaign_of(dataset: Path) -> str | None:
+    """Read the campaign id stored with a dataset, or none when it has none."""
+    from clave.data.dataset import DatasetError
+    from clave.data.dataset import read as read_dataset
+
+    try:
+        return read_dataset(dataset).campaign_id
+    except (DatasetError, OSError):
+        return None
+
+
+def _publish_score(
+    root: Path, score: Any, checkpoint: Path, name: str | None, campaign_id: str | None
+) -> None:
     """Upload a perception score and index it."""
     import hashlib
     import json
 
     from clave.storage import D1Client, R2Client, load_d1_config, load_r2_config
+    from clave.storage.sync import index_scored_model
 
     payload = json.dumps(
         {
@@ -369,7 +383,20 @@ def _publish_score(root: Path, score: Any) -> None:
         score.mean_iou,
         key,
     )
+    model_key = index_scored_model(
+        checkpoint,
+        candidate=score.candidate,
+        name=name or score.candidate,
+        validation_dataset_digest=score.dataset_digest,
+        campaign_id=campaign_id,
+        overall_agreement=score.overall_agreement,
+        mean_iou=score.mean_iou,
+        frames_scored=score.frames,
+        r2=r2,
+        d1=d1,
+    )
     _log_output(f"  evaluation      {evaluation_id}")
+    _log_output(f"  model           {model_key}")
 
 
 def _train(
@@ -827,6 +854,12 @@ def _build_parser() -> argparse.ArgumentParser:
     scored.add_argument("--checkpoint", type=Path, required=True)
     scored.add_argument(
         "--thresholds", type=Path, default=Path("configs/validation/corpus.yml")
+    )
+    scored.add_argument(
+        "--name",
+        type=str,
+        default=None,
+        help="label stored on the model row (default: the architecture)",
     )
     scored.add_argument(
         "--sync",

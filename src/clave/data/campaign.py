@@ -8,22 +8,30 @@ datasets the rest of the pipeline already knows how to read.
 
 from __future__ import annotations
 
+import gc
 import hashlib
 import json
-from dataclasses import dataclass
+import logging
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
 import yaml
 
 from clave.corpus.artifacts import digest_of
-from clave.data.dataset import DatasetDescription, write
+from clave.data.dataset import (
+    DatasetDescription,
+    _describe,
+    _write_corpus_archive,
+)
 from clave.data.recorder import record
 from clave.demo.video import StreamSettings, open_stream
 from clave.errors import ClaveError
 from clave.tracker.evidence import Role
 from clave.tracker.sensors import load_sensors, of_role
 from clave.world import config as world_config
+
+LOGGER = logging.getLogger(__name__)
 
 
 class CampaignError(ClaveError):
@@ -262,6 +270,33 @@ class CampaignResult:
     preview: Path | None
 
 
+def _release_freed_pages() -> None:
+    """Return allocator arenas to the OS after a rollout's frames are dropped.
+
+    CPython frees the arrays, and glibc keeps the pages. Across ninety rollouts
+    that retained heap is larger than this machine.
+    """
+    import ctypes
+
+    libc = ctypes.CDLL("libc.so.6")
+    libc.malloc_trim(0)
+
+
+def _without_pixels(rollout: Any) -> Any:
+    """Drop frame buffers once the archive is on disk.
+
+    Composition only reads labels. Holding every camera of every rollout until
+    the half is finished does not fit in the memory this command runs on.
+    """
+    import numpy as np
+
+    blank = np.zeros((1, 1, 3), dtype=np.uint8)
+    examples = tuple(
+        replace(example, frame=blank, captures=()) for example in rollout.examples
+    )
+    return replace(rollout, examples=examples)
+
+
 def record_campaign(root: Path, config: CampaignConfig) -> CampaignResult:
     """Record both halves and a short preview of a dense stream.
 
@@ -288,8 +323,22 @@ def record_campaign(root: Path, config: CampaignConfig) -> CampaignResult:
     directories: dict[str, Path] = {}
     for role in ("train", "validation"):
         chosen = tuple(item for item in assignments(config) if item.role == role)
-        rollouts = tuple(
-            record(
+        directory = out / role
+        directory.mkdir(parents=True, exist_ok=True)
+        kept: list[Any] = []
+        written: list[Path] = []
+        for number, item in enumerate(chosen, start=1):
+            LOGGER.info(
+                "recording %s %s (%s/%s) seed %s at %.2f m/s, spacing %.2f m",
+                role,
+                item.rollout_id,
+                number,
+                len(chosen),
+                item.seed,
+                item.belt_speed,
+                item.spacing_meters,
+            )
+            rollout = record(
                 root=root,
                 seed=item.seed,
                 seconds=config.seconds_per_rollout,
@@ -302,17 +351,22 @@ def record_campaign(root: Path, config: CampaignConfig) -> CampaignResult:
                 drive_arm=False,
                 cameras=camera_ids,
             )
-            for item in chosen
-        )
-        directory = out / role
-        descriptions[role] = write(
+            path = directory / f"{rollout.rollout_id}.npz"
+            _write_corpus_archive(path, rollout)
+            written.append(path)
+            kept.append(_without_pixels(rollout))
+            del rollout
+            gc.collect()
+            _release_freed_pages()
+        descriptions[role] = _describe(
             directory,
-            rollouts,
+            tuple(kept),
             {role: tuple(item.rollout_id for item in chosen)},
             config.seed,
             world_digest,
-            role=role,
-            campaign_id=identifier,
+            role,
+            identifier,
+            written,
         )
         directories[role] = directory
 

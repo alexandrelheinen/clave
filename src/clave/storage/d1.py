@@ -86,6 +86,26 @@ CREATE TABLE IF NOT EXISTS corpus_evaluations (
     report_r2_key TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS models (
+    model_id TEXT PRIMARY KEY,
+    name TEXT,
+    candidate TEXT NOT NULL,
+    format TEXT NOT NULL,
+    checkpoint_r2_key TEXT,
+    train_dataset_digest TEXT,
+    validation_dataset_digest TEXT,
+    config_digest TEXT,
+    campaign_id TEXT,
+    trained_at TEXT,
+    epochs INTEGER,
+    final_loss REAL,
+    frames_scored INTEGER,
+    overall_agreement REAL,
+    mean_iou REAL,
+    machine TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 
@@ -217,11 +237,33 @@ class D1Client:
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
             """,
+            """
+            CREATE TABLE IF NOT EXISTS models (
+                model_id TEXT PRIMARY KEY,
+                name TEXT,
+                candidate TEXT NOT NULL,
+                format TEXT NOT NULL,
+                checkpoint_r2_key TEXT,
+                train_dataset_digest TEXT,
+                validation_dataset_digest TEXT,
+                config_digest TEXT,
+                campaign_id TEXT,
+                trained_at TEXT,
+                epochs INTEGER,
+                final_loss REAL,
+                frames_scored INTEGER,
+                overall_agreement REAL,
+                mean_iou REAL,
+                machine TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            """,
         ]
         for stmt in statements:
             self.execute(stmt.strip())
         self._add_column("datasets", "role", "TEXT")
         self._add_column("datasets", "campaign_id", "TEXT")
+        self._add_column("models", "name", "TEXT")
 
     def _add_column(self, table: str, column: str, declaration: str) -> None:
         """Add a column, treating an existing column as success."""
@@ -452,6 +494,103 @@ class D1Client:
                 decision_latency_p99_seconds,
                 1 if passed else 0,
                 pack_r2_key,
+            ],
+        )
+
+    def record_model(
+        self,
+        model_id: str,
+        name: str,
+        candidate: str,
+        format: str,
+        checkpoint_r2_key: str,
+        train_dataset_digest: str,
+        config_digest: str,
+        campaign_id: str | None,
+        trained_at: str,
+        epochs: int,
+        final_loss: float,
+        machine: str,
+    ) -> None:
+        """Record the training half of a scored checkpoint (AC-DATA-09).
+
+        The validation columns stay as they are, so attaching a score and then
+        refreshing the weights does not wipe the result.
+        """
+        sql = """
+        INSERT INTO models (
+            model_id, name, candidate, format, checkpoint_r2_key,
+            train_dataset_digest, config_digest, campaign_id,
+            trained_at, epochs, final_loss, machine
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(model_id) DO UPDATE SET
+            name=excluded.name,
+            candidate=excluded.candidate,
+            format=excluded.format,
+            checkpoint_r2_key=excluded.checkpoint_r2_key,
+            train_dataset_digest=excluded.train_dataset_digest,
+            config_digest=excluded.config_digest,
+            campaign_id=excluded.campaign_id,
+            trained_at=excluded.trained_at,
+            epochs=excluded.epochs,
+            final_loss=excluded.final_loss,
+            machine=excluded.machine
+        """
+        self.execute(
+            sql,
+            [
+                model_id,
+                name,
+                candidate,
+                format,
+                checkpoint_r2_key,
+                train_dataset_digest,
+                config_digest,
+                campaign_id,
+                trained_at,
+                epochs,
+                final_loss,
+                machine,
+            ],
+        )
+
+    def record_model_score(
+        self,
+        model_id: str,
+        name: str,
+        candidate: str,
+        format: str,
+        checkpoint_r2_key: str,
+        validation_dataset_digest: str,
+        overall_agreement: float,
+        mean_iou: float | None,
+        frames_scored: int,
+    ) -> None:
+        """Store the validation result on the model row (AC-DATA-09)."""
+        sql = """
+        INSERT INTO models (
+            model_id, name, candidate, format, checkpoint_r2_key,
+            validation_dataset_digest, overall_agreement, mean_iou, frames_scored
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(model_id) DO UPDATE SET
+            name=excluded.name,
+            validation_dataset_digest=excluded.validation_dataset_digest,
+            overall_agreement=excluded.overall_agreement,
+            mean_iou=excluded.mean_iou,
+            frames_scored=excluded.frames_scored
+        """
+        self.execute(
+            sql,
+            [
+                model_id,
+                name,
+                candidate,
+                format,
+                checkpoint_r2_key,
+                validation_dataset_digest,
+                overall_agreement,
+                mean_iou,
+                frames_scored,
             ],
         )
 

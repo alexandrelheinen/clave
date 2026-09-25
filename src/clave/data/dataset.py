@@ -12,7 +12,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import asdict, dataclass, field
+from collections.abc import Iterator
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 
 import numpy as np
@@ -137,7 +138,22 @@ def write(
         else:
             _write_legacy_archive(path, rollout)
         written.append(path)
+    return _describe(
+        root, rollouts, parts, seed, config_digest, role, campaign_id, written
+    )
 
+
+def _describe(
+    root: Path,
+    rollouts: tuple[Rollout, ...],
+    parts: dict[str, tuple[str, ...]],
+    seed: int,
+    config_digest: str,
+    role: str | None,
+    campaign_id: str | None,
+    written: list[Path],
+) -> DatasetDescription:
+    """Write dataset.json for archives that are already on disk."""
     compositions = compose_parts(rollouts, parts)
     by_id = {rollout.rollout_id: rollout for rollout in rollouts}
     description = DatasetDescription(
@@ -149,7 +165,7 @@ def write(
         composition={
             name: _composition_as_dict(value) for name, value in compositions.items()
         },
-        format_version=FORMAT_CORPUS if corpus else FORMAT_LEGACY,
+        format_version=FORMAT_CORPUS if role is not None else FORMAT_LEGACY,
         role=role,
         campaign_id=campaign_id,
         files=tuple(_file_record(path, by_id[path.stem]) for path in written),
@@ -402,6 +418,59 @@ def load_split(root: Path, part: str, camera: str | None = None) -> tuple[Rollou
             )
         )
     return tuple(rollouts)
+
+
+def iter_split(root: Path, part: str, camera: str | None = None) -> Iterator[Rollout]:
+    """Yield one rollout at a time, then release its pixels.
+
+    `load_split` keeps every frame. A full corpus does not fit beside a model
+    on the machine this command runs on, so training and scoring walk the
+    archives instead.
+
+    Args:
+        root: The dataset directory.
+        part: Split part name, such as `train`.
+        camera: Detection camera to expose as `Example.frame` on a corpus
+            archive. None uses the first camera stored.
+
+    Yields:
+        One rollout, with a copy of the chosen camera and no other captures.
+
+    Raises:
+        DatasetError: If the dataset does not verify, the part is unknown, or
+            the named camera was not stored.
+    """
+    description = read(root)
+    if part not in description.parts:
+        known = ", ".join(sorted(description.parts))
+        raise DatasetError(f"unknown split part {part!r}; this dataset has {known}")
+
+    file_by_name = {item.name: item for item in description.files}
+    for rollout_id in description.parts[part]:
+        archive = np.load(root / f"{rollout_id}.npz", allow_pickle=False)
+        try:
+            if description.format_version >= FORMAT_CORPUS:
+                examples = _examples_from_corpus(archive, description, camera)
+            else:
+                examples = _examples_from_legacy(archive, description)
+            owned = tuple(_owned_frame(item) for item in examples)
+        finally:
+            archive.close()
+        recorded = file_by_name.get(f"{rollout_id}.npz")
+        yield Rollout(
+            rollout_id=rollout_id,
+            seed=recorded.seed if recorded is not None else description.seed,
+            examples=owned,
+            belt_speed=None
+            if recorded is None
+            else recorded.belt_speed_meters_per_second,
+            spacing_meters=None if recorded is None else recorded.spacing_meters,
+        )
+
+
+def _owned_frame(example: Example) -> Example:
+    """Copy the frame so it survives closing the archive it was read from."""
+    return replace(example, frame=np.array(example.frame, copy=True), captures=())
 
 
 def _joints_at(joints: object, index: int) -> tuple[float, ...]:

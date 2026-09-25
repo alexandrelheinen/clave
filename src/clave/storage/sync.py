@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import contextlib
 import datetime
+import hashlib
 import json
 import logging
 from pathlib import Path
@@ -237,6 +238,94 @@ def push_training_run(
         )
 
     return checkpoint_key
+
+
+def index_scored_model(
+    checkpoint: Path,
+    *,
+    candidate: str,
+    name: str,
+    validation_dataset_digest: str,
+    overall_agreement: float,
+    mean_iou: float | None,
+    frames_scored: int,
+    r2: R2Client,
+    d1: D1Client,
+    campaign_id: str | None = None,
+) -> str:
+    """Upload a scored checkpoint and attach the validation metrics.
+
+    Args:
+        checkpoint: The `.pt` file that was scored.
+        candidate: Architecture name from the registry.
+        name: Label for this scored checkpoint.
+        validation_dataset_digest: Digest of the corpus the score used.
+        overall_agreement: Fraction of class bits or boxes that matched.
+        mean_iou: Mean best box overlap, or none for a classifier.
+        frames_scored: Frames the score covered.
+        r2: Connected R2 client.
+        d1: Connected D1 client.
+        campaign_id: Campaign that paired the two corpora, when known.
+
+    Returns:
+        The R2 object key of the checkpoint.
+    """
+    model_id = hashlib.sha256(checkpoint.read_bytes()).hexdigest()
+    run_path = checkpoint.with_suffix(".run.json")
+    checkpoint_key = f"checkpoints/{candidate}/{model_id}.pt"
+    train_fields: tuple[str, str, int, float, str] | None = None
+    if run_path.is_file():
+        raw: dict[str, Any] = json.loads(run_path.read_text(encoding="utf-8"))
+        config_digest = str(raw.get("config_digest", "unknown"))
+        dataset_digest = str(raw.get("dataset_digest", "unknown"))
+        checkpoint_key = (
+            f"checkpoints/{candidate}/{config_digest}_{dataset_digest}/"
+            f"{checkpoint.name}"
+        )
+        epochs_list = raw.get("epochs", [])
+        if not isinstance(epochs_list, list):
+            epochs_list = []
+        train_fields = (
+            dataset_digest,
+            config_digest,
+            len(epochs_list),
+            float(epochs_list[-1]["loss"]) if epochs_list else 0.0,
+            str(raw.get("machine", "unknown")),
+        )
+    r2.upload_file(checkpoint, checkpoint_key, content_type="application/octet-stream")
+    if train_fields is not None:
+        dataset_digest, config_digest, epochs, final_loss, machine = train_fields
+        d1.record_model(
+            model_id=model_id,
+            name=name,
+            candidate=candidate,
+            format="pt",
+            checkpoint_r2_key=checkpoint_key,
+            train_dataset_digest=dataset_digest,
+            config_digest=config_digest,
+            campaign_id=campaign_id,
+            trained_at=_utc_now(),
+            epochs=epochs,
+            final_loss=final_loss,
+            machine=machine,
+        )
+    d1.record_model_score(
+        model_id=model_id,
+        name=name,
+        candidate=candidate,
+        format="pt",
+        checkpoint_r2_key=checkpoint_key,
+        validation_dataset_digest=validation_dataset_digest,
+        overall_agreement=overall_agreement,
+        mean_iou=mean_iou,
+        frames_scored=frames_scored,
+    )
+    return checkpoint_key
+
+
+def _utc_now() -> str:
+    """UTC timestamp for a publication, independent of the machine's zone."""
+    return datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def push_benchmark(

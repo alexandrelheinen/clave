@@ -7,6 +7,7 @@ measuring the recorder.
 
 from __future__ import annotations
 
+import gc
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -17,7 +18,6 @@ from numpy.typing import NDArray
 
 from clave.candidates.base import Stage
 from clave.candidates.registry import REGISTRY
-from clave.data.dataset import load_split
 from clave.data.examples import Example
 from clave.errors import ClaveError
 from clave.taxonomy import MATERIAL_CLASSES
@@ -240,27 +240,47 @@ def score_candidate(
 
     description = read_dataset(dataset)
     part = description.role or "validation"
-    examples = tuple(
-        example for rollout in load_split(dataset, part) for example in rollout.examples
-    )
-    if candidate == "faster-rcnn-mobilenetv3":
-        mean_iou, agreement = _score_detector(
-            model, examples, thresholds, detection_batches
-        )
-    elif candidate == "resnet50-baseline":
-        agreement = _score_classifier(
-            model, examples, thresholds, classification_batches
-        )
-        mean_iou = None
-    else:
+    from clave.data.dataset import iter_split
+
+    frames = 0
+    bits_equal = 0
+    bits = 0
+    overlap_sum = 0.0
+    overlap_count = 0
+    matched_boxes = 0
+    if candidate not in ("faster-rcnn-mobilenetv3", "resnet50-baseline"):
         raise PerceptionEvalError(
             f"{candidate} has no corpus scorer; the known ones are "
             "resnet50-baseline and faster-rcnn-mobilenetv3"
         )
+    for rollout in iter_split(dataset, part):
+        examples = rollout.examples
+        frames += len(examples)
+        if candidate == "faster-rcnn-mobilenetv3":
+            mean_iou, agreement, count = _score_detector(
+                model, examples, thresholds, detection_batches
+            )
+            overlap_sum += mean_iou * count
+            overlap_count += count
+            matched_boxes += int(round(agreement * count))
+        else:
+            equal, total = _score_classifier(
+                model, examples, thresholds, classification_batches
+            )
+            bits_equal += equal
+            bits += total
+        del rollout
+        gc.collect()
+    if candidate == "faster-rcnn-mobilenetv3":
+        agreement = matched_boxes / overlap_count if overlap_count else 0.0
+        mean_iou = overlap_sum / overlap_count if overlap_count else 0.0
+    else:
+        agreement = bits_equal / bits if bits else 0.0
+        mean_iou = None
     return PerceptionScore(
         candidate=candidate,
         dataset_digest=description.digest,
-        frames=len(examples),
+        frames=frames,
         overall_agreement=agreement,
         mean_iou=mean_iou,
     )
@@ -279,13 +299,17 @@ def _score_classifier(
     examples: tuple[Example, ...],
     thresholds: ScoreThresholds,
     batches: Any,
-) -> float:
-    """Agreement of a multi-label head with visible classes."""
+) -> tuple[int, int]:
+    """Agreement of a multi-label head with visible classes.
+
+    Returns:
+        Class bits that matched, and the number of class bits scored.
+    """
     import torch
 
     truth = truth_presence(examples)
     if len(examples) == 0:
-        return 0.0
+        return 0, 0
     predicted_rows: list[NDArray[np.bool_]] = []
     with torch.no_grad():
         for images, _targets in batches(examples, batch_size=1, augment=False):
@@ -293,10 +317,11 @@ def _score_classifier(
             present = torch.sigmoid(logits) >= thresholds.decision_threshold
             predicted_rows.append(present.detach().cpu().numpy().astype(np.bool_))
     if not predicted_rows:
-        return 0.0
+        return 0, 0
     predicted = np.concatenate(predicted_rows, axis=0)
     width = min(len(predicted), len(truth))
-    return presence_agreement(predicted[:width], truth[:width])
+    compared = predicted[:width] == truth[:width]
+    return int(np.sum(compared)), int(compared.size)
 
 
 def _score_detector(
@@ -304,8 +329,13 @@ def _score_detector(
     examples: tuple[Example, ...],
     thresholds: ScoreThresholds,
     batches: Any,
-) -> tuple[float, float]:
-    """Overlap of predicted boxes with the ground-truth boxes."""
+) -> tuple[float, float, int]:
+    """Overlap of predicted boxes with the ground-truth boxes.
+
+    Returns:
+        Mean best overlap, the fraction of boxes that cleared the match cut,
+        and how many ground-truth boxes were scored.
+    """
     import torch
 
     usable = tuple(item for item in examples if item.visible_labels)
@@ -320,4 +350,7 @@ def _score_detector(
                 predicted.append(np.asarray(boxes, dtype=np.float64).reshape(-1, 4))
     while len(predicted) < len(gold):
         predicted.append(np.zeros((0, 4), dtype=np.float64))
-    return mean_best_iou(predicted[: len(gold)], gold, thresholds.match_iou)
+    kept = predicted[: len(gold)]
+    mean_iou, agreement = mean_best_iou(kept, gold, thresholds.match_iou)
+    count = sum(len(boxes) for boxes in gold)
+    return mean_iou, agreement, count
