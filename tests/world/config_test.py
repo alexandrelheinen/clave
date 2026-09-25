@@ -140,7 +140,7 @@ def test_a_mesh_object_must_name_its_mesh() -> None:
 
 
 def test_every_shipped_mesh_object_is_checked_out() -> None:
-    """The submodules the world names have to be present for it to build."""
+    """The meshes the world names have to be on disk for it to build."""
     from clave.world.objects import parse
 
     raw = load(CONFIG)

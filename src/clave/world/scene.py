@@ -1441,7 +1441,7 @@ def build(
         if not spec_mesh.is_file():
             raise FileNotFoundError(
                 f"object {spec.name!r} names the mesh {spec.mesh}, which is not "
-                "checked out. Run: git submodule update --init --recursive"
+                "on disk. Run: python scripts/import_scene_assets.py --objects"
             )
         mujoco_spec.add_mesh(name=f"asset_{spec.name}", file=str(spec_mesh))
         if spec.texture is not None and (root / spec.texture).is_file():

@@ -55,5 +55,11 @@ jobs:
           # are covered by the benchmark sweep instead.
           .venv/bin/pip install -e ".[dev,world]"
 
+      # Object meshes are pinned by digest, not as submodules. Without them the
+      # world cannot compile and the gate fails before it tests anything.
+      - name: Fetch the object meshes the world names
+        if: hashFiles('pyproject.toml') != ''
+        run: .venv/bin/python scripts/import_scene_assets.py --objects
+
       - name: Validate
         run: ./scripts/validate.sh
