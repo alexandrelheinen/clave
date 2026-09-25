@@ -116,6 +116,7 @@ def train(
 
     machine, threads = _machine()
     description = read_dataset(config.dataset)
+    release_freed_pages()
     dataset_digest = description.digest
     frames = frame_total(description, "train")
     run = TrainingRun(

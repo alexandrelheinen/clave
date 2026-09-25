@@ -441,6 +441,11 @@ def iter_split(root: Path, part: str, camera: str | None = None) -> Iterator[Rol
             the named camera was not stored.
     """
     description = read(root)
+    # Hashing the archives allocates large temporary buffers. glibc keeps that
+    # heap, and the frames copied below would sit on top of it.
+    from clave.training.memory import release_freed_pages
+
+    release_freed_pages()
     if part not in description.parts:
         known = ", ".join(sorted(description.parts))
         raise DatasetError(f"unknown split part {part!r}; this dataset has {known}")
