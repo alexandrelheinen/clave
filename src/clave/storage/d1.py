@@ -54,6 +54,38 @@ CREATE TABLE IF NOT EXISTS benchmarks (
     pack_r2_key TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS campaigns (
+    campaign_id TEXT PRIMARY KEY,
+    train_digest TEXT,
+    validation_digest TEXT,
+    world_config_digest TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS dataset_files (
+    digest TEXT,
+    name TEXT,
+    sha256 TEXT,
+    byte_count INTEGER,
+    frame_count INTEGER,
+    seed INTEGER,
+    belt_speed_meters_per_second REAL,
+    spacing_meters REAL,
+    camera_ids TEXT,
+    r2_key TEXT,
+    PRIMARY KEY (digest, name)
+);
+
+CREATE TABLE IF NOT EXISTS corpus_evaluations (
+    evaluation_id TEXT PRIMARY KEY,
+    candidate TEXT,
+    dataset_digest TEXT,
+    overall_agreement REAL,
+    mean_iou REAL,
+    report_r2_key TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 
@@ -150,9 +182,54 @@ class D1Client:
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
             """,
+            """
+            CREATE TABLE IF NOT EXISTS campaigns (
+                campaign_id TEXT PRIMARY KEY,
+                train_digest TEXT,
+                validation_digest TEXT,
+                world_config_digest TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS dataset_files (
+                digest TEXT,
+                name TEXT,
+                sha256 TEXT,
+                byte_count INTEGER,
+                frame_count INTEGER,
+                seed INTEGER,
+                belt_speed_meters_per_second REAL,
+                spacing_meters REAL,
+                camera_ids TEXT,
+                r2_key TEXT,
+                PRIMARY KEY (digest, name)
+            );
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS corpus_evaluations (
+                evaluation_id TEXT PRIMARY KEY,
+                candidate TEXT,
+                dataset_digest TEXT,
+                overall_agreement REAL,
+                mean_iou REAL,
+                report_r2_key TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            """,
         ]
         for stmt in statements:
             self.execute(stmt.strip())
+        self._add_column("datasets", "role", "TEXT")
+        self._add_column("datasets", "campaign_id", "TEXT")
+
+    def _add_column(self, table: str, column: str, declaration: str) -> None:
+        """Add a column, treating an existing column as success."""
+        try:
+            self.execute(f"ALTER TABLE {table} ADD COLUMN {column} {declaration}")
+        except D1Error as exc:
+            if "duplicate column" not in str(exc).lower():
+                raise
 
     def record_dataset(
         self,
@@ -163,20 +240,25 @@ class D1Client:
         train_examples: int,
         validation_examples: int,
         test_examples: int,
+        role: str | None = None,
+        campaign_id: str | None = None,
     ) -> None:
         """Record dataset metadata in D1 (AC-DATA-04)."""
         sql = """
         INSERT INTO datasets (
             digest, seed, config_digest, example_count,
-            train_examples, validation_examples, test_examples
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            train_examples, validation_examples, test_examples,
+            role, campaign_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(digest) DO UPDATE SET
             seed=excluded.seed,
             config_digest=excluded.config_digest,
             example_count=excluded.example_count,
             train_examples=excluded.train_examples,
             validation_examples=excluded.validation_examples,
-            test_examples=excluded.test_examples
+            test_examples=excluded.test_examples,
+            role=excluded.role,
+            campaign_id=excluded.campaign_id
         """
         self.execute(
             sql,
@@ -188,6 +270,107 @@ class D1Client:
                 train_examples,
                 validation_examples,
                 test_examples,
+                role,
+                campaign_id,
+            ],
+        )
+
+    def record_campaign(
+        self,
+        campaign_id: str,
+        train_digest: str,
+        validation_digest: str,
+        world_config_digest: str,
+    ) -> None:
+        """Pair the two corpus halves (AC-CORPUS-04)."""
+        sql = """
+        INSERT INTO campaigns (
+            campaign_id, train_digest, validation_digest, world_config_digest
+        ) VALUES (?, ?, ?, ?)
+        ON CONFLICT(campaign_id) DO UPDATE SET
+            train_digest=excluded.train_digest,
+            validation_digest=excluded.validation_digest,
+            world_config_digest=excluded.world_config_digest
+        """
+        self.execute(
+            sql,
+            [campaign_id, train_digest, validation_digest, world_config_digest],
+        )
+
+    def record_dataset_file(
+        self,
+        digest: str,
+        name: str,
+        sha256: str,
+        byte_count: int,
+        frame_count: int,
+        seed: int,
+        belt_speed_meters_per_second: float | None,
+        spacing_meters: float | None,
+        camera_ids: str,
+        r2_key: str,
+    ) -> None:
+        """Record one archive in the file index (AC-CORPUS-05)."""
+        sql = """
+        INSERT INTO dataset_files (
+            digest, name, sha256, byte_count, frame_count, seed,
+            belt_speed_meters_per_second, spacing_meters, camera_ids, r2_key
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(digest, name) DO UPDATE SET
+            sha256=excluded.sha256,
+            byte_count=excluded.byte_count,
+            frame_count=excluded.frame_count,
+            seed=excluded.seed,
+            belt_speed_meters_per_second=excluded.belt_speed_meters_per_second,
+            spacing_meters=excluded.spacing_meters,
+            camera_ids=excluded.camera_ids,
+            r2_key=excluded.r2_key
+        """
+        self.execute(
+            sql,
+            [
+                digest,
+                name,
+                sha256,
+                byte_count,
+                frame_count,
+                seed,
+                belt_speed_meters_per_second,
+                spacing_meters,
+                camera_ids,
+                r2_key,
+            ],
+        )
+
+    def record_corpus_evaluation(
+        self,
+        evaluation_id: str,
+        candidate: str,
+        dataset_digest: str,
+        overall_agreement: float,
+        mean_iou: float | None,
+        report_r2_key: str,
+    ) -> None:
+        """Record a perception score against a validation corpus (AC-CORPUS-08)."""
+        sql = """
+        INSERT INTO corpus_evaluations (
+            evaluation_id, candidate, dataset_digest,
+            overall_agreement, mean_iou, report_r2_key
+        ) VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(evaluation_id) DO UPDATE SET
+            overall_agreement=excluded.overall_agreement,
+            mean_iou=excluded.mean_iou,
+            report_r2_key=excluded.report_r2_key
+        """
+        self.execute(
+            sql,
+            [
+                evaluation_id,
+                candidate,
+                dataset_digest,
+                overall_agreement,
+                mean_iou,
+                report_r2_key,
             ],
         )
 

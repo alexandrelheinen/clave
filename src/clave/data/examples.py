@@ -54,6 +54,11 @@ class ObjectLabel:
             and a detector trained on a label with no pixels would be taught to
             hallucinate. None is therefore the visibility flag as well as the
             absence of a box.
+        orientation: Unit quaternion (w, x, y, z) in world coordinates, or None
+            on a record written before the corpus stored pose.
+        linear_velocity: Meters per second, world frame, or None when unstored.
+        angular_velocity: Radians per second, world frame, or None when unstored.
+        object_name: Catalog name of the spawned mesh. Empty when unstored.
     """
 
     object_id: int
@@ -62,6 +67,10 @@ class ObjectLabel:
     position: NDArray[np.float64]
     in_reachable_window: bool
     bbox: tuple[int, int, int, int] | None = None
+    orientation: tuple[float, float, float, float] | None = None
+    linear_velocity: tuple[float, float, float] | None = None
+    angular_velocity: tuple[float, float, float] | None = None
+    object_name: str = ""
 
     def __post_init__(self) -> None:
         """Refuse a class the taxonomy does not define, and coerce position.
@@ -88,6 +97,10 @@ class ObjectLabel:
             and bool(np.allclose(self.position, other.position, rtol=0.0, atol=1e-12))
             and self.in_reachable_window == other.in_reachable_window
             and self.bbox == other.bbox
+            and self.orientation == other.orientation
+            and self.linear_velocity == other.linear_velocity
+            and self.angular_velocity == other.angular_velocity
+            and self.object_name == other.object_name
         )
 
     def as_dict(self) -> dict[str, Any]:
@@ -99,7 +112,35 @@ class ObjectLabel:
             "position": list(self.position),
             "in_reachable_window": self.in_reachable_window,
             "bbox": list(self.bbox) if self.bbox is not None else None,
+            "orientation": list(self.orientation) if self.orientation else None,
+            "linear_velocity": (
+                list(self.linear_velocity) if self.linear_velocity else None
+            ),
+            "angular_velocity": (
+                list(self.angular_velocity) if self.angular_velocity else None
+            ),
+            "object_name": self.object_name,
         }
+
+
+@dataclass(frozen=True)
+class CameraCapture:
+    """One camera's image and the truth measured in that image.
+
+    Attributes:
+        camera_id: Sensor id from the world configuration. Provenance for the
+            pixels, not a key a fusion rule selects on.
+        frame: Height by width by three, unsigned bytes.
+        labels: Objects at this instant. Boxes are in this camera's pixels.
+        instance_ids: Height by width, the spawn serial of the object owning
+            each pixel, or zero for background. None on a record that stored
+            boxes only.
+    """
+
+    camera_id: str
+    frame: NDArray[np.uint8]
+    labels: tuple[ObjectLabel, ...]
+    instance_ids: NDArray[np.uint16] | None = None
 
 
 @dataclass(frozen=True)
@@ -118,6 +159,9 @@ class Example:
             photograph carries no proprioception. A policy that cannot see where
             its own arm is cannot account for it, which is why v0.7.0's policies
             were vision only.
+        captures: One entry per detection camera. Empty on a format-1 record,
+            which stores only `frame`. When present, `frame` and `labels` repeat
+            the first camera so a reader that knows one image still works.
     """
 
     frame: NDArray[np.uint8]
@@ -127,6 +171,7 @@ class Example:
     config_digest: str
     origin: Origin = Origin.SIMULATED
     arm_joints: tuple[float, ...] = ()
+    captures: tuple[CameraCapture, ...] = ()
 
     @property
     def material_classes(self) -> tuple[str, ...]:
@@ -156,8 +201,15 @@ class Rollout:
         rollout_id: Identity, unique within a dataset.
         seed: Seed this rollout ran under.
         examples: Captured examples, in capture order.
+        belt_speed: Meters per second the belt was driven at, when the recording
+            fixed it. None when the world drew a speed and the record did not
+            keep it.
+        spacing_meters: Metres of belt between releases, when the recording
+            fixed the gap. None when each gap was drawn from a range.
     """
 
     rollout_id: str
     seed: int
     examples: tuple[Example, ...]
+    belt_speed: float | None = None
+    spacing_meters: float | None = None

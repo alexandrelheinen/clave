@@ -253,6 +253,125 @@ def _record_dataset(root: Path, out: Path, seed: int) -> int:
     return 0
 
 
+def _corpus(root: Path, config_path: Path) -> int:
+    """Record both corpus halves and publish them.
+
+    Args:
+        root: Repository root.
+        config_path: Corpus configuration, relative to `root` unless absolute.
+
+    Returns:
+        A process exit code.
+    """
+    from clave.data.campaign import CampaignConfig, record_campaign
+    from clave.storage import D1Client, R2Client, load_d1_config, load_r2_config
+    from clave.storage.sync import push_dataset
+
+    path = config_path if config_path.is_absolute() else root / config_path
+    result = record_campaign(root, CampaignConfig.load(path))
+    r2 = R2Client(load_r2_config())
+    d1 = D1Client(load_d1_config())
+    d1.init_schema()
+    for role, directory, description in (
+        ("train", result.train_dir, result.train),
+        ("validation", result.validation_dir, result.validation),
+    ):
+        uploaded, skipped = push_dataset(directory, r2, d1)
+        images = description.example_count * max(
+            len(description.files[0].camera_ids) if description.files else 1, 1
+        )
+        _log_output(f"  {role:16s}  {description.digest}")
+        _log_output(
+            f"  {role:16s}  {description.example_count} frames, {images} images, "
+            f"{uploaded} uploaded, {skipped} already stored"
+        )
+    d1.record_campaign(
+        result.campaign_id,
+        result.train.digest,
+        result.validation.digest,
+        result.train.config_digest,
+    )
+    _log_output(f"  campaign        {result.campaign_id}")
+    if result.preview is None:
+        _log_output("  preview         no video; ffmpeg is not installed")
+    else:
+        _log_output(f"  preview         {result.preview}")
+    return 0
+
+
+def _validate_corpus(root: Path, args: Any) -> int:
+    """Score a checkpoint on the validation corpus.
+
+    Args:
+        root: Repository root.
+        args: Parsed command line.
+
+    Returns:
+        A process exit code.
+    """
+    from clave.data.locate import resolve_dataset
+    from clave.validation.perception import ScoreThresholds, score_candidate
+
+    dataset = resolve_dataset(root, Path(args.dataset), role="validation")
+    thresholds = (
+        args.thresholds if args.thresholds.is_absolute() else root / args.thresholds
+    )
+    checkpoint = (
+        args.checkpoint if args.checkpoint.is_absolute() else root / args.checkpoint
+    )
+    score = score_candidate(
+        dataset, args.candidate, checkpoint, ScoreThresholds.load(thresholds)
+    )
+    _log_output(f"  candidate       {score.candidate}")
+    _log_output(f"  dataset         {score.dataset_digest}")
+    _log_output(f"  frames          {score.frames}")
+    _log_output(f"  agreement       {score.overall_agreement:.4f}")
+    if score.mean_iou is None:
+        _log_output("  mean iou        not a detector")
+    else:
+        _log_output(f"  mean iou        {score.mean_iou:.4f}")
+    if args.sync:
+        _publish_score(root, score)
+    return 0
+
+
+def _publish_score(root: Path, score: Any) -> None:
+    """Upload a perception score and index it."""
+    import hashlib
+    import json
+
+    from clave.storage import D1Client, R2Client, load_d1_config, load_r2_config
+
+    payload = json.dumps(
+        {
+            "candidate": score.candidate,
+            "dataset_digest": score.dataset_digest,
+            "frames": score.frames,
+            "overall_agreement": score.overall_agreement,
+            "mean_iou": score.mean_iou,
+        },
+        sort_keys=True,
+    )
+    evaluation_id = hashlib.sha256(payload.encode()).hexdigest()
+    local = root / "runs" / "validation" / f"{evaluation_id}.json"
+    local.parent.mkdir(parents=True, exist_ok=True)
+    local.write_text(payload + "\n")
+    key = f"benchmarks/corpus/{evaluation_id}.json"
+    r2 = R2Client(load_r2_config())
+    r2.upload_file(local, key, content_type="application/json")
+    d1 = D1Client(load_d1_config())
+    d1.init_schema()
+    d1.record_corpus_evaluation(
+        evaluation_id,
+        score.candidate,
+        score.dataset_digest,
+        score.overall_agreement,
+        score.mean_iou,
+        key,
+    )
+    _log_output(f"  evaluation      {evaluation_id}")
+
+
 def _train(
     root: Path,
     config_path: Path,
@@ -270,10 +389,17 @@ def _train(
     Returns:
         A process exit code. Non-zero when the candidate could not be loaded.
     """
+    from dataclasses import replace
+
+    from clave.data.locate import resolve_dataset
     from clave.training.config import TrainingConfig
     from clave.training.runner import train
 
     config = TrainingConfig.load(root / config_path, candidate)
+    if isinstance(config.dataset, Path):
+        config = replace(
+            config, dataset=resolve_dataset(root, config.dataset, role="train")
+        )
     run = train(config, config.window_exit_meters)
     if run.unavailable_reason is not None:
         _log_output(f"  UNAVAILABLE  {config.candidate}: {run.unavailable_reason}")
@@ -681,11 +807,31 @@ def _build_parser() -> argparse.ArgumentParser:
         "--out", type=Path, default=Path("checkpoints"), help="output directory"
     )
 
+    corpus = sub.add_parser(
+        "corpus",
+        help="record a train and validation corpus and publish both",
+    )
+    corpus.add_argument("--config", type=Path, default=Path("configs/data/corpus.yml"))
     tr = sub.add_parser("train", help="train a candidate from a configuration")
     tr.add_argument("--config", type=Path, default=Path("configs/training/default.yml"))
     tr.add_argument("--candidate", type=str, default=None)
     tr.add_argument(
         "--sync", action="store_true", help="upload checkpoint and record run in D1"
+    )
+    scored = sub.add_parser(
+        "validate",
+        help="score a perception checkpoint against a validation corpus",
+    )
+    scored.add_argument("--dataset", type=str, required=True)
+    scored.add_argument("--candidate", type=str, required=True)
+    scored.add_argument("--checkpoint", type=Path, required=True)
+    scored.add_argument(
+        "--thresholds", type=Path, default=Path("configs/validation/corpus.yml")
+    )
+    scored.add_argument(
+        "--sync",
+        action="store_true",
+        help="upload the score to R2 and register it in D1",
     )
     validate = sub.add_parser(
         "validate-run", help="score recorded outcomes against the validation gates"
@@ -870,8 +1016,12 @@ def main(argv: list[str] | None = None) -> int:
                 args.latest,
                 args.out,
             )
+        if args.command == "corpus":
+            return _corpus(args.root, args.config)
         if args.command == "train":
             return _train(args.root, args.config, args.candidate, sync=args.sync)
+        if args.command == "validate":
+            return _validate_corpus(args.root, args)
         if args.command == "sim":
             return _debug_tracker(args.root, args)
         if args.command == "still":

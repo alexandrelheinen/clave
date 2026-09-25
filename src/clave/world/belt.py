@@ -203,6 +203,8 @@ class SpawnedObject:
             and then sat idle for the rest of the rollout, because every
             object after the first pass carried an identity already in the
             served set.
+        object_name: Catalog name of the mesh or primitive that was spawned.
+            Empty on a record written before the corpus carried it.
         name: Body name in the model.
         material_class: Taxonomy identifier, recorded at spawn so a consumer
             never has to infer it.
@@ -216,6 +218,7 @@ class SpawnedObject:
     channel: str
     serial: int = 0
     entered_window: bool = False
+    object_name: str = ""
 
 
 @dataclass
@@ -298,6 +301,7 @@ class Conveyor:
             material_class=template.material_class,
             channel=template.channel,
             serial=self._spawned,
+            object_name=template.name,
         )
         self.active.append(spawned)
         return spawned

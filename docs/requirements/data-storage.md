@@ -152,3 +152,8 @@ render a formatted table of historical training runs and benchmark scores.
 `AC-DATA-08`: When network connectivity is lost during training or simulation,
 the system shall log a warning, retain all records and checkpoints locally, and
 exit with zero if the local operation succeeded.
+
+A perception corpus adds `campaigns`, `dataset_files` and `corpus_evaluations`,
+and two columns on `datasets`. That index is specified in
+[corpus.md](corpus.md), which is the command that fills it. This document's
+push and pull still address bytes by digest.

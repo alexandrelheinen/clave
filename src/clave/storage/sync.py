@@ -100,7 +100,22 @@ def push_dataset(
             train_examples=train_count,
             validation_examples=val_count,
             test_examples=test_count,
+            role=description.role,
+            campaign_id=description.campaign_id,
         )
+        for archived in description.files:
+            d1.record_dataset_file(
+                digest=digest,
+                name=archived.name,
+                sha256=archived.sha256,
+                byte_count=archived.byte_count,
+                frame_count=archived.frame_count,
+                seed=archived.seed,
+                belt_speed_meters_per_second=archived.belt_speed_meters_per_second,
+                spacing_meters=archived.spacing_meters,
+                camera_ids=",".join(archived.camera_ids),
+                r2_key=f"datasets/{digest}/{archived.name}",
+            )
 
     return uploaded, skipped
 

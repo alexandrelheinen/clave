@@ -152,3 +152,22 @@ def test_validate_run_reports_a_malformed_records_file(
     outcomes.write_text('{"provenance": "fixture", "outcomes": [{"object_id": "a"}]}')
     assert main(["--root", str(ROOT), "validate-run", "--outcomes", str(outcomes)]) == 1
     assert "true_class" in caplog.text
+
+
+def test_corpus_and_validate_are_subcommands() -> None:
+    """The corpus and its scorer are their own commands."""
+    parser = _build_parser()
+    corpus = parser.parse_args(["corpus", "--config", "configs/data/corpus.yml"])
+    assert corpus.command == "corpus"
+    scored = parser.parse_args(
+        [
+            "validate",
+            "--dataset",
+            "a" * 64,
+            "--candidate",
+            "resnet50-baseline",
+            "--checkpoint",
+            "model.pt",
+        ]
+    )
+    assert scored.command == "validate"
