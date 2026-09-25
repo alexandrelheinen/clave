@@ -110,7 +110,7 @@ ten hours.
 
 `N = 3` is the setting that makes a proof-of-concept epoch short enough to
 wait for. `N = 5` keeps a closer look at each crossing and leaves the epoch
-at about 24 minutes. The value lives in the training configuration. It is the
+at about 24 minutes. The value is `training.samples_per_crossing`. It is the
 only free parameter of the sampler.
 
 A point on the belt is the right object for this count. A bottle has length,

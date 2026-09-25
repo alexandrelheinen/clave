@@ -429,8 +429,9 @@ def _train(
             config, dataset=resolve_dataset(root, config.dataset, role="train")
         )
     budget = MemoryBudget.load(root / "configs" / "training" / "memory.yml")
+    world = root / "configs" / "world" / "sorting_line.yml"
     try:
-        run = train(config, config.window_exit_meters, budget=budget)
+        run = train(config, config.window_exit_meters, budget=budget, world=world)
     except MemoryBudgetError as err:
         _log_output(f"  STOPPED  {err}")
         return 1

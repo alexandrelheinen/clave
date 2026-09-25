@@ -1284,6 +1284,78 @@ def field_of_view(
     return 2.0 * math.degrees(math.atan(across / (2.0 * focal)))
 
 
+def along_travel_meters(
+    camera: dict[str, Any],
+    sensors: dict[str, Any],
+    lenses: dict[str, Any],
+    standoff_meters: float,
+) -> float:
+    """Return the belt length a nadir camera sees along travel.
+
+    The vertical field of view is the across-belt axis when the long sensor
+    side lies across the belt. The length an object crosses is the other axis.
+
+    Args:
+        camera: One entry from the `cameras` list.
+        sensors: The `sensors` catalog.
+        lenses: The `lenses` catalog.
+        standoff_meters: Distance from the lens to the belt plane.
+
+    Returns:
+        The along-travel footprint in meters.
+
+    Raises:
+        WorldConfigError: If the standoff or the focal length cannot form an image.
+    """
+    if not math.isfinite(standoff_meters) or standoff_meters <= 0.0:
+        raise WorldConfigError(
+            f"camera {camera.get('id')!r} has standoff {standoff_meters!r}, "
+            f"which does not meet the belt"
+        )
+    _across, along = sensor_span_millimeters(camera, sensors, lenses)
+    name = str(require(camera, "lens", "cameras"))
+    if name not in lenses:
+        raise WorldConfigError(
+            f"camera {camera.get('id')!r} names lens {name!r}, "
+            f"which `lenses` does not declare"
+        )
+    focal = float(require(lenses[name], "focal_length_millimeters", f"lenses.{name}"))
+    if focal <= 0.0:
+        raise WorldConfigError(
+            f"lens {name!r} has focal length {focal!r}, which forms no image"
+        )
+    return standoff_meters * (along / focal)
+
+
+def detection_along_travel_meters(raw: dict[str, Any]) -> float:
+    """Return the along-travel footprint of the first detection camera.
+
+    Args:
+        raw: A parsed world configuration.
+
+    Returns:
+        The footprint in meters.
+
+    Raises:
+        WorldConfigError: If the line has no detection camera, or its geometry
+            is incomplete.
+    """
+    belt = require(raw, "belt")
+    surface = float(require(belt, "surface_height_meters", "belt"))
+    chosen: dict[str, Any] | None = None
+    for camera in require(raw, "cameras"):
+        if isinstance(camera, dict) and camera.get("role") == "detection":
+            chosen = camera
+            break
+    if chosen is None:
+        raise WorldConfigError("the world has no camera with role 'detection'")
+    position = require(chosen, "position_meters", "cameras")
+    standoff = float(position[2]) - surface
+    return along_travel_meters(
+        chosen, require(raw, "sensors"), require(raw, "lenses"), standoff
+    )
+
+
 def build(
     raw: dict[str, Any],
     rng: np.random.Generator,

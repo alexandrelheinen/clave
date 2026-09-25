@@ -32,7 +32,9 @@ class TrainingConfig:
         epochs: How many passes over the training split.
         batch_size: Examples per optimizer step.
         learning_rate: Optimizer step size.
-        seed: Seed for initialization and shuffling.
+        seed: Seed for initialization, the frame-sample phases, and shuffling.
+        samples_per_crossing: Looks kept while an object crosses the camera
+            footprint along the belt. A shorter crossing keeps every frame.
         window_exit_meters: Belt coordinate where the reachable window ends,
             used to replay the scripted expert.
         act_chunk_size: Actions an action chunking policy predicts per
@@ -46,6 +48,7 @@ class TrainingConfig:
     batch_size: int
     learning_rate: float
     seed: int
+    samples_per_crossing: int
     window_exit_meters: float
     act_chunk_size: int
 
@@ -59,6 +62,7 @@ class TrainingConfig:
                 "batch_size": self.batch_size,
                 "learning_rate": self.learning_rate,
                 "seed": self.seed,
+                "samples_per_crossing": self.samples_per_crossing,
                 "window_exit_meters": self.window_exit_meters,
                 "act_chunk_size": self.act_chunk_size,
             }
@@ -99,6 +103,27 @@ class TrainingConfig:
             batch_size=int(need("batch_size")),
             learning_rate=float(need("learning_rate")),
             seed=int(need("seed")),
+            samples_per_crossing=_samples_per_crossing(need("samples_per_crossing")),
             window_exit_meters=float(need("window_exit_meters")),
             act_chunk_size=int(need("act_chunk_size")),
         )
+
+
+def _samples_per_crossing(value: object) -> int:
+    """Read how many looks a crossing keeps.
+
+    Args:
+        value: The YAML value.
+
+    Returns:
+        The count.
+
+    Raises:
+        TrainingConfigError: If the value is not an integer of at least one.
+    """
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise TrainingConfigError(
+            f"training.samples_per_crossing is {value!r}; it must be an integer "
+            f"of at least one"
+        )
+    return value
