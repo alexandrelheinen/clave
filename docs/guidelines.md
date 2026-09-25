@@ -317,7 +317,9 @@ Trained policies and perception models are not committed to this repository. A
 model is named by candidate, configuration digest, and dataset digest, uploaded
 to object storage, and retrieved via deployment commands. Training workflows,
 domain randomization, and precision validation gates are documented in
-[detection-training.md](detection-training.md).
+[detection-training.md](detection-training.md). The sequence from the
+proof-of-concept step to a host that selects a checkpoint is
+[training-pipeline.md](training-pipeline.md).
 
 Datasets for policy training use public sources where possible (COCO for
 initial training, public waste datasets). Proprietary customer data for

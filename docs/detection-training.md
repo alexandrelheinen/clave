@@ -1,10 +1,10 @@
 # Training perception models to full precision
 
 The sorting pipeline operates end to end, the safety layer enforces physical
-envelopes, and perception accuracy governs sorting yield. This guide covers the
-training workflow for CLAVE's object detector and classifier architectures,
-addressing false detections and detailing data synthesis, domain
-randomization, and evaluation against validation gates.
+envelopes, and perception accuracy governs sorting yield. This guide covers
+sensor limits, the losses, and the commands. The sequence a host follows,
+from initialization through the batch to the checkpoint that is kept, is
+[training-pipeline.md](training-pipeline.md).
 
 ## Sensor limits and expected confusions
 
@@ -81,7 +81,7 @@ training:
   dataset: datasets/synthetic
   checkpoints: runs
   epochs: 5
-  batch_size: 4
+  batch_size: 1
   learning_rate: 0.0001
   seed: 0
   window_exit_meters: 1.034
@@ -115,7 +115,7 @@ training:
   dataset: datasets/synthetic
   checkpoints: runs
   epochs: 10
-  batch_size: 16
+  batch_size: 1
   learning_rate: 0.0001
   seed: 0
   window_exit_meters: 1.034

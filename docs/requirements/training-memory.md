@@ -64,4 +64,5 @@ are dropped after the batch that uses them.
 Raise `resident_limit_bytes` and `input_side_pixels`, and the batch sizes in
 the training files, when a machine can hold a full-resolution batch. Until
 then this budget is the proof of concept. The published corpus does not
-change.
+change. The rest of that host procedure, including initialization and which
+checkpoint is kept, is [training-pipeline.md](../training-pipeline.md).
