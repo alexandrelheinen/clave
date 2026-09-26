@@ -1,15 +1,19 @@
 """Which frames a crossing keeps, and which pick a checkpoint reloads."""
 
+import json
 import math
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from clave.data.dataset import DatasetDescription, DatasetFile
 from clave.training.config import TrainingConfig, TrainingConfigError
 from clave.training.sample import (
+    FrameSample,
     SampleError,
     build_frame_sample,
+    capture_interval_seconds,
     crossing_stride,
     kept_indexes,
     resolve_stored_sample,
@@ -173,6 +177,112 @@ def test_ac_sample_05_a_checkpoint_reloads_its_stored_pick() -> None:
         resolve_stored_sample(None, checkpoint=True, samples_per_crossing=3)
     with pytest.raises(SampleError, match="asks for 5"):
         resolve_stored_sample(stored, checkpoint=True, samples_per_crossing=5)
+
+
+def test_a_stored_pick_roundtrips_through_its_manifest(tmp_path: Path) -> None:
+    """The manifest is the pick a later run reloads."""
+    description = _description(
+        (_file("rollout_000.npz", 0.25, frames=4),),
+        ["rollout_000"],
+    )
+    sample = build_frame_sample(
+        description,
+        along_travel_meters=ALONG,
+        capture_interval_seconds=INTERVAL,
+        samples_per_crossing=3,
+        seed=1,
+    )
+    assert sample.frame_count == len(sample.picks["rollout_000"])
+    path = tmp_path / "resnet50-baseline.sample.json"
+    sample.write(path)
+    stored = json.loads(path.read_text())
+    assert stored["digest"] == sample.digest
+    assert FrameSample.from_payload(stored["sample"]) == sample
+
+
+def test_a_stored_pick_refuses_a_field_that_is_not_the_one_it_wrote() -> None:
+    """A checkpoint with a damaged pick does not train on a guess."""
+    description = _description(
+        (_file("rollout_000.npz", None, frames=2),),
+        ["rollout_000"],
+    )
+    payload = build_frame_sample(
+        description,
+        along_travel_meters=ALONG,
+        capture_interval_seconds=INTERVAL,
+        samples_per_crossing=1,
+        seed=0,
+    ).payload()
+    with pytest.raises(SampleError, match="no picks"):
+        FrameSample.from_payload({**payload, "picks": []})
+    with pytest.raises(SampleError, match="not a list"):
+        FrameSample.from_payload({**payload, "picks": {"rollout_000": (0, 1)}})
+    damaged = dict(payload)
+    del damaged["seed"]
+    with pytest.raises(SampleError, match="missing"):
+        FrameSample.from_payload(damaged)
+    with pytest.raises(SampleError, match="integer"):
+        FrameSample.from_payload({**payload, "seed": True})
+    with pytest.raises(SampleError, match="number"):
+        FrameSample.from_payload({**payload, "along_travel_meters": True})
+
+
+def test_a_crossing_refuses_fewer_than_one_look() -> None:
+    """N below one is not a sample."""
+    with pytest.raises(SampleError, match="at least one look"):
+        crossing_stride(10.0, 0)
+
+
+def test_a_part_the_description_does_not_have_is_refused() -> None:
+    """Validation is sampled only when the description has that part."""
+    description = _description((_file("rollout_000.npz", None),), ["rollout_000"])
+    with pytest.raises(SampleError, match="no validation part"):
+        build_frame_sample(
+            description,
+            along_travel_meters=ALONG,
+            capture_interval_seconds=INTERVAL,
+            samples_per_crossing=1,
+            seed=0,
+            part="validation",
+        )
+
+
+def test_a_rollout_without_a_file_record_needs_the_archive(tmp_path: Path) -> None:
+    """A legacy description counts frames from the archive itself."""
+    description = _description((), ["rollout_000"])
+    with pytest.raises(SampleError, match="no file record"):
+        build_frame_sample(
+            description,
+            along_travel_meters=ALONG,
+            capture_interval_seconds=INTERVAL,
+            samples_per_crossing=1,
+            seed=0,
+        )
+    frames = np.zeros((4, 2, 2, 3), dtype=np.uint8)
+    times = np.array([0.0, 0.2, 0.4, 0.6], dtype=np.float64)
+    np.savez(tmp_path / "rollout_000.npz", frames=frames, times=times)
+    sample = build_frame_sample(
+        description,
+        along_travel_meters=ALONG,
+        capture_interval_seconds=INTERVAL,
+        samples_per_crossing=3,
+        seed=0,
+        dataset=tmp_path,
+    )
+    assert sample.picks["rollout_000"] == (0, 1, 2, 3)
+    assert capture_interval_seconds(tmp_path, "rollout_000") == pytest.approx(0.2)
+
+
+def test_a_capture_interval_needs_two_increasing_timestamps(tmp_path: Path) -> None:
+    """One timestamp, or a clock that does not advance, is not an interval."""
+    single = tmp_path / "one.npz"
+    np.savez(single, times=np.array([0.0]))
+    with pytest.raises(SampleError, match="fewer than two"):
+        capture_interval_seconds(tmp_path, "one")
+    stuck = tmp_path / "stuck.npz"
+    np.savez(stuck, times=np.array([1.0, 1.0]))
+    with pytest.raises(SampleError, match="capture interval"):
+        capture_interval_seconds(tmp_path, "stuck")
 
 
 def test_ac_sample_06_the_shipped_gate_covers_0_920_m_along_travel() -> None:

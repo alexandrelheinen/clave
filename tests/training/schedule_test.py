@@ -48,6 +48,24 @@ def test_ac_accum_01_one_step_keeps_archive_order(tmp_path: Path) -> None:
     )
     assert all(len(window) == 1 for window in windows)
     assert [window[0][0] for window in windows] == ["a", "a", "b"]
+    with pytest.raises(ValueError, match="accumulation_steps"):
+        accumulation_schedule(
+            picks,
+            rollout_order=("a",),
+            batch_size=1,
+            accumulation_steps=0,
+            seed=0,
+            epoch=0,
+        )
+    with pytest.raises(ValueError, match="batch_size"):
+        accumulation_schedule(
+            picks,
+            rollout_order=("a",),
+            batch_size=0,
+            accumulation_steps=1,
+            seed=0,
+            epoch=0,
+        )
 
 
 def test_ac_accum_02_a_window_uses_distinct_rollouts() -> None:
