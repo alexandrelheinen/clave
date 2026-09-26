@@ -1,0 +1,23 @@
+# Pipeline check for the corpus ResNet run. Same path as
+# classification.yml: one archive open per frame, eight rollouts per step,
+# inverse class weights, and a thinned validation score after each epoch.
+# One look per crossing and two epochs. At the 0.56 frame/s measured on
+# this machine, the training frames are about 40 minutes and each
+# validation pick is about 5 minutes. Checkpoints stay out of the full run's
+# directory. This file is not a model to deploy.
+
+training:
+  candidate: resnet50-baseline
+  dataset: datasets/corpus/train
+  checkpoints: runs/debug/corpus-lite/checkpoints
+  epochs: 2
+  batch_size: 1
+  learning_rate: 0.0001
+  seed: 0
+  samples_per_crossing: 1
+  accumulation_steps: 8
+  class_balance: inverse
+  validation_dataset: datasets/corpus/validation
+  patience: 3
+  window_exit_meters: 1.034
+  act_chunk_size: 10

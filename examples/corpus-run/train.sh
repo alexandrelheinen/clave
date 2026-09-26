@@ -12,22 +12,28 @@ fail() { echo "ERROR: $1" >&2; exit 1; }
 
 usage() {
   cat <<EOF
-Usage: examples/corpus-run/train.sh [--clean] [--config PATH]
+Usage: examples/corpus-run/train.sh [--clean] [--lite] [--config PATH]
 
 Installs the virtualenv, the Python extras, the release safety layer, and
 the object meshes, then trains one configuration.
 
   --clean        Remove that candidate's checkpoint, run record, and picks
+  --lite         Train examples/corpus-run/classification-lite.yml
   --config PATH  Training file (default: examples/corpus-run/classification.yml)
 EOF
 }
 
 CONFIG="examples/corpus-run/classification.yml"
 CLEAN=0
+LITE=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --clean)
       CLEAN=1
+      shift
+      ;;
+    --lite)
+      LITE=1
       shift
       ;;
     --config)
@@ -44,6 +50,12 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+if [[ "${LITE}" -eq 1 ]]; then
+  [[ "${CONFIG}" == "examples/corpus-run/classification.yml" ]] \
+    || fail "--lite already chooses the classification lite file"
+  CONFIG="examples/corpus-run/classification-lite.yml"
+fi
 
 [[ -f "${CONFIG}" ]] || fail "training configuration not found: ${CONFIG}"
 

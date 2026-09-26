@@ -6,7 +6,9 @@ epoch. If the machine stops mid-epoch, that epoch's weights are not on disk.
 `examples/corpus-run/train.sh` installs the environment and then trains one
 configuration. `--clean` deletes that candidate's checkpoint, run record, and
 stored picks before training starts. Without `--clean`, a finished epoch is
-resumed.
+resumed. `--lite` trains two epochs with one look per crossing and writes
+under `runs/debug/corpus-lite/checkpoints`, so a pipeline check does not
+touch the full run.
 
 Work from the repository root. The script changes to the root itself:
 
@@ -89,6 +91,15 @@ If the machine stops mid-epoch, that epoch's `.pt` does not exist. Run
 `examples/corpus-run/train.sh` again, without `--clean`. If the epoch had
 already finished, that continues at the next epoch. `--clean` starts at
 epoch 1.
+
+A first pass that has to finish in about an hour uses the lite file. It
+keeps the same step, the same class weights, and the same validation score,
+with one look per crossing and two epochs. Patience does not end it early.
+Stop the full run first. The machine fits one training process.
+
+```bash
+examples/corpus-run/train.sh --lite --clean
+```
 
 ## 3. Train Faster R-CNN
 
