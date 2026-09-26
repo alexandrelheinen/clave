@@ -44,6 +44,8 @@ def test_ac_mem_04_a_checkpoint_records_the_input_side(tmp_path: Path) -> None:
 
     from clave.training.config import TrainingConfig
     from clave.training.runner import _checkpoint
+    from clave.training.sample import FrameSample
+    from clave.training.selection import fresh_selection
 
     config = replace(
         TrainingConfig.load(ROOT / "configs" / "training" / "default.yml"),
@@ -51,6 +53,24 @@ def test_ac_mem_04_a_checkpoint_records_the_input_side(tmp_path: Path) -> None:
     )
     model = torch.nn.Linear(1, 1)
     optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
-    _checkpoint(config, model, optimizer, epoch=0, input_side_pixels=224)
+    sample = FrameSample(
+        samples_per_crossing=1,
+        dataset_digest="a" * 64,
+        along_travel_meters=0.92,
+        capture_interval_seconds=0.2,
+        seed=0,
+        picks={},
+    )
+    _checkpoint(
+        config,
+        model,
+        optimizer,
+        epoch=0,
+        input_side_pixels=224,
+        sample=sample,
+        weights=None,
+        selection=fresh_selection(),
+        validation_sample=None,
+    )
     state = torch.load(tmp_path / "resnet50-baseline.pt", weights_only=False)
     assert state["input_side_pixels"] == 224
