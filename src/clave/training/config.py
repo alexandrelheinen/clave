@@ -35,6 +35,12 @@ class TrainingConfig:
         seed: Seed for initialization, the frame-sample phases, and shuffling.
         samples_per_crossing: Looks kept while an object crosses the camera
             footprint along the belt. A shorter crossing keeps every frame.
+        accumulation_steps: Microbatches summed before one optimizer step.
+            One steps on every microbatch.
+        class_balance: `none`, or `inverse` for the classifier's positive weights.
+        validation_dataset: Held-out corpus. None skips selection.
+        patience: Epochs without a better held-out score before the run stops.
+            None when there is no validation dataset.
         window_exit_meters: Belt coordinate where the reachable window ends,
             used to replay the scripted expert.
         act_chunk_size: Actions an action chunking policy predicts per
@@ -49,6 +55,10 @@ class TrainingConfig:
     learning_rate: float
     seed: int
     samples_per_crossing: int
+    accumulation_steps: int
+    class_balance: str
+    validation_dataset: Path | None
+    patience: int | None
     window_exit_meters: float
     act_chunk_size: int
 
@@ -63,6 +73,14 @@ class TrainingConfig:
                 "learning_rate": self.learning_rate,
                 "seed": self.seed,
                 "samples_per_crossing": self.samples_per_crossing,
+                "accumulation_steps": self.accumulation_steps,
+                "class_balance": self.class_balance,
+                "validation_dataset": (
+                    None
+                    if self.validation_dataset is None
+                    else str(self.validation_dataset)
+                ),
+                "patience": self.patience,
                 "window_exit_meters": self.window_exit_meters,
                 "act_chunk_size": self.act_chunk_size,
             }
@@ -95,8 +113,9 @@ class TrainingConfig:
                 )
             return section[key]
 
+        chosen = candidate or str(need("candidate"))
         return cls(
-            candidate=candidate or need("candidate"),
+            candidate=chosen,
             dataset=Path(need("dataset")),
             checkpoints=Path(need("checkpoints")),
             epochs=int(need("epochs")),
@@ -104,6 +123,10 @@ class TrainingConfig:
             learning_rate=float(need("learning_rate")),
             seed=int(need("seed")),
             samples_per_crossing=_samples_per_crossing(need("samples_per_crossing")),
+            accumulation_steps=_accumulation_steps(need("accumulation_steps")),
+            class_balance=_class_balance(need("class_balance"), chosen),
+            validation_dataset=_validation_dataset(section),
+            patience=_patience(section),
             window_exit_meters=float(need("window_exit_meters")),
             act_chunk_size=int(need("act_chunk_size")),
         )
@@ -125,5 +148,56 @@ def _samples_per_crossing(value: object) -> int:
         raise TrainingConfigError(
             f"training.samples_per_crossing is {value!r}; it must be an integer "
             f"of at least one"
+        )
+    return value
+
+
+def _accumulation_steps(value: object) -> int:
+    """Read how many microbatches one optimizer step sums."""
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise TrainingConfigError(
+            f"training.accumulation_steps is {value!r}; it must be an integer "
+            "of at least one"
+        )
+    return value
+
+
+def _class_balance(value: object, candidate: str) -> str:
+    """Read `none` or `inverse`, and keep inverse on the classifier."""
+    if value not in ("none", "inverse"):
+        raise TrainingConfigError(
+            f"training.class_balance is {value!r}; it must be 'none' or 'inverse'"
+        )
+    if value == "inverse" and candidate != "resnet50-baseline":
+        raise TrainingConfigError(
+            "training.class_balance inverse applies to resnet50-baseline; "
+            f"{candidate} keeps its own loss"
+        )
+    return str(value)
+
+
+def _validation_dataset(section: dict[str, Any]) -> Path | None:
+    """Read the held-out corpus, if the file names one."""
+    if "validation_dataset" not in section:
+        if "patience" in section:
+            raise TrainingConfigError(
+                "training.patience requires training.validation_dataset"
+            )
+        return None
+    return Path(section["validation_dataset"])
+
+
+def _patience(section: dict[str, Any]) -> int | None:
+    """Read how many epochs without improvement end the run."""
+    if "validation_dataset" not in section:
+        return None
+    if "patience" not in section:
+        raise TrainingConfigError(
+            "required configuration key 'training.patience' is missing"
+        )
+    value = section["patience"]
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise TrainingConfigError(
+            f"training.patience is {value!r}; it must be an integer of at least one"
         )
     return value

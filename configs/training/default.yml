@@ -14,6 +14,8 @@ training:
   # Looks kept while an object crosses the camera footprint along the belt.
   # docs/frame-sampling.md. A shorter crossing keeps every frame.
   samples_per_crossing: 3
+  accumulation_steps: 1
+  class_balance: none
   # Where the arm's reachable window ends, in belt frame meters. The scripted
   # expert is replayed against this to produce demonstrations, so a stale value
   # here teaches picks that cannot be made.

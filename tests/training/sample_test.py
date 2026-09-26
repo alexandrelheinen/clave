@@ -148,8 +148,9 @@ def test_ac_sample_04_the_configuration_names_samples_per_crossing(
         TrainingConfig.load(missing)
     three = tmp_path / "three.yml"
     five = tmp_path / "five.yml"
-    three.write_text(bare + "  samples_per_crossing: 3\n")
-    five.write_text(bare + "  samples_per_crossing: 5\n")
+    tail = "  accumulation_steps: 1\n  class_balance: none\n"
+    three.write_text(bare + "  samples_per_crossing: 3\n" + tail)
+    five.write_text(bare + "  samples_per_crossing: 5\n" + tail)
     assert TrainingConfig.load(five).samples_per_crossing == 5
     assert TrainingConfig.load(three).digest != TrainingConfig.load(five).digest
 

@@ -457,6 +457,28 @@ def iter_split(root: Path, part: str, camera: str | None = None) -> Iterator[Rol
         yield _load_rollout(root, description, file_by_name, rollout_id, camera)
 
 
+def load_rollout(
+    root: Path,
+    description: DatasetDescription,
+    rollout_id: str,
+    camera: str | None = None,
+) -> Rollout:
+    """Load one archive and release the rest.
+
+    Args:
+        root: The dataset directory.
+        description: The description already read for this directory.
+        rollout_id: Archive name without the suffix.
+        camera: Detection camera to expose as `Example.frame`. None uses the
+            first camera stored.
+
+    Returns:
+        The rollout, with owned frames.
+    """
+    file_by_name = {item.name: item for item in description.files}
+    return _load_rollout(root, description, file_by_name, rollout_id, camera)
+
+
 def _load_rollout(
     root: Path,
     description: DatasetDescription,

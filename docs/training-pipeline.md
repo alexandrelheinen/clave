@@ -65,9 +65,11 @@ concept accepts four consequences of that cap.
 The batch size in the training files is 1. One frame is a legal gradient and
 a noisy one. Consecutive frames in a rollout are the same objects a fifth of
 a second apart (`capture_interval_seconds` is 0.2), so the next step sees
-almost the same scene. The loop walks archives in order and does not shuffle.
-A shuffle exists in [src/clave/data/splits.py](../src/clave/data/splits.py),
-and it runs when a split is built, not once per epoch.
+almost the same scene. The loop walks archives in archive order and reads
+each file once. The kept frames of the loaded rollout are shuffled on every
+epoch. A shuffle in [src/clave/data/splits.py](../src/clave/data/splits.py)
+runs when a split is built, which is a different permutation from the one
+inside an epoch.
 
 The builders in [src/clave/candidates/perception.py](../src/clave/candidates/perception.py)
 pass `weights=None`. ResNet-50 and the MobileNetV3 backbone therefore start
@@ -78,9 +80,12 @@ either way, so loading published weights does not raise the resident set.
 Every step collects garbage and asks glibc to return free pages, so the
 process stays under the ceiling. That keeps the machine up. It also spends
 the time a training host would spend on the next batch. A checkpoint is
-written at the end of an epoch and resumed at the next epoch. Nothing in the
-loop scores the validation half, so the weights that are kept are the last
-epoch, whatever the held-out frames would have said.
+written at the end of an epoch and resumed at the next epoch. When
+`validation_dataset` is set, that same moment scores the thinned validation
+pick, and `{candidate}.best.pt` keeps the epoch with the highest held-out
+score. `{candidate}.pt` stays the last epoch, so a resume still has an
+optimizer state. The published score is still `clave validate` on every
+validation frame.
 
 The input side of 224 is the side this budget uses, and it is the side
 ResNet-50 was built for. The 96 pixel fixture in
@@ -116,7 +121,9 @@ M-06 without M-05, and M-09 without M-08, so those gates have no pair to
 score.
 
 M-02 is about half of the labels that do exist. An unweighted average over
-frames will look healthy while the rare class is ignored. A later campaign
+frames will look healthy while the rare class is ignored.
+[requirements/class-balance.md](requirements/class-balance.md) gives a rare
+class a larger positive weight on the classifier. A later campaign
 that places the missing classes is a new digest. The training code does not
 invent those labels, and this page does not ask for the current corpus to be
 recorded again in order to shrink it.
@@ -152,9 +159,10 @@ published initialization was worth on the same validation digest.
 
 ### 3. Build a batch of different scenes
 
-An epoch draws a permutation of frames across rollouts, seeded, and the
-training file sets the period. The frames that enter the permutation are a
-stored sample of the corpus, a few looks per camera footprint, as
+[requirements/gradient-accumulation.md](requirements/gradient-accumulation.md)
+is this step. An epoch draws a permutation of frames across rollouts, seeded,
+and the training file sets the period. The frames that enter the permutation
+are a stored sample of the corpus, a few looks per camera footprint, as
 [frame-sampling.md](frame-sampling.md) sets out. The published archives stay
 intact. Consecutive frames of one object stop being consecutive steps.
 
@@ -177,8 +185,11 @@ and the batch size move together.
 
 ### 4. Keep the checkpoint the validation half prefers
 
-At the end of each epoch the run scores the validation digest with the same
-function `clave validate` uses, and writes that score into the run record.
+[requirements/checkpoint-selection.md](requirements/checkpoint-selection.md)
+is this step. At the end of each epoch the run scores the validation digest
+with the same function `clave validate` uses, and writes that score into the
+run record. The frames in that pass are the thinned validation pick. The
+published score still reads every validation frame, once, after training.
 The file that is kept for deployment is the epoch with the best of those
 scores, and the last epoch is kept beside it so a resume still has an
 optimizer state. Patience is a key in the training file: after that many

@@ -15,7 +15,7 @@ from pathlib import Path
 
 import numpy as np
 
-from clave.data.dataset import DatasetDescription, DatasetFile
+from clave.data.dataset import DatasetDescription
 from clave.errors import ClaveError
 
 
@@ -188,6 +188,8 @@ def build_frame_sample(
     capture_interval_seconds: float,
     samples_per_crossing: int,
     seed: int,
+    part: str = "train",
+    dataset: Path | None = None,
 ) -> FrameSample:
     """Draw one phase per rollout and keep the resulting indexes.
 
@@ -197,23 +199,34 @@ def build_frame_sample(
         capture_interval_seconds: Seconds between captures.
         samples_per_crossing: Looks per crossing.
         seed: Seed for the phases. The same seed redraws the same phases.
+        part: Split part to walk, `train` or `validation`.
+        dataset: Directory of the archives. Used when a legacy description
+            names a rollout and does not list a file record.
 
     Returns:
         The pick, in archive order.
 
     Raises:
-        SampleError: If the description has no training part.
+        SampleError: If the description has no such part.
     """
-    members = description.parts.get("train")
+    members = description.parts.get(part)
     if members is None:
-        raise SampleError("dataset has no train part to sample")
+        raise SampleError(f"dataset has no {part} part to sample")
     by_name = {item.name: item for item in description.files}
     rng = np.random.Generator(np.random.PCG64(seed))
     picks: dict[str, tuple[int, ...]] = {}
     for rollout_id in members:
         recorded = by_name.get(f"{rollout_id}.npz")
-        speed = None if recorded is None else recorded.belt_speed_meters_per_second
-        frames = description_frames(recorded, rollout_id)
+        if recorded is None:
+            if dataset is None:
+                raise SampleError(
+                    f"{part} part names {rollout_id!r}, which has no file record"
+                )
+            speed = None
+            frames = _archive_frame_count(dataset, rollout_id)
+        else:
+            speed = recorded.belt_speed_meters_per_second
+            frames = recorded.frame_count
         stride = 1
         if speed is not None and speed > 0.0 and capture_interval_seconds > 0.0:
             crossing = along_travel_meters / (speed * capture_interval_seconds)
@@ -237,22 +250,13 @@ def build_frame_sample(
     )
 
 
-def description_frames(recorded: DatasetFile | None, rollout_id: str) -> int:
-    """Frame count of one archive record.
-
-    Args:
-        recorded: The file record, or None when the part names an unknown file.
-        rollout_id: Rollout the part named.
-
-    Returns:
-        The frame count.
-
-    Raises:
-        SampleError: If the part names a file the description does not list.
-    """
-    if recorded is None:
-        raise SampleError(f"train part names {rollout_id!r}, which has no file record")
-    return recorded.frame_count
+def _archive_frame_count(dataset: Path, rollout_id: str) -> int:
+    """Frame count of an archive whose description has no file record."""
+    archive = np.load(dataset / f"{rollout_id}.npz", allow_pickle=False)
+    try:
+        return int(archive["frames"].shape[0])
+    finally:
+        archive.close()
 
 
 def capture_interval_seconds(dataset: Path, rollout_id: str) -> float:

@@ -475,3 +475,51 @@ def _score_detector(
     mean_iou, agreement = mean_best_iou(kept, gold, thresholds.match_iou)
     count = sum(len(boxes) for boxes in gold)
     return mean_iou, agreement, count
+
+
+def score_kept_examples(
+    model: Any,
+    candidate: str,
+    examples: tuple[Example, ...],
+    thresholds: ScoreThresholds,
+    input_side: int | None,
+    bar: Progress,
+) -> tuple[int, int, float, int]:
+    """Score one group of kept frames with the live model.
+
+    Args:
+        model: The weights currently being trained.
+        candidate: Registry name.
+        examples: Frames from one rollout, already limited to the pick.
+        thresholds: Decision and overlap cuts.
+        input_side: Side the checkpoint resizes to.
+        bar: The selection bar for this epoch.
+
+    Returns:
+        Matching class bits, compared class bits, the sum of best overlaps,
+        and the number of ground-truth boxes. A classifier fills the bit
+        counts. A detector fills the overlap sum.
+    """
+    from clave.training.adapters import classification_batches, detection_batches
+
+    if candidate == "resnet50-baseline":
+        equal, total = _score_classifier(
+            model,
+            examples,
+            thresholds,
+            classification_batches,
+            bar,
+            _RunningBits(),
+            input_side,
+        )
+        return equal, total, 0.0, 0
+    mean_iou, _agreement, count = _score_detector(
+        model,
+        examples,
+        thresholds,
+        detection_batches,
+        bar,
+        _RunningBoxes(),
+        input_side,
+    )
+    return 0, 0, mean_iou * count, count

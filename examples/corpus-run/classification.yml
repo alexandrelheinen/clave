@@ -12,5 +12,9 @@ training:
   # Looks kept while an object crosses the camera footprint along the belt.
   # docs/frame-sampling.md. Three looks is about 13 minutes an epoch here.
   samples_per_crossing: 3
+  accumulation_steps: 8
+  class_balance: inverse
+  validation_dataset: datasets/corpus/validation
+  patience: 3
   window_exit_meters: 1.034
   act_chunk_size: 10
