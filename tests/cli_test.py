@@ -2,10 +2,12 @@
 
 import logging
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
-from clave.cli import _build_parser, main
+from clave.cli import _build_parser, _train, main
+from clave.training.runner import EpochRecord, TrainingRun
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -152,6 +154,60 @@ def test_validate_run_reports_a_malformed_records_file(
     outcomes.write_text('{"provenance": "fixture", "outcomes": [{"object_id": "a"}]}')
     assert main(["--root", str(ROOT), "validate-run", "--outcomes", str(outcomes)]) == 1
     assert "true_class" in caplog.text
+
+
+def test_a_held_out_score_is_logged_beside_the_epoch_loss(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """An epoch that was scored names that score, and one that was not does not."""
+    text = (
+        "training:\n"
+        "  candidate: resnet50-baseline\n"
+        "  dataset: datasets/corpus/train\n"
+        "  checkpoints: runs\n"
+        "  epochs: 1\n"
+        "  batch_size: 1\n"
+        "  learning_rate: 0.0001\n"
+        "  seed: 0\n"
+        "  samples_per_crossing: 3\n"
+        "  window_exit_meters: 1.034\n"
+        "  act_chunk_size: 10\n"
+        "  accumulation_steps: 1\n"
+        "  class_balance: none\n"
+        "  validation_dataset: datasets/corpus/validation\n"
+        "  patience: 3\n"
+    )
+    config = tmp_path / "train.yml"
+    config.write_text(text)
+    run = TrainingRun(
+        candidate="resnet50-baseline",
+        seed=0,
+        config_digest="a" * 64,
+        dataset_digest="b" * 64,
+        machine="test",
+        threads=1,
+        environment={},
+        input_side_pixels=224,
+        resident_limit_bytes=1,
+        epochs=[
+            EpochRecord(0, 0.2, 1.0, None),
+            EpochRecord(1, 0.1, 1.5, 0.25),
+        ],
+        completed=True,
+    )
+
+    def _resolved(*_args: object, **_kwargs: object) -> Path:
+        return tmp_path
+
+    with (
+        patch("clave.data.locate.resolve_dataset", side_effect=_resolved),
+        patch("clave.training.runner.train", return_value=run),
+    ):
+        assert _train(ROOT, config, None) == 0
+    assert "epoch  0" in caplog.text
+    assert "held-out   0.2500" in caplog.text
+    first = next(line for line in caplog.text.splitlines() if "epoch  0" in line)
+    assert "held-out" not in first
 
 
 def test_corpus_and_validate_are_subcommands() -> None:

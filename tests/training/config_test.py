@@ -40,6 +40,39 @@ def test_a_file_without_a_training_section_is_refused(tmp_path: Path) -> None:
         TrainingConfig.load(path)
 
 
+def test_a_count_below_one_is_refused(tmp_path: Path) -> None:
+    """Looks, balance, and patience are integers the loop can use."""
+    body = (
+        "training:\n"
+        "  candidate: resnet50-baseline\n"
+        "  dataset: datasets/synthetic\n"
+        "  checkpoints: runs\n"
+        "  epochs: 1\n"
+        "  batch_size: 1\n"
+        "  learning_rate: 0.0001\n"
+        "  seed: 0\n"
+        "  samples_per_crossing: 3\n"
+        "  window_exit_meters: 1.034\n"
+        "  act_chunk_size: 10\n"
+        "  accumulation_steps: 1\n"
+        "  class_balance: none\n"
+    )
+    looks = tmp_path / "looks.yml"
+    looks.write_text(body.replace("samples_per_crossing: 3", "samples_per_crossing: 0"))
+    with pytest.raises(TrainingConfigError, match="samples_per_crossing"):
+        TrainingConfig.load(looks)
+    balance = tmp_path / "balance.yml"
+    balance.write_text(body.replace("class_balance: none", "class_balance: weighted"))
+    with pytest.raises(TrainingConfigError, match="class_balance"):
+        TrainingConfig.load(balance)
+    patience = tmp_path / "patience.yml"
+    patience.write_text(
+        body + "  validation_dataset: datasets/corpus/validation\n  patience: 0\n"
+    )
+    with pytest.raises(TrainingConfigError, match="patience"):
+        TrainingConfig.load(patience)
+
+
 def test_the_digest_covers_the_settings_that_change_a_run() -> None:
     """Two runs are comparable by value."""
     first = TrainingConfig.load(SHIPPED)
