@@ -77,6 +77,13 @@ def test_sim_no_progress_is_off_unless_asked() -> None:
     assert parser.parse_args(["sim", "--no-frames"]).frames is False
 
 
+def test_camera_video_is_off_unless_asked() -> None:
+    """AC-CAM-01: the detection-camera video is off unless the flag is set."""
+    parser = _build_parser()
+    assert parser.parse_args(["sim"]).camera_video is False
+    assert parser.parse_args(["sim", "--camera-video"]).camera_video is True
+
+
 def test_no_command_is_an_error() -> None:
     """argparse requires a subcommand."""
     with pytest.raises(SystemExit):

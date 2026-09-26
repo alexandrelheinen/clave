@@ -174,6 +174,18 @@ def test_the_report_survives_the_terminal_it_printed_on_ac_move_55() -> None:
     assert document["served"] == [1, 2, 3]
     assert document["metadata_path"] == "runs/debug/example/metadata.json"
     assert document["worst_aim_drift"] == 0.338
+    # AC-CAM-02: no camera file means the report does not name one.
+    assert "camera video" not in text
+    from dataclasses import replace
+
+    named = replace(
+        report, camera_video_path=Path("runs/debug/example/camera-debug.mp4")
+    )
+    named_text = "\n".join(report_lines(named))
+    assert "camera video    runs/debug/example/camera-debug.mp4" in named_text
+    assert _report_document(named)["camera_video_path"] == (
+        "runs/debug/example/camera-debug.mp4"
+    )
 
 
 def test_a_telemetry_row_carries_the_command_and_the_jaw(
@@ -340,7 +352,37 @@ def test_headless_without_frames_skips_rgb_render(tmp_path: Path) -> None:
     )
     assert report.frames_written == 0
     assert list(tmp_path.glob("frame_*.png")) == []
+    assert report.camera_video_path is None
+    assert list(tmp_path.glob("camera-debug.mp4")) == []
     assert report.captures > 0
+
+
+def test_camera_video_writes_the_detection_camera(tmp_path: Path) -> None:
+    """AC-CAM-01: the flag writes the detection camera when an encoder exists."""
+    import shutil
+
+    from clave.sim.debug_run import run
+
+    report = run(
+        root=ROOT,
+        out=tmp_path,
+        seconds=0.6,
+        seed=0,
+        window=False,
+        video=False,
+        frames=False,
+        camera_video=True,
+        ground_truth_tracker=True,
+        progress=False,
+    )
+    if shutil.which("ffmpeg") is None:
+        assert report.camera_video_path is None
+        return
+    assert report.camera_video_path == tmp_path / "camera-debug.mp4"
+    assert report.camera_video_path is not None
+    assert report.camera_video_path.is_file()
+    assert report.camera_video_path.stat().st_size > 0
+    assert "camera video" in (tmp_path / "report.txt").read_text()
 
 
 def test_no_window_defaults_frames_off_unless_forced(tmp_path: Path) -> None:

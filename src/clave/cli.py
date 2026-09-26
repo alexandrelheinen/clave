@@ -921,6 +921,14 @@ def _build_parser() -> argparse.ArgumentParser:
     sim.add_argument("--no-window", action="store_true")
     sim.add_argument("--video", action="store_true")
     sim.add_argument(
+        "--camera-video",
+        action="store_true",
+        help=(
+            "write the detection camera as a second video, with a box on each "
+            "visible object (off unless asked; the render is the expensive part)"
+        ),
+    )
+    sim.add_argument(
         "--frames",
         action="store_true",
         default=None,
@@ -1112,13 +1120,15 @@ def _debug_tracker(root: Path, args: Any) -> int:
 
     LOGGER.debug(
         "sim parameters: seconds=%.3f (use sim --seconds to override), seed=%d, "
-        "out=%s, video=%s, frames=%s, telemetry=%s, telemetry_rate=%.3f, "
+        "out=%s, video=%s, camera_video=%s, frames=%s, telemetry=%s, "
+        "telemetry_rate=%.3f, "
         "trajectory_seconds=%.3f, window=%s, view=%s, ground_truth_tracker=%s, "
         "progress=%s",
         args.seconds,
         args.seed,
         args.out,
         args.video,
+        args.camera_video,
         args.frames,
         args.telemetry,
         args.telemetry_rate,
@@ -1140,6 +1150,7 @@ def _debug_tracker(root: Path, args: Any) -> int:
         seed=args.seed,
         window=not args.no_window,
         video=args.video,
+        camera_video=args.camera_video,
         frames=args.frames,
         fps=args.fps,
         view_name=args.view,

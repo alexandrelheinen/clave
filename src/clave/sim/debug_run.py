@@ -18,6 +18,10 @@ straight above has no approach to read. That file carries two views and the
 run takes one by name: one camera cannot both read a 60 mm jaw and hold the
 park pose in frame.
 
+`--camera-video` writes a second file of the primary detection camera, with a
+box on each object a segmentation of that same frame covered. That render
+stays off unless it is asked for (`AC-CAM-01`).
+
 **The report separates active motion from grasping.** An arm can reach the pose it
 was sent to perfectly and still hold nothing, which is what happens when the
 pose is not where the object is, so the run reports the distance to the
@@ -41,6 +45,7 @@ import math
 import os
 import subprocess
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
@@ -182,6 +187,9 @@ class DebugRunReport:
         output: Where they went.
         video_path: The playable file, or None when none was asked for or no
             encoder was found.
+        camera_video_path: The detection-camera file, with a box on each
+            object the segmentation covered, or None when none was asked for
+            or no encoder was found.
         telemetry_path: The CSV telemetry file, or None when telemetry was not
             requested.
         metadata_path: Where the revision and the configuration digests were
@@ -259,6 +267,7 @@ class DebugRunReport:
     windowed: bool = False
     reason: str | None = None
     ground_truth: bool = False
+    camera_video_path: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -585,6 +594,7 @@ def run(
     render: tuple[int, int] = (640, 480),
     window: bool = True,
     video: bool = False,
+    camera_video: bool = False,
     frames: bool | None = None,
     fps: int | None = None,
     view_name: str | None = None,
@@ -608,6 +618,10 @@ def run(
         window: Open a live window when a display is available.
         video: Encode the rendered frames into a playable file beside them.
             A machine with no `ffmpeg` runs anyway and says none was written.
+        camera_video: Encode the primary detection camera, with a box on each
+            object a segmentation of that same frame covered (`AC-CAM-01`).
+            Off unless asked, because the render is the expensive part. A
+            machine with no `ffmpeg` runs anyway and says none was written.
         frames: Write annotated PNG captures. When None, defaults to on if a
             window or video was asked for, and off for a headless run with
             neither (`AC-PERF-02`).
@@ -975,16 +989,20 @@ def run(
     believed.write_text("")
     movie = config.require(debug, "video")
     movie_interval = float(config.require(movie, "interval_seconds", "video"))
-    recorder = (
-        _recorder(
-            view,
-            out,
-            fps or int(config.require(movie, "frames_per_second")),
-            movie_interval,
-        )
-        if video
-        else None
-    )
+    playback = fps or int(config.require(movie, "frames_per_second"))
+    recorder = _recorder(view, out, playback, movie_interval) if video else None
+    # The detection-camera file is a second render. It stays unbuilt unless
+    # asked for, which is what keeps a headless run from paying for it
+    # (`AC-CAM-01`).
+    camera_recorder = None
+    camera_rgb = None
+    camera_seg = None
+    if camera_video:
+        camera_recorder = _camera_recorder(out, width, height, playback)
+        if camera_recorder is not None:
+            camera_rgb = mujoco.Renderer(model, height=height, width=width)
+            camera_seg = mujoco.Renderer(model, height=height, width=width)
+            camera_seg.enable_segmentation_rendering()
     next_capture = 0.0
     # Ground truth is the object's own pose, so the arm can read it far faster
     # than the cameras settle. A descent lasts 0.4 s and the capture is 0.5 s,
@@ -1256,13 +1274,22 @@ def run(
 
             # The video and live window render on their own cadence. The
             # capture cadence is what the tracker decides at, and watching
-            # a decision rate is watching an arm teleport.
-            if (
-                (recorder is not None or opened)
-                and watching is not None
-                and data.time >= next_frame
-            ):
+            # a decision rate is watching an arm teleport. The detection
+            # camera shares that cadence (`AC-CAM-01`).
+            due = data.time >= next_frame
+            line_view = (recorder is not None or opened) and watching is not None
+            if due and (line_view or camera_recorder is not None):
                 next_frame = data.time + movie_interval
+            if due and camera_recorder is not None:
+                _write_camera_frame(
+                    camera_rgb,
+                    camera_seg,
+                    model,
+                    data,
+                    detection_camera,
+                    camera_recorder,
+                )
+            if due and line_view:
                 frame = _painted(
                     watching,
                     data,
@@ -1526,6 +1553,12 @@ def run(
             tracker_cam.close()
         if recorder is not None:
             recorder.close()
+        if camera_rgb is not None:
+            camera_rgb.close()
+        if camera_seg is not None:
+            camera_seg.close()
+        if camera_recorder is not None:
+            camera_recorder.close()
         if telemetry is not None:
             telemetry.close()
         if opened:
@@ -1561,6 +1594,9 @@ def run(
         frames_written=written,
         output=out,
         video_path=None if recorder is None else recorder.settings.path,
+        camera_video_path=(
+            None if camera_recorder is None else camera_recorder.settings.path
+        ),
         telemetry_path=telemetry_path,
         windowed=opened,
         reason=reason,
@@ -1712,6 +1748,8 @@ def report_lines(report: DebugRunReport) -> tuple[str, ...]:
     lines.append(f"  frames written  {report.frames_written} to {report.output}")
     if report.video_path is not None:
         lines.append(f"  video           {report.video_path}")
+    if report.camera_video_path is not None:
+        lines.append(f"  camera video    {report.camera_video_path}")
     if report.telemetry_path is not None:
         lines.append(f"  telemetry       {report.telemetry_path}")
     lines.append(f"  metadata        {report.metadata_path}")
@@ -2297,6 +2335,117 @@ def _body_yaw(mujoco: Any, model: Any, data: Any, name: str) -> float | None:
     quat = data.xquat[body]
     w, x, y, z = (float(quat[i]) for i in range(4))
     return math.degrees(math.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z)))
+
+
+# Green reads on the belt without sitting on a material the line already paints.
+_BOX_RGB = (0, 255, 0)
+
+
+def bounds_of(runs: Sequence[tuple[int, int, int]]) -> tuple[int, int, int, int]:
+    """Return inclusive pixel bounds of run-length coverage.
+
+    Args:
+        runs: `(row, start_column, length)` triples from one object's mask.
+
+    Returns:
+        `(x_min, y_min, x_max, y_max)`.
+    """
+    x_min = min(start for _, start, _ in runs)
+    y_min = min(row for row, _, _ in runs)
+    x_max = max(start + length - 1 for _, start, length in runs)
+    y_max = max(row for row, _, _ in runs)
+    return x_min, y_min, x_max, y_max
+
+
+def paint_boxes(
+    frame: NDArray[np.uint8],
+    boxes: Sequence[tuple[int, int, int, int]],
+) -> NDArray[np.uint8]:
+    """Draw inclusive box borders on an RGB frame.
+
+    The boxes are the pixels each object covered in a segmentation of this
+    same frame (`AC-CAM-03`). Pixels outside a box stay as the camera
+    rendered them.
+
+    Args:
+        frame: Height by width by three, RGB.
+        boxes: Inclusive `(x_min, y_min, x_max, y_max)` bounds.
+
+    Returns:
+        The same frame, with borders written in.
+    """
+    height, width = frame.shape[:2]
+    color = np.asarray(_BOX_RGB, dtype=np.uint8)
+    for x0, y0, x1, y1 in boxes:
+        left = min(max(int(x0), 0), width - 1)
+        right = min(max(int(x1), 0), width - 1)
+        top = min(max(int(y0), 0), height - 1)
+        bottom = min(max(int(y1), 0), height - 1)
+        if right < left:
+            left, right = right, left
+        if bottom < top:
+            top, bottom = bottom, top
+        frame[top, left : right + 1] = color
+        frame[bottom, left : right + 1] = color
+        frame[top : bottom + 1, left] = color
+        frame[top : bottom + 1, right] = color
+    return frame
+
+
+def _camera_recorder(out: Path, width: int, height: int, fps: int) -> Any:
+    """Start recording the detection camera, or report that no encoder is installed.
+
+    Args:
+        out: Where the run writes.
+        width: Frame width in pixels.
+        height: Frame height in pixels.
+        fps: Playback rate.
+
+    Returns:
+        The recorder, or None when `ffmpeg` is absent.
+    """
+    from clave.demo.video import StreamSettings, open_stream
+
+    return open_stream(
+        StreamSettings(
+            path=out / "camera-debug.mp4",
+            width=width,
+            height=height,
+            frames_per_second=fps,
+        )
+    )
+
+
+def _write_camera_frame(
+    rgb: Any,
+    segmentation: Any,
+    model: Any,
+    data: Any,
+    camera: str,
+    recorder: Any,
+) -> None:
+    """Paint one detection-camera frame and hand it to the encoder.
+
+    The colour frame and the segmentation are the same camera at the same
+    size, so a box sits on the pixels the object actually covered.
+
+    Args:
+        rgb: Renderer for the colour frame.
+        segmentation: Renderer for geometry ids, segmentation already enabled.
+        model: The compiled model, used to name geometries.
+        data: The simulated state.
+        camera: The detection camera's name.
+        recorder: The open encoder.
+    """
+    rgb.update_scene(data, camera=camera)
+    frame = np.array(rgb.render(), copy=True)
+    segmentation.update_scene(data, camera=camera)
+    boxes = tuple(
+        bounds_of(mask.runs)
+        for mask in segment_masks(model, segmentation.render()).values()
+    )
+    paint_boxes(frame, boxes)
+    recorder.write(frame)
 
 
 def _recorder(view: dict[str, Any], out: Path, fps: int, interval: float) -> Any:
