@@ -181,6 +181,7 @@ def train(
     restored = _resume(config, model, optimizer)
     sample = restored.sample
     if sample is None:
+        LOGGER.info("drawing training sample")
         sample = _draw_sample(config, description, world, config.dataset, "train")
         sample.write(_sample_path(config))
     weights = restored.weights
@@ -200,6 +201,7 @@ def train(
         and validation_root is not None
     ):
         part = validation_description.role or "validation"
+        LOGGER.info("drawing validation sample")
         validation_sample = _draw_sample(
             config, validation_description, world, validation_root, part
         )
@@ -352,12 +354,22 @@ def train(
             validation_sample,
         )
         run.write(run_record_path(config.checkpoints, config.candidate))
-        LOGGER.info(
-            "epoch %s loss %.4f in %.1fs",
-            epoch + 1,
-            run.epochs[-1].loss,
-            run.epochs[-1].seconds,
-        )
+        held_out_score = run.epochs[-1].selection_score
+        if held_out_score is None:
+            LOGGER.info(
+                "epoch %s loss %.4f in %.1fs",
+                epoch + 1,
+                run.epochs[-1].loss,
+                run.epochs[-1].seconds,
+            )
+        else:
+            LOGGER.info(
+                "epoch %s loss %.4f in %.1fs, held-out %.4f",
+                epoch + 1,
+                run.epochs[-1].loss,
+                run.epochs[-1].seconds,
+                held_out_score,
+            )
         if validation_sample is not None and selection.stops(config.patience or 1):
             break
 
@@ -423,6 +435,7 @@ def _checkpoint(
     import torch
 
     config.checkpoints.mkdir(parents=True, exist_ok=True)
+    LOGGER.info("writing checkpoint, epoch %s", epoch + 1)
     torch.save(
         _checkpoint_payload(
             config,
@@ -572,20 +585,26 @@ def _count_positives(
 
     counts = [0] * CLASS_COUNT
     frames = 0
-    for rollout_id, indexes in sample.picks.items():
-        examples = _examples_at(dataset, description, rollout_id, indexes)
-        for example in examples:
-            frames += 1
-            present = {
-                CLASS_INDEX[label.material_class]
-                for label in example.visible_labels
-                if label.material_class in CLASS_INDEX
-            }
-            for class_index in present:
-                counts[class_index] += 1
-        del examples
-        gc.collect()
-        release_freed_pages()
+    rollouts = tuple(sample.picks.items())
+    # This walk opens every archive before the sample line. With no count on
+    # screen the terminal looks stopped for the whole pass.
+    LOGGER.info("class weights 0/%s rollouts", len(rollouts))
+    with Progress(len(rollouts), "class weights", "rollout") as bar:
+        for rollout_id, indexes in rollouts:
+            examples = _examples_at(dataset, description, rollout_id, indexes)
+            for example in examples:
+                frames += 1
+                present = {
+                    CLASS_INDEX[label.material_class]
+                    for label in example.visible_labels
+                    if label.material_class in CLASS_INDEX
+                }
+                for class_index in present:
+                    counts[class_index] += 1
+            del examples
+            gc.collect()
+            release_freed_pages()
+            bar.update(1)
     return counts, frames
 
 
@@ -617,6 +636,7 @@ def _select_epoch(
 
     cuts = ScoreThresholds.load(thresholds)
     metric = metric_for(config.candidate)
+    LOGGER.info("select epoch %s, %s frames", epoch + 1, sample.frame_count)
     model.eval()
     equal = 0
     total = 0
@@ -655,6 +675,10 @@ def _write_best(
     import torch
 
     config.checkpoints.mkdir(parents=True, exist_ok=True)
+    LOGGER.info(
+        "writing best checkpoint, epoch %s",
+        epoch + 1,
+    )
     payload = _checkpoint_payload(
         config,
         model,

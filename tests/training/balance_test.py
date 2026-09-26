@@ -1,5 +1,6 @@
 """Positive weights for the classes the pick actually shows."""
 
+import logging
 from pathlib import Path
 
 import pytest
@@ -82,3 +83,42 @@ def test_ac_balance_03_a_resume_reloads_the_stored_weights() -> None:
         resolve_class_weights(None, checkpoint=True, mode="inverse", length=2)
     with pytest.raises(BalanceError, match="taxonomy"):
         resolve_class_weights((1.0,), checkpoint=True, mode="inverse", length=2)
+
+
+def test_class_weight_count_logs_before_the_first_archive(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The weight walk names its length before it opens an archive."""
+    from clave.training.runner import _count_positives
+    from clave.training.sample import FrameSample
+
+    logged_before_open: list[bool] = []
+
+    def _open(
+        dataset: object,
+        description: object,
+        rollout_id: str,
+        indexes: tuple[int, ...],
+    ) -> tuple[object, ...]:
+        del dataset, description, rollout_id
+        logged_before_open.append(
+            any(
+                "class weights 0/2 rollouts" in record.message
+                for record in caplog.records
+            )
+        )
+        return (type("Example", (), {"visible_labels": ()})(),) * len(indexes)
+
+    monkeypatch.setattr("clave.training.runner._examples_at", _open)
+    sample = FrameSample(
+        samples_per_crossing=1,
+        dataset_digest="digest",
+        along_travel_meters=0.92,
+        capture_interval_seconds=0.2,
+        seed=0,
+        picks={"rollout_000": (0,), "rollout_001": (1,)},
+    )
+    with caplog.at_level(logging.INFO, logger="clave.training.runner"):
+        _counts, frames = _count_positives(Path("."), None, sample)
+    assert frames == 2
+    assert logged_before_open == [True, True]

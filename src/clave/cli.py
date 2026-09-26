@@ -485,6 +485,7 @@ def _train(
 
             ckpt_path = _checkpoint_path(config)
             rec_path = run_record_path(config.checkpoints, config.candidate)
+            _log_output("  syncing       checkpoint")
             key = push_training_run(ckpt_path, rec_path, r2, d1)
             _log_output(f"  synced        checkpoint to R2: {key}")
         except Exception as exc:
