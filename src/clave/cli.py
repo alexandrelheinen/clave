@@ -428,10 +428,24 @@ def _train(
         config = replace(
             config, dataset=resolve_dataset(root, config.dataset, role="train")
         )
+    if isinstance(config.validation_dataset, Path):
+        config = replace(
+            config,
+            validation_dataset=resolve_dataset(
+                root, config.validation_dataset, role="validation"
+            ),
+        )
     budget = MemoryBudget.load(root / "configs" / "training" / "memory.yml")
     world = root / "configs" / "world" / "sorting_line.yml"
+    thresholds = root / "configs" / "validation" / "corpus.yml"
     try:
-        run = train(config, config.window_exit_meters, budget=budget, world=world)
+        run = train(
+            config,
+            config.window_exit_meters,
+            budget=budget,
+            world=world,
+            thresholds=thresholds,
+        )
     except MemoryBudgetError as err:
         _log_output(f"  STOPPED  {err}")
         return 1
@@ -442,9 +456,12 @@ def _train(
     _log_output(f"  machine       {run.machine}, {run.threads} threads")
     _log_output(f"  dataset       {run.dataset_digest[:16]}...")
     for epoch in run.epochs:
+        held = ""
+        if epoch.selection_score is not None:
+            held = f"   held-out {epoch.selection_score:8.4f}"
         _log_output(
             f"  epoch {epoch.index:2d}      loss {epoch.loss:10.4f}   "
-            f"{epoch.seconds:8.1f} s"
+            f"{epoch.seconds:8.1f} s{held}"
         )
     if sync and run.completed:
         try:

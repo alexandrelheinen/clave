@@ -46,7 +46,12 @@ them is in the YAML files beside this one.
 Ten epochs. Each frame is resized to 224 pixels on a side before the model
 sees it, and the batch holds 1 frame. `samples_per_crossing` keeps three
 looks each time an object crosses the camera, which is about 13 minutes an
-epoch instead of an hour on every frame. The proof-of-concept budget in
+epoch instead of an hour on every frame. `accumulation_steps` sums eight of
+those frames, from different rollouts, before one optimizer step.
+`class_balance` gives a rare class a larger positive weight. At the end of
+each epoch the run scores a thinned pick of the validation half, keeps the
+best epoch in `resnet50-baseline.best.pt`, and stops after three epochs
+without a better score. The proof-of-concept budget in
 `configs/training/memory.yml` stops the run if the process resident set goes
 over 1.25 GiB. A ResNet-50 step on this machine retains about 1.06 GiB, and
 the full-resolution frames are released after each batch. One progress bar

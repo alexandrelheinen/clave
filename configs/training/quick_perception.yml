@@ -9,5 +9,7 @@ training:
   learning_rate: 0.0003
   seed: 0
   samples_per_crossing: 3
+  accumulation_steps: 1
+  class_balance: none
   window_exit_meters: 1.034
   act_chunk_size: 10
