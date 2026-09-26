@@ -1,10 +1,14 @@
 # Run the corpus, training, and validation
 
-One command at a time, in your own terminal. Do not chain them with `&&` or a
-script. A checkpoint is written only at the end of an epoch. If the machine
-stops mid-epoch, that epoch's weights are not on disk.
+Each stage is its own command. A checkpoint is written only at the end of an
+epoch. If the machine stops mid-epoch, that epoch's weights are not on disk.
 
-Work from the repository root, with the environment already installed:
+`examples/corpus-run/train.sh` installs the environment and then trains one
+configuration. `--clean` deletes that candidate's checkpoint, run record, and
+stored picks before training starts. Without `--clean`, a finished epoch is
+resumed.
+
+Work from the repository root. The script changes to the root itself:
 
 ```bash
 cd /home/alexandre/Workspace/clave
@@ -66,16 +70,25 @@ The line `epoch 1/10` is only the start of the epoch. The line
 `runs/debug/corpus/checkpoints/resnet50-baseline.pt` exists.
 
 ```bash
-MUJOCO_GL=osmesa .venv/bin/clave --log-level INFO train --config examples/corpus-run/classification.yml --sync
+examples/corpus-run/train.sh
+examples/corpus-run/train.sh --clean
+```
+
+The script sources `.venv`, installs `.[dev,world]`, builds the release
+safety layer, fetches the object meshes, and then runs:
+
+```bash
+MUJOCO_GL=osmesa clave --log-level INFO train --config examples/corpus-run/classification.yml --sync
 ```
 
 `--sync` uploads the `.pt` and the `.run.json` to the bucket and records the
 run in `training_runs`. The `models` row is not written yet. That row is the
 validation result.
 
-If the machine stops mid-epoch, that epoch's `.pt` does not exist. Run the
-same command again. If the epoch had already finished, the same command
-continues at the next epoch.
+If the machine stops mid-epoch, that epoch's `.pt` does not exist. Run
+`examples/corpus-run/train.sh` again, without `--clean`. If the epoch had
+already finished, that continues at the next epoch. `--clean` starts at
+epoch 1.
 
 ## 3. Train Faster R-CNN
 
@@ -87,7 +100,8 @@ checkpoint is
 `runs/debug/corpus/checkpoints/faster-rcnn-mobilenetv3.pt`.
 
 ```bash
-MUJOCO_GL=osmesa .venv/bin/clave --log-level INFO train --config examples/corpus-run/detection.yml --sync
+examples/corpus-run/train.sh --config examples/corpus-run/detection.yml
+examples/corpus-run/train.sh --config examples/corpus-run/detection.yml --clean
 ```
 
 ## 4. Validate and publish each model
