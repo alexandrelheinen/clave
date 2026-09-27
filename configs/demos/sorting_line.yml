@@ -10,8 +10,8 @@ scenario:
     The belt carries tagged objects past the manipulator. The scripted expert
     proposes a pick for whichever reachable object has least time left, the Rust
     safety layer accepts or overrides it, and the decision is published. The arm
-    tracks the proposal; nothing grasps, because nothing in CLAVE executes a
-    pick yet.
+    tracks the proposal and the jaw closes on the visit. A hold through the
+    carry is the open measurement.
   predictor: scripted
   seed: 0
   seconds: 25.0

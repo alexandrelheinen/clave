@@ -1,10 +1,7 @@
-"""The end effector the pick geometry assumes.
+"""The jaw the pick geometry is measured against.
 
-CLAVE has no gripper. Nothing in the model closes on an object and nothing in
-the repository has ever grasped one, so every dimension here is an assumption
-read from configuration rather than a measurement. The type exists so that
-assumption is written in one place, reviewed like any other tunable, and
-replaced wholesale the day a real effector is specified.
+The dimensions are the shipped Robotiq 2F-85, read from configuration so a
+marker and the compiled gripper share one description.
 
 The jaw opening is not a field of its own. It is `arm.max_grasp_width_meters`,
 which already decides which objects the world may spawn, and reading it from
@@ -30,7 +27,7 @@ covers that and stays well inside the clearance the jaw keeps.
 
 @dataclass(frozen=True)
 class Effector:
-    """What a jaw would measure, if one existed.
+    """What the shipped jaw measures.
 
     Attributes:
         finger_length: How far the pads sit below the face the tool bolts to,

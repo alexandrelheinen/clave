@@ -1,6 +1,6 @@
 # Checkpoint selection
 
-Status: draft
+Status: landed
 
 ## Intent
 

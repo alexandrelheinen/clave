@@ -1,6 +1,6 @@
 # Gradient accumulation
 
-Status: draft
+Status: landed
 
 ## Intent
 

@@ -10,7 +10,7 @@ training:
   learning_rate: 0.0001
   seed: 0
   # Looks kept while an object crosses the camera footprint along the belt.
-  # docs/frame-sampling.md. Three looks is about 13 minutes an epoch here.
+  # docs/requirements/frame-sampling.md. Three looks is about 13 minutes an epoch here.
   samples_per_crossing: 3
   accumulation_steps: 8
   class_balance: inverse

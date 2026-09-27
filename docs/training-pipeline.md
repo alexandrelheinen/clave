@@ -163,8 +163,9 @@ published initialization was worth on the same validation digest.
 is this step. An epoch draws a permutation of frames across rollouts, seeded,
 and the training file sets the period. The frames that enter the permutation
 are a stored sample of the corpus, a few looks per camera footprint, as
-[frame-sampling.md](frame-sampling.md) sets out. The published archives stay
-intact. Consecutive frames of one object stop being consecutive steps.
+[requirements/frame-sampling.md](requirements/frame-sampling.md) sets out.
+The published archives stay intact. Consecutive frames of one object stop
+being consecutive steps.
 
 On the development machine the resident budget still holds one image. The
 available improvement there is gradient accumulation: a configured number of

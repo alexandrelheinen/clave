@@ -1,6 +1,6 @@
 # Training memory budget
 
-Status: draft
+Status: landed
 
 ## Intent
 

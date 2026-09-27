@@ -1,9 +1,10 @@
 """The comparison table, the recommendation, and the evidence pack.
 
-Two of the five headline metrics the release asks for cannot be measured,
-because nothing in CLAVE executes a pick. They appear in the table as
-`unmeasured` with the reason attached rather than as a zero, because a pick
-success rate of zero is arithmetically true and reads as a result.
+Two of the five headline metrics the release asks for cannot be measured by
+this harness. It scores the proposal loop and does not run the jaw, so every
+record carries `picked = False` and no cycle. They appear in the table as
+`unmeasured` with the reason attached, because a pick success rate of zero
+is arithmetically true and reads as a result.
 """
 
 from __future__ import annotations
@@ -23,13 +24,12 @@ UNMEASURED = "unmeasured"
 
 UNMEASURABLE_METRICS: dict[str, str] = {
     "pick success rate": (
-        "nothing in CLAVE grasps an object, so every record carries picked = "
-        "False and the rate would be zero by construction rather than by "
-        "measurement"
+        "the benchmark scores the proposal loop and does not run the jaw, so "
+        "every record carries picked = False and the rate would be zero by "
+        "construction rather than by measurement"
     ),
     "cycle time": (
-        "there is no placement to measure to, for the same reason, so no "
-        "record carries a cycle"
+        "the same harness records no placement, so no record carries a cycle"
     ),
     "generalization drop": (
         "the benchmark runs the world the models trained on, so every instance "

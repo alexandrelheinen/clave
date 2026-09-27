@@ -22,12 +22,14 @@ runtime:
   # Below this probability the classifier abstains and no proposal is sent,
   # which is how a frame with nothing on the belt produces no decision.
   presence_floor: 0.30
-  # How far the identity association may reach, in meters. CLAVE has no
-  # tracker, so a proposed point is matched to the nearest object the world
-  # holds; a point further than this from every object matches nothing and is
-  # dropped rather than published under some other object's identity. Scaled
-  # with the belt: on a 0.16 m wide line, a 0.30 m radius would match an object
-  # on the far side of the belt from the one the policy meant.
+  # How far the identity association may reach, in meters. The proposal loop
+  # matches a point to the nearest object the world holds; a point further
+  # than this from every object matches nothing and is dropped. Sized for a
+  # 0.16 m belt: a 0.30 m radius would match an object on the far side from
+  # the one the policy meant. The belt is 0.50 m. Widening this constant
+  # would admit those mismatches. The sim tracker already gates on the
+  # track's own footprint, and the proposal loop takes that gate when it
+  # stops calling associate().
   association_radius_meters: 0.12
   # The coordinate frame a pick point is expressed in, carried into every
   # published message. The belt frame has its origin at the center of the belt

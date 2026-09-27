@@ -29,7 +29,6 @@ does.
 | `sam2` | Perception | 38.96 M | 1229.2 ms | 41.5 ms |
 | `behavior-cloning-baseline` | Policy | 0.02 M | 0.4 ms | 0.1 ms |
 | `act` | Policy | 51.60 M | 31.6 ms | 5.1 ms |
-| `ppo-mlp` | Policy | 0.01 M | 0.2 ms | 0.0 ms |
 | `diffusion-policy` | Policy | 262.95 M | 15479.1 ms | 295.5 ms |
 
 Two candidates are ruled out by cost alone on this machine. `sam2` exceeds the
@@ -108,8 +107,10 @@ That is why this arm stands beside the line where the previous one hung over it.
 | Collaborative, including the UR10e | behind all three, limited by the safety envelope |
 
 CLAVE's budget is **1.0 second**, enforced by
-`max_cycle_time_p99_seconds`. It is unmeasured rather than met: nothing grasps,
-so there is no placement to measure to.
+`max_cycle_time_p99_seconds`. The benchmark leaves it unmeasured: that harness
+scores the proposal loop and does not run the jaw, so no record carries a
+cycle. The simulation closes the jaw. A measured cycle to a chute is v1.9.0
+and waits on a hold.
 
 ## The world
 
@@ -664,8 +665,8 @@ a decider handling one object per frame is the thing to fix.
 
 | Metric | Why |
 | --- | --- |
-| Pick success rate | Nothing grasps, so every record carries `picked = False` and the rate would be zero by construction |
-| Cycle time | There is no placement to measure to, for the same reason |
+| Pick success rate | The benchmark scores the proposal loop and does not run the jaw, so every record carries `picked = False` and the rate would be zero by construction |
+| Cycle time | The same harness records no placement, so no record carries a cycle |
 | Generalization drop | The benchmark runs the world the models trained on, so the unseen partition is empty |
 
 ### What the safety layer did
@@ -722,9 +723,8 @@ no identity, and it joins the nearest track inside a gate scaled to that track's
 footprint, so a track tens of millimetres out can fail to be corrected by a
 fresh observation and no run reports the failure as a failure. The fix is the
 association and retirement rule already specified as
-[learned-tracker](requirements/learned-tracker.md) at v1.2.0, and the figures to
-aim at are the 35 to 415 mm above rather than the 94 to 644 mm the roadmap
-carries.
+[learned-tracker](requirements/learned-tracker.md) at v1.7.0, and the figures
+to aim at are the 35 to 415 mm above.
 
 ### What the actuator lag costs now
 

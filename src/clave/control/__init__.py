@@ -6,6 +6,6 @@ the path between two poses, and `servo` turns a commanded pose into joint
 angles. Only the first three make decisions; the servo compiles a model.
 `story` narrates those decisions at debug level and decides nothing.
 
-Nothing here grasps. No gripper exists, so what is delivered is the motion and
-the evidence that the motion reached the pose it was given.
+The jaw command rides with the visit. Whether the object stays in the jaw
+through the carry is what the debug run measures, and it is the open figure.
 """

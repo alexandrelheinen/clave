@@ -316,10 +316,10 @@ latency is part of the overall budget, not separate from safety checks.
 Trained policies and perception models are not committed to this repository. A
 model is named by candidate, configuration digest, and dataset digest, uploaded
 to object storage, and retrieved via deployment commands. Training workflows,
-domain randomization, and precision validation gates are documented in
-[detection-training.md](detection-training.md). The sequence from the
-proof-of-concept step to a host that selects a checkpoint is
-[training-pipeline.md](training-pipeline.md).
+the corpus, and the sequence from a proof-of-concept run to a host that
+selects a checkpoint are in
+[training-pipeline.md](training-pipeline.md). Sensor limits for that corpus
+are in [waste-taxonomy.md](waste-taxonomy.md).
 
 Datasets for policy training use public sources where possible (COCO for
 initial training, public waste datasets). Proprietary customer data for

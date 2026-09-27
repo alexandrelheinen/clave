@@ -14,11 +14,11 @@ physics:
   timestep_seconds: 0.002
 
 belt:
-  # Sized as a recovery-facility picking line rather than as a desk model. The
-  # arm is a UR10e whose trusted workspace is an annulus 0.25 m to 1.25 m about
-  # its base, measured by sweeping the compiled model with the tool held
-  # vertical. A sweep confirms every lateral position on a 1.00 m belt is
-  # reachable at some point in its travel. docs/measurements.md carries it.
+  # Sized as a recovery-facility picking line. The arm is a UR10e whose
+  # trusted workspace is an annulus 0.25 m to 1.25 m about its base, measured
+  # by sweeping the compiled model with the tool held vertical.
+  # docs/measurements.md carries the sweep. The width below is the one the
+  # line runs.
   length_meters: 3.00
   # Narrowed from 1.00 m, and the reason is reach margin rather than cost.
   #
@@ -465,9 +465,8 @@ cameras:
 
   # Detection, classification and segmentation across the whole belt.
   # 8.446 mm of sensor at 8 mm focal length over a 1.042 m standoff gives
-  # 1.100 m across a 1.000 m belt, so the width is covered with 50 mm of margin
-  # at each edge, at 0.449 mm per pixel. Objects spawn out to 0.42 m and every
-  # one of them is now in frame.
+  # 1.100 m across at 0.449 mm per pixel. The belt is 0.50 m, so the width
+  # sits inside that footprint.
   - id: gate_wide
     role: detection
     sensor: imx264

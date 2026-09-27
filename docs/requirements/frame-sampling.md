@@ -1,6 +1,6 @@
 # Frame sampling
 
-Status: draft
+Status: landed
 
 ## Intent
 
@@ -77,6 +77,15 @@ line that extent is 0.920 m.
 
 ## Design notes
 
-`K = L / (V * dt)`. `L` is the along-travel footprint, not `fovy`. The stored
-pick is the list of indexes. Recomputing it on resume would let a later edit
-of the sampler change the data under weights that already exist.
+`K = L / (V * dt)`. `L` is the along-travel footprint of the detection camera,
+not `fovy`. On this line the long sensor axis lies across the belt, so `fovy`
+is the across-belt angle. Using `fovy` in the dwell formula returns the width
+and the crossing comes out too long. The shipped gate covers 0.920 m along
+travel. See [measurements.md](../measurements.md#sensing).
+
+The stored pick is the list of indexes. Recomputing it on resume would let a
+later edit of the sampler change the data under weights that already exist.
+
+Measured on the development machine, one epoch over all 10800 frames took
+61 minutes. At `N = 3` the same epoch keeps 2232 frames and finishes in about
+13 minutes. `N = 3` is the proof-of-concept setting.

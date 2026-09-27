@@ -1,6 +1,6 @@
 # Pinned object assets
 
-Status: draft
+Status: landed
 
 ## Intent
 
