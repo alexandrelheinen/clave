@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from clave.sim.debug_run import bounds_of, paint_boxes
+from clave.sim.overlay import bounds_of, paint_boxes
 
 
 def test_bounds_follow_the_runs_ac_cam_03() -> None:
