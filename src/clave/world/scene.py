@@ -998,11 +998,11 @@ def _add_conveyor_modules(
     """Draw the belt as a row of conveyor modules.
 
     The module is published at 0.500 by 0.504 by 0.502 m with its belt surface
-    on top. CLAVE's belt is 1.20 by 0.32 m with its surface at 0.35 m, so each
-    axis is scaled independently to fit: the length so that `modules` of them
-    span the belt, the width to the belt's width, and the height so the module's
-    own surface lands on the belt surface. Scaling rather than restating the
-    belt keeps every geometry this project has measured.
+    on top. The shipped belt is 3.00 by 0.50 m with its surface at 0.90 m, so
+    each axis is scaled independently to fit: the length so that `modules` of
+    them span the belt, the width to the belt's width, and the height so the
+    module's own surface lands on the belt surface. Scaling from the published
+    mesh keeps the geometry this project has measured.
 
     The modules carry no collision geometry. An object still rests on the box
     the belt has always been, so nothing here moves a trajectory.

@@ -1,6 +1,6 @@
 # Perception corpus
 
-Status: draft
+Status: landed
 
 ## Intent
 

@@ -1,5 +1,8 @@
 # Learned tracker
 
+Status: open. v1.7.0. Identity in the proposal loop is still the simulator's
+object id, and the runtime still calls `associate()`.
+
 ## Intent
 
 Supply the rule that decides which observation belongs to which object, and
@@ -210,9 +213,8 @@ introduces no estimator.
 Where an estimator does pay is association, which is this spec. A covariance
 is a principled association gate, and the roadmap already records the defect
 it would close: `association_radius_meters` is a global constant sized for a
-belt six times narrower than the one the world runs, and the repair recorded
-there is that the radius becomes the track's own propagated footprint plus a
-gate. A Mahalanobis distance is that gate. It also buys outlier rejection,
+0.16 m belt, and the belt is 0.50 m. The repair recorded there is that the
+radius becomes the track's own propagated footprint plus a gate. A Mahalanobis distance is that gate. It also buys outlier rejection,
 which matters more than it sounds: one residual in the same measurement run
 reached 229 mm, which is too large to be sensor noise and is most likely one
 object carried as two tracks. A filter without a gate would absorb that jump

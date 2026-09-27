@@ -9,7 +9,7 @@ first and never arrives at anything.
 
 This spec gives the arm a task layer and a motion layer, so it goes to a
 marker, holds there while the belt carries the object under it, lifts away and
-takes the next one. Nothing grasps. What is delivered is the motion, and the
+takes the next one. What this step delivered is the motion, and the
 evidence that the motion reached the pose the tracker asked for.
 
 The audience is whoever is judging whether the perception stack produces poses
@@ -175,9 +175,8 @@ rather than rewriting.
 The profile is configuration. `motion_only` runs STANDBY, TRACK, PARK and
 FAULT and nothing else, so the arm goes to each marker in turn and moves on,
 which is what tuning arm speed against belt speed needs. `full_visit` adds
-DESCEND, HOLD and RETREAT. Neither profile grasps, because no gripper exists;
-the phases a gripper would need are absent from both rather than present and
-skipped.
+DESCEND, HOLD and RETREAT. The jaw command arrived with the effector. The
+hold through the carry is v1.8.0.
 
 **`motion`.** Turns where the flange is and where the phase wants it into
 the single pose to command this tick. A straight line in task space, which is
@@ -195,8 +194,8 @@ Python is a gain nobody reviews.
 
 ## Constraints
 
-- **Nothing grasps.** No gripper enters the model and no phase closes one. Any
-  metric that needs a grasp stays unmeasured and says so.
+- **This step delivers motion.** The jaw is mounted in later work. Pick
+  success rate stays with v1.8.0.
 - **The solver is the one already here.** No second description of the arm, in
   URDF or anywhere else, and no second set of reach bounds.
 - **The safety layer is not bypassed.** A pose the envelope refuses does not
@@ -799,9 +798,10 @@ A refused pose that wrote no actuator command left the arm to sag under
 gravity, out of its own trusted vertical band, after which every pose was
 refused for a reason the controller had caused.
 
-**What stays unmeasurable.** Pick success rate and cycle time to placement,
-because nothing grasps and there is nowhere to place. Both are reported as
-unmeasured for the same reason the benchmark already reports them so.
+**What this step left unmeasured.** Pick success rate and cycle time to a
+chute. The jaw and the openings arrived in later work. The benchmark still
+leaves both unmeasured because it scores the proposal loop and does not run
+the jaw. The hold is v1.8.0 and the measured cycle is v1.9.0.
 
 ## Design
 

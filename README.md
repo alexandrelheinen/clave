@@ -5,7 +5,7 @@
 CLAVE sorts recyclable waste traveling on a conveyor belt through a learned
 perception-action policy. A neural architecture fuses visual perception,
 object tracking, and pick timing into an end-to-end system trained by
-imitation learning today, with reinforcement learning on the roadmap.
+imitation of a scripted expert.
 
 The policy runs against the clock with
 hard safety guarantees: a Rust core handles interlocks and workspace limits,
@@ -129,14 +129,14 @@ measurements that set them.
 
 | Part | Dimension |
 | --- | --- |
-| Belt | 3.00 m long, 1.00 m wide, surface at 0.90 m |
+| Belt | 3.00 m long, 0.50 m wide, surface at 0.90 m |
 | Belt speed | 0.25 to 0.35 m/s, randomized per run |
 | Conveyor modules | **10 modules of 0.300 m**, spanning the 3.00 m belt |
 | Arm | Universal Robots UR10e, on a pedestal 0.70 m off the belt centerline |
 | Effector workspace | an annulus 0.25 m to 1.25 m about the base, over a 0.50 m vertical band, measured by sweeping the model with the tool held vertical |
 | Reachable window | 2.071 m of belt on the centerline, 6.6 s per object at 0.31 m/s |
-| Sensing | one detection camera and three barcode cameras, all nadir, at a gate 1.00 m upstream |
-| Objects | 18 scanned packages |
+| Sensing | two detection cameras (`gate_wide`, `pick_wide`) and three barcode cameras, all nadir |
+| Objects | 10 scanned packages, four material classes |
 
 ### The conveyor modules
 
@@ -148,8 +148,8 @@ configures:
 | Axis | Published | Scaled to | Factor |
 | --- | --- | --- | --- |
 | Length | 0.500 m | **0.300 m**, so four span 1.20 m | 0.600 |
-| Width | 0.504 m | **0.320 m**, the belt width | 0.635 |
-| Height | 0.502 m | **0.350 m**, so the module surface lands on the belt surface | 0.697 |
+| Width | 0.504 m | **0.50 m**, the belt width | 0.992 |
+| Height | 0.502 m | **0.90 m**, so the module surface lands on the belt surface | 1.793 |
 
 Change `belt.modules` and `belt.length_meters` together: four modules of 0.30 m
 make a 1.20 m belt, eight of 0.15 m make the same belt out of shorter sections,
@@ -165,17 +165,13 @@ is the whole problem CLAVE exists to solve.
 
 | Class | Objects | Source |
 | --- | --- | --- |
-| `M-02` HDPE | 6 supplement tubs, toiletry bottles and a mustard bottle | Scanned Objects and YCB |
-| `M-04` Other plastic | 2, a sprinkles jar and snack bags | Scanned Objects |
-| `M-06` Ferrous metal | 4 food cans | YCB |
-| `M-09` Paperboard | 6 cartons | YCB and Scanned Objects |
+| `M-02` HDPE | 5 supplement tubs and toiletry bottles | Scanned Objects |
+| `M-04` Other plastic | 1 sprinkles jar | Scanned Objects |
+| `M-06` Ferrous metal | 1 food can | YCB |
+| `M-09` Paperboard | 3 cartons | YCB and Scanned Objects |
 
-The set was selected against the previous arm's **0.180 m spline stroke** rather
-than a gripper opening, which took the candidate pool from 153 models to 836 and
-admitted four YCB packages the old 55.7 mm jaw refused, including a 102.5 mm
-master chef can. The UR10e's vertical band is 0.50 m, so that bound no longer
-binds; the end effector is specified separately and is what will set the next
-one.
+The set is the ten meshes whose narrowest sides fit the **85 mm** jaw.
+`master_chef_can` is 102.5 mm across and stays off the belt.
 
 **Seven classes still have no object, and the gripper was never the reason.**
 Probing both pinned collections for them finds nothing: no PET bottle, no
@@ -201,23 +197,24 @@ from the commits recorded in `configs/assets/objects.yml`.
 
 ## Current version
 
-Everything through v1.0.0 runs in simulation and nothing has touched hardware.
+The latest tag is v1.6.0. Everything in this line runs in simulation and
+nothing has touched hardware.
 
 | Part | State |
 | --- | --- |
 | Material taxonomy, corpus mappings | 11 classes, four corpora mapped |
 | Corpora | TrashNet and ZeroWaste fetched, digested and measured |
-| Simulated world | MuJoCo conveyor from Open-RMF modules, ROBOTIS arm, bins, warehouse dressing, randomized per seed |
+| Simulated world | MuJoCo conveyor from Open-RMF modules, UR10e, parallel jaw, chutes, warehouse dressing, randomized per seed |
 | Data pipeline | Labeled rollouts, ground-truth boxes, proprioception, digested splits |
-| Candidates | Seven benchmarked, four trained |
+| Candidates | Six benchmarked, four trained |
 | Runtime | Frame to published decision, with a Rust safety layer that can override the model |
 | Integration | The decision on a ROS 2 topic, specified for a consumer to implement against |
 | Benchmark | Every runnable configuration compared under one protocol |
 
-What is missing is as important: nothing tracks an object across frames, nothing
-executes a pick, and no model has been trained on real imagery. The
-[roadmap](docs/roadmap.md) carries the ladder and each step's release
-criteria.
+What is still open: identity in the proposal loop still comes from the
+simulator, the jaw holds about one object in seven, and cycle time to a
+chute waits on that hold. No model has been trained on real imagery. The
+[roadmap](docs/roadmap.md) carries v1.7.0, v1.8.0 and v1.9.0.
 
 ## Versioning
 
@@ -230,10 +227,10 @@ for this project.
 | MINOR | One roadmap step lands and is tagged. A minor is the unit of planned work. |
 | PATCH | A fix, a correction, or a change of mind inside a step already tagged. Unplanned by definition. |
 
-`v1.0.0` means the full pipeline runs in simulation, with training,
-validation, and a benchmark that reproduces from a seed and a manifest. It
-does not mean anything was tested on hardware. A minor is tagged only once
-its release criteria hold and `./scripts/validate.sh` exits 0.
+v1.6.0 is the latest tag: the feed-rate loop holds a configured setpoint.
+A minor is tagged only once its release criteria hold and
+`./scripts/validate.sh` exits 0. The next steps are v1.7.0, v1.8.0 and
+v1.9.0. None of them is a claim about hardware.
 
 ## Ecosystem
 

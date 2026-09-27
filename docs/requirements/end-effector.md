@@ -1,13 +1,16 @@
 # The end effector
 
+Status: open. The jaw is mounted and the object set is swept against the
+85 mm opening. v1.8.0 is the hold through the carry, and pick success rate
+as a measured figure. It waits on v1.7.0, because the pose the jaw closes on
+is still the estimate.
+
 ## Intent
 
-Give the arm something to close. The UR10e is vendored bare: it ends at a
-flange, `docs/architecture.md` says under what is absent that the gripper
-has never closed on an object, and pick success rate and cycle time are
-reported as unmeasurable by construction rather than unmeasured by
-omission. Everything above the flange is built and tested; this is what
-makes those two numbers exist.
+Give the arm a grip that keeps the object. The Robotiq 2F-85 is on the
+flange and the jaw does close. With the aim already inside 30 mm it holds
+about one object in seven, so pick success rate is not yet a measured
+figure. This spec is what makes that number exist.
 
 ## Scope
 

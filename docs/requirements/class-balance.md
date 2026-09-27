@@ -1,6 +1,6 @@
 # Class balance
 
-Status: draft
+Status: landed
 
 ## Intent
 

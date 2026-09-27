@@ -5,9 +5,9 @@ window, which is the definition the validation harness already uses: an object
 that never came within reach is outside this harness's boundary, since nothing
 could have been done about it.
 
-Every record carries `picked = False`. Nothing in CLAVE grasps anything, so pick
-success and cycle time are unmeasurable rather than zero, and the evidence pack
-says so in those words instead of publishing a rate.
+Every record carries `picked = False`. This harness scores the proposal loop
+and does not run the jaw, so pick success and cycle time stay unmeasured, and
+the evidence pack says so instead of publishing a rate.
 """
 
 from __future__ import annotations

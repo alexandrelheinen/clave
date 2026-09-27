@@ -24,7 +24,8 @@ scene, one set per open track, in the track's colour. A 3D viewpoint for the
 debug run, so the markers read as solids rather than as a plan view. Removal
 of the two-dimensional overlay the debug view drew on captured frames.
 
-**Out.** Grasping. Nothing in CLAVE closes a jaw, and a marker is not a plan.
+**Out.** The jaw itself, which the end-effector spec owns. A marker is not a
+plan.
 Reference planning and approach trajectories, which stay in ARCO and FRET. The
 runtime loop, which publishes decisions and does not render markers. Any
 change to what the tracker computes: this spec reads `WasteObject` and writes
@@ -43,10 +44,8 @@ nothing back to it.
   the scene of the renderer a person watches and never into the scene of the
   camera the tracker reads. The model is untouched, which is what makes that
   true by construction rather than by discipline.
-- **Nothing measures the effector.** CLAVE has no gripper, in the model or on
-  a bench. Every effector dimension is a stated assumption living in
-  configuration, and the marker documents itself as showing an assumed
-  standoff rather than a measured one.
+- **The marker uses the shipped jaw.** Its dimensions are the Robotiq 2F-85
+  in configuration, the same description the compiled gripper is built from.
 - **The gate estimates no height.** The nadir cameras produce no depth and the
   `Height` role is refused at intake, so `WasteObject.height` is always
   absent on this line. The vertical placement of a marker is therefore

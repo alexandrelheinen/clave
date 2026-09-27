@@ -1,17 +1,16 @@
 # Where the sorted material goes
 
+Status: open. Chute openings, place records and misroute counts are in the
+world. v1.9.0 is cycle time from a published decision to an object crossing
+an opening, and it waits on a carry that holds.
+
 ## Intent
 
-Give the arm somewhere to put an object. The world has eleven material
-classes, a routing policy that resolves each to a channel, and a decision
-that carries that channel on the wire, and none of it reaches anything
-physical: the destination is eleven boxes 0.14 m on a side standing on the
-floor 0.75 m from the belt, which nothing is ever placed in and which no
-test reads.
-
-This spec replaces them with what a recovery facility actually puts there,
-and makes a completed place a measurable event rather than a gap in the
-report.
+Give the measured cycle a destination the arm can reach. A chute opening
+per channel already stands in the conveyor, a crossing already records a
+place, and a place into the wrong channel already counts as a misroute.
+Cycle time from the published decision to that crossing is the figure this
+spec still owes, and it needs a grip that holds through the carry.
 
 ## Scope
 

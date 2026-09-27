@@ -12,7 +12,7 @@ training:
   learning_rate: 0.0003
   seed: 0
   # Looks kept while an object crosses the camera footprint along the belt.
-  # docs/frame-sampling.md. A shorter crossing keeps every frame.
+  # docs/requirements/frame-sampling.md. A shorter crossing keeps every frame.
   samples_per_crossing: 3
   accumulation_steps: 1
   class_balance: none

@@ -106,8 +106,10 @@ published pick-and-place cycles put delta robots near 0.3 s, SCARAs at 0.28 to
 0.50 s, six-axis industrial arms at 0.4 to 0.8 s, and collaborative arms behind
 all three.
 
-**It is unmeasured, not met.** Nothing in CLAVE grasps, so the harness reports
-cycle time as unmeasured rather than passing a gate vacuously.
+**The benchmark leaves it unmeasured.** That harness scores the proposal loop
+and does not run the jaw, so its records carry no cycle and the gate stays
+open. The simulation does close the jaw. A hold through the carry is v1.8.0,
+and a cycle measured to a chute is v1.9.0.
 
 ### Sensing
 
@@ -124,14 +126,15 @@ Objects travel in a single layer, so from directly above nothing occludes
 anything. A tilt buys a little height information and costs all of that, so the
 tilted views in this repository are for presentation stills only.
 
-The cameras form a **gate** upstream of the arm. An object is seen once, under
-controlled light, and is then carried to the arm by a belt whose speed is known,
-so the tracker propagates it by dead reckoning rather than re-detecting it in
-every frame.
+Two detection cameras watch the belt. `gate_wide` stands upstream of the arm
+and `pick_wide` stands over the reachable window, with the same sensor, lens
+and standoff, so a pixel is worth the same on both. Between those footprints
+the tracker propagates an object by the belt speed it already knows.
 
 | Sensor | Role | Parts | Across the belt | Along travel | Resolution |
 | --- | --- | --- | --- | --- | --- |
 | `gate_wide` | detection | IMX264 + Fujinon 8 mm | 1.100 m | 0.920 m | 0.449 mm per pixel |
+| `pick_wide` | detection | IMX264 + Fujinon 8 mm | 1.100 m | 0.920 m | 0.449 mm per pixel |
 | `gate_code_left`, `_center`, `_right` | code | IMX264 + Fujinon 16 mm | 0.385 m each | 0.322 m each | 0.157 mm per pixel |
 
 A camera names the parts it is built from and the field of view is derived, so
@@ -145,10 +148,9 @@ camera, so a sensor laid out along travel spends its long side on the direction
 the object crosses anyway and leaves its short side to cover the width. Turning
 every camera a quarter turn is most of why the gate covers the belt at all.
 
-Both roles cover the full 1.00 m width, swept and recorded in
+The belt is 0.50 m wide, and both roles cover it. The sweeps are in
 [measurements.md](measurements.md). The three code cameras stand 0.33 m apart
-while each sees 0.385 m across, so they overlap and tile the belt instead of
-sampling it.
+while each sees 0.385 m across, so they overlap and tile the belt.
 
 The split between the two roles is forced by arithmetic rather than chosen. An
 EAN-13 narrow module is about 0.33 mm, and decoding wants roughly two pixels
@@ -182,11 +184,8 @@ proposal path to Rust.
 ### Learned stages
 
 Perception and policy are separate models, trained separately by supervised
-imitation of the scripted expert. No reinforcement learning runs anywhere in the
-repository: the arm is inert during data collection, so no reward can be earned.
-`ppo-mlp` appears in the candidate registry, but it is built against a stock
-gym environment purely to obtain observation and action shapes for a forward
-pass benchmark, and it is never trained or stepped.
+imitation of the scripted expert. No reinforcement learning runs anywhere in
+the repository.
 
 | Stage | In | Out | Loss |
 | --- | --- | --- | --- |
@@ -293,10 +292,12 @@ so it does not redraw over those lines.
 Naming these here keeps a reader from inferring them from the presence of
 nearby machinery.
 
-- **No tracker.** Object identity is ground truth from the simulator.
-- **No reinforcement learning.** Every trained model is supervised.
-- **No grasping.** The gripper has never closed on an object, so pick success
-  rate and cycle time are unmeasurable by construction rather than unmeasured
-  by omission.
+- **Identity in the proposal loop is still ground truth.** The operator
+  harness runs `clave.tracker`. The proposal loop still calls `associate()`
+  and reads the simulator's object id. That swap is v1.7.0.
+- **No reinforcement learning.** Every trained model is supervised imitation.
+- **The jaw closes and the hold is open.** Pick success rate is not yet a
+  measured figure, and cycle time to a chute waits on a carry that holds.
+  Those are v1.8.0 and v1.9.0.
 - **No hardware.** Nothing in this repository has touched a camera, a belt or
   an arm, and no number in it describes real world accuracy.
