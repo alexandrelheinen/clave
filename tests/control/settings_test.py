@@ -265,7 +265,8 @@ def test_the_debug_views_are_named_and_one_is_the_default() -> None:
 
 def test_an_unknown_view_names_the_ones_that_exist() -> None:
     """An unknown view names the ones that exist."""
-    from clave.sim.debug_run import DebugRunError, _view
+    from clave.sim.overlay import _view
+    from clave.sim.report import DebugRunError
 
     debug = load(ROOT / "configs" / "debug" / "tracker.yml")
     with pytest.raises(DebugRunError, match="belt"):
@@ -282,7 +283,7 @@ def test_the_park_marker_is_visible_from_the_default_view() -> None:
     """
     mujoco = pytest.importorskip("mujoco")
     numpy = pytest.importorskip("numpy")
-    from clave.sim.debug_run import _view
+    from clave.sim.overlay import _view
     from clave.tracker.markers import draw_park
     from clave.world import config as world_config
     from clave.world import scene

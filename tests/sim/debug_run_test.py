@@ -19,15 +19,13 @@ import pytest
 
 from clave.control.motion import Command
 from clave.control.settings import Phase
+from clave.sim.clearance import _jaw_collision_geoms, _jaw_state, _lowest_world_z
 from clave.sim.debug_run import (
-    _jaw_collision_geoms,
-    _jaw_state,
-    _lowest_world_z,
     _park_the_arm,
     _progress,
-    _run_metadata,
     _TelemetryWriter,
 )
+from clave.sim.report import _run_metadata
 from clave.world.config import load
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -115,7 +113,7 @@ def test_the_report_survives_the_terminal_it_printed_on_ac_move_55() -> None:
     reading them back from telemetry meant inferring which of thirteen objects
     each visit had been about.
     """
-    from clave.sim.debug_run import (
+    from clave.sim.report import (
         DebugRunReport,
         _report_document,
         report_lines,

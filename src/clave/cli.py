@@ -1116,7 +1116,8 @@ def _debug_tracker(root: Path, args: Any) -> int:
     Returns:
         Zero when the run completed.
     """
-    from clave.sim.debug_run import report_lines, run
+    from clave.sim.debug_run import run
+    from clave.sim.report import report_lines
 
     LOGGER.debug(
         "sim parameters: seconds=%.3f (use sim --seconds to override), seed=%d, "
