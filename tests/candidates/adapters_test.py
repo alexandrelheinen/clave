@@ -62,7 +62,7 @@ def test_a_sweep_reports_every_candidate_one_way_or_the_other() -> None:
     """Nothing vanishes from the sweep."""
     pytest.importorskip("torch")
     rows = sweep(warmup=0, repetitions=1)
-    assert len(rows) == 7
+    assert len(rows) == 6
     for spec, result, note in rows:
         assert spec.name
         assert result is not None or note is not None
