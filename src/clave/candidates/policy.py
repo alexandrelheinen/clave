@@ -1,8 +1,8 @@
 """Adapters for the shortlisted pick-policy architectures.
 
 ACT and Diffusion Policy load from lerobot, which packages the reference
-implementations. PPO loads from stable-baselines3. Behavior cloning has no
-upstream and is implemented here as the deliberate simple comparator.
+implementations. Behavior cloning has no upstream and is implemented here as
+the deliberate simple comparator.
 
 Imports are inside the builders: importing this module must not require torch.
 """
@@ -36,14 +36,6 @@ DIFFUSION_POLICY = CandidateSpec(
     license="MIT",
     source="lerobot.policies.diffusion",
     requires="lerobot",
-)
-
-PPO = CandidateSpec(
-    name="ppo-mlp",
-    stage=Stage.POLICY,
-    license="MIT",
-    source="stable_baselines3.PPO",
-    requires="stable_baselines3",
 )
 
 BEHAVIOR_CLONING = CandidateSpec(
@@ -122,21 +114,6 @@ def _build_diffusion_policy() -> Any:
     ).eval()
 
 
-def _build_ppo() -> Any:
-    """Build a PPO policy network over a continuous action space.
-
-    The environment only supplies observation and action shapes; no training
-    happens, and the episode is never stepped.
-    """
-    import gymnasium as gym
-    import numpy as np
-    from stable_baselines3 import PPO
-
-    env = gym.make("Pendulum-v1")
-    del np
-    return PPO("MlpPolicy", env, device="cpu").policy.eval()
-
-
 def _build_behavior_cloning() -> Any:
     """Build the simple comparator: a small convolutional encoder and a head.
 
@@ -203,19 +180,6 @@ def forward_lerobot(model: Any) -> Callable[[], Any]:
     return run
 
 
-def forward_ppo(model: Any) -> Callable[[], Any]:
-    """Return a callable running one PPO policy forward pass."""
-    import torch
-
-    observation = torch.zeros((1, 3))
-
-    def run() -> Any:
-        with torch.no_grad():
-            return model(observation)
-
-    return run
-
-
 def forward_behavior_cloning(model: Any) -> Callable[[], Any]:
     """Return a callable running one behavior cloning forward pass."""
     import torch
@@ -233,6 +197,5 @@ def forward_behavior_cloning(model: Any) -> Callable[[], Any]:
 POLICY_CANDIDATES: tuple[tuple[Candidate, Callable[[Any], Callable[[], Any]]], ...] = (
     (Candidate(ACT, _build_act), forward_lerobot),
     (Candidate(DIFFUSION_POLICY, _build_diffusion_policy), forward_lerobot),
-    (Candidate(PPO, _build_ppo), forward_ppo),
     (Candidate(BEHAVIOR_CLONING, _build_behavior_cloning), forward_behavior_cloning),
 )

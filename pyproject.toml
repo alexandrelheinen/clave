@@ -24,8 +24,6 @@ candidates = [
     "torchvision>=0.17",
     "lerobot>=0.6",
     "diffusers>=0.27",
-    "stable-baselines3>=2.3",
-    "gymnasium>=1.0",
 ]
 world = ["mujoco>=3.2", "pyyaml>=6"]
 # Publishing the decision on ROS 2. rclpy and the message packages come from a
@@ -86,8 +84,6 @@ module = [
     "torchvision.*",
     "sam2.*",
     "lerobot.*",
-    "stable_baselines3.*",
-    "gymnasium.*",
     "diffusers.*",
     "mujoco.*",
     "yaml",
