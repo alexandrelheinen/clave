@@ -141,6 +141,7 @@ class DebugRunReport:
             artifacts, so the figures survive the terminal that printed them.
         windowed: Whether a live window was opened.
         reason: Why no window was opened, when none was.
+        render_mode: Render mode used ('lite' or 'demo'/'realistic').
     """
 
     captures: int
@@ -182,6 +183,7 @@ class DebugRunReport:
     reason: str | None = None
     ground_truth: bool = False
     camera_video_path: Path | None = None
+    render_mode: str = "lite"
 
 
 def _report_document(report: DebugRunReport) -> dict[str, Any]:
@@ -239,6 +241,7 @@ def report_lines(report: DebugRunReport) -> tuple[str, ...]:
         line did, and what the arm did about it.
     """
     lines: list[str] = []
+    lines.append(f"  render mode     {report.render_mode}")
     if report.ground_truth:
         lines.append("  targets         ground truth (MuJoCo physics)")
     lines.append(f"  captures        {report.captures}")

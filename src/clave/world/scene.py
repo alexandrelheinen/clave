@@ -87,6 +87,48 @@ means nothing. `configs/world/sorting_line.yml` declares 2448 by 2048, and the
 OFFSCREEN_HEIGHT = 1080
 """Tallest frame any renderer attached to this model can produce."""
 
+DEFAULT_DEMO_PRESENTATION: dict[str, Any] = {
+    "quality": {
+        "shadowsize": 2048,
+        "offsamples": 4,
+    },
+    "headlight": {
+        "ambient": [0.26, 0.27, 0.29],
+        "diffuse": [0.08, 0.08, 0.10],
+        "specular": [0.28, 0.28, 0.28],
+    },
+    "background": {
+        "top": [0.22, 0.23, 0.26],
+        "bottom": [0.40, 0.38, 0.36],
+    },
+    "lights": [
+        {
+            "position_meters": [1.40, -2.10, 1.15],
+            "direction": [-0.55, 0.72, -0.30],
+            "directional": True,
+            "diffuse": [0.82, 0.80, 0.74],
+            "specular": [0.12, 0.12, 0.12],
+            "cast_shadow": True,
+        },
+        {
+            "position_meters": [-1.70, 1.90, 1.05],
+            "direction": [0.68, -0.66, -0.28],
+            "directional": True,
+            "diffuse": [0.48, 0.50, 0.54],
+            "specular": [0.06, 0.06, 0.06],
+            "cast_shadow": False,
+        },
+        {
+            "position_meters": [2.20, -0.40, 0.95],
+            "direction": [-0.80, 0.20, -0.40],
+            "directional": True,
+            "diffuse": [0.28, 0.24, 0.18],
+            "specular": [0.03, 0.03, 0.03],
+            "cast_shadow": False,
+        },
+    ],
+}
+
 
 @dataclass(frozen=True)
 class BeltGeometry:
