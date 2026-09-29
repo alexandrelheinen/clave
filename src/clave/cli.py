@@ -1004,6 +1004,30 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="override belt speed in meters per second (default: config value)",
     )
+    sim.add_argument(
+        "--mode",
+        "--render-mode",
+        dest="render_mode",
+        choices=("lite", "demo", "realistic"),
+        default=None,
+        help=(
+            "rendering mode: 'lite' for lightweight/fast validation without shadows, "
+            "or 'demo'/'realistic' for professional presentation rendering with proper "
+            "shadowing, lighting, and colors (default: lite)"
+        ),
+    )
+    sim.add_argument(
+        "--lite",
+        action="store_true",
+        help="alias for --render-mode lite (fast lightweight validation)",
+    )
+    sim.add_argument(
+        "--demo",
+        "--realistic",
+        action="store_true",
+        dest="demo_mode",
+        help="alias for --render-mode demo (realistic presentation rendering)",
+    )
 
     still = sub.add_parser(
         "still",
@@ -1119,12 +1143,20 @@ def _debug_tracker(root: Path, args: Any) -> int:
     from clave.sim.debug_run import run
     from clave.sim.report import report_lines
 
+    render_mode = "lite"
+    if args.render_mode:
+        render_mode = args.render_mode
+    elif getattr(args, "demo_mode", False):
+        render_mode = "demo"
+    elif getattr(args, "lite", False):
+        render_mode = "lite"
+
     LOGGER.debug(
         "sim parameters: seconds=%.3f (use sim --seconds to override), seed=%d, "
         "out=%s, video=%s, camera_video=%s, frames=%s, telemetry=%s, "
         "telemetry_rate=%.3f, "
         "trajectory_seconds=%.3f, window=%s, view=%s, ground_truth_tracker=%s, "
-        "progress=%s",
+        "progress=%s, render_mode=%s",
         args.seconds,
         args.seed,
         args.out,
@@ -1138,6 +1170,7 @@ def _debug_tracker(root: Path, args: Any) -> int:
         args.view,
         args.ground_truth_tracker,
         not args.no_progress,
+        render_mode,
     )
     telemetry_path = None
     if args.telemetry:
@@ -1161,6 +1194,7 @@ def _debug_tracker(root: Path, args: Any) -> int:
         ground_truth_tracker=args.ground_truth_tracker,
         belt_speed=args.belt_speed,
         progress=not args.no_progress,
+        render_mode=render_mode,
     )
     for line in report_lines(report):
         _log_output(line)

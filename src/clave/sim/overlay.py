@@ -46,8 +46,10 @@ def bounds_of(runs: Sequence[tuple[int, int, int]]) -> tuple[int, int, int, int]
 def paint_boxes(
     frame: NDArray[np.uint8],
     boxes: Sequence[tuple[int, int, int, int]],
+    labels: Sequence[str] | None = None,
+    render_mode: str = "lite",
 ) -> NDArray[np.uint8]:
-    """Draw inclusive box borders on an RGB frame.
+    """Draw inclusive box borders and ML tracking overlays on an RGB frame.
 
     The boxes are the pixels each object covered in a segmentation of this
     same frame (`AC-CAM-03`). Pixels outside a box stay as the camera
@@ -56,25 +58,94 @@ def paint_boxes(
     Args:
         frame: Height by width by three, RGB.
         boxes: Inclusive `(x_min, y_min, x_max, y_max)` bounds.
+        labels: Optional label strings (material / tracking id) per box.
+        render_mode: Render mode ('lite' or 'demo'/'realistic').
 
     Returns:
         The same frame, with borders written in.
     """
     height, width = frame.shape[:2]
-    color = np.asarray(_BOX_RGB, dtype=np.uint8)
-    for x0, y0, x1, y1 in boxes:
-        left = min(max(int(x0), 0), width - 1)
-        right = min(max(int(x1), 0), width - 1)
-        top = min(max(int(y0), 0), height - 1)
-        bottom = min(max(int(y1), 0), height - 1)
-        if right < left:
-            left, right = right, left
-        if bottom < top:
-            top, bottom = bottom, top
-        frame[top, left : right + 1] = color
-        frame[bottom, left : right + 1] = color
-        frame[top : bottom + 1, left] = color
-        frame[top : bottom + 1, right] = color
+    if render_mode == "lite" or not labels:
+        color = np.asarray(_BOX_RGB, dtype=np.uint8)
+        for x0, y0, x1, y1 in boxes:
+            left = min(max(int(x0), 0), width - 1)
+            right = min(max(int(x1), 0), width - 1)
+            top = min(max(int(y0), 0), height - 1)
+            bottom = min(max(int(y1), 0), height - 1)
+            if right < left:
+                left, right = right, left
+            if bottom < top:
+                top, bottom = bottom, top
+            frame[top, left : right + 1] = color
+            frame[bottom, left : right + 1] = color
+            frame[top : bottom + 1, left] = color
+            frame[top : bottom + 1, right] = color
+        return frame
+
+    # Demo / realistic mode: styled bounding boxes with labels
+    try:
+        import cv2
+
+        for idx, (x0, y0, x1, y1) in enumerate(boxes):
+            left = min(max(int(x0), 0), width - 1)
+            right = min(max(int(x1), 0), width - 1)
+            top = min(max(int(y0), 0), height - 1)
+            bottom = min(max(int(y1), 0), height - 1)
+            if right < left:
+                left, right = right, left
+            if bottom < top:
+                top, bottom = bottom, top
+
+            # Main bounding box
+            cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 128), 2)
+
+            # Corner accents
+            c_len = min(8, max(3, (right - left) // 4))
+            cv2.line(frame, (left, top), (left + c_len, top), (0, 255, 255), 2)
+            cv2.line(frame, (left, top), (left, top + c_len), (0, 255, 255), 2)
+            cv2.line(frame, (right, bottom), (right - c_len, bottom), (0, 255, 255), 2)
+            cv2.line(frame, (right, bottom), (right, bottom - c_len), (0, 255, 255), 2)
+
+            if labels and idx < len(labels):
+                text = labels[idx]
+                font = cv2.FONT_HERSHEY_SIMPLEX
+                scale = 0.45
+                thickness = 1
+                (txt_w, txt_h), baseline = cv2.getTextSize(text, font, scale, thickness)
+                b_top = max(0, top - txt_h - 6)
+                b_right = min(width, left + txt_w + 6)
+                cv2.rectangle(
+                    frame,
+                    (left, b_top),
+                    (b_right, b_top + txt_h + 6),
+                    (0, 100, 50),
+                    -1,
+                )
+                cv2.putText(
+                    frame,
+                    text,
+                    (left + 3, b_top + txt_h + 2),
+                    font,
+                    scale,
+                    (255, 255, 255),
+                    thickness,
+                    cv2.LINE_AA,
+                )
+    except ImportError:
+        color = np.asarray(_BOX_RGB, dtype=np.uint8)
+        for x0, y0, x1, y1 in boxes:
+            left = min(max(int(x0), 0), width - 1)
+            right = min(max(int(x1), 0), width - 1)
+            top = min(max(int(y0), 0), height - 1)
+            bottom = min(max(int(y1), 0), height - 1)
+            if right < left:
+                left, right = right, left
+            if bottom < top:
+                top, bottom = bottom, top
+            frame[top, left : right + 1] = color
+            frame[bottom, left : right + 1] = color
+            frame[top : bottom + 1, left] = color
+            frame[top : bottom + 1, right] = color
     return frame
 
 
@@ -109,6 +180,7 @@ def _write_camera_frame(
     data: Any,
     camera: str,
     recorder: Any,
+    render_mode: str = "lite",
 ) -> None:
     """Paint one detection-camera frame and hand it to the encoder.
 
@@ -122,15 +194,23 @@ def _write_camera_frame(
         data: The simulated state.
         camera: The detection camera's name.
         recorder: The open encoder.
+        render_mode: Render mode ('lite' or 'demo'/'realistic').
     """
     rgb.update_scene(data, camera=camera)
+    if render_mode in ("demo", "realistic"):
+        _with_shadows(rgb)
+    else:
+        _without_shadows(rgb)
     frame = np.array(rgb.render(), copy=True)
     segmentation.update_scene(data, camera=camera)
-    boxes = tuple(
-        bounds_of(mask.runs)
-        for mask in segment_masks(model, segmentation.render()).values()
-    )
-    paint_boxes(frame, boxes)
+    found = segment_masks(model, segmentation.render())
+    boxes_and_labels = [
+        (bounds_of(mask.runs), name.replace("object_", "OBJ_"))
+        for name, mask in found.items()
+    ]
+    boxes = [item[0] for item in boxes_and_labels]
+    labels = [item[1] for item in boxes_and_labels]
+    paint_boxes(frame, boxes, labels=labels, render_mode=render_mode)
     recorder.write(frame)
 
 
@@ -430,6 +510,7 @@ def _painted(
     task: TaskMachine,
     trajectory_seconds: float,
     indices: Any,
+    render_mode: str = "lite",
 ) -> Any:
     """Render one video frame with the markers standing in it.
 
@@ -440,6 +521,10 @@ def _painted(
         standing: The grasp markers settled at the last capture.
         control: The control settings, for the park pose and its colour.
         surface: Height of the belt surface, in meters.
+        task: Active task machine state.
+        trajectory_seconds: Trajectory horizon in seconds.
+        indices: Arm model indices.
+        render_mode: Render mode ('lite' or 'demo'/'realistic').
 
     Returns:
         The rendered frame.
@@ -452,30 +537,22 @@ def _painted(
         trajectory_seconds,
         _flange(indices, data),
     )
-    _without_shadows(renderer)
+    if render_mode in ("demo", "realistic"):
+        _with_shadows(renderer)
+    else:
+        _without_shadows(renderer)
     return renderer.render()
 
 
 def _without_shadows(renderer: Any) -> None:
-    """Turn the shadow map off for one frame.
-
-    MEASURED, and it is the whole cost of this view. A frame of this scene
-    takes 90.9 ms to render and 28.5 ms with shadows off, and halving the
-    output resolution changes nothing at all: 89.7 ms at 480 by 270 against
-    90.9 at 960 by 540. That rules out rasterisation and names the shadow
-    map, which is an offscreen buffer of fixed size rendered once per
-    casting light, and this scene has two of them.
-
-    At the shipped frame interval a sixty second run asks for six thousand
-    frames, so the difference is twenty six minutes against eight.
-
-    This is the diagnostic view, not a published figure. `clave still`
-    renders those and keeps its shadows, because there a frame is rendered
-    once and the lighting is the point.
-
-    Args:
-        renderer: The renderer, whose scene flags are set in place.
-    """
+    """Turn the shadow map off for one frame."""
     import mujoco
 
     renderer.scene.flags[mujoco.mjtRndFlag.mjRND_SHADOW] = 0
+
+
+def _with_shadows(renderer: Any) -> None:
+    """Turn the shadow map on for one frame."""
+    import mujoco
+
+    renderer.scene.flags[mujoco.mjtRndFlag.mjRND_SHADOW] = 1

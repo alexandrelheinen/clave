@@ -271,6 +271,7 @@ def run(
     ground_truth_tracker: bool | None = None,
     belt_speed: float | None = None,
     progress: bool = True,
+    render_mode: str = "lite",
 ) -> DebugRunReport:
     """Drive the tracker over one rollout, annotating every capture.
 
@@ -315,9 +316,15 @@ def run(
     """
     write_frames = bool(window or video) if frames is None else frames
     os.environ.setdefault("MUJOCO_GL", "osmesa")
+    render_mode = render_mode.lower()
+    if render_mode not in ("lite", "demo", "realistic"):
+        raise DebugRunError(
+            f"unknown render_mode {render_mode!r}. Options: 'lite', 'demo', 'realistic'"
+        )
+
     LOGGER.debug(
         "initializing tracker debug run: root=%s out=%s seconds=%.3f seed=%d "
-        "capture_interval=%.3f ground_truth_tracker=%s frames=%s",
+        "capture_interval=%.3f ground_truth_tracker=%s frames=%s render_mode=%s",
         root,
         out,
         seconds,
@@ -325,6 +332,7 @@ def run(
         capture_interval,
         ground_truth_tracker,
         write_frames,
+        render_mode,
     )
     import cv2
     import mujoco
@@ -375,7 +383,14 @@ def run(
         else bool(debug.get("ground_truth_tracker", False))
     )
 
-    model, data, plan = scene.build(raw, np.random.default_rng(seed), root)
+    presentation = (
+        scene.DEFAULT_DEMO_PRESENTATION
+        if render_mode in ("demo", "realistic")
+        else None
+    )
+    model, data, plan = scene.build(
+        raw, np.random.default_rng(seed), root, presentation=presentation
+    )
     if belt_speed is not None:
         plan = replace(plan, belt=replace(plan.belt, speed=belt_speed))
     spawn = config.require(raw, "spawn")
@@ -502,6 +517,7 @@ def run(
                     "belt_speed_override": belt_speed,
                     "window": window,
                     "progress": progress,
+                    "render_mode": render_mode,
                 },
             ),
             indent=2,
@@ -955,6 +971,7 @@ def run(
                     data,
                     detection_camera,
                     camera_recorder,
+                    render_mode=render_mode,
                 )
             if due and line_view:
                 frame = _painted(
@@ -967,6 +984,7 @@ def run(
                     task,
                     trajectory_seconds,
                     indices,
+                    render_mode=render_mode,
                 )
                 if recorder is not None:
                     recorder.write(frame)
@@ -1004,14 +1022,22 @@ def run(
                     )
 
                     phase_name = "standby" if goal is None else goal.phase.value
-                    hud = (
-                        f"SIM: {data.time:5.2f}s | BELT: {feeding.speed:4.2f} m/s | "
-                        f"PHASE: {phase_name.upper()}"
+                    mode_tag = (
+                        "DEMO" if render_mode in ("demo", "realistic") else "LITE"
                     )
+                    time_str = f"{data.time:5.2f}s"
+                    spd_str = f"{feeding.speed:4.2f} m/s"
+                    hud = (
+                        f"CLAVE SIM [{mode_tag}] | {time_str} | "
+                        f"BELT: {spd_str} | PHASE: {phase_name.upper()}"
+                    )
+                    font_face = cv2.FONT_HERSHEY_SIMPLEX
+                    (tw, th), _ = cv2.getTextSize(hud, font_face, 0.55, 2)
+                    cv2.rectangle(display, (15, 10), (25 + tw, 65), (20, 20, 20), -1)
                     cv2.putText(
                         display,
                         hud,
-                        (20, 30),
+                        (20, 32),
                         cv2.FONT_HERSHEY_SIMPLEX,
                         0.55,
                         (255, 255, 255),
@@ -1021,7 +1047,7 @@ def run(
                     cv2.putText(
                         display,
                         f"TRACKS: {len(standing)} | GRASPS: {len(lifts)}",
-                        (20, 55),
+                        (20, 56),
                         cv2.FONT_HERSHEY_SIMPLEX,
                         0.50,
                         (200, 200, 200),
@@ -1272,6 +1298,7 @@ def run(
         belt_contacts=contacts,
         worst_tool_tilt_degrees=tilt,
         metadata_path=metadata_path,
+        render_mode=render_mode,
     )
     written_report = out / "report.json"
     written_report.write_text(
