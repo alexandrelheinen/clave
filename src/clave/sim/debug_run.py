@@ -1055,16 +1055,20 @@ def run(
                         cv2.LINE_AA,
                     )
 
-                    target_wall = start_wall + data.time
-                    now_wall = time.perf_counter()
-                    sleep_sec = target_wall - now_wall
-                    if sleep_sec > 0.001:
-                        time.sleep(sleep_sec)
+                    if opened:
+                        cv2.imshow("clave tracker debug", display)
+                        target_wall = start_wall + data.time
+                        now_wall = time.perf_counter()
+                        sleep_sec = target_wall - now_wall
 
-                    cv2.imshow("clave tracker debug", display)
-                    key = cv2.waitKey(1) & 0xFF
-                    if key in (27, ord("q")):
-                        break
+                        if sleep_sec > 0.001:
+                            delay_ms = int(sleep_sec * 1000)
+                            key = cv2.waitKey(max(1, delay_ms)) & 0xFF
+                        else:
+                            key = cv2.waitKey(1) & 0xFF
+
+                        if key in (27, ord("q")):
+                            break
 
             if use_ground_truth and task.active and data.time >= next_ground_truth:
                 next_ground_truth = data.time + ground_truth_steer
