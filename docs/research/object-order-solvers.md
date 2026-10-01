@@ -9,6 +9,23 @@ which a tour is a real decision, the colony's first track matches the walk
 on 35% of epochs and the lateness along its tour is 3.00 s against the
 walk's 2.14 s. The shipped solver stays the greedy walk.
 
+A second replay asks the same solvers about a field the belt does not
+have. Twelve, twenty-four, or thirty-six points move in a 4 m square,
+nothing damps the move, and three other robots each delete a point
+before the planner looks. The order that holds together is a repair of
+the previous permutation: survivors keep their relative order, and each
+new id is inserted where it adds the least length. With 21 points still
+visible that repair runs 9.8% over a 2-opt polish of the walk, and 95%
+of epochs fall inside 20% of the polish, while 83% of the edges that
+still have both ends survive. At 33 visible points the repair runs 31.5%
+over and 20% of epochs stay inside that band. The warm colony, eight
+ants and twenty iterations at evaporation 0.50, runs 22% over there,
+inside the band on 40% of epochs, and keeps 47% of those edges. The
+call takes 148 ms. The walk takes 0.85 ms and runs 11.5% over the polish.
+Five iterations, the setting in which a carried trail has to stand in
+for a short search, averages 30.4 m and 35.5 m against a polished path
+of 18.6 m.
+
 The comparison is `python -m clave.control.order_study`. It writes
 `runs/debug/order-solvers/study.json`. The figures below are that file at
 seed 0, with the sample sizes and the colony parameters recorded in it.
@@ -279,6 +296,120 @@ agreement falls to 35%, and mean lateness is 3.00 s for the colony against
 to absorb an arrival. On a belt that keeps arriving, it holds an old head
 past the point where the deadline has moved.
 
+## A field shared with other robots
+
+The replay is `python -m clave.control.order_fleet`. It writes
+`runs/debug/order-solvers/fleet.json`. The figures below are that file
+at seed 0, forty epochs, four robots. The square is 4 m on a side. Every
+point moves at 0.35 m/s and a call happens every 0.25 s, so each point
+travels 87.5 mm between calls. Before the call the generator replaces a
+fraction 0.08 of the ids, rounded to a count, and then removes three
+more, drawn from the live ids and fixed before any solver runs. The
+planner sees 9, 21, and 33 points. From one of its epochs to the next
+the set loses a mean of 2.8, 4.2, and 5.2 ids. The depot stays at the
+center. The exit weight is zero, so the score is open-path length, which
+is the quantity a pheromone keyed by track id can remember. Urgency
+belongs to the belt study above.
+
+The reference is 2-opt, first improvement, started from the greedy walk.
+A reversal is kept when the two boundary edges shorten. It is a local
+path. At nine visible points a fresh colony of twenty iterations and
+evaporation 0.20 is shorter than that path on 20% of epochs, and the
+mean lengths are 10.32 m and 10.35 m. A ratio below one means that
+colony found a shorter path than this 2-opt descent.
+Within 10% and within 20% count epochs whose length is at most that
+factor times the 2-opt length.
+
+Edge keep is the share of successive pairs, the depot included, that
+still have both ends and that the next order still traverses as a pair.
+A head change is counted only on epochs where the previous head is still
+present. The Kendall fraction is the share of shared pairs whose
+relative order changed. The repair scores zero there because keeping
+that relative order is the method.
+
+Colony weights other than the iteration count and the evaporation come
+from the runtime file: eight ants, pheromone weight 1, heuristic weight
+2, deposit 1, initial pheromone 1, position discount 1. A cold colony is
+a new solver every epoch. A warm colony is one solver, and an edge that
+names a deleted id is dropped when the call starts. The best-of-call row
+returns the shortest tour the call saw. The last-iteration row returns
+the shortest tour of the final iteration. Deposit uses every ant either
+way, so those two rows differ in the tour they hand back.
+
+| Seen | Method | Ratio | Within 20% | Edges kept | Head changes | ms |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| 9 | 2-opt from the walk | 1.000 | 100% | 0.42 | 0.61 | 0.10 |
+| 9 | nearest neighbor | 1.090 | 92% | 0.47 | 0.48 | 0.06 |
+| 9 | repair | 1.052 | 98% | 0.72 | 0.44 | 0.03 |
+| 9 | warm, 20 iterations, evaporation 0.20 | 1.018 | 100% | 0.38 | 0.60 | 14.3 |
+| 9 | warm, 20 iterations, evaporation 0.50 | 1.045 | 100% | 0.38 | 0.57 | 14.2 |
+| 9 | cold, 20 iterations, evaporation 0.20 | 0.999 | 100% | 0.43 | 0.54 | 14.5 |
+| 9 | warm, 5 iterations, evaporation 0.20 | 1.035 | 100% | 0.35 | 0.68 | 3.6 |
+| 21 | 2-opt from the walk | 1.000 | 100% | 0.46 | 0.47 | 0.56 |
+| 21 | nearest neighbor | 1.077 | 88% | 0.46 | 0.25 | 0.29 |
+| 21 | repair | 1.098 | 95% | 0.83 | 0.10 | 0.10 |
+| 21 | warm, 20 iterations, evaporation 0.20 | 1.060 | 98% | 0.47 | 0.43 | 63 |
+| 21 | warm, 20 iterations, evaporation 0.50 | 1.101 | 85% | 0.53 | 0.40 | 63 |
+| 21 | cold, 20 iterations, evaporation 0.20 | 1.174 | 58% | 0.32 | 0.47 | 63 |
+| 21 | warm, 5 iterations, evaporation 0.20 | 1.362 | 10% | 0.26 | 0.55 | 16 |
+| 33 | 2-opt from the walk | 1.000 | 100% | 0.32 | 0.41 | 2.3 |
+| 33 | nearest neighbor | 1.115 | 85% | 0.43 | 0.24 | 0.85 |
+| 33 | repair | 1.315 | 20% | 0.86 | 0.06 | 0.24 |
+| 33 | warm, 20 iterations, evaporation 0.20 | 1.227 | 30% | 0.37 | 0.23 | 149 |
+| 33 | warm, 20 iterations, evaporation 0.50 | 1.221 | 40% | 0.47 | 0.15 | 148 |
+| 33 | cold, 20 iterations, evaporation 0.20 | 1.540 | 0% | 0.21 | 0.66 | 148 |
+| 33 | warm, 5 iterations, evaporation 0.20 | 1.637 | 0% | 0.20 | 0.61 | 38 |
+
+Colony rows are the best tour of the call. The file holds the rest of
+the grid. No five-iteration row at 21 or 33 visible points lands inside
+20% on more than 10% of epochs. The longest is the warm colony at
+evaporation 0.50 and five iterations: ratio 1.917 at 33 points, mean
+length 35.5 m.
+
+At nine visible points every row in the table is inside 20% on at least
+92% of epochs. Length is cheap. The repair keeps 72% of surviving edges
+at a 5.2% gap. The twenty-iteration warm colony at evaporation 0.20
+keeps 38% at a 1.8% gap. Retention and length are already separating.
+
+At 21 visible points that warm colony is the shortest method in the
+table aside from the reference itself: 6.0% over, inside 10% on 33 of
+the 40 epochs, mean length 16.0 m against the reference 15.1 m. The walk is
+7.7% over, at 16.3 m. Edge keep is 0.47 for the colony and 0.46 for the
+walk. The surviving head changes on 43% of epochs for the colony and on
+25% for the walk. The calls take 63 ms and 0.29 ms. The cold colony at
+the same iteration count is 17%
+over and keeps 32% of edges, so the carried trail is what makes the
+warm row short. The repair keeps 83% of edges, changes the surviving
+head on 10% of epochs, and runs 9.8% over, inside 20% on 95% of epochs
+and inside 10% on 45%. Five iterations drops the warm row to 36% over,
+mean length 20.5 m.
+
+At 33 visible points the walk is the short cheap tour: 11.5% over
+(20.7 m against 18.6 m), inside 20% on 85% of epochs, edge keep 0.43,
+head change 0.24, 0.85 ms. The best colony row is warm, twenty
+iterations, evaporation 0.50: 22% over (22.7 m), inside 20% on 40% of
+epochs and inside 10% on 10%, edge keep 0.47, head change 0.15, 148 ms.
+Evaporation 0.20 runs 23% over, keeps 0.37 of the edges, and changes
+the head on 23% of surviving epochs. The last-iteration tour is the
+longer of the two reports. At this size and evaporation 0.50 its ratio
+is 1.265 against 1.221 for the call's best tour, edge keep is 0.45
+against 0.47, and the head-change rate is 0.15 in both rows. A cold
+twenty-iteration colony runs 54% over at evaporation 0.20 and 44.5%
+over at 0.50, with edge keep near 0.21.
+Five warm iterations sit at 64% and 92% over. A trail laid down by
+those tours and then trusted is a long tour. The 2-opt polish keeps
+32% of edges and changes the head on 41% of surviving epochs, in 2.3 ms.
+Re-solving a local path every epoch is short, and the order moves.
+
+At 33 points the higher evaporation is both the shorter warm colony and
+the one that keeps more edges. At 21 points the lower evaporation is
+the shorter one (6.0% against 10.1%) and keeps slightly fewer edges
+(0.47 against 0.53). Carried pheromone shortens the path once the
+iteration count is high enough to deposit on decent tours. The repair
+is the method whose successive edges survive. Past about twenty visible
+points that survival is a long path: 31.5% over the reference at 33
+points, with a fifth of epochs still inside 20%.
+
 ## What to keep
 
 Keep the greedy walk as the only solver the line runs. It is the rule the
@@ -297,3 +428,18 @@ urgent head, enumeration at the measured peak of six is exact and, at
 11 ms, the same order of time as the colony, with no seed and no discount
 to misunderstand. That would be a different product decision, because it
 throws away the exit weight. It is not a reason to keep the ants.
+
+On the shared field, keep the walk as well if one construction has to
+cover every size in the replay. At 33 visible points it runs 11.5% over
+the polished path, inside 20% on 85% of epochs, in 0.85 ms. The colony
+row that comes closest runs 22% over, inside that band on 40% of epochs,
+in 148 ms. The surviving head changes on 15% of epochs, against 24% for
+the walk, and edge keep is 0.47 beside the walk's 0.43. Add the repair
+when a requirement says a stolen point must leave the rest of the order
+alone. It keeps 86% of surviving edges, and the surviving head changes
+on 6% of epochs. Give it a length check. At 33 points the repair runs
+31.5% over and 20% of epochs stay inside 20% of the polish. At 21 points
+95% of epochs are inside that band and the mean gap is 9.8%. When the
+requirement is the short path, polish the walk with 2-opt. At 33 points
+that costs 2.3 ms. Enumeration no longer fits at this size, and the
+colony remains the longer tour.

@@ -164,4 +164,5 @@ call, which is what the belt study scores.
 
 Whether `ant_colony` remains in the tree after the comparison is read.
 Both solvers ship, the default stays `nearest_neighbor`, and deleting
-one is a separate change.
+one is a separate change. The fleet replay is part of the comparison
+the research note records.
