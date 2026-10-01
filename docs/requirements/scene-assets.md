@@ -12,7 +12,8 @@ way the conveyor module already is.
 
 **In.** The files named by `configs/world/sorting_line.yml` and the barcode
 fixtures. A manifest of commit, path and digest. `scripts/import_scene_assets.py
---objects`.
+--objects`, including the Cloud Agent install script's invocation of that
+fetch.
 
 **Out.** The warehouse COLLADA submodule, which is converted rather than
 spawned as-is. The vendored UR10e and the Robotiq gripper. The unused ROBOTIS
@@ -30,6 +31,10 @@ on disk untouched.
 `AC-ASSET-03`: A download whose digest does not match shall raise and shall
 not replace the destination.
 
+`AC-ASSET-04`: When `scripts/cloud-agent-install.sh` fetches the pinned
+object meshes, it shall run `scripts/import_scene_assets.py` with the
+project virtualenv interpreter.
+
 ## Traceability
 
 | ID | Test(s) |
@@ -37,6 +42,7 @@ not replace the destination.
 | `AC-ASSET-01` | `test_the_manifest_covers_every_spawned_object_path` |
 | `AC-ASSET-02` | `test_a_matching_file_is_not_downloaded_again` |
 | `AC-ASSET-03` | `test_a_bad_download_is_refused` |
+| `AC-ASSET-04` | `test_the_install_script_fetches_objects_with_the_venv` |
 
 ## Constraints
 

@@ -58,7 +58,9 @@ uv pip install --python .venv/bin/python -e ".[dev,world]" \
   || fail "python dependency install failed"
 
 step "Object meshes named by the world"
-python scripts/import_scene_assets.py --objects \
+# The image has python3 and no python, and the editable install lives in the
+# venv created above. A bare python exits here and skips the cargo steps.
+.venv/bin/python scripts/import_scene_assets.py --objects \
   || fail "object asset download failed"
 
 step "Cargo tools the quality gate runs"
