@@ -7,11 +7,15 @@ therefore scored
 
     cost = distance_to_flange + exit_weight * distance_before_leaving
 
-with both terms in meters, so the weight is dimensionless. The order is built
-greedily, scoring each next candidate from where the flange will stand after
-the previous one, which is nearest-neighbour tour construction and not an
-optimal tour. Naming that is the point: the ordering is a starting algorithm
-chosen to be replaced, and calling it optimal would hide that it is not.
+with both terms in meters, so the weight is dimensionless. The shipped
+solver walks that cost greedily, scoring each next candidate from where the
+flange will stand after the previous one. That is nearest-neighbor tour
+construction, and it is one solver behind the name in the control
+configuration. The sum of the cost over a whole permutation does not depend
+on the weight: every object pays its exit term once, so a search that
+minimizes the sum is minimizing travel and can leave a dying object for
+last. The greedy walk does not have that blind spot, because it never
+scores the sum.
 
 **The queue is damped at its inputs rather than frozen at its output.** A
 mean of 2.67 objects sit inside the workspace at once, peaking at six, so an
@@ -46,6 +50,7 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
+from clave.control.order import OrderNode, OrderRequest, make_solver
 from clave.control.settings import SelectionSettings
 from clave.control.trajectory import distance, same
 from clave.tracker.belt_frame import carry
@@ -259,6 +264,7 @@ class Selector:
         )
         self._anchors: dict[int, _Anchor] = {}
         self._order: tuple[int, ...] = ()
+        self._solver = make_solver(settings.solver, settings.ant_colony)
 
     @property
     def anchor_count(self) -> int:
@@ -390,31 +396,34 @@ class Selector:
         Returns:
             The track ids, best first.
         """
-        remaining = [
-            _candidate(
+        nodes: list[OrderNode] = []
+        for track_id, marker in live.items():
+            speed = (
+                max(0.0, marker.velocity_world[0])
+                if marker.velocity_world is not None
+                else belt_speed
+            )
+            candidate = _candidate(
                 marker,
-                self._carried(
-                    track_id,
-                    max(0.0, marker.velocity_world[0])
-                    if marker.velocity_world is not None
-                    else belt_speed,
-                    at_nanos,
-                ),
+                self._carried(track_id, speed, at_nanos),
                 belt_speed,
                 at_nanos,
             )
-            for track_id, marker in live.items()
-        ]
-        order: list[int] = []
-        # Nearest neighbour: each pick moves the flange, and the next one is
-        # scored from where it landed rather than from where the arm started.
-        standing = flange
-        while remaining:
-            best = min(remaining, key=lambda item: self._cost(item, standing))
-            remaining.remove(best)
-            order.append(best.track_id)
-            standing = best.anchor
-        return tuple(order)
+            nodes.append(
+                OrderNode(
+                    node_id=track_id,
+                    position=candidate.anchor_position_belt,
+                    distance_before_leaving=candidate.distance_before_leaving,
+                )
+            )
+        self._solver.retain(frozenset(node.node_id for node in nodes))
+        return self._solver.order(
+            OrderRequest(
+                nodes=tuple(nodes),
+                origin=flange,
+                exit_weight=self._settings.exit_weight,
+            )
+        )
 
     def _admissible(self, marker: GraspMarker, at_nanos: int) -> bool:
         """Return whether a marker is worth ordering at all.
@@ -442,20 +451,6 @@ class Selector:
         if not self._admits(marker.flange):
             return False
         return self._pickability(marker)
-
-    def _cost(self, candidate: Candidate, flange: NDArray[np.float64]) -> float:
-        """Return what serving this candidate from here costs.
-
-        Args:
-            candidate: The candidate scored.
-            flange: Where the flange stands, or will stand.
-
-        Returns:
-            The cost, in meters. Lower is served sooner, so an object with
-            little belt left scores low and outranks a nearer one.
-        """
-        travel = distance(flange, candidate.anchor)
-        return travel + self._settings.exit_weight * candidate.distance_before_leaving
 
 
 def _candidate(

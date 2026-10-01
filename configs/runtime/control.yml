@@ -27,6 +27,38 @@ selection:
   # the point where a displacement should reorder anything.
   anchor_radius_meters: 0.020
 
+  # Which construction orders the admissible tracks. nearest_neighbor is the
+  # greedy walk this file's exit weight was written for. ant_colony is the
+  # ant system beside it. The comparison is docs/research/object-order-solvers.md.
+  solver: nearest_neighbor
+
+  # Ant system (Dorigo, Maniezzo and Colorni, 1996). Loaded even while the
+  # walk above is selected, so pointing solver at ant_colony cannot fail for
+  # a missing number.
+  #
+  # Not a measurement on this belt. The paper's reported runs used a heuristic
+  # weight of 5 and an evaporation of 0.5. The weights here are that family
+  # with a milder heuristic weight, so pheromone is able to move a choice,
+  # which is the hypothesis the study tests. Deposit is scaled to tour scores
+  # of a few meters: one tour then moves an edge by about as much pheromone
+  # as it started with. The paper's deposit of 100 matched a different
+  # distance scale. Counts are sized to the measured peak of six objects on
+  # the belt, not to a large tour.
+  ant_colony:
+    ant_count: 8
+    iteration_count: 20
+    evaporation: 0.20
+    pheromone_weight: 1.0
+    heuristic_weight: 2.0
+    deposit: 1.0
+    initial_pheromone: 1.0
+    # At 1 the colony scores the plain sum of step costs. The exit weight
+    # then adds the same constant to every permutation, so the tour it keeps
+    # is a short path and the weight does not decide it. Below 1, earlier
+    # visits weigh more and the first object can feel the deadline.
+    position_discount: 1.0
+    seed: 0
+
 task:
   # motion_only runs standby, tracking, parking and fault, which is what
   # tuning arm speed against belt speed needs: the flange rides at approach

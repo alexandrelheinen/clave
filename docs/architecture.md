@@ -274,6 +274,18 @@ generated from a seed through one seeding entry point rather than downloaded.
 A training run records its configuration digest, its dataset digest and its
 environment, so a figure can be traced to the world that produced it.
 
+## Queue order
+
+`clave.control.selection` asks `clave.control.order` for a permutation of
+the admissible tracks when the queue rebuilds. The runtime configuration
+names the solver. `nearest_neighbor` is the greedy walk
+[arm control](requirements/arm-control.md) specifies, and it is the name
+the line ships. `ant_colony` is an ant system on the same step cost, with
+pheromone that survives from one rebuild to the next.
+[tour order](requirements/tour-order.md) is the contract. The comparison
+that says which name to keep is
+[object order](research/object-order-solvers.md).
+
 ## Debug narrative
 
 `clave sim --log-level DEBUG` tells the visit as it happens: why the queue

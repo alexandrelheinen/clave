@@ -81,6 +81,45 @@ class Profile(enum.Enum):
     """Adds descent, grasp, retreat and delivery, planned as one sequence."""
 
 
+class OrderSolverKind(enum.Enum):
+    """Which construction turns the admissible tracks into a visit order."""
+
+    NEAREST_NEIGHBOR = "nearest_neighbor"
+    """Greedy walk. Each next track is the cheapest step from the last one."""
+
+    ANT_COLONY = "ant_colony"
+    """Ant system. Pheromone survives a rebuild and evaporates between iterations."""
+
+
+@dataclass(frozen=True)
+class AntColonySettings:
+    """The ant system's counts and weights.
+
+    Attributes:
+        ant_count: How many permutations one iteration samples.
+        iteration_count: How many iterations one rebuild runs.
+        evaporation: Fraction of stored pheromone removed before deposit.
+        pheromone_weight: Exponent on pheromone in the step probability.
+        heuristic_weight: Exponent on the reciprocal step cost. Zero ignores it.
+        deposit: Pheromone added on an edge, before dividing by the tour score.
+        initial_pheromone: Value of an edge no ant has deposited on yet.
+        position_discount: Multiplier on the step cost for each visit already
+            taken. One scores the plain sum, which does not depend on the
+            exit weight.
+        seed: Seed of the sampler, so two processes with the same requests agree.
+    """
+
+    ant_count: int
+    iteration_count: int
+    evaporation: float
+    pheromone_weight: float
+    heuristic_weight: float
+    deposit: float
+    initial_pheromone: float
+    position_discount: float
+    seed: int
+
+
 @dataclass(frozen=True)
 class SelectionSettings:
     """How the queue is ordered and how still it is held.
@@ -90,10 +129,15 @@ class SelectionSettings:
             Dimensionless, because both terms of that cost are meters.
         anchor_radius: How far the tracker's estimate moves before the anchor
             the ordering scores follows it, in meters.
+        solver: Which construction orders the tracks.
+        ant_colony: The colony's parameters, loaded even when the walk is
+            selected so renaming the solver cannot fail at the first rebuild.
     """
 
     exit_weight: float
     anchor_radius: float
+    solver: OrderSolverKind
+    ant_colony: AntColonySettings
 
 
 @dataclass(frozen=True)
@@ -349,10 +393,37 @@ class ControlSettings:
         servo = require(raw, "servo")
         calibration = require(raw, "calibration")
 
+        colony = require(selection, "ant_colony", "selection")
         return cls(
             selection=SelectionSettings(
                 exit_weight=float(require(selection, "exit_weight", "selection")),
                 anchor_radius=_positive(selection, "anchor_radius_meters", "selection"),
+                solver=_solver_kind(selection),
+                ant_colony=AntColonySettings(
+                    ant_count=_count(colony, "ant_count", "selection.ant_colony"),
+                    iteration_count=_count(
+                        colony, "iteration_count", "selection.ant_colony"
+                    ),
+                    evaporation=_open_closed_unit(
+                        colony, "evaporation", "selection.ant_colony"
+                    ),
+                    pheromone_weight=_strictly_positive(
+                        colony, "pheromone_weight", "selection.ant_colony"
+                    ),
+                    heuristic_weight=_nonnegative(
+                        colony, "heuristic_weight", "selection.ant_colony"
+                    ),
+                    deposit=_strictly_positive(
+                        colony, "deposit", "selection.ant_colony"
+                    ),
+                    initial_pheromone=_strictly_positive(
+                        colony, "initial_pheromone", "selection.ant_colony"
+                    ),
+                    position_discount=_open_closed_unit(
+                        colony, "position_discount", "selection.ant_colony"
+                    ),
+                    seed=_seed(colony, "seed", "selection.ant_colony"),
+                ),
             ),
             task=TaskSettings(
                 profile=_profile(task),
@@ -503,3 +574,141 @@ def _color(block: dict[str, Any], key: str, path: str) -> tuple[float, float, fl
             f"{path}.{key} holds {len(values)} numbers, and this is three"
         )
     return values[0], values[1], values[2]
+
+
+def _solver_kind(block: dict[str, Any]) -> OrderSolverKind:
+    """Read the order solver, naming the alternatives when it is wrong.
+
+    Args:
+        block: The `selection` block.
+
+    Returns:
+        The solver.
+
+    Raises:
+        WorldConfigError: If the key is absent or names no solver.
+    """
+    name = str(require(block, "solver", "selection"))
+    try:
+        return OrderSolverKind(name)
+    except ValueError:
+        known = ", ".join(sorted(member.value for member in OrderSolverKind))
+        raise WorldConfigError(
+            f"selection.solver is {name!r}, which is no solver. Known: {known}"
+        ) from None
+
+
+def _count(block: dict[str, Any], key: str, path: str) -> int:
+    """Read a count, refusing a fraction or anything below one.
+
+    Args:
+        block: The block to read from.
+        key: The key required.
+        path: Dotted path of the block, for the message.
+
+    Returns:
+        The count.
+
+    Raises:
+        WorldConfigError: If the key is absent, is not a whole number, or
+            is below one. A boolean is a whole number in Python and is
+            refused anyway, because it is not a count anyone wrote on purpose.
+    """
+    value = require(block, key, path)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise WorldConfigError(f"{path}.{key} is {value!r}, and this is a count")
+    if value < 1:
+        raise WorldConfigError(
+            f"{path}.{key} is {value}, and a count below one describes no search"
+        )
+    return value
+
+
+def _seed(block: dict[str, Any], key: str, path: str) -> int:
+    """Read a random seed.
+
+    Args:
+        block: The block to read from.
+        key: The key required.
+        path: Dotted path of the block, for the message.
+
+    Returns:
+        The seed.
+
+    Raises:
+        WorldConfigError: If the key is absent, is not a whole number, or
+            is negative.
+    """
+    value = require(block, key, path)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise WorldConfigError(
+            f"{path}.{key} is {value!r}, and a seed is a whole number"
+        )
+    if value < 0:
+        raise WorldConfigError(f"{path}.{key} is {value}, and a seed is not negative")
+    return value
+
+
+def _open_closed_unit(block: dict[str, Any], key: str, path: str) -> float:
+    """Read a fraction that has to sit in the open-closed unit interval.
+
+    Args:
+        block: The block to read from.
+        key: The key required.
+        path: Dotted path of the block, for the message.
+
+    Returns:
+        The fraction.
+
+    Raises:
+        WorldConfigError: If the key is absent or the value is not above
+            zero and at most one.
+    """
+    value = float(require(block, key, path))
+    if not 0.0 < value <= 1.0:
+        raise WorldConfigError(
+            f"{path}.{key} is {value}, and it has to be above zero and at most one"
+        )
+    return value
+
+
+def _strictly_positive(block: dict[str, Any], key: str, path: str) -> float:
+    """Read a magnitude that has to be above zero.
+
+    Args:
+        block: The block to read from.
+        key: The key required.
+        path: Dotted path of the block, for the message.
+
+    Returns:
+        The magnitude.
+
+    Raises:
+        WorldConfigError: If the key is absent or the value is not above zero.
+    """
+    value = float(require(block, key, path))
+    if not value > 0.0:
+        raise WorldConfigError(f"{path}.{key} is {value}, and it has to be above zero")
+    return value
+
+
+def _nonnegative(block: dict[str, Any], key: str, path: str) -> float:
+    """Read a weight that may be zero and may not be negative.
+
+    Args:
+        block: The block to read from.
+        key: The key required.
+        path: Dotted path of the block, for the message.
+
+    Returns:
+        The weight.
+
+    Raises:
+        WorldConfigError: If the key is absent or the value is negative.
+    """
+    value = float(require(block, key, path))
+    if value < 0.0:
+        raise WorldConfigError(
+            f"{path}.{key} is {value}, and a weight below zero reverses the score"
+        )
+    return value

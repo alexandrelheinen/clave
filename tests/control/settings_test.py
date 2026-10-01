@@ -9,7 +9,7 @@ from typing import Any
 import numpy as np
 import pytest
 
-from clave.control.settings import ControlSettings, Profile
+from clave.control.settings import ControlSettings, OrderSolverKind, Profile
 from clave.errors import ClaveError
 from clave.world.config import load
 
@@ -33,6 +33,7 @@ def test_the_shipped_configuration_loads() -> None:
     settings = shipped()
     assert settings.selection.exit_weight > 0.0
     assert settings.selection.anchor_radius > 0.0
+    assert settings.selection.solver is OrderSolverKind.NEAREST_NEIGHBOR
     assert settings.task.profile is Profile.FULL_VISIT
     assert settings.task.grasp_clearance > 0.0
     assert settings.task.approach_speed > 0.0
@@ -46,6 +47,8 @@ def test_the_shipped_configuration_loads() -> None:
     [
         ("selection", "exit_weight"),
         ("selection", "anchor_radius_meters"),
+        ("selection", "solver"),
+        ("selection", "ant_colony"),
         ("task", "profile"),
         ("task", "approach_height_meters"),
         ("task", "dwell_seconds"),
@@ -83,6 +86,66 @@ def test_an_unknown_profile_names_the_ones_that_exist() -> None:
     parsed = raw()
     parsed["task"]["profile"] = "full_send"
     with pytest.raises(ClaveError, match="motion_only"):
+        ControlSettings.load(parsed)
+
+
+def test_an_unknown_solver_names_the_ones_that_exist() -> None:
+    """AC-ORDER-02: an unknown solver names the ones that exist."""
+    parsed = raw()
+    parsed["selection"]["solver"] = "bees"
+    with pytest.raises(ClaveError, match="nearest_neighbor"):
+        ControlSettings.load(parsed)
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        "ant_count",
+        "iteration_count",
+        "evaporation",
+        "pheromone_weight",
+        "heuristic_weight",
+        "deposit",
+        "initial_pheromone",
+        "position_discount",
+        "seed",
+    ],
+)
+def test_an_absent_ant_colony_key_fails_at_load(key: str) -> None:
+    """AC-ORDER-05: an absent ant-colony key fails at load naming itself."""
+    parsed = raw()
+    del parsed["selection"]["ant_colony"][key]
+    with pytest.raises(ClaveError, match=key):
+        ControlSettings.load(parsed)
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("ant_count", 0),
+        ("ant_count", 1.5),
+        ("ant_count", True),
+        ("iteration_count", 0),
+        ("evaporation", 0.0),
+        ("evaporation", 1.1),
+        ("pheromone_weight", 0.0),
+        ("heuristic_weight", -0.1),
+        ("deposit", 0.0),
+        ("initial_pheromone", 0.0),
+        ("position_discount", 0.0),
+        ("position_discount", 1.1),
+        ("seed", -1),
+        ("seed", 1.2),
+        ("seed", True),
+    ],
+)
+def test_a_colony_parameter_outside_its_range_is_refused(
+    key: str, value: object
+) -> None:
+    """AC-ORDER-05: a colony parameter outside its range is refused."""
+    parsed = raw()
+    parsed["selection"]["ant_colony"][key] = value
+    with pytest.raises(ClaveError, match=key):
         ControlSettings.load(parsed)
 
 
