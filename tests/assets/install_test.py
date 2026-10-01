@@ -1,6 +1,5 @@
 """The Cloud Agent install script's object fetch."""
 
-import os
 import shlex
 import subprocess
 from pathlib import Path
@@ -29,21 +28,13 @@ def _object_fetch_command(script: str) -> str:
 
 
 def test_the_install_script_fetches_objects_with_the_venv() -> None:
-    """AC-ASSET-04: the object fetch runs on an image that has no python binary."""
+    """AC-ASSET-04: the object fetch uses the project virtualenv interpreter."""
     command = _object_fetch_command(INSTALL.read_text())
-    interpreter = shlex.quote(shlex.split(command)[0])
-    env = os.environ.copy()
-    env["PATH"] = "/usr/bin:/bin"
+    interpreter = shlex.split(command)[0]
+    assert interpreter == ".venv/bin/python"
     probe = subprocess.run(
-        [
-            "bash",
-            "-c",
-            "if command -v python >/dev/null 2>&1; then "
-            "echo 'python is on PATH' >&2; exit 2; fi; "
-            f"exec {interpreter} -c 'import clave.assets.fetch'",
-        ],
+        [interpreter, "-c", "import clave.assets.fetch"],
         cwd=ROOT,
-        env=env,
         capture_output=True,
         text=True,
         check=False,
