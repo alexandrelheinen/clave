@@ -34,15 +34,21 @@ nothing in the task machine changes.
   parameter.
 - A study that scores both solvers against an exhaustive reference on
   travel, on the first visit, on stability, and on time.
+- An offline fleet study on one shared sequence of moving points that
+  other robots remove. It scores the walk, a repair of the previous
+  order, and a colony with pheromone discarded or kept, against a 2-opt
+  reference.
 
 **Out of scope:**
 
 - Changing the anchor radius, the exit weight, or when the queue rebuilds.
-- A third runtime solver. Exhaustive search is the study's reference and
-  is not selectable on the line.
+- A third runtime solver. Exhaustive search and 2-opt are study
+  references and are not selectable on the line.
 - Persisting pheromone across a process restart.
 - Retuning the task machine, the servo, or the safety envelope around
   whichever head comes back.
+- Treating the fleet study as a change to what the arm runs. The line
+  still rebuilds on appear, retire, and anchor motion.
 
 ## Acceptance criteria
 
@@ -79,6 +85,13 @@ against an exhaustive reference, on whether the first visit agrees, on
 how the order moves when the same request is repeated and when the set
 changes, and on the time a call takes.
 
+`AC-ORDER-08`: The fleet study shall score the greedy walk, a repair of
+the previous order, and an ant colony run both with pheromone discarded
+between epochs and with pheromone kept, on one shared sequence in which
+points move and other robots remove points. It shall report open-path
+length against a 2-opt reference, the fraction of surviving edges the
+next order keeps, and the time a call takes.
+
 ## Traceability
 
 | ID | Test(s) |
@@ -90,6 +103,7 @@ changes, and on the time a call takes.
 | `AC-ORDER-05` | `tests/control/settings_test.py::test_an_absent_ant_colony_key_fails_at_load`, `test_a_colony_parameter_outside_its_range_is_refused` |
 | `AC-ORDER-06` | `tests/control/order_test.py::test_retiring_a_track_drops_edges_that_name_it` |
 | `AC-ORDER-07` | `tests/control/order_study_test.py::test_the_study_scores_both_solvers` |
+| `AC-ORDER-08` | `tests/control/order_fleet_test.py::test_the_fleet_study_scores_walk_repair_and_colony` |
 
 ## Constraints
 
@@ -100,6 +114,9 @@ changes, and on the time a call takes.
   dozens of admissible tracks at once is outside this contract.
 - The colony runs when the queue rebuilds (a track appears, retires, or
   its anchor moves). It does not run on a tick that only carries the belt.
+- The fleet study is not that queue. It calls a solver every epoch on
+  the raw position, with no anchor radius, on a set large enough that
+  enumeration is not the reference.
 - Pheromone is process memory. A restart begins at the initial pheromone.
 - The seed is configuration, so a colony run can be repeated.
 
@@ -132,6 +149,16 @@ live set. A track that appears starts at the initial pheromone, so a
 colony that has concentrated on an old tour is slow to put the newcomer
 first. That lag is the behavior the study is there to measure, not a
 side effect to be smoothed over in the solver.
+
+The fleet study lives in `clave.control.order_fleet`. One generator
+draws the frames, and every solver replays that same list, so a stolen
+point is stolen for all of them. The depot stays at the center of the
+field, which keeps the planner's own head from forking the world. The
+exit weight is zero there: the score is open-path length. The reference
+is 2-opt started from the greedy walk, first improvement, because n! no
+longer fits. A colony call can return the best tour of the whole call
+or the best tour of the last iteration. The default remains the whole
+call, which is what the belt study scores.
 
 ## Open questions
 

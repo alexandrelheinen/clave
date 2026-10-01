@@ -204,10 +204,10 @@ class AntColonySolver:
     Each call runs a fixed number of iterations. Every ant builds one
     permutation from the flange. Stored edges evaporate, then each ant
     deposits on the edges it used. The permutation returned is the lowest
-    discounted score seen during the call, not a sample from the last
-    iteration. Edges that have never been deposited stay at the initial
-    pheromone and do not evaporate, which is how a track that just
-    appeared stays a stranger until some ant takes it.
+    discounted score seen during the call, unless the caller asks for the
+    last iteration's best. Edges that have never been deposited stay at
+    the initial pheromone and do not evaporate, which is how a track that
+    just appeared stays a stranger until some ant takes it.
     """
 
     def __init__(self, settings: AntColonySettings) -> None:
@@ -239,16 +239,25 @@ class AntColonySolver:
             if _edge_alive(edge, node_ids)
         }
 
-    def order(self, request: OrderRequest) -> tuple[int, ...]:
-        """Run the colony and return the best permutation of this call.
+    def order(
+        self, request: OrderRequest, *, incumbent: str = "best"
+    ) -> tuple[int, ...]:
+        """Run the colony and return one permutation of this call.
 
         Args:
             request: The admissible tracks and the flange.
+            incumbent: `best` is the lowest score seen in the call. `last`
+                is the lowest score of the final iteration, the tour the
+                pheromone has just been pulled toward.
 
         Returns:
-            The track ids of the lowest discounted score found, first
-            visit first. Empty when the request is empty.
+            Track ids, first visit first. Empty when the request is empty.
+
+        Raises:
+            ClaveError: If `incumbent` is neither `best` nor `last`.
         """
+        if incumbent not in ("best", "last"):
+            raise ClaveError("the incumbent is 'best' or 'last'")
         _require_request(request)
         self.retain(frozenset(node.node_id for node in request.nodes))
         if not request.nodes:
@@ -256,9 +265,12 @@ class AntColonySolver:
 
         best_order: tuple[int, ...] | None = None
         best_cost = math.inf
+        last_order: tuple[int, ...] | None = None
         built: list[tuple[tuple[int, ...], float]] = []
         for _iteration in range(self._settings.iteration_count):
             built.clear()
+            last_order = None
+            last_cost = math.inf
             for _ant in range(self._settings.ant_count):
                 path = self._walk(request)
                 cost = tour_cost(request, path, self._settings.position_discount)
@@ -266,12 +278,16 @@ class AntColonySolver:
                 if cost < best_cost:
                     best_cost = cost
                     best_order = path
+                if cost < last_cost:
+                    last_cost = cost
+                    last_order = path
             self._evaporate()
             for path, cost in built:
                 self._deposit(path, self._settings.deposit / max(cost, COST_FLOOR))
-        if best_order is None:
+        chosen = last_order if incumbent == "last" else best_order
+        if chosen is None:
             raise ClaveError("the colony produced no tour")
-        return best_order
+        return chosen
 
     def _walk(self, request: OrderRequest) -> tuple[int, ...]:
         """Sample one permutation from the current pheromone.

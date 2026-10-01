@@ -300,6 +300,11 @@ def main() -> None:
             f"gap {colony['mean_travel_gap']:.4f} "
             f"head {colony['agrees_greedy']:.2f}"
         )
+    # The fleet replay is a second report. Imported here so loading the belt
+    # study does not load that module.
+    from clave.control.order_fleet import main as fleet_main
+
+    fleet_main()
 
 
 @dataclass(frozen=True)

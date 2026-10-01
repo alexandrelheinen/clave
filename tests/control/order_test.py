@@ -194,3 +194,14 @@ def test_a_colony_that_cannot_search_is_refused() -> None:
     """A hand-built colony with no ants does not pretend to have returned a tour."""
     with pytest.raises(ClaveError, match="one ant"):
         AntColonySolver(replace(colony_settings(), ant_count=0))
+
+
+def test_the_last_iteration_is_a_permutation_and_a_bad_incumbent_is_refused() -> None:
+    """The final iteration is its own tour, and an unknown choice is refused."""
+    settings = replace(colony_settings(), ant_count=2, iteration_count=3, seed=4)
+    nodes = (node(1, 0.2, 1.0), node(2, 0.7, 0.4), node(3, 1.1, 0.2))
+    last = AntColonySolver(settings).order(request(nodes), incumbent="last")
+    assert sorted(last) == [1, 2, 3]
+    assert AntColonySolver(settings).order(request(()), incumbent="last") == ()
+    with pytest.raises(ClaveError, match="incumbent"):
+        AntColonySolver(settings).order(request(nodes), incumbent="sample")
