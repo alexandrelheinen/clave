@@ -10,6 +10,7 @@ AC-GT-05: Scene visualization displaying ground-truth markers.
 from __future__ import annotations
 
 import math
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -17,7 +18,7 @@ import numpy as np
 
 from clave.cli import _build_parser
 from clave.control.selection import Selector
-from clave.control.settings import SelectionSettings
+from clave.control.settings import ControlSettings
 from clave.tracker.markers import ground_truth_markers
 from clave.world.belt import SpawnedObject
 from clave.world.config import load
@@ -228,8 +229,11 @@ def test_ground_truth_selector_and_task_planning_ac_gt_04() -> None:
         belt_speed=0.31,
     )
 
+    shipped = ControlSettings.load(
+        load(ROOT / "configs" / "runtime" / "control.yml")
+    ).selection
     selector = Selector(
-        SelectionSettings(exit_weight=1.0, anchor_radius=0.02),
+        replace(shipped, exit_weight=1.0, anchor_radius=0.02),
         admits=lambda p: True,
     )
 
