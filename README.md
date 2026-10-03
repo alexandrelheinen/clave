@@ -1,6 +1,6 @@
 # CLAVE
 
-<img src="docs/images/recycling_50dp_5084C1_FILL0_wght400_GRAD0_opsz48.svg" alt="CLAVE Logo" width="120" align="left">
+<img src="docs/images/clave-mark.svg" alt="CLAVE Logo" width="120" align="left">
 
 CLAVE sorts recyclable waste traveling on a conveyor belt through a learned
 perception-action policy. A neural architecture fuses visual perception,
