@@ -59,7 +59,7 @@ if [[ -f pyproject.toml ]]; then
     echo "  ok      .venv with the dev toolchain"
   else
     printf '  MISSING python dev toolchain. Create it with:\n'
-    printf '            uv venv .venv && . .venv/bin/activate && uv pip install -e ".[dev]"\n'
+    printf '            uv sync --locked --extra dev --extra world\n'
     missing=1
   fi
 else
