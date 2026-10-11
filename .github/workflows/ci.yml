@@ -44,16 +44,23 @@ jobs:
         if: hashFiles('pyproject.toml') != ''
         run: sudo apt-get update && sudo apt-get install -y libosmesa6 libgl1 ffmpeg
 
+      - name: Set up uv
+        if: hashFiles('pyproject.toml') != ''
+        uses: astral-sh/setup-uv@v6
+
+      # The versions come from uv.lock, never from the newest release. The demo
+      # stills replay exact physics, and an unpinned MuJoCo minor release moves
+      # what is on the belt at the capture instant.
       - name: Install Python toolchain
         if: hashFiles('pyproject.toml') != ''
+        env:
+          UV_PYTHON: '3.12'
         run: |
-          python -m venv .venv
-          .venv/bin/pip install --upgrade pip
           # The world extra brings MuJoCo and PyYAML so the sorting world is
           # genuinely exercised here rather than skipped. The candidate extra is
           # deliberately not installed: it is over a gigabyte and its adapters
           # are covered by the benchmark sweep instead.
-          .venv/bin/pip install -e ".[dev,world]"
+          uv sync --locked --extra dev --extra world
 
       # Object meshes are pinned by digest, not as submodules. Without them the
       # world cannot compile and the gate fails before it tests anything.

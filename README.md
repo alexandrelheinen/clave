@@ -61,8 +61,8 @@ git clone --recurse-submodules https://github.com/alexandrelheinen/clave.git
 cd clave
 ./scripts/setup.sh                  # reports missing tools, installs nothing silently
 
-uv venv .venv && . .venv/bin/activate
-uv pip install -e ".[dev,world]"    # Python deps, MuJoCo, dev tooling
+uv sync --locked --extra dev --extra world  # Python deps, MuJoCo, dev tooling, as uv.lock pins them
+. .venv/bin/activate
 cargo build --release -p clave-sitl # Rust safety layer
 
 # Object meshes the world spawns. A few megabytes, checked by digest.
@@ -70,7 +70,7 @@ python scripts/import_scene_assets.py --objects
 
 # Optional: scene dressing (shelves, pallets, trash cans).
 # Without it the belt uses a plain box on legs and the floor a gray plane.
-uv pip install -e ".[assets]" && python scripts/import_scene_assets.py --warehouse
+uv sync --locked --extra dev --extra world --extra assets && python scripts/import_scene_assets.py --warehouse
 ```
 
 ## Running it
