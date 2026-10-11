@@ -1,0 +1,1344 @@
+% Visão do CLAVE: da imagem da câmera à pose de preensão.
+% Compilar a partir da raiz do repositório:
+%   latexmk -pdf -outdir=target/vision docs/vision/vision-pipeline.tex
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[brazil]{babel}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{amsmath,amssymb,amsthm,mathtools}
+\usepackage{icomma}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{caption}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,calc,fit}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usepackage[hidelinks]{hyperref}
+\usepackage[brazilian,nameinlink]{cleveref}
+
+\newtheorem{proposicao}{Proposição}
+\newtheorem{lema}{Lema}
+\theoremstyle{definition}
+\newtheorem{definicao}{Definição}
+\theoremstyle{remark}
+\newtheorem{observacao}{Observação}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\ex}{\mathbf{e}_x}
+\newcommand{\ey}{\mathbf{e}_y}
+\newcommand{\ez}{\mathbf{e}_z}
+\newcommand{\code}[1]{\texttt{#1}}
+\emergencystretch=3em
+\newcommand{\wrap}{\operatorname{wrap}}
+\DeclareMathOperator*{\argmin}{arg\,min}
+\DeclareMathOperator*{\argmax}{arg\,max}
+\DeclareMathOperator{\atantwo}{atan2}
+
+\title{A cadeia de visão do CLAVE\\[0.3em]
+\large Da imagem da câmera à pose de preensão dos objetos}
+\author{Documento técnico do repositório \code{clave}}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Este documento descreve, com a matemática que o código executa, como o CLAVE
+transforma o que as câmeras da esteira veem na pose que o braço usa para pegar
+cada objeto. A cadeia tem sete etapas: o modelo óptico das câmeras nadir, a
+segmentação por instância, os momentos de segunda ordem que dão a cada máscara
+um retângulo orientado, a projeção desse retângulo no referencial da esteira, a
+associação de cada observação a um rastro, o filtro alfa-beta que estima posição
+e velocidade, e a construção da pose de preensão a partir do registro fundido.
+Cada fórmula vem acompanhada do arquivo que a implementa. As propriedades que o
+código afirma sem demonstrar recebem aqui uma demonstração, e as que podem ser
+medidas foram medidas no simulador, em quatro sementes de 60 segundos cada. O
+documento também registra onde a cadeia ainda depende do rótulo do simulador.
+\end{abstract}
+
+\tableofcontents
+
+%======================================================================
+\section{Escopo e visão geral}
+\label{sec:escopo}
+
+O CLAVE separa a responsabilidade em dois processos. O Python percebe e propõe;
+o Rust verifica e decide. Este documento cobre apenas a percepção geométrica do
+lado Python, implementada no pacote \code{clave.tracker}, e a etapa de controle
+que converte o registro percebido na pose comandada no instante da pega
+(\code{clave.control}). A camada de segurança, o contrato do datagrama e a
+publicação ROS ficam de fora.
+
+A \cref{fig:cadeia} mostra a cadeia. Cada caixa corresponde a uma seção.
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[
+  node distance=4mm and 6mm,
+  box/.style={draw, rounded corners=2pt, align=center, font=\small,
+              minimum height=9mm, text width=31mm, fill=gray!6},
+  arr/.style={-{Stealth[length=2.2mm]}, thick}]
+\node[box] (cam) {Câmeras nadir\\\small\cref{sec:optica}};
+\node[box, right=of cam] (seg) {Segmentação\\por instância\\\small\cref{sec:segmentacao}};
+\node[box, right=of seg] (mom) {Momentos e\\retângulo orientado\\\small\cref{sec:momentos}};
+\node[box, below=of mom] (proj) {Projeção no\\referencial da esteira\\\small\cref{sec:projecao}};
+\node[box, left=of proj] (assoc) {Evidência e\\associação\\\small\cref{sec:evidencia,sec:associacao}};
+\node[box, left=of assoc] (filt) {Filtro alfa-beta\\e fusão\\\small\cref{sec:movimento,sec:material}};
+\node[box, below=of filt] (rec) {Registro\\\code{WasteObject}\\\small\cref{sec:registro}};
+\node[box, right=of rec] (pose) {Pose de preensão\\\code{GraspMarker}\\\small\cref{sec:pose}};
+\node[box, right=of pose] (pick) {Pose no instante\\da pega\\\small\cref{sec:instante}};
+\draw[arr] (cam) -- (seg);
+\draw[arr] (seg) -- (mom);
+\draw[arr] (mom) -- (proj);
+\draw[arr] (proj) -- (assoc);
+\draw[arr] (assoc) -- (filt);
+\draw[arr] (filt) -- (rec);
+\draw[arr] (rec) -- (pose);
+\draw[arr] (pose) -- (pick);
+\end{tikzpicture}
+\caption{A cadeia de visão, da câmera à pose comandada.}
+\label{fig:cadeia}
+\end{figure}
+
+Três fatos delimitam o que \emph{percepção} significa no estado atual do
+repositório, e o leitor precisa deles antes de qualquer fórmula:
+
+\begin{enumerate}[leftmargin=*]
+\item \textbf{A segmentação é exata.} As máscaras vêm do buffer de segmentação
+  do MuJoCo, que rotula cada pixel com a geometria que o cobre. Nenhum modelo
+  treinado segmenta a imagem (\cref{sec:segmentacao}). Tudo que vem depois da
+  máscara é geometria calculada a partir de pixels.
+\item \textbf{O material vem do rótulo do simulador.} Nenhum classificador por
+  instância roda no laço. O posterior de material é alimentado por evidência
+  \code{GroundTruth}, e o registro declara isso no campo \code{simulated}
+  (\cref{sec:material}).
+\item \textbf{A associação das detecções é geométrica e o rótulo apenas as
+  acompanha.} Uma detecção não carrega identidade e entra no rastro mais
+  próximo dentro de uma porta (\emph{gate}). O rótulo do simulador chega
+  depois, por um caminho separado (\cref{sec:associacao}).
+\end{enumerate}
+
+A pose que chega ao braço depende de uma chave de configuração. Com a chave
+\code{ground\_truth\_tracker} em \code{false}, que é o padrão em
+\code{configs/debug/tracker.yml}, a seleção e o planejamento consomem as poses
+derivadas da visão (\cref{sec:pose}). Com a opção \code{-{}-gt} da linha de
+comando, consomem poses tiradas diretamente da física do MuJoCo, e o rastreador
+visual continua rodando em paralelo (\cref{sec:pose-gt}).
+
+%======================================================================
+\section{Referencial, relógio e propagação}
+\label{sec:referencial}
+
+\begin{definicao}[Referencial da esteira]
+O referencial da esteira $\mathcal{B}$ tem origem no centro da esteira, sobre a
+linha central e abaixo do braço; $\ex$ aponta no sentido do transporte, $\ey$
+atravessa a esteira e $\ez$ aponta para cima, com $z$ medido a partir do piso.
+A esteira de 3,00~m ocupa $x\in[-1{,}50;\,+1{,}50]$ e sua superfície fica
+em $z_s = 0{,}90$~m. No simulador esse referencial coincide com o referencial do
+mundo, de modo que nenhuma transformação rígida separa os dois.
+\end{definicao}
+
+\begin{definicao}[Relógio]
+Todo instante é um inteiro monotônico em nanossegundos, recebido como argumento
+e nunca lido de um relógio interno. O intervalo entre dois instantes é
+\begin{equation}
+\Delta t(t_0,t_1) = \frac{t_1 - t_0}{10^{9}}\ \text{s},
+\end{equation}
+e pode ser negativo; quem o consome decide se o corta em zero
+(\code{belt\_frame.elapsed\_seconds}).
+\end{definicao}
+
+Como a esteira arrasta os objetos ao longo de $\ex$ com velocidade conhecida
+$v_b \ge 0$, um ponto observado em $t_0$ pode ser levado a qualquer $t_1$ por
+\begin{equation}
+\label{eq:carry}
+\mathbf{p}(t_1) = \mathbf{p}(t_0) + v_b\,\Delta t(t_0,t_1)\,\ex .
+\end{equation}
+Essa é a única definição de transporte do pacote (\code{belt\_frame.carry}).
+A função \code{propagate} aplica \eqref{eq:carry} ao centro de um retângulo e
+mantém extensões e ângulo. Uma velocidade negativa ou não finita é recusada. A
+velocidade $v_b$ não é constante durante uma execução: o controlador de
+alimentação a ajusta, e o laço copia o valor corrente para o rastreador a cada
+captura (\code{sim/debug\_run.py}).
+
+%======================================================================
+\section{Modelo óptico das câmeras}
+\label{sec:optica}
+
+\subsection{Sensores, lentes e campo de visão}
+
+Uma câmera declara as peças de que é feita e o campo de visão é derivado delas
+(\code{configs/world/sorting\_line.yml}). O sensor é o Sony IMX264, com
+$N_1\times N_2 = 2448\times 2048$ pixels de passo $p = 3{,}45\ \mu$m, e as lentes
+são Fujinon HF-XA-5M de distância focal $f$. As dimensões ativas do sensor são
+\begin{equation}
+\ell_{\text{longo}} = N_1 p = 8{,}4456\ \text{mm},\qquad
+\ell_{\text{curto}} = N_2 p = 7{,}0656\ \text{mm}.
+\end{equation}
+A chave \code{long\_axis: across} põe o lado longo atravessando a esteira. O
+MuJoCo interpreta \code{fovy} como campo de visão \emph{vertical}, isto é, do
+eixo das linhas da imagem; numa câmera nadir girada dessa forma esse eixo é o
+transversal $\ey$. Daí (\code{scene.field\_of\_view})
+\begin{equation}
+\label{eq:fovy}
+\varphi = 2\arctan\!\left(\frac{\ell_{\text{longo}}}{2f}\right),
+\qquad
+\varphi_{8\,\text{mm}} = 55{,}65^\circ,\quad
+\varphi_{16\,\text{mm}} = 29{,}57^\circ .
+\end{equation}
+
+\begin{table}[ht]
+\centering
+\caption{Câmeras declaradas. Posições em $\mathcal{B}$, em metros.}
+\label{tab:cameras}
+\begin{tabular}{@{}llccc@{}}
+\toprule
+Identificador & Papel & Lente & Posição $(c_x,c_y,Z_c)$ & Distância à superfície \\
+\midrule
+\code{gate\_wide} & detecção & 8 mm & $(-1{,}00;\ 0;\ 1{,}942)$ & 1,042 m \\
+\code{pick\_wide} & detecção & 8 mm & $(+0{,}38;\ 0;\ 1{,}942)$ & 1,042 m \\
+\code{gate\_code\_left} & código & 16 mm & $(-1{,}00;\ +0{,}33;\ 1{,}630)$ & 0,730 m \\
+\code{gate\_code\_center} & código & 16 mm & $(-1{,}00;\ 0;\ 1{,}630)$ & 0,730 m \\
+\code{gate\_code\_right} & código & 16 mm & $(-1{,}00;\ -0{,}33;\ 1{,}630)$ & 0,730 m \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Só as duas câmeras de papel \emph{detecção} alimentam a cadeia geométrica. O
+laço de simulação as obtém por papel, nunca por identificador
+(\code{sensors.of\_role}), e as três câmeras de código não são lidas no laço
+(\cref{sec:codigos}).
+
+\subsection{Projeção pinhole nadir}
+
+Seja uma imagem renderizada com $W$ colunas e $H$ linhas. A câmera olha
+exatamente para $-\ez$, então o plano da imagem é paralelo à esteira. Pelo modelo
+pinhole com distância focal em pixels
+\begin{equation}
+f_{\text{px}} = \frac{H}{2\tan(\varphi/2)},
+\end{equation}
+um ponto $\mathbf{P} = (X,Y,Z)$ com $Z<Z_c$ projeta-se nas coordenadas contínuas
+de coluna $u$ e linha $v$
+\begin{equation}
+\label{eq:pinhole}
+u = \frac{W}{2} + f_{\text{px}}\,\frac{X - c_x}{Z_c - Z},
+\qquad
+v = \frac{H}{2} - f_{\text{px}}\,\frac{Y - c_y}{Z_c - Z}.
+\end{equation}
+Os sinais refletem duas orientações que o código registrou por medição, e não por
+dedução (\code{adapters/detection.py}): a coluna cresce no sentido do
+transporte, e a linha cresce para o lado $-\ey$, porque a linha zero é o topo da
+imagem e corresponde ao lado afastado da esteira.
+
+\begin{definicao}[Escala métrica]
+Para uma superfície horizontal na altura $h$, o tamanho de um pixel no
+referencial da esteira é
+\begin{equation}
+\label{eq:escala}
+s(h) = \frac{Z_c - h}{f_{\text{px}}} = \frac{2\,(Z_c - h)\tan(\varphi/2)}{H},
+\end{equation}
+definido apenas para $Z_c - h > 0$ (\code{NadirOptics.meters\_per\_pixel}).
+\end{definicao}
+
+Invertendo \eqref{eq:pinhole} para pontos sobre o plano $Z=h$:
+\begin{equation}
+\label{eq:retroprojecao}
+X = c_x + \Bigl(u - \frac{W}{2}\Bigr) s(h),
+\qquad
+Y = c_y - \Bigl(v - \frac{H}{2}\Bigr) s(h).
+\end{equation}
+Com o plano da imagem paralelo ao plano observado, a relação entre pixel e metro
+é uma escala, e não uma homografia que varia ao longo da imagem. A escala,
+porém, depende de $h$: uma superfície mais alta está mais perto da câmera e
+aparece com resolução mais fina.
+
+O MuJoCo renderiza pixels quadrados, com a mesma $f_{\text{px}}$ nos dois eixos.
+O campo horizontal da imagem não sai do sensor, e sim da razão de aspecto do
+render:
+\begin{equation}
+\label{eq:fovx}
+\text{extensão ao longo de } \ex \text{ em } h = W\,s(h) = \frac{W}{H}\,2(Z_c-h)\tan(\varphi/2).
+\end{equation}
+
+\begin{table}[ht]
+\centering
+\caption{Escala e cobertura das câmeras de detecção, calculadas por
+\eqref{eq:escala} e \eqref{eq:fovx}. O laço de simulação renderiza em
+$640\times480$.}
+\label{tab:escala}
+\begin{tabular}{@{}lccc@{}}
+\toprule
+Render & $h$ (m) & $s(h)$ (mm/pixel) & Cobertura $y \times x$ (m) \\
+\midrule
+$640\times480$ & 0,90 (esteira) & 2,292 & $1{,}100 \times 1{,}467$ \\
+$640\times480$ & 0,95 (altura suposta) & 2,182 & $1{,}047 \times 1{,}396$ \\
+$640\times480$ & 1,00 & 2,072 & $0{,}995 \times 1{,}326$ \\
+nativo, $H=2448$, $W=2048$ & 0,90 & 0,449 & $1{,}100 \times 0{,}920$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{observacao}[Aspecto do render]
+\label{obs:aspecto}
+O sensor declarado cobre 0,920~m ao longo do transporte, mas o render de
+$640\times480$ tem razão de aspecto $4{:}3$ no sentido oposto ao do sensor
+(1,333 contra $2048/2448 = 0{,}837$) e cobre 1,467~m sobre a esteira. A
+varredura citada em \code{sorting\_line.yml}, segundo a qual \code{gate\_wide}
+detecta até $x = -0{,}275$~m, ou seja, a 0,725~m da câmera, concorda com a
+metade de 1,467~m, e não com a metade de 0,920~m. A cobertura longitudinal do
+simulador é, portanto, uma propriedade do render, e não do hardware declarado.
+O par de câmeras cobriria $[-1{,}46;\ -0{,}54]\cup[-0{,}08;\ +0{,}84]$ com a
+óptica real, e não $[-1{,}73;\ -0{,}27]\cup[-0{,}35;\ +1{,}11]$.
+\end{observacao}
+
+%======================================================================
+\section{Segmentação por instância}
+\label{sec:segmentacao}
+
+\subsection{O buffer de segmentação}
+
+O renderizador do MuJoCo, com a segmentação ligada, devolve um arranjo
+$S\in\mathbb{Z}^{H\times W\times 2}$ cujo primeiro canal é o identificador da
+geometria visível em cada pixel. Para cada identificador $g$ cuja geometria se
+chama \code{object\_<slot>}, a máscara da instância é
+\begin{equation}
+M_g = \{(u_i, v_i)\in\{0,\dots,W-1\}\times\{0,\dots,H-1\} : S(v_i,u_i,0) = g\}
+\end{equation}
+(\code{adapters/render.segment\_masks}). A máscara é exata no sentido de que
+cada pixel pertence à geometria que o rasterizador desenhou ali. Isso inclui as
+faces laterais do objeto que a perspectiva torna visíveis, e exclui as partes
+encobertas por outra geometria, como o braço ou o efetuador quando passam entre
+a câmera e a esteira.
+
+A máscara é guardada como uma sequência de corridas horizontais
+$(r, c_0, n)$, cada uma cobrindo os pixels $(c_0,r),\dots,(c_0+n-1,r)$
+(\code{evidence.PixelMask}). A estrutura recusa quadros sem pixels, máscaras
+vazias e corridas fora do quadro.
+
+\subsection{O descarte da identidade}
+
+A chave do dicionário de máscaras é o nome da geometria, e o \code{slot} nesse
+nome é o mesmo inteiro que o mundo usa como \code{ObjectLabel.object\_id}. O
+adaptador de detecção percorre as máscaras pelos \emph{valores} e nunca copia a
+chave para a evidência (\code{detections\_from\_masks}). A única identidade
+que o simulador sabe sobre um pixel é jogada fora nesse ponto, e daqui em diante
+uma detecção não sabe a que objeto pertence.
+
+%======================================================================
+\section{Da máscara ao retângulo orientado}
+\label{sec:momentos}
+
+\subsection{Momentos de ordem zero, um e dois}
+
+Seja $M$ uma máscara com $N = |M|$ pixels, cada um identificado pelos índices
+inteiros $(x_i, y_i) = (\text{coluna}, \text{linha})$. O código calcula
+(\code{oriented\_extent})
+\begin{align}
+\bar x &= \frac1N\sum_i x_i, & \bar y &= \frac1N\sum_i y_i, \\
+\mu_{20} &= \frac1N\sum_i (x_i-\bar x)^2, &
+\mu_{02} &= \frac1N\sum_i (y_i-\bar y)^2, &
+\mu_{11} &= \frac1N\sum_i (x_i-\bar x)(y_i-\bar y).
+\end{align}
+Os momentos centrais não mudam se cada pixel for representado pelo seu centro
+$(x_i+\tfrac12,\,y_i+\tfrac12)$ em vez do índice, porque uma translação comum
+cancela nas diferenças.
+
+A matriz de covariância da máscara,
+\begin{equation}
+\Sigma = \begin{pmatrix}\mu_{20} & \mu_{11}\\ \mu_{11} & \mu_{02}\end{pmatrix},
+\end{equation}
+é simétrica e semidefinida positiva, com autovalores
+\begin{equation}
+\label{eq:autovalores}
+\lambda_\pm = \frac{\mu_{20}+\mu_{02} \pm \sqrt{(\mu_{20}-\mu_{02})^2 + 4\mu_{11}^2}}{2},
+\qquad \lambda_+ \ge \lambda_- \ge 0 .
+\end{equation}
+
+\subsection{Extensões principais}
+
+\begin{proposicao}
+\label{prop:retangulo}
+Se $M$ é a discretização de um retângulo de lados $a\ge b$, preenchido com
+densidade uniforme, então, no limite contínuo, $\lambda_+ = a^2/12$ e
+$\lambda_- = b^2/12$; logo $a = 2\sqrt3\,\sqrt{\lambda_+}$ e
+$b = 2\sqrt3\,\sqrt{\lambda_-}$.
+\end{proposicao}
+\begin{proof}
+No referencial dos eixos do retângulo, centrado nele, as coordenadas $(\xi,\eta)$
+são independentes e uniformes em $[-a/2,a/2]\times[-b/2,b/2]$. A covariância é
+diagonal, com $\operatorname{Var}\xi = \frac1a\int_{-a/2}^{a/2}\xi^2\,d\xi =
+a^2/12$ e $\operatorname{Var}\eta = b^2/12$. Uma rotação preserva os autovalores
+de $\Sigma$, então os autovalores na imagem são os mesmos. Como $a\ge b$, o maior
+é $a^2/12$.
+\end{proof}
+
+O código define as extensões, em pixels, por
+\begin{equation}
+\label{eq:extensoes}
+A = 2\sqrt3\,\sqrt{\lambda_+},\qquad
+B = \max\bigl(2\sqrt3\,\sqrt{\lambda_-},\ 1\bigr).
+\end{equation}
+Pela \cref{prop:retangulo}, o estimador é exato para um retângulo e é a
+extensão de um retângulo uniforme com os mesmos segundos momentos para qualquer
+outra forma. O piso de um pixel em $B$ impede uma extensão nula numa máscara
+de uma linha. Um teste sintético com um retângulo de $60\times20$ pixels girado de
+$30^\circ$ devolve $A = 60{,}04$ e $B = 19{,}99$.
+
+\subsection{Orientação}
+
+\begin{proposicao}
+\label{prop:angulo}
+O autovetor associado a $\lambda_+$ forma com o eixo das colunas o ângulo
+\begin{equation}
+\label{eq:theta}
+\theta = \tfrac12\,\atantwo\bigl(2\mu_{11},\ \mu_{20}-\mu_{02}\bigr)
+\in \left(-\tfrac{\pi}{2}, \tfrac{\pi}{2}\right].
+\end{equation}
+\end{proposicao}
+\begin{proof}
+Seja $\mathbf{d}(\alpha) = (\cos\alpha, \sin\alpha)$. A variância na direção
+$\mathbf{d}$ é
+\[
+\sigma^2(\alpha) = \mathbf{d}^\top\Sigma\,\mathbf{d}
+= \tfrac{\mu_{20}+\mu_{02}}{2} + \tfrac{\mu_{20}-\mu_{02}}{2}\cos2\alpha + \mu_{11}\sin2\alpha
+= \tfrac{\mu_{20}+\mu_{02}}{2} + R\cos(2\alpha - 2\theta),
+\]
+com $R = \tfrac12\sqrt{(\mu_{20}-\mu_{02})^2+4\mu_{11}^2}$ e $2\theta =
+\atantwo(2\mu_{11}, \mu_{20}-\mu_{02})$. O máximo, igual a $\lambda_+$ por
+\eqref{eq:autovalores}, ocorre em $\alpha=\theta$ (mod $\pi$), e o maximizador
+de uma forma quadrática na esfera unitária é o autovetor do maior autovalor.
+\end{proof}
+
+\begin{definicao}[Orientabilidade]
+Com $\rho = 1{,}15$ (\code{ROUNDNESS}), a máscara declara orientação quando
+\begin{equation}
+\label{eq:orientavel}
+o = \Bigl[\,2\sqrt3\sqrt{\lambda_-} > 0 \ \wedge\ \frac{A}{2\sqrt3\sqrt{\lambda_-}} \ge \rho\,\Bigr]
+\iff \frac{\lambda_+}{\lambda_-} \ge \rho^2 = 1{,}3225 .
+\end{equation}
+Se $o$ é falso, o código usa $\theta = 0$ e marca o ângulo como sem
+significado.
+\end{definicao}
+
+A justificativa é a sensibilidade de \eqref{eq:theta}: quando
+$\lambda_+\to\lambda_-$, $R\to0$ e o argumento do $\atantwo$ tende a $(0,0)$, de
+modo que um ruído de um pixel na borda gira $\theta$ de um valor arbitrário. Um
+ângulo arbitrário que a camada de controle trata como medido é pior do que
+nenhum ângulo.
+
+\subsection{Centro}
+
+O centro do retângulo \emph{não} é o centroide $(\bar x,\bar y)$. É o centro da
+caixa alinhada aos eixos da imagem (\code{PixelMask.bounds}):
+\begin{equation}
+\label{eq:centro}
+\hat u = \frac{u_{\min}+u_{\max}}{2},\qquad
+\hat v = \frac{v_{\min}+v_{\max}}{2},
+\end{equation}
+com $u_{\min}, u_{\max}, v_{\min}, v_{\max}$ os índices extremos, inclusivos.
+Para uma forma com simetria central, os dois centros coincidem. Para uma forma
+assimétrica, como uma garrafa vista de cima, diferem, e o centro da caixa
+alinhada passa a depender da orientação do objeto na imagem.
+
+\subsection{Confiança}
+
+A confiança que o adaptador atribui à detecção é
+\begin{equation}
+c = \min\!\left(1,\ \frac{N}{400}\right),
+\end{equation}
+que satura em 400 pixels (\code{\_confidence\_of}). Nas medições da
+\cref{sec:medicoes}, toda máscara inteira tem mais de 400 pixels (mediana 1385,
+décimo percentil 838), então $c=1$ em todas: no regime atual, a confiança não
+diferencia uma detecção de outra.
+
+%======================================================================
+\section{Projeção no referencial da esteira}
+\label{sec:projecao}
+
+\subsection{O retângulo na esteira}
+
+O adaptador aplica \eqref{eq:retroprojecao} ao centro \eqref{eq:centro}, com uma
+altura de superfície \emph{suposta} $h_a = z_s + 0{,}05 = 0{,}95$~m, constante
+para todos os objetos (\code{sim/debug\_run.py}):
+\begin{align}
+\label{eq:centro-esteira}
+x &= c_x + \Bigl(\hat u - \frac W2\Bigr)s(h_a), &
+y &= c_y - \Bigl(\hat v - \frac H2\Bigr)s(h_a).
+\end{align}
+As extensões passam a metros pela mesma escala, $L = A\,s(h_a)$ e
+$\ell = B\,s(h_a)$. A altura estimada acima da esteira é $\eta = h_a - z_s =
+0{,}05$~m, também constante. O resultado é o retângulo orientado
+\begin{equation}
+F = \bigl(\mathbf{c} = (x,\,y,\,h_a),\ L,\ \ell,\ \psi,\ o\bigr),
+\qquad L \ge \ell > 0,
+\end{equation}
+cujo construtor recusa extensões não positivas e eixos trocados
+(\code{belt\_frame.Footprint}). Uma máscara degenerada cuja extensão projetada
+é nula é descartada antes de virar evidência. As detecções de um quadro são
+ordenadas por $x$, para que o resultado não dependa da ordem de iteração do
+dicionário.
+
+\subsection{O sinal do ângulo}
+
+\begin{proposicao}
+\label{prop:sinal}
+Se o eixo maior faz ângulo $\theta$ com o eixo das colunas na imagem, ele faz
+ângulo $\psi = -\theta$ com $\ex$ na esteira.
+\end{proposicao}
+\begin{proof}
+Por \eqref{eq:retroprojecao}, a aplicação linear que leva deslocamentos na
+imagem a deslocamentos na esteira é $J = s\,\operatorname{diag}(1,-1)$. A
+direção $(\cos\theta,\sin\theta)$ vai em $s(\cos\theta, -\sin\theta) =
+s(\cos(-\theta), \sin(-\theta))$. Como $J$ é uma reflexão seguida de escala, ela
+conjuga rotações: $J R(\theta) J^{-1} = R(-\theta)$.
+\end{proof}
+
+O código aplica exatamente essa troca de sinal (\code{yaw=-yaw}). Esquecê-la
+espelharia cada orientação em torno da linha central sem que nenhum outro
+componente acusasse o erro.
+
+\subsection{Análise do erro geométrico}
+\label{sec:erro}
+
+A retroprojeção \eqref{eq:centro-esteira} supõe que todo pixel da máscara está no
+plano $z = h_a$. Três efeitos violam essa hipótese.
+
+\paragraph{Paralaxe de altura.}
+Um ponto na altura $z$, a uma distância horizontal $d$ do eixo óptico, projeta-se
+por \eqref{eq:pinhole} em $f_{\text{px}}\,d/(Z_c-z)$, e a retroprojeção na
+altura $h_a$ o coloca a $\hat d = d\,(Z_c-h_a)/(Z_c-z)$. O erro radial é
+\begin{equation}
+\label{eq:paralaxe}
+\hat d - d = d\,\frac{z - h_a}{Z_c - z}.
+\end{equation}
+Para $Z_c = 1{,}942$ e $h_a = 0{,}95$, um ponto da base ($z=0{,}90$) a
+$d = 0{,}5$~m aparece 24,0~mm mais perto do eixo, e um ponto em $z = 1{,}00$
+aparece 26,5~mm mais longe.
+
+\paragraph{Silhueta de um prisma.}
+A máscara é a silhueta do objeto inteiro, e não a projeção da face superior. Seja
+um prisma vertical de largura radial $D$, base em $z_b$ e topo em $z_t$, com
+centro a uma distância $d > D/2$ do eixo. A borda externa da silhueta é a aresta
+superior externa, porque o ponto de raio $d+D/2$ projeta-se mais longe quanto
+mais alto está. A borda interna é a aresta \emph{inferior} interna, pelo mesmo
+argumento aplicado ao raio $d - D/2 > 0$. Com
+$a_t = (Z_c-h_a)/(Z_c-z_t)$ e $a_b = (Z_c-h_a)/(Z_c-z_b)$, o centro da caixa
+retroprojetado fica em
+\begin{equation}
+\hat d = \tfrac12\bigl[(d + D/2)\,a_t + (d - D/2)\,a_b\bigr],
+\end{equation}
+e o erro radial do centro é
+\begin{equation}
+\label{eq:vies-prisma}
+\hat d - d = d\left(\frac{a_t+a_b}{2} - 1\right) + \frac{D}{4}\,(a_t - a_b).
+\end{equation}
+Com a altura mediana medida dos topos, $z_t = 0{,}96$~m, e $z_b = z_s = 0{,}90$~m,
+vem $a_t = 1{,}0102$, $a_b = 0{,}9520$, e o coeficiente de $d$ é
+$-0{,}0189$: um viés para dentro de cerca de 19~mm por metro de afastamento do
+eixo, mais um termo constante de $D/4\cdot0{,}058$, que vale 1,5~mm para
+$D = 0{,}10$~m. Quando o objeto cruza o eixo ($d < D/2$), as duas bordas da
+silhueta são arestas superiores e o viés passa a $d(a_t - 1)$, pequeno e positivo.
+O modelo explica o sinal e a ordem de grandeza do erro medido
+(\cref{fig:radial}). O restante da diferença vem do que o modelo não descreve:
+malhas escaneadas não são prismas, a base de um objeto deitado não é plana, e a
+referência da medição é o centro de massa, não o centro geométrico.
+
+\paragraph{Viés de meio pixel.}
+O pixel de índice $i$ cobre o intervalo contínuo $[i, i+1)$, cujo centro é
+$i + \tfrac12$, e o eixo óptico passa por $u = W/2$. Para uma silhueta simétrica
+de centro contínuo $u^\star$, os índices extremos dão $\hat u = u^\star - \tfrac12$.
+Aplicado em \eqref{eq:centro-esteira}, o deslocamento resulta em
+\begin{equation}
+\label{eq:meio-pixel}
+\delta x = -\tfrac12\,s(h_a) = -1{,}09\ \text{mm},
+\qquad
+\delta y = +\tfrac12\,s(h_a) = +1{,}09\ \text{mm}.
+\end{equation}
+Nas detecções a menos de 0,15~m do eixo, onde a paralaxe é pequena, o erro médio
+medido é $(-1{,}08;\ +0{,}92)$~mm, de acordo com \eqref{eq:meio-pixel}. Somar
+$\tfrac12$ a $\hat u$ e a $\hat v$ eliminaria o viés.
+
+\paragraph{Máscaras cortadas pela borda do quadro.}
+Quando parte do objeto fica fora da imagem, a caixa \eqref{eq:centro} encolhe
+pelo lado cortado e o centro se desloca para dentro do quadro de cerca de metade
+do comprimento perdido. Nada no adaptador detecta o corte: a máscara cortada
+vira evidência como qualquer outra. Na \cref{sec:medicoes}, 10,5\% das detecções
+estão nesse caso, com erro mediano de 48,6~mm.
+
+%======================================================================
+\section{Evidência e a porta de entrada}
+\label{sec:evidencia}
+
+Cada detecção vira um envelope
+\begin{equation}
+E = (\text{fonte},\ \text{papel},\ t,\ c,\ \text{carga}),
+\end{equation}
+cuja carga é uma união marcada de cinco variantes: \code{Detection} (retângulo,
+máscara e altura), \code{Material} (posterior sobre as classes),
+\code{Code} (símbolo decodificado), \code{Height} (altura medida do topo) e
+\code{GroundTruth} (rótulo do simulador). O envelope recusa um papel que não
+corresponda à carga e uma confiança fora de $[0,1]$
+(\code{evidence.Evidence}). Uma variante descreve o que foi \emph{medido}, nunca
+o que deve ser \emph{feito}.
+
+Toda evidência atravessa uma única porta (\code{intake.Intake.accept}), que
+aplica três regras:
+\begin{enumerate}[leftmargin=*]
+\item numa implantação declarada como \code{HARDWARE}, \code{GroundTruth} é
+  recusada;
+\item uma fonte que a linha não declara é recusada;
+\item uma fonte que declara um papel diferente do da evidência é recusada.
+\end{enumerate}
+O laço de simulação roda com \code{Deployment.SIMULATED}, de modo que a
+primeira regra não atua nele.
+
+%======================================================================
+\section{Associação}
+\label{sec:associacao}
+
+\subsection{O que o associador pode ver}
+
+Antes de associar uma evidência de instante $t$, o rastreador leva cada rastro
+aberto $j$ até $t$ (\code{Track.at}): se o rastro já tem estimativa de
+movimento, usa-a (\cref{sec:movimento}); se não, aplica \eqref{eq:carry} ao
+último retângulo observado. O associador recebe um resumo por rastro, com o
+retângulo propagado $F_j(t)$ e o rótulo $\lambda_j$ quando houver, e um
+\emph{indício} (\code{Cue}) da evidência. Uma detecção produz um indício com o
+retângulo e sem rótulo. Uma evidência \code{GroundTruth} produz um indício com o
+rótulo $\lambda$ e um retângulo centrado na posição verdadeira, de extensão
+$\varepsilon_u = 0{,}085$~m, a maior largura de preensão da linha
+(\code{track.\_cue\_of}).
+
+\subsection{A regra}
+
+A implementação entregue é \code{SimulatorIdentity}
+(\code{association.py}). Seja $\mathcal{T}$ o conjunto de rastros abertos.
+
+\begin{enumerate}[leftmargin=*]
+\item Se o indício tem rótulo $\lambda$ e existe $j\in\mathcal T$ com
+  $\lambda_j = \lambda$, a evidência entra em $j$. Se nenhum rastro tem esse
+  rótulo, o conjunto candidato passa a $\mathcal T' = \{j : \lambda_j = \varnothing\}$.
+  Sem rótulo, $\mathcal T' = \mathcal T$.
+\item Com o centro $\mathbf{c}$ do indício, calcula-se para cada candidato a
+  distância horizontal e a porta
+  \begin{equation}
+  \label{eq:porta}
+  d_j = \bigl\|\Pi\bigl(\mathbf{c}_j(t) - \mathbf{c}\bigr)\bigr\|_2,
+  \qquad
+  g_j = \gamma\,L_j,\quad \gamma = 1{,}5,
+  \end{equation}
+  com $\Pi$ a projeção em $(x,y)$ e $L_j$ a extensão maior do rastro.
+\item A evidência entra em
+  \begin{equation}
+  j^\star = \argmin_{j\in\mathcal T' :\ d_j \le g_j} d_j,
+  \end{equation}
+  e abre um rastro novo se o conjunto for vazio.
+\end{enumerate}
+
+A porta escala com o próprio objeto, e não com um raio fixo: um pacote grande
+alcança mais longe que um pequeno. Um rastro novo recebe um identificador
+estritamente crescente, que nunca é reutilizado, e um posterior uniforme.
+
+Em cada captura o laço entrega primeiro as detecções de \code{gate\_wide}, depois
+as de \code{pick\_wide}, e por fim uma evidência \code{GroundTruth} por objeto
+ativo (\code{sim/debug\_run.py}). Duas consequências decorrem dessa ordem:
+\begin{itemize}[leftmargin=*]
+\item a posição de um rastro é decidida só pela geometria das detecções; o rótulo
+  apenas se prende ao rastro que já estiver perto da posição verdadeira;
+\item um objeto visto pelas duas câmeras na mesma captura recebe duas
+  detecções no mesmo instante, e a segunda corrige só a posição
+  (\cref{sec:mesmo-instante}).
+\end{itemize}
+
+\begin{observacao}[Rastros nascidos do rótulo]
+\label{obs:rastro-gt}
+Quando uma evidência \code{GroundTruth} não encontra rastro com seu rótulo nem
+rastro sem rótulo dentro da porta, ela abre um rastro novo cujo retângulo é o do
+indício, centrado na posição verdadeira (\code{Tracker.\_open}). O campo
+\code{simulated} desse registro só lista \code{material}, e não a posição. Nas
+medições da \cref{sec:medicoes}, 37 de 1315 registros (2,8\%) estão nesse caso.
+O caso tem pouco peso porque, enquanto nenhuma detecção os alcança, esses
+rastros envelhecem e são aposentados em 1,5~s, mas ele mostra um caminho pelo qual uma posição do
+simulador chega a um registro sem ser declarada como tal.
+\end{observacao}
+
+\subsection{O modo de falha dominante}
+
+Se a previsão de um rastro erra por mais que sua porta, a detecção seguinte do
+mesmo objeto abre um rastro duplicado. O rastro original, que tem o rótulo,
+deixa de receber detecções, segue por estimativa até ser aposentado e, nesse
+intervalo, descreve um lugar onde nenhum objeto está. É a fragmentação de
+identidade que \code{docs/measurements.md} já diagnostica, e é a maior fonte da
+cauda de erro medida na \cref{sec:medicoes}.
+
+%======================================================================
+\section{Estimação de movimento: o filtro alfa-beta}
+\label{sec:movimento}
+
+\subsection{Modelo e recursão}
+
+Cada eixo horizontal tem estado $(p, v)$ e modelo de velocidade constante. A
+primeira detecção abre a estimativa com a velocidade da esteira ao longo do
+transporte e com velocidade nula na direção transversal
+(\code{motion.begin}):
+\begin{equation}
+\mathbf{p}_0 = (x, y),\qquad \mathbf{v}_0 = (v_b,\ 0).
+\end{equation}
+Para uma nova observação $z$ no instante $t$, com $T = t - t_{k}$, cada eixo
+segue a recursão (\code{motion.fold})
+\begin{align}
+\label{eq:ab}
+p^- &= p_k + v_k T, & r &= z - p^-, \\
+p_{k+1} &= p^- + \alpha\,r, & v_{k+1} &= v_k + \beta\,\frac{r}{T}\quad (T>0),
+\end{align}
+e, se $T \le 0$, só a posição é corrigida: $v_{k+1} = v_k$. O instante da
+estimativa passa a $\max(t, t_k)$. Entre observações, a posição prevista é
+$p(t) = p_k + v_k (t - t_k)$ (\code{Estimate.at}).
+
+\begin{table}[ht]
+\centering
+\caption{Ganhos configurados em \code{configs/perception/fusion.yml}.}
+\label{tab:ganhos}
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+Eixo & $\alpha$ & $\beta$ & Autovalores de $\Phi$ & $\beta$ do Kalman em regime (DWNA) \\
+\midrule
+ao longo ($x$) & 0,80 & 0,05 & 0,936 e 0,214 & 0,611 \\
+transversal ($y$) & 0,70 & 0,20 & 0,600 e 0,500 & 0,409 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+A assimetria é intencional. Ao longo do transporte, a esteira impõe a velocidade
+de forma rígida: o $\beta$ pequeno impede que o ruído da segmentação seja
+aprendido como velocidade, mas não é zero porque o controlador de alimentação
+muda $v_b$. Na direção transversal nada impõe velocidade, e toda deriva
+precisa ser aprendida das observações.
+
+\subsection{Estabilidade}
+
+\begin{proposicao}
+\label{prop:estabilidade}
+Com período $T$ fixo e objeto de velocidade constante, o erro
+$\mathbf{e}_k = (p_k - p^\star_k,\ v_k - v^\star)$ evolui sem ruído como
+$\mathbf{e}_{k+1} = \Phi\,\mathbf{e}_k$, com
+\begin{equation}
+\Phi = \begin{pmatrix} 1-\alpha & (1-\alpha)T \\ -\beta/T & 1-\beta \end{pmatrix},
+\qquad
+\det(\lambda I - \Phi) = \lambda^2 - (2-\alpha-\beta)\lambda + (1-\alpha).
+\end{equation}
+O filtro é assintoticamente estável se e somente se $0<\alpha<2$ e
+$0<\beta<4-2\alpha$, e o erro em regime para velocidade constante é nulo.
+\end{proposicao}
+\begin{proof}
+Com $z_{k+1} = p^\star_{k+1} = p^\star_k + v^\star T$, o resíduo é
+$r = -(e_p + e_v T)$. Substituindo em \eqref{eq:ab}:
+$e_p' = (1-\alpha)(e_p + e_v T)$ e $e_v' = e_v - \tfrac{\beta}{T}(e_p + e_v T)$,
+que é $\Phi\,\mathbf e$. O polinômio característico segue do traço
+$2-\alpha-\beta$ e do determinante $(1-\alpha)(1-\beta) + \beta(1-\alpha) =
+1-\alpha$. Pelo critério de Jury para $\lambda^2 + a_1\lambda + a_0$, as raízes
+estão no disco unitário aberto se e somente se $|a_0|<1$, $1+a_1+a_0>0$ e
+$1-a_1+a_0>0$, ou seja, $0<\alpha<2$, $\beta>0$ e $4 - 2\alpha - \beta > 0$.
+Como a recursão é linear e homogênea no erro, $\mathbf e_k\to 0$, e o erro em
+regime é nulo.
+\end{proof}
+
+Os autovalores da \cref{tab:ganhos} decorrem desse polinômio. Ao longo do
+transporte, o modo lento de 0,936 por captura corresponde a uma constante de
+tempo de $-T/\ln 0{,}936 \approx 7{,}6$~s para $T = 0{,}5$~s: o filtro corrige
+uma velocidade errada ao longo de $x$ em vários segundos, de propósito. Na
+direção transversal, os modos 0,6 e 0,5 decaem em cerca de uma captura.
+
+\subsection{Atenuação do ruído}
+
+\begin{proposicao}
+Se a posição verdadeira é constante e a observação tem ruído branco de variância
+$\sigma^2$, as variâncias em regime são
+\begin{equation}
+\frac{\operatorname{Var} p}{\sigma^2} = \frac{2\alpha^2 + 2\beta - 3\alpha\beta}{\alpha(4-2\alpha-\beta)},
+\qquad
+\frac{\operatorname{Var} v}{\sigma^2} = \frac{1}{T^2}\,\frac{2\beta^2}{\alpha(4-2\alpha-\beta)} .
+\end{equation}
+\end{proposicao}
+
+São as razões clássicas de redução de variância do filtro alfa-beta
+\cite{benedict,kalata}; a demonstração resolve a equação de Lyapunov discreta
+$P = \Phi P \Phi^\top + \sigma^2\mathbf{k}\mathbf{k}^\top$, com
+$\mathbf k = (\alpha, \beta/T)$. Com os ganhos da \cref{tab:ganhos} e
+$T = 0{,}5$~s:
+\begin{center}
+\begin{tabular}{@{}lcc@{}}
+\toprule
+Eixo & $\operatorname{Var}p/\sigma^2$ & $\operatorname{Var}v/\sigma^2$ (s$^{-2}$) \\
+\midrule
+ao longo & 0,670 & 0,0106 \\
+transversal & 0,571 & 0,190 \\
+\bottomrule
+\end{tabular}
+\end{center}
+Uma simulação de Monte Carlo com a própria função \code{motion.fold}, com
+$2\times10^5$ passos, reproduz os quatro valores com três algarismos.
+
+\begin{observacao}[Relação com o filtro de Kalman]
+Os comentários do código descrevem o filtro como o Kalman em regime para um
+modelo de velocidade constante. A estrutura é a mesma, mas os ganhos
+configurados não estão sobre a curva do Kalman em regime do modelo padrão de
+aceleração branca discreta (DWNA), $\beta = 2(2-\alpha) - 4\sqrt{1-\alpha}$
+\cite{barshalom}, que daria $\beta = 0{,}611$ e $0{,}409$. Também não estão
+sobre a curva de Benedict--Bordner, $\beta = \alpha^2/(2-\alpha)$, que daria
+0,533 e 0,377. Os valores configurados foram ajustados por varredura contra o
+rótulo do simulador (\code{fusion.yml}) e correspondem a um filtro alfa-beta que
+suaviza a velocidade mais do que qualquer um desses dois critérios.
+\end{observacao}
+
+\subsection{Duas detecções no mesmo instante}
+\label{sec:mesmo-instante}
+
+Na faixa de sobreposição das duas câmeras, $x\in[-0{,}35;\ -0{,}27]$~m no render
+atual, um objeto gera duas detecções com o mesmo $t$. A segunda chega com
+$T = 0$ e aplica só $p \leftarrow p + \alpha(z_2 - p)$. O efeito sobre a
+posição equivale ao de uma média ponderada das duas observações, com peso
+$\alpha$ para a segunda e $\alpha(1-\alpha)$ para a primeira.
+
+\subsection{O que a detecção atualiza}
+
+Depois do filtro, o retângulo do rastro passa a ser o da observação mais recente,
+com extensões $L$, $\ell$, ângulo $\psi$ e $o$ copiados dela e o centro
+horizontal substituído pela posição filtrada (\code{Tracker.\_fold}). O filtro
+modela para onde o objeto vai, e não seu tamanho nem sua orientação: o ângulo
+de um registro é sempre o da última máscara, sem suavização e sem estimativa de
+velocidade angular.
+
+%======================================================================
+\section{Fusão de material}
+\label{sec:material}
+
+\subsection{O posterior}
+
+O posterior de um rastro é uma distribuição $\pi$ sobre os 12 resultados
+$\Omega = \{\text{M-01},\dots,\text{M-11},\text{reject}\}$, uniforme na abertura
+(\code{fusion.Posterior}). Cada evidência entra com o peso
+\begin{equation}
+\label{eq:peso}
+w = c\cdot 2^{-\max(0,\Delta t)/\tau},\qquad \tau = 2{,}0\ \text{s},
+\end{equation}
+em que $\Delta t$ é a idade da evidência no instante da fusão
+(\code{weight\_of}). O corte em zero impede que uma evidência fora de ordem,
+com $\Delta t<0$, pese mais que uma nova. A função de peso não recebe a fonte, de
+modo que nenhuma prioridade por sensor pode ser expressa.
+
+\subsection{A atualização com piso}
+
+Dada uma verossimilhança $\boldsymbol\ell$ e um piso $\epsilon = 5\times10^{-4}$,
+a atualização é um produto de Bayes temperado seguido do operador de piso
+(\code{Posterior.fold}):
+\begin{equation}
+\label{eq:bayes}
+q_k = \frac{\pi_k\,\max(\ell_k,\epsilon)^{w}}{\sum_j \pi_j\,\max(\ell_j,\epsilon)^{w}},
+\qquad
+\pi' = \Phi_\epsilon(q),
+\end{equation}
+\begin{equation}
+\label{eq:piso}
+\Phi_\epsilon(q)_k = \epsilon + (1 - |\Omega|\epsilon)\,
+\frac{(q_k - \epsilon)_+}{\sum_j (q_j-\epsilon)_+},
+\end{equation}
+com $(\cdot)_+ = \max(\cdot,0)$. Se $w\le0$, nada muda.
+
+\begin{proposicao}
+\label{prop:piso}
+Se $0<\epsilon<1/|\Omega|$ e algum $q_j>\epsilon$, então $\Phi_\epsilon(q)$ é uma
+distribuição, $\Phi_\epsilon(q)_k\ge\epsilon$ para todo $k$, e
+$q_i \le q_k \Rightarrow \Phi_\epsilon(q)_i \le \Phi_\epsilon(q)_k$.
+\end{proposicao}
+\begin{proof}
+A soma é $|\Omega|\epsilon + (1-|\Omega|\epsilon)\cdot 1 = 1$. Cada termo é
+$\epsilon$ mais uma parcela não negativa, porque $1-|\Omega|\epsilon>0$. A
+função $q\mapsto (q-\epsilon)_+$ é monótona não decrescente, e os demais fatores
+são comuns a todos os $k$, o que preserva a ordem.
+\end{proof}
+
+O código registra por que a construção é essa: elevar os valores ao piso e
+depois renormalizar devolveria alguns deles para baixo do piso. A
+\cref{prop:piso} mostra que \eqref{eq:piso} garante o piso de forma exata.
+
+\subsection{O rótulo do simulador}
+
+Para \code{GroundTruth} da classe $m$, a verossimilhança é $\ell_m = 1$ e
+$\ell_k = \epsilon$ para $k\ne m$, com $c = 1$ e idade zero, logo $w = 1$.
+
+\begin{proposicao}
+A partir de qualquer posterior com $\pi_m \ge \pi_k$ para todo $k$, em particular
+o uniforme, uma fusão de \code{GroundTruth} leva a
+$\pi'_m = 1 - 11\epsilon = 0{,}9945$ e $\pi'_k = \epsilon$ para $k\ne m$, e esse
+ponto é fixo para as fusões seguintes da mesma classe.
+\end{proposicao}
+\begin{proof}
+Partindo do uniforme, $q_m = 1/(1+11\epsilon)$ e $q_k = \epsilon/(1+11\epsilon) <
+\epsilon$. Então $(q_k-\epsilon)_+ = 0$ para $k\ne m$, e \eqref{eq:piso} dá
+$\pi'_m = \epsilon + (1-12\epsilon) = 1-11\epsilon$. Partindo desse ponto,
+$q_k = \epsilon^2/Z < \epsilon$ para $k \ne m$, com
+$Z = (1-11\epsilon) + 11\epsilon^2 < 1$, e o mesmo cálculo devolve o mesmo
+ponto. O caso geral com $\pi_m$ máximo é análogo, porque $q_k \le
+\epsilon\,\pi_k/(\pi_m) \le \epsilon$.
+\end{proof}
+
+É exatamente o valor medido: a confiança de material mediana dos registros é
+0,9945, e a classe está certa em 100\% deles. A confiança de material, portanto,
+não mede percepção nenhuma.
+
+\subsection{Códigos de barras}
+\label{sec:codigos}
+
+Um código decodificado passa pelo dígito verificador módulo 10 (UPC-A, EAN-8,
+EAN-13) e é resolvido num catálogo para os componentes $C$ da embalagem
+(\code{codes.py}). A verossimilhança espalha o peso entre os componentes,
+$\ell_k = 1/|C|$ para $k\in C$ e $\ell_k = \epsilon$ fora, e o peso é
+atenuado pela certeza atual:
+\begin{equation}
+w_{\text{código}} = w\,\bigl(1 - \max_k \pi_k\bigr).
+\end{equation}
+Um código, portanto, nunca derruba uma crença já confiante. Com o posterior
+saturado pelo rótulo em 0,9945, um código entraria com peso de no máximo
+$0{,}9\times0{,}0055\approx 0{,}005$. No laço de simulação atual nenhuma câmera de
+código é lida e nenhum código chega ao rastreador; a decodificação só é exercida
+pela medição de rendimento em \code{tracker/measure.py}.
+
+\subsection{Material por classificador}
+
+A regra para a variante \code{Material} existe e funde o posterior do
+classificador diretamente por \eqref{eq:bayes}. Nenhum componente do laço a
+produz. O estágio de percepção treinado (\code{docs/architecture.md}) classifica
+o quadro inteiro, com saída multirrótulo $(B,11)$ para entradas de $96\times96$,
+e não atribui material a uma instância; por isso não pode alimentar um rastro.
+
+%======================================================================
+\section{Ciclo de vida e o registro}
+\label{sec:registro}
+
+\subsection{Aposentadoria}
+
+Seja $t^{\text{obs}}_j$ o instante da última detecção do rastro $j$. Antes de
+descrever os rastros no instante $t$, o rastreador remove todo $j$ com
+\begin{equation}
+\Delta t(t^{\text{obs}}_j, t) > T_r = 1{,}5\ \text{s}
+\end{equation}
+(\code{Tracker.\_retire}). São três intervalos de captura: um rastro sobrevive a
+duas detecções perdidas e morre na terceira. Uma evidência \code{GroundTruth}
+atualiza $t^{\text{upd}}$, mas não $t^{\text{obs}}$, de modo que o rótulo não
+mantém vivo um rastro que as câmeras deixaram de ver.
+
+\subsection{O registro \code{WasteObject}}
+
+Para cada rastro sobrevivente, o registro no instante $t$ contém
+(\code{Tracker.\_settle}):
+\begin{itemize}[leftmargin=*]
+\item o retângulo propagado $F(t)$, com centro $(p_x(t), p_y(t), h_a)$ dado pelo
+  filtro, ou por \eqref{eq:carry} se não houver filtro;
+\item o material $\hat m = \argmax_k \pi_k$ e a confiança $\max_k\pi_k$;
+\item a validade
+  \begin{equation}
+  t_{\text{val}} = t + \frac{\max\bigl(0,\ x_{\text{saída}} - p_x(t)\bigr)}{v_b},
+  \end{equation}
+  em que $x_{\text{saída}}$ é a borda a jusante da janela alcançável, obtida pela
+  varredura do modelo compilado (\code{belt.window\_exit}); o valor de reserva
+  no laço é 1,034~m;
+\item a faixa de massa $[\rho_{\min}V,\ \rho_{\max}V]$, com
+  $V = L\,\ell\,\eta$ e as densidades declaradas no mundo para a classe; a faixa
+  fica ausente se nenhum objeto do mundo tem essa classe.
+\end{itemize}
+O registro não guarda grandezas de preensão, mas as deriva do retângulo:
+\begin{equation}
+\label{eq:grasp-record}
+\mathbf{g} = \mathbf{c},\qquad
+\chi = \psi + \frac{\pi}{2},\qquad
+w_g = \ell,\qquad
+\mathbf{n} = \ez .
+\end{equation}
+O ponto de preensão é o centro, o eixo de fechamento é o eixo menor, a abertura
+é a extensão menor e a normal é vertical, porque nada na linha mede a inclinação
+de uma superfície.
+
+%======================================================================
+\section{A pose de preensão}
+\label{sec:pose}
+
+\subsection{Construção a partir do registro}
+
+A pose de preensão (\code{markers.marker\_for}) combina o registro com os
+parâmetros do efetuador, um Robotiq 2F-85 cujas medidas foram lidas do modelo
+compilado (\code{configs/world/sorting\_line.yml}, bloco \code{effector}):
+
+\begin{center}
+\begin{tabular}{@{}lll@{}}
+\toprule
+Grandeza & Símbolo & Valor \\
+\midrule
+Altura de fechamento acima da esteira & $h_g$ & 0,030 m \\
+Flange até o ponto de pinça & $\ell_f$ & 0,1558 m \\
+Espessura da almofada (direção de fechamento) & $t_p$ & 0,008 m \\
+Abertura máxima da garra & $w_{\max}$ & 0,085 m \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Com o registro $(\mathbf g = (x,y,\cdot),\ \chi,\ w_g,\ o)$:
+\begin{align}
+\label{eq:pinca}
+\mathbf{p}_{\text{pinça}} &= (x,\ y,\ z_s + h_g) = (x,\ y,\ 0{,}930), \\
+\label{eq:flange}
+\mathbf{p}_{\text{flange}} &= \mathbf{p}_{\text{pinça}} + \ell_f\,\ez = (x,\ y,\ 1{,}0858), \\
+\label{eq:almofadas}
+\mathbf{p}_{\pm} &= \mathbf{p}_{\text{pinça}} \pm \Bigl(\frac{w_g}{2} + \frac{t_p}{2}\Bigr)\bigl(\cos\chi,\ \sin\chi,\ 0\bigr)
+\quad \text{(se } o\text{)}, \\
+\text{alcançável} &\iff w_g \le w_{\max} .
+\end{align}
+A posição horizontal, o eixo de fechamento e a abertura vêm dos pixels. A altura
+não: nenhum sensor da linha mede profundidade, e o plano de fechamento é uma
+distância configurada acima da esteira, que não depende do objeto. Um objeto sem
+orientação ($o$ falso) não recebe eixo; o marcador desenha um anel de quatro
+almofadas e a pose não impõe giro à ferramenta. O canal de destino é o da classe
+$\hat m$, ou o de rejeição se a classe estiver fora da taxonomia. A velocidade e a
+taxa de giro do marcador ficam vazias nesse caminho, porque o registro não as
+carrega.
+
+\subsection{A pose como elemento de \texorpdfstring{$SE(3)$}{SE(3)}}
+
+A ferramenta é mantida apontando para baixo, então a pose tem quatro graus de
+liberdade, posição e giro em torno de $\ez$. Uma forma matricial equivalente para
+o flange é
+\begin{equation}
+T = \begin{pmatrix} R_z(\chi)\,R_x(\pi) & \mathbf{p}_{\text{flange}} \\ \mathbf{0}^\top & 1\end{pmatrix},
+\qquad R_x(\pi) = \operatorname{diag}(1,-1,-1),
+\end{equation}
+em que $R_x(\pi)$ vira o eixo da ferramenta para $-\ez$ e $R_z(\chi)$ alinha a
+direção de fechamento das almofadas com o eixo menor do objeto. A garra paralela
+é simétrica por meia volta, então $\chi$ e $\chi+\pi$ descrevem a mesma
+preensão, e o ângulo pertence a $S^1/\pi$. Essa matriz descreve o que a pose
+significa; o código não a monta, e transporta o par
+$(\mathbf p_{\text{flange}}, \chi)$.
+
+\subsection{O caminho alternativo: pose da física}
+\label{sec:pose-gt}
+
+Com \code{-{}-gt}, a pose vem de \code{ground\_truth\_markers}, que lê o estado do
+MuJoCo a cada 50~ms. As diferenças em relação à pose da visão são:
+\begin{itemize}[leftmargin=*]
+\item o ponto é o centro de massa do corpo (\code{xipos}), e não o centro de uma
+  caixa na imagem;
+\item a largura e o eixo de fechamento vêm da análise de componentes principais
+  dos vértices da malha girados para o mundo e projetados no plano: com a
+  dispersão $C = \sum_i \tilde{\mathbf q}_i\tilde{\mathbf q}_i^\top$ dos vértices
+  centrados, o autovetor menor $\mathbf m$ dá $\chi = \atantwo(m_y, m_x)$ e a
+  largura é $\max_i \tilde{\mathbf q}_i\!\cdot\!\mathbf m - \min_i
+  \tilde{\mathbf q}_i\!\cdot\!\mathbf m$, ou seja, a extensão real, e não um
+  equivalente de segundos momentos;
+\item o plano de fechamento acompanha o objeto,
+  $z_g = \min\bigl(\max(z_c,\ z_s + z_{\text{piso}}),\ z_s + 0{,}150\bigr)$, com
+  $z_c$ a altura do centro geométrico da malha e $z_{\text{piso}}$ a folga mínima da garra
+  aberta;
+\item a velocidade linear e a taxa de giro $\omega_z$ vêm da velocidade espacial
+  do corpo (\code{cvel}), e a validade usa a velocidade medida ao longo de $x$
+  quando ela passa de 0,01~m/s.
+\end{itemize}
+Esse caminho é a referência contra a qual a visão é medida
+(\cref{sec:medicoes}), e é o que o comando de vídeo de \code{AGENTS.md} usa.
+
+%======================================================================
+\section{Do registro à pose no instante da pega}
+\label{sec:instante}
+
+\subsection{Filtro e ordenação}
+
+O seletor (\code{control/selection.py}) só ordena um marcador que seja
+alcançável ($w_g \le w_{\max}$), cuja validade não tenha vencido
+($t_{\text{val}} > t$), cujo flange esteja na região em que o braço é confiável
+e que passe a condição de \emph{pickability}. Entre os candidatos, o custo é
+\begin{equation}
+J = \bigl\|\mathbf p_{\text{flange atual}} - \mathbf a\bigr\| + w_e\,v_x\,(t_{\text{val}} - t),
+\qquad w_e = 1{,}0,
+\end{equation}
+em que $\mathbf a$ é a âncora do candidato levada ao instante corrente e $v_x$ é a
+velocidade medida ao longo de $x$, ou $v_b$ se não houver medida. O segundo termo
+é a distância que o objeto ainda percorre antes de sair da janela, de modo que um
+objeto prestes a sair passa à frente de um mais próximo.
+
+\subsection{Previsão da posição}
+
+A pose é comandada para o instante $t_p$ em que o plano diz que as garras
+fecham, e não para o instante da captura. Com $\tau = t_p - t$ e a velocidade
+$\mathbf v$ do marcador, ou $(v_b, 0, 0)$ quando ela falta, como no caminho da
+visão (\code{control/task.py}), a posição prevista é
+(\code{trajectory.where\_carried})
+\begin{equation}
+\label{eq:where-carried}
+\mathbf p(t_p) = \mathbf p + \mathbf v \odot \bigl(\tau,\ \min(\tau, h_d),\ 0\bigr),
+\qquad h_d = 0{,}30\ \text{s},
+\end{equation}
+com $\odot$ o produto elemento a elemento. A componente ao longo da esteira é
+levada pelo intervalo inteiro, porque a esteira a sustenta; a transversal só por
+$h_d$, porque a deriva é um transitório; a vertical não é levada.
+
+\subsection{Previsão do giro}
+
+Se o marcador tem eixo $\chi$ e taxa $\omega$, o giro comandado é
+(\code{Task.\_yaw\_at\_pick})
+\begin{equation}
+\chi(t_p) =
+\begin{cases}
+\wrap(\chi + \omega\tau), & |\omega\tau| \le \pi/4,\\
+\chi, & \text{caso contrário},
+\end{cases}
+\qquad \wrap(\alpha) = \bigl((\alpha+\pi) \bmod 2\pi\bigr) - \pi .
+\end{equation}
+O limite de $\pi/4$ vem da simetria da garra: como $\chi$ e $\chi+\pi/2$ são as
+preensões mais distantes entre si, um giro previsto acima de $\pi/4$ já não é
+melhor que a medida. No caminho da visão, $\omega$ não existe e
+$\chi(t_p) = \chi$. Por fim, entre $\chi(t_p)$ e $\chi(t_p)+\pi$ escolhe-se o mais
+próximo do giro atual da ferramenta (\code{pick.nearer\_parallel\_yaw}), o que
+evita meia volta do punho.
+
+%======================================================================
+\section{Medições}
+\label{sec:medicoes}
+
+\subsection{Procedimento}
+
+As medições usaram o código do repositório sem modificação, em duas etapas,
+ambas com o mundo \code{configs/world/sorting\_line.yml}, render de
+$640\times480$, capturas a cada 0,5~s pelas duas câmeras de detecção e
+$h_a = 0{,}95$~m, como no laço de simulação. Foram quatro sementes (7, 11, 23 e
+42), de 60~s simulados cada, com a velocidade da esteira sorteada pelo layout,
+sem o controlador de alimentação, e com o braço parado na pose inicial, sem o
+laço de controle. A referência é o centro de massa
+de cada corpo (\code{xipos}), o mesmo ponto da pose da física, e só entram
+corpos apoiados na esteira, com $z_s - 0{,}05 < z \le z_s + 0{,}15$.
+
+\begin{enumerate}[leftmargin=*]
+\item \textbf{Adaptador.} Cada máscara é convertida isoladamente por
+  \code{detections\_from\_masks}, e o nome da geometria, que o adaptador
+  descarta, é usado só na avaliação, para parear a detecção com o corpo. A
+  largura e o eixo verdadeiros vêm da mesma análise de vértices da
+  \cref{sec:pose-gt}.
+\item \textbf{Rastreador.} O \code{Tracker} roda como no laço, com
+  \code{SimulatorIdentity}, as configurações de fusão e a evidência
+  \code{GroundTruth}. Cada registro é pareado ao corpo pelo rótulo interno do
+  seu rastro, lido só na avaliação.
+\end{enumerate}
+
+\subsection{Adaptador: da máscara ao retângulo}
+
+\begin{table}[ht]
+\centering
+\caption{Erro do adaptador de detecção contra o centro de massa. São 1353
+detecções, das quais 1211 com a máscara inteira dentro do quadro.}
+\label{tab:adaptador}
+\begin{tabular}{@{}lccc@{}}
+\toprule
+Grandeza & Mediana & p90 & Máximo \\
+\midrule
+Erro do centro, máscara inteira (mm) & 4,0 & 14,5 & 23,5 \\
+Erro do centro, máscara cortada pela borda (mm), 142 casos & 48,6 & 81,6 & 91,6 \\
+Largura $\ell$ menos largura verdadeira (mm) & $-1{,}7$ & $+6{,}6$ & --- \\
+Erro do eixo de fechamento, orientadas (graus) & 1,4 & 4,5 & 41,4 \\
+\midrule
+\multicolumn{4}{@{}l}{Orientadas: 1186 de 1211 (97,9\%). Décimo percentil da largura: $-4{,}5$~mm.}\\
+\multicolumn{4}{@{}l}{Altura do topo acima da esteira: mediana 0,060~m, p10 0,030~m, p90 0,068~m.}\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+O erro do centro cresce com a distância ao eixo óptico, com sinal negativo na
+direção radial, como prevê \eqref{eq:vies-prisma}. Um ajuste linear do erro radial
+contra a distância dá $-26{,}8$~mm/m com intercepto de $+3{,}0$~mm, contra
+$-18{,}9$~mm/m do modelo de prisma. O erro tangencial tem mediana absoluta de
+1,05~mm. A \cref{fig:radial} mostra a dependência.
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+  width=0.82\textwidth, height=6.4cm,
+  xlabel={distância horizontal ao eixo óptico, $d$ (m)},
+  ylabel={erro radial do centro (mm)},
+  xmin=0, xmax=0.72, ymin=-36, ymax=5,
+  grid=both, grid style={gray!20},
+  legend pos=south west, legend style={font=\footnotesize},
+  /pgf/number format/use comma,
+]
+\addplot[only marks, mark=*, mark size=1.8pt,
+  error bars/.cd, y dir=both, y explicit]
+  table[x=d, y=med, y error plus=up, y error minus=down] {
+  d    med    up    down
+  0.05 -0.9   2.1   1.9
+  0.15 -3.2   3.0   2.5
+  0.25 -2.3   1.6   5.2
+  0.35 -3.6   0.9   7.1
+  0.45 -10.4  6.5   6.0
+  0.55 -13.5  5.6   6.1
+  0.65 -15.8  6.8   6.2
+  };
+\addlegendentry{mediana medida, barras de p10 a p90}
+\addplot[thick, dashed, domain=0.05:0.72] {-18.9*x + 1.45};
+\addlegendentry{prisma, eq.~\eqref{eq:vies-prisma}, com $D = 0{,}10$ m}
+\addplot[thick, dotted, domain=0:0.72] {-26.8*x + 3.0};
+\addlegendentry{ajuste linear aos dados}
+\end{axis}
+\end{tikzpicture}
+\caption{Erro radial do centro das detecções em função da distância ao eixo da
+câmera que as produziu. Valores negativos apontam para o eixo. São 1211
+detecções com máscara inteira, em faixas de 0,1~m.}
+\label{fig:radial}
+\end{figure}
+
+Três leituras decorrem da tabela e da figura.
+\begin{itemize}[leftmargin=*]
+\item A geometria a partir de uma máscara exata erra poucos milímetros perto
+  do eixo. Longe dele, o erro chega a 15~mm, dominado pela altura suposta, e
+  não pela discretização.
+\item A largura que define a abertura da garra erra de $-4{,}5$ a $+6{,}6$~mm
+  entre p10 e p90, a mesma ordem da folga lateral mais estreita da garra, de
+  8,7~mm (\code{fusion.yml}).
+\item O eixo de fechamento é a grandeza mais robusta da cadeia, com mediana de
+  1,4$^\circ$ e p90 de 4,5$^\circ$. O máximo, de 41,4$^\circ$, mostra que
+  existem casos isolados de erro grande, cuja causa estas medições não
+  isolaram.
+\end{itemize}
+
+\subsection{Rastreador: o registro}
+
+\begin{table}[ht]
+\centering
+\caption{Erro horizontal do centro dos registros \code{WasteObject} contra o
+centro de massa, nas mesmas quatro sementes.}
+\label{tab:rastreador}
+\begin{tabular}{@{}lccc@{}}
+\toprule
+Conjunto de registros & $n$ & Mediana (mm) & p90 (mm) \\
+\midrule
+Com detecção na história & 1278 & 15,8 & 345 \\
+\quad detectados na própria captura & 957 & 9,3 & 56 \\
+\quad sem detecção na própria captura & 321 & 179 & 479 \\
+Abertos só pelo rótulo (\cref{obs:rastro-gt}) & 37 & 107 & 342 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Os registros atualizados por uma detecção na própria captura erram 9,3~mm na
+mediana, um pouco mais que o adaptador, porque o filtro atrasa a posição em
+relação à observação ($\alpha<1$). A cauda vem dos registros sem detecção
+recente: dentro da cobertura das câmeras, com $x\in[-1{,}25;\ 1{,}10]$~m, eles
+erram de 171 a 236~mm na mediana. Esses registros só existem porque outro rastro
+tomou as detecções do objeto, que é a fragmentação de identidade descrita na
+\cref{sec:associacao}. Perto da entrada da esteira, onde os objetos caem e
+quicam, a mediana chega a 345~mm. A classe do material está certa em 100\% dos
+registros, com confiança 0,9945, pelos motivos da \cref{sec:material}.
+
+%======================================================================
+\section{Limitações}
+\label{sec:limitacoes}
+
+Esta seção reúne o que as seções anteriores estabeleceram, em ordem de efeito
+sobre a pose.
+
+\begin{enumerate}[leftmargin=*]
+\item \textbf{Associação.} A fragmentação de identidade produz registros que
+  erram centenas de milímetros e é a maior fonte de erro da pose
+  (\cref{tab:rastreador}).
+\item \textbf{Altura.} A altura do objeto é suposta, e não medida: $\eta = 0{,}05$~m
+  para todos. Isso gera o viés radial da \cref{fig:radial}, de até $-16$~mm na
+  borda da cobertura, e faz o plano de fechamento ignorar o objeto
+  ($z = 0{,}930$~m sempre). A faixa de massa herda a mesma constante.
+\item \textbf{Máscaras cortadas.} Uma em cada dez detecções é cortada pela
+  borda do quadro e erra 48,6~mm na mediana, sem que nada a marque.
+\item \textbf{Cobertura longitudinal.} A cobertura das câmeras no simulador é a
+  do render de $4{:}3$, e não a do sensor declarado (\cref{obs:aspecto}). Com a
+  óptica real, a faixa entre $-0{,}54$ e $-0{,}08$~m ficaria sem câmera.
+\item \textbf{Material e identidade.} O material é o rótulo do simulador. O
+  rótulo decide qual rastro recebe o material, embora não decida a posição. Uma posição do simulador pode entrar num registro pelo caminho da
+  \cref{obs:rastro-gt} sem ser declarada.
+\item \textbf{Orientação.} O ângulo não é filtrado e nenhuma taxa de giro é
+  estimada pela visão. Uma garra que fecha meio segundo depois da captura chega
+  com o ângulo da última máscara, mesmo que o objeto tenha girado.
+\item \textbf{Centro.} O centro é o da caixa alinhada à imagem, que difere do
+  centroide em formas assimétricas e carrega o viés de meio pixel
+  \eqref{eq:meio-pixel}, de cerca de 1,1~mm.
+\item \textbf{Segmentação.} As máscaras são exatas porque vêm do rasterizador.
+  Num sistema real, a segmentação seria um modelo com erro próprio, que se
+  somaria a todos os erros acima.
+\end{enumerate}
+
+%======================================================================
+\section{Reprodutibilidade}
+
+Os números das \cref{sec:optica,sec:movimento} decorrem das fórmulas e das
+configurações citadas, e podem ser recalculados à mão. Os da
+\cref{sec:medicoes} vêm de dois roteiros de avaliação que importam o pacote
+\code{clave} sem alterá-lo e renderizam com \code{MUJOCO\_GL=egl}. Esses roteiros
+não fazem parte do repositório; o procedimento da \cref{sec:medicoes} basta para
+reconstruí-los. A pose de referência e os vídeos de depuração saem de
+\begin{center}
+\code{clave sim -{}-seconds 30 -{}-gt -{}-log-level DEBUG -{}-no-progress -{}-no-window -{}-video -{}-out runs/debug/<id>}
+\end{center}
+e a variante sem \code{-{}-gt} faz o braço seguir as poses da visão.
+
+%======================================================================
+\appendix
+\section{Parâmetros}
+\label{ap:parametros}
+
+\begin{center}
+\small
+\begin{tabular}{@{}llll@{}}
+\toprule
+Símbolo & Valor & Significado & Origem \\
+\midrule
+$z_s$ & 0,90 m & superfície da esteira & \code{world/sorting\_line.yml} \\
+$h_a$ & $z_s + 0{,}05$ m & altura suposta do topo & \code{sim/debug\_run.py} \\
+$W\times H$ & $640\times480$ & resolução do render & \code{sim/debug\_run.py} \\
+$T$ & 0,5 s & intervalo de captura & \code{sim/debug\_run.py} \\
+$\rho$ & 1,15 & limiar de orientabilidade & \code{adapters/detection.py} \\
+$N_{\text{sat}}$ & 400 px & saturação da confiança & \code{adapters/detection.py} \\
+$\gamma$ & 1,5 & porta, em múltiplos de $L_j$ & \code{association.py} \\
+$\varepsilon_u$ & 0,085 m & extensão de um rastro sem medida & \code{arm.max\_grasp\_width\_meters} \\
+$\alpha_x, \beta_x$ & 0,80; 0,05 & ganhos ao longo & \code{perception/fusion.yml} \\
+$\alpha_y, \beta_y$ & 0,70; 0,20 & ganhos transversais & \code{perception/fusion.yml} \\
+$\epsilon$ & $5\times10^{-4}$ & piso do posterior & \code{perception/fusion.yml} \\
+$\tau$ & 2,0 s & meia-vida da evidência & \code{perception/fusion.yml} \\
+$T_r$ & 1,5 s & aposentadoria & \code{perception/fusion.yml} \\
+$h_g$ & 0,030 m & plano de fechamento & \code{world/sorting\_line.yml} \\
+$\ell_f$ & 0,1558 m & flange até a pinça & \code{world/sorting\_line.yml} \\
+$t_p$ & 0,008 m & espessura da almofada & \code{world/sorting\_line.yml} \\
+$w_{\max}$ & 0,085 m & abertura máxima & \code{world/sorting\_line.yml} \\
+$w_e$ & 1,0 & peso da saída na ordenação & \code{runtime/control.yml} \\
+$h_d$ & 0,30 s & horizonte da deriva transversal & \code{runtime/control.yml} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{thebibliography}{9}
+\bibitem{benedict}
+T.~R. Benedict e G.~W. Bordner.
+\newblock Synthesis of an optimal set of radar track-while-scan smoothing
+  equations.
+\newblock \emph{IRE Transactions on Automatic Control}, 7(4):27--32, 1962.
+
+\bibitem{kalata}
+P.~R. Kalata.
+\newblock The tracking index: a generalized parameter for $\alpha$-$\beta$ and
+  $\alpha$-$\beta$-$\gamma$ target trackers.
+\newblock \emph{IEEE Transactions on Aerospace and Electronic Systems},
+  AES-20(2):174--182, 1984.
+
+\bibitem{barshalom}
+Y.~Bar-Shalom, X.~R. Li e T.~Kirubarajan.
+\newblock \emph{Estimation with Applications to Tracking and Navigation}.
+\newblock Wiley, 2001.
+\end{thebibliography}
+
+\end{document}
