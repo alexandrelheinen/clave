@@ -254,11 +254,10 @@ def build_frame_sample(
 def _archive_frame_count(dataset: Path, rollout_id: str) -> int:
     """Frame count of an archive whose description has no file record."""
     path = dataset / f"{rollout_id}.npz"
-    with zipfile.ZipFile(path, "r") as z:
-        with z.open("frames.npy") as f:
-            version = np.lib.format.read_magic(f)
-            shape, _, _ = np.lib.format._read_array_header(f, version)
-            return int(shape[0])
+    with zipfile.ZipFile(path, "r") as z, z.open("frames.npy") as f:
+        version = np.lib.format.read_magic(f)
+        shape, _, _ = np.lib.format._read_array_header(f, version)
+        return int(shape[0])
 
 
 def capture_interval_seconds(dataset: Path, rollout_id: str) -> float:
