@@ -1,8 +1,12 @@
 # Plan for probabilistic sorting
 
-Status: draft. No implementation starts until Alexandre has reviewed
-[docs/spec/probabilistic-sorting.md](../spec/probabilistic-sorting.md)
-and the open questions that gate the later phases.
+Status: phases 1 through 3 are implemented. Phases 4 through 7 stay
+gated. The cost table is a provisional operator setting written when
+phase 4 starts, and the implementer may fill it. The default rule stays
+`confidence_floor` until that default is changed on purpose.
+
+The specification is
+[docs/spec/probabilistic-sorting.md](../spec/probabilistic-sorting.md).
 
 Each phase is one change, with its own review. A phase does not begin by
 borrowing unfinished work from the next one. Acceptance criteria cite the
@@ -125,11 +129,12 @@ class. The confidence floor still routes.
 
 ## Phase 4. Decide the channel by expected cost
 
-This phase waits on open question 1 in the specification: the numeric
-cost table. The mechanism can be written and tested against the book's
-fixture and against synthetic tables before that file exists. The
-simulator's `routing.rule` does not flip until the table is in the
-configuration Alexandre accepted.
+This phase writes the provisional cost table from open question 1. The
+cells are an unmeasured operator setting, so the implementer may fill
+them. The mechanism can be tested against the book's fixture and
+against synthetic tables. The simulator's `routing.rule` does not flip
+in the same change as the table. The shipped rule stays
+`confidence_floor` until a later phase changes it on purpose.
 
 Bump the proposal contract to version 2 with a `posterior` field
 (`AC-SORT-17`, `AC-SORT-18`). Version 1 stays valid for a runtime whose

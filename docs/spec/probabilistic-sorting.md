@@ -1,10 +1,13 @@
 # Probabilistic sorting
 
-Status: draft. Alexandre reviews this before any code is written.
+Status: phases 1 through 3 of the plan are the implementation this
+document covers. The cost table, the channel change, and the estimator
+stay open.
 
-The phased work that would carry this out is
+The phased work is
 [docs/plan/probabilistic-sorting.md](../plan/probabilistic-sorting.md).
-Nothing in that plan starts while this document is still a draft.
+Phases 4 through 7 stay gated on a provisional cost table and on an
+explicit change of the default routing rule.
 
 This follows the spec-anchored bar in
 [.guidelines/workflow/sdd.md](../../.guidelines/workflow/sdd.md): an
@@ -295,13 +298,15 @@ has to be unable to route around that.
 
 The shipped table is configuration, with no numeric default in source.
 The book's 4 by 5 numbers are the fixture and are not the line's costs.
-Damage costs for this taxonomy have not been measured. Writing a
-provisional table into `configs/runtime/sitl.yml` waits on review, which
-the plan records as a gate in front of that phase. A flat reject cost, a
-zero on the mapped channel, and a higher cost on every other channel is
-the shape that generalizes the chapter's table. Asymmetric pairs, such as
-aluminum read as ferrous metal, are the reason to leave the confidence
-floor behind. The numbers in those cells are the open question.
+Damage costs for this taxonomy have not been measured. A provisional
+table is an operator setting, written when phase 4 starts, and either
+the implementer or the operator may fill the cells. It stays out of the
+shipped configuration while the rule is `confidence_floor`, and it is
+not recorded as a measurement. A flat reject cost, a zero on the mapped
+channel, and a higher cost on every other channel is the shape that
+generalizes the chapter's table. Asymmetric pairs, such as aluminum
+read as ferrous metal, are the reason to leave the confidence floor
+behind. The numbers in those cells are that provisional setting.
 
 While the confidence floor remains the configured rule, behavior of the
 line does not change. The floor is removed only after a reviewed cost
@@ -604,7 +609,9 @@ These block the phases the plan names. They do not block the fixture or
 the posterior builder.
 
 1. The first cost table for `M-01` through `M-11`, including any
-   asymmetric pair. This document does not choose those numbers.
+   asymmetric pair. The cells are an unmeasured operator setting. The
+   implementer writes a provisional table when phase 4 starts. Phases 1
+   through 3 do not contain that table.
 2. Whether `routing.rule` defaults to `expected_cost` once a table exists,
    or only when an operator sets it. The plan keeps the default on
    `confidence_floor` until that choice is written down.
