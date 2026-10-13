@@ -1,0 +1,57 @@
+# Reasoned default for expected-cost routing. Not measured data.
+#
+# Nothing in the runtime loads this file. configs/runtime/sitl.yml keeps
+# routing.rule at confidence_floor until an operator sets expected_cost.
+# Phase 5 estimates replace these cells. The estimator does not write
+# this file (AC-SORT-14). Replacing the cells is a reviewed edit of this
+# default once those estimates exist.
+#
+# version 1. Columns follow OUTCOMES: M-01 through M-11, then reject.
+# Rows are the channel ids in configs/runtime/sitl.yml. A zero is the
+# correct placement for that mapping, including the three fiber classes
+# that share channel 8. The scale is the chapter's 0 to 10.
+
+version: 1
+outcomes:
+  - M-01
+  - M-02
+  - M-03
+  - M-04
+  - M-05
+  - M-06
+  - M-07
+  - M-08
+  - M-09
+  - M-10
+  - M-11
+  - reject
+cost:
+  # Reject, the chapter's nop: 2 on a recoverable class, 0 on residue and
+  # on the reject outcome, which are already home here.
+  - channel: 0
+    costs: [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 0, 0]
+  # PET. Other plastic (M-04) is 8 because that class includes PVC and film.
+  - channel: 1
+    costs: [0, 3, 3, 8, 6, 8, 6, 3, 3, 4, 10, 6]
+  # HDPE. PP is the mild polyolefin swap, at 2.
+  - channel: 2
+    costs: [3, 0, 2, 5, 6, 8, 6, 3, 3, 4, 10, 6]
+  # PP. The HDPE swap is the same 2 in the other direction.
+  - channel: 3
+    costs: [3, 2, 0, 5, 6, 8, 6, 3, 3, 4, 10, 6]
+  # Other plastic. A valued resin landing here is a loss of grade, not a
+  # ruined PET bale, so those cells stay at 2 or 3.
+  - channel: 4
+    costs: [3, 2, 2, 0, 5, 8, 6, 2, 2, 3, 10, 6]
+  # Aluminum. Ferrous in this stream is 8. Glass is 5.
+  - channel: 5
+    costs: [3, 3, 3, 4, 0, 8, 5, 3, 3, 3, 10, 6]
+  # Ferrous. Aluminum in this stream is 5, the cheap direction of that pair.
+  - channel: 6
+    costs: [3, 3, 3, 4, 5, 0, 5, 3, 3, 3, 10, 6]
+  # Glass. Ferrous is 6, as in the chapter's scrap-in-glass cell.
+  - channel: 7
+    costs: [3, 3, 3, 4, 5, 6, 0, 3, 3, 3, 10, 6]
+  # Fiber, shared by M-08, M-09, and M-10. Ferrous is 10, glass is 8.
+  - channel: 8
+    costs: [4, 4, 4, 6, 6, 10, 8, 0, 0, 0, 10, 6]

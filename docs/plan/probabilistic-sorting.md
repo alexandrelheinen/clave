@@ -1,9 +1,9 @@
 # Plan for probabilistic sorting
 
-Status: phases 1 through 3 are implemented. Phases 4 through 7 stay
-gated. The cost table is a provisional operator setting written when
-phase 4 starts, and the implementer may fill it. The default rule stays
-`confidence_floor` until that default is changed on purpose.
+Status: phases 1 through 3 are implemented. The reasoned cost default
+is recorded in the specification. Phases 4 through 7 stay gated on
+wiring it. The default rule stays `confidence_floor`. An operator opts
+in.
 
 The specification is
 [docs/spec/probabilistic-sorting.md](../spec/probabilistic-sorting.md).
@@ -14,8 +14,8 @@ ids in the specification. Those ids are append-only.
 
 The line's behavior does not change in phases 1 through 3. Phase 4 is the
 first one that can change a channel, and only when `routing.rule` is
-`expected_cost`. The default stays `confidence_floor` until the open
-question on that default is answered.
+`expected_cost`. The default stays `confidence_floor`. An operator opts
+in.
 
 ## Phase 1. Pin GTSAM and lock the chapter's arithmetic
 
@@ -129,12 +129,12 @@ class. The confidence floor still routes.
 
 ## Phase 4. Decide the channel by expected cost
 
-This phase writes the provisional cost table from open question 1. The
-cells are an unmeasured operator setting, so the implementer may fill
-them. The mechanism can be tested against the book's fixture and
-against synthetic tables. The simulator's `routing.rule` does not flip
-in the same change as the table. The shipped rule stays
-`confidence_floor` until a later phase changes it on purpose.
+The reasoned default from open question 1 is
+[configs/routing/expected-cost-default.yml](../../configs/routing/expected-cost-default.yml).
+This phase loads that file. It does not invent a second table. The
+mechanism can be tested against the book's fixture and against
+synthetic tables. The simulator's `routing.rule` does not flip in the
+same change as the load. The shipped rule stays `confidence_floor`.
 
 Bump the proposal contract to version 2 with a `posterior` field
 (`AC-SORT-17`, `AC-SORT-18`). Version 1 stays valid for a runtime whose
@@ -195,9 +195,9 @@ estimator, not a claim about the perception head.
 
 ## Phase 6. Close the loop in simulation
 
-Select `expected_cost` for a debug configuration that names the reviewed
-cost table. Leave the default runtime file on `confidence_floor` unless
-open question 2 has been answered in favor of a flip.
+Select `expected_cost` for a debug configuration that names the reasoned
+default. Leave the shipped runtime file on `confidence_floor`. Open
+question 2 keeps that default unless an operator opts in.
 
 Extend the simulation narrative with one line per routing decision: the
 leading class, the chosen channel, and the expected cost of that channel.
@@ -226,8 +226,9 @@ configuration.
 
 ## Phase 7. Retire the floor, if the review says so
 
-Only after a period of running both rules, and only with an explicit
-decision on open question 2.
+Only after a period of running both rules, and only with a new explicit
+decision. Open question 2 keeps the shipped default on
+`confidence_floor`.
 
 Remove `Resolver`'s confidence comparison, the `confidence_floor` key, and
 version 1 of the proposal. Spend new ids for that removal. Do not reuse
