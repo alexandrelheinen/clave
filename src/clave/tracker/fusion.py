@@ -30,11 +30,15 @@ import math
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import yaml
 
+from clave.belief.floor import reserve_floor
 from clave.errors import ClaveError
+
+if TYPE_CHECKING:
+    from clave.belief.model import BeliefModel
 from clave.taxonomy import MATERIAL_CLASSES
 from clave.tracker.evidence import (
     Code,
@@ -161,13 +165,7 @@ def _floored(weights: tuple[float, ...], floor: float) -> tuple[float, ...]:
         A distribution summing to one in which nothing sits below the floor,
         and whose ordering is unchanged.
     """
-    reserved = floor * len(weights)
-    spare = 1.0 - reserved
-    excess = [max(0.0, value - floor) for value in weights]
-    total = math.fsum(excess)
-    if total <= 0.0:
-        return (1.0 / len(weights),) * len(weights)
-    return tuple(floor + spare * value / total for value in excess)
+    return reserve_floor(weights, floor)
 
 
 @dataclass(frozen=True)
@@ -186,6 +184,9 @@ class FusionSettings:
             dropped, in seconds. An object nobody has seen for that long is
             not an object whose position is known, and carrying it forward
             produces a confident record about a fiction.
+        belief: The category model, when expected-cost routing loaded one.
+            Absent on the confidence-floor line, which keeps the product
+            this module already had.
     """
 
     posterior_floor: float
@@ -194,6 +195,7 @@ class FusionSettings:
     along: Gains
     across: Gains
     retire_after: float
+    belief: BeliefModel | None = None
 
     @classmethod
     def load(cls, path: Path, world: Path) -> FusionSettings:
@@ -444,6 +446,36 @@ def _fold_geometry(
     return posterior
 
 
+def _category_product(
+    posterior: Posterior,
+    likelihood: tuple[float, ...],
+    weight: float,
+    floor: float,
+) -> Posterior:
+    """Multiply one scaled likelihood into a belief, then apply the floor.
+
+    The GTSAM import stays inside the call. A line that never attaches a
+    category model does not load it.
+
+    Args:
+        posterior: What is believed now.
+        likelihood: One value per outcome. It does not have to sum to one.
+        weight: How much the reading counts. Zero leaves the belief as it is.
+        floor: The smallest weight any outcome may hold afterwards.
+
+    Returns:
+        The updated belief.
+    """
+    if weight <= 0.0:
+        return posterior
+    from clave.belief.posterior import multiply, scale, with_floor
+
+    updated = with_floor(
+        multiply(posterior.weights, (scale(likelihood, weight),)), floor
+    )
+    return Posterior(weights=updated)
+
+
 def _fold_material(
     posterior: Posterior,
     payload: Payload,
@@ -451,10 +483,28 @@ def _fold_material(
     settings: FusionSettings,
     resolve: Resolver,
 ) -> Posterior:
-    """Fold a classifier's distribution straight in."""
+    """Fold a material reading.
+
+    Without a category model the soft vector is the likelihood, which is
+    the product this line already ran. With a model, the hard label is the
+    argmax of that vector and the likelihood is the matching column of the
+    conditional table. The soft vector is not `P(reading | category)`.
+    """
     del resolve
     assert isinstance(payload, Material)
-    return posterior.fold(payload.posterior, weight, settings.posterior_floor)
+    model = settings.belief
+    if model is None:
+        return posterior.fold(payload.posterior, weight, settings.posterior_floor)
+    reading = max(
+        range(len(payload.posterior)),
+        key=lambda index: payload.posterior[index],
+    )
+    return _category_product(
+        posterior,
+        model.likelihood("material", reading),
+        weight,
+        settings.posterior_floor,
+    )
 
 
 def _fold_code(
@@ -476,11 +526,11 @@ def _fold_code(
     if not components:
         return posterior
     _, leading = posterior.most_likely
-    return posterior.fold(
-        code_prior(components, settings.posterior_floor),
-        weight * (1.0 - leading),
-        settings.posterior_floor,
-    )
+    scaled = weight * (1.0 - leading)
+    likelihood = code_prior(components, settings.posterior_floor)
+    if settings.belief is None:
+        return posterior.fold(likelihood, scaled, settings.posterior_floor)
+    return _category_product(posterior, likelihood, scaled, settings.posterior_floor)
 
 
 def _fold_ground_truth(

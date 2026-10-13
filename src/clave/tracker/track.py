@@ -333,7 +333,7 @@ class Tracker:
             track_id=track_id,
             footprint=cue.footprint or self._unmeasured(),
             observed_at_nanos=cue.observed_at_nanos,
-            posterior=Posterior.uniform(),
+            posterior=_opening_posterior(self.settings),
             first_seen_nanos=at_nanos,
             last_updated_nanos=at_nanos,
         )
@@ -429,6 +429,24 @@ class Tracker:
             evidence=frozenset(track.evidence),
             simulated=frozenset(track.simulated),
         )
+
+
+def _opening_posterior(settings: FusionSettings) -> Posterior:
+    """Return the belief a new track starts from.
+
+    A configured category model starts from its prior. The confidence-floor
+    line has no model, and a new track stays uniform.
+
+    Args:
+        settings: The fusion settings for this tracker.
+
+    Returns:
+        The opening belief.
+    """
+    model = settings.belief
+    if model is None:
+        return Posterior.uniform()
+    return Posterior(weights=model.opening_weights(settings.posterior_floor))
 
 
 def _cue_of(evidence: Evidence, unmeasured_extent: float) -> Cue:
