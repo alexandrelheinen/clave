@@ -1,13 +1,13 @@
 # Plan for probabilistic sorting
 
-Status: phases 1 through 6 are implemented. The channel decider loads
+Status: phases 1 through 7 are settled. The channel decider loads
 the reasoned cost default when `routing.rule` is `expected_cost`.
 `clave estimate-belief` writes prior and sensor counts from a count
 log and does not edit the cost file.
 `configs/debug/expected-cost.yml` selects `expected_cost` and names
 that default. `clave sim` reads it only when `--routing` points at a
-file. The shipped rule stays `confidence_floor`. Phase 7 is not
-implemented. An operator opts in.
+file. Phase 7 keeps the shipped rule on `confidence_floor`. An
+operator opts in.
 
 The specification is
 [docs/spec/probabilistic-sorting.md](../spec/probabilistic-sorting.md).
@@ -227,18 +227,22 @@ configuration.
 
 ## Phase 7. Retire the floor, if the review says so
 
-Only after a period of running both rules, and only with a new explicit
-decision. Open question 2 keeps the shipped default on
-`confidence_floor`.
+The review keeps the floor.
 
-Remove `Resolver`'s confidence comparison, the `confidence_floor` key, and
-version 1 of the proposal. Spend new ids for that removal. Do not reuse
-`AC-SORT-21`. Update the routing tests that describe the floor, and keep
-the ones that describe reject, residue, and a total mapping.
+The phase 6 run is seed 0, 30 simulated seconds, ground truth, and
+`configs/debug/expected-cost.yml`. Six arrivals. The confidence-floor
+chute and the expected-cost chute match on each of them: HDPE, mixed
+paper, ferrous, HDPE, other plastic, mixed paper. The printed expected
+costs are 0.028, 0.029, 0.024, 0.028, 0.025, and 0.029. The reasoned
+default prices a correct placement at 0 and reject at 2, so a class
+spike still minimizes on the mapped channel. That run rejected nothing
+and misrouted nothing. The cost table was not edited.
 
-**Acceptance.** New ids, written into the specification before the
-deletion. `AC-SORT-07` through `AC-SORT-09` still hold. The default
-configuration loads `expected_cost`.
+Removing `Resolver`'s confidence comparison, the `confidence_floor`
+key, and version 1 of the proposal would retire `AC-SORT-21`. That
+deletion needs new ids, written before the code, and this review does
+not spend them. `AC-SORT-07` through `AC-SORT-09` and `AC-SORT-21`
+still hold. The shipped file stays on `confidence_floor`.
 
 ## What this plan will not do
 
