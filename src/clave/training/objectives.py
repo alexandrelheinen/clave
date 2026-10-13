@@ -16,7 +16,9 @@ def multilabel_presence(model: Any, batch: tuple[Any, Any]) -> Any:
     """Binary cross entropy over which classes appear in the frame.
 
     Several objects share a frame, so a single-label objective would be ill
-    posed regardless of the architecture.
+    posed regardless of the architecture. The vector this loss trains is not
+    P(reading | category). A category belief that consumes the head takes
+    the argmax as a hard label and reads a conditional table for that label.
     """
     import torch
 
