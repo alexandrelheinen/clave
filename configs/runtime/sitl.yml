@@ -40,7 +40,7 @@ runtime:
   belt_frame: belt
 
 routing:
-  # Names the rule in force. Expected cost is a later rule and is not
+  # Names the rule in force. Expected cost is available and is not
   # selected here, so the channel still follows the confidence floor.
   rule: confidence_floor
   reject_channel: 0

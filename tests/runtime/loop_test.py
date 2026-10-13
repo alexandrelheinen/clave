@@ -73,6 +73,56 @@ def test_a_channel_map_naming_an_unknown_class_is_refused(tmp_path: Path) -> Non
         loop.RuntimeSettings.load(path)
 
 
+def test_ac_sort_21_the_shipped_runtime_config_omits_the_cost_table() -> None:
+    """The confidence floor does not put a cost table on the runtime JSON."""
+    settings = loop.RuntimeSettings.load(SETTINGS)
+    assert settings.routing.rule == "confidence_floor"
+    assert settings.routing.cost is None
+    world = config.load(ROOT / "configs" / "world" / "sorting_line.yml")
+    derived = loop.runtime_config(world, settings.routing)
+    assert "cost" not in derived
+    assert "rule" not in derived
+
+
+def test_expected_cost_embeds_the_named_cost_file(tmp_path: Path) -> None:
+    """An operator opts in by naming the reasoned default."""
+    raw = yaml.safe_load(SETTINGS.read_text())
+    raw["routing"]["rule"] = "expected_cost"
+    raw["routing"]["cost_file"] = str(
+        ROOT / "configs" / "routing" / "expected-cost-default.yml"
+    )
+    path = tmp_path / "sitl.yml"
+    path.write_text(yaml.safe_dump(raw))
+    settings = loop.RuntimeSettings.load(path)
+    assert settings.routing.cost is not None
+    world = config.load(ROOT / "configs" / "world" / "sorting_line.yml")
+    derived = loop.runtime_config(world, settings.routing)
+    assert derived["rule"] == "expected_cost"
+    rows = derived["cost"]
+    assert isinstance(rows, list)
+    assert len(rows) == 9
+
+
+def test_the_confidence_floor_ignores_a_garbage_cost_table(tmp_path: Path) -> None:
+    """A floor file can carry a cost value the loader must not read."""
+    raw = yaml.safe_load(SETTINGS.read_text())
+    raw["routing"]["cost"] = "not a table"
+    path = tmp_path / "sitl.yml"
+    path.write_text(yaml.safe_dump(raw))
+    settings = loop.RuntimeSettings.load(path)
+    assert settings.routing.cost is None
+
+
+def test_expected_cost_names_a_missing_cost_key(tmp_path: Path) -> None:
+    """Opting in without a table fails at load and names the key."""
+    raw = yaml.safe_load(SETTINGS.read_text())
+    raw["routing"]["rule"] = "expected_cost"
+    path = tmp_path / "sitl.yml"
+    path.write_text(yaml.safe_dump(raw))
+    with pytest.raises(loop.RuntimeConfigError, match="routing.cost"):
+        loop.RuntimeSettings.load(path)
+
+
 def test_the_envelope_is_derived_from_the_world_rather_than_restated() -> None:
     """A second copy of the belt geometry is a second copy that can drift."""
     settings = loop.RuntimeSettings.load(SETTINGS)
