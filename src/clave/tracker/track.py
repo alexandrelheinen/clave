@@ -150,6 +150,8 @@ class WasteObject:
         evidence: Which roles contributed.
         simulated: Which of these fields came from the simulator rather than
             from a sensor.
+        posterior: Outcome weights, in `OUTCOMES` order, or empty when the
+            record was built without a belief.
     """
 
     track_id: int
@@ -164,6 +166,7 @@ class WasteObject:
     codes: tuple[str, ...]
     evidence: frozenset[Role]
     simulated: frozenset[str]
+    posterior: tuple[float, ...] = ()
 
     @property
     def grasp_point(self) -> NDArray[np.float64]:
@@ -428,6 +431,7 @@ class Tracker:
             codes=track.codes,
             evidence=frozenset(track.evidence),
             simulated=frozenset(track.simulated),
+            posterior=track.posterior.weights,
         )
 
 

@@ -340,6 +340,42 @@ def _parse_cost_rows(
     return tuple((channel, by_channel[channel]) for channel in sorted(by_channel))
 
 
+def load_routing_policy(path: Path) -> RoutingPolicy:
+    """Load the routing block from a runtime file or a routing file.
+
+    Args:
+        path: A YAML file with a `routing` mapping, or the mapping itself
+            at the top level.
+
+    Returns:
+        The policy. A confidence-floor file does not read the cost table.
+
+    Raises:
+        RuntimeConfigError: If a key is missing or a row is unusable.
+    """
+    loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if not isinstance(loaded, dict):
+        raise RuntimeConfigError(f"{path} is not a mapping")
+    routing = loaded.get("routing", loaded)
+    if not isinstance(routing, dict):
+        raise RuntimeConfigError("routing is not a mapping")
+    channels = _require(routing, "channels", "routing")
+    if not isinstance(channels, dict):
+        raise RuntimeConfigError("routing.channels is not a mapping")
+    for class_id in channels:
+        if class_id not in BY_ID:
+            raise RuntimeConfigError(
+                f"routing.channels names {class_id!r}, which is not in the taxonomy"
+            )
+    return RoutingPolicy(
+        channels={str(key): int(value) for key, value in channels.items()},
+        reject_channel=int(_require(routing, "reject_channel", "routing")),
+        confidence_floor=float(_require(routing, "confidence_floor", "routing")),
+        rule=str(routing.get("rule", CONFIDENCE_FLOOR)),
+        cost=_cost_for_rule(routing, path),
+    )
+
+
 def runtime_config(world: dict[str, Any], routing: RoutingPolicy) -> dict[str, Any]:
     """Build what the Rust runtime reads, from the world and the policy.
 

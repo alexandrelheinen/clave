@@ -1,6 +1,6 @@
 """The debug narrative: one sentence per event, and a watch that opens episodes.
 
-AC-STORY-01 through AC-STORY-10. The sentences are what an operator reads
+AC-STORY-01 through AC-STORY-11. The sentences are what an operator reads
 while a run is going wrong. They are specified in
 docs/requirements/simulation-narrative.md.
 """
@@ -241,3 +241,19 @@ def test_the_watch_is_an_episode_not_a_tick() -> None:
     assert "outside the annulus" in refusals[2]
     lags = [line for line in lines if "from the pose it was commanded" in line]
     assert all("report a loss of control" in line for line in (*lags, *refusals))
+
+
+def test_ac_story_11_an_expected_cost_decision_is_one_line() -> None:
+    """AC-STORY-11: one line per new decision, and silence when it repeats."""
+    story, kept = _lines()
+    story.route(1.25, 4, "M-08", "CH-FERROUS", 1.8)
+    assert len(kept) == 1
+    assert "Corrugated cardboard, M-08" in kept[0]
+    assert "minimizes expected cost at 1.800" in kept[0]
+    assert "chute CH-FERROUS" in kept[0]
+    assert kept[0].endswith(": pending")
+    story.route(1.75, 4, "M-08", "CH-FERROUS", 1.8)
+    assert len(kept) == 1
+    story.route(2.0, 4, "M-08", "CH-REJECT", 2.0)
+    assert len(kept) == 2
+    assert "2.000" in kept[1]

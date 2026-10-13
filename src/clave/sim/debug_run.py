@@ -67,6 +67,7 @@ from clave.control.settings import ControlSettings, Phase
 from clave.control.story import AnomalyWatch, StoryLog
 from clave.control.task import TaskMachine
 from clave.control.trajectory import distance, norm, zeros
+from clave.runtime.loop import load_routing_policy
 from clave.sim.clearance import (
     JawState,
     _jaw_collision_geoms,
@@ -95,6 +96,7 @@ from clave.sim.report import (
     _run_metadata,
     report_lines,
 )
+from clave.sim.routing import RoutingSession, ground_truth_beliefs, record_beliefs
 from clave.taxonomy import channel_of
 from clave.tracker.adapters.detection import detections_from_masks
 from clave.tracker.adapters.render import segment_masks
@@ -104,6 +106,7 @@ from clave.tracker.evidence import Evidence, GroundTruth, Role
 from clave.tracker.fusion import FusionSettings
 from clave.tracker.intake import Deployment, Intake
 from clave.tracker.markers import (
+    GraspMarker,
     ground_truth_markers,
     markers_for,
 )
@@ -272,6 +275,7 @@ def run(
     belt_speed: float | None = None,
     progress: bool = True,
     render_mode: str = "lite",
+    routing_path: Path | None = None,
 ) -> DebugRunReport:
     """Drive the tracker over one rollout, annotating every capture.
 
@@ -307,6 +311,10 @@ def run(
             the speed sampled by the scene layout.
         progress: Draw the tqdm bar. Off when the operator wants the debug
             narrative, which shares the terminal with the bar.
+        render_mode: `lite`, `demo`, or `realistic`.
+        routing_path: A routing file for this run. Absent, each object stays
+            on the channel its class maps to. The shipped runtime file is
+            not what this argument reads.
 
     Returns:
         The report.
@@ -426,6 +434,17 @@ def run(
         unmeasured_extent=grasp,
         resolve=resolver_for(load_catalog(packaging_path)),
     )
+    routing_file = None
+    routing_session: RoutingSession | None = None
+    if routing_path is not None:
+        routing_file = (
+            routing_path if routing_path.is_absolute() else root / routing_path
+        )
+        routing_session = RoutingSession(
+            load_routing_policy(routing_file),
+            tracker.settings.posterior_floor,
+            tuple(plan.chutes),
+        )
 
     LOGGER.debug(
         "resolved simulation parameters: belt_speed=%.3f m/s surface=%.3f m "
@@ -518,6 +537,7 @@ def run(
                     "window": window,
                     "progress": progress,
                     "render_mode": render_mode,
+                    "routing": None if routing_file is None else str(routing_file),
                 },
             ),
             indent=2,
@@ -645,8 +665,10 @@ def run(
     ]
     mouth = (opening[0], opening[1])
     # Which channel each pool slot's object belongs in, learned as objects
-    # spawn rather than read once from an empty belt. Ground truth, and used
-    # only to count a misroute: nothing the controller reads comes from here.
+    # spawn rather than read once from an empty belt. Used only to count a
+    # misroute: nothing the controller reads comes from here. After an
+    # expected-cost decision the slot keeps the chute the visit flies, so a
+    # place on that chute is not counted as a miss.
     routes: dict[int, str] = {}
     # And how near it got to where the head actually was at that instant.
     # Without interception the commanded pose is as old as the decision
@@ -743,6 +765,31 @@ def run(
             serial=serial,
         )
 
+    def _routed(
+        standing: tuple[GraspMarker, ...],
+        beliefs: dict[int, tuple[str, tuple[float, ...]]],
+        at_seconds: float,
+    ) -> tuple[GraspMarker, ...]:
+        """Apply the debug routing file, or leave the markers as they are."""
+        if routing_session is None:
+            return standing
+        return routing_session.apply(standing, beliefs, story, at_seconds)
+
+    def _gt_beliefs() -> dict[int, tuple[str, tuple[float, ...]]]:
+        """Floored class posteriors for the objects on the belt."""
+        return ground_truth_beliefs(
+            [(item.serial, item.material_class) for item in conveyor.active],
+            tracker.settings.posterior_floor,
+        )
+
+    def _stamp_routes() -> None:
+        """Remember the chute each slot is flying, for the misroute count."""
+        routes.update({item.index: item.channel for item in conveyor.active})
+        if routing_session is None:
+            return
+        for item in conveyor.active:
+            routes[item.index] = routing_session.chute_for(item.serial, item.channel)
+
     def _interruptible(iterable: Any) -> Any:
         try:
             yield from iterable
@@ -759,10 +806,13 @@ def run(
             # recycles it below 0.30 m, so at the half second capture
             # cadence it goes from above the surface to gone without ever
             # being seen crossing.
-            routes.update({i.index: i.channel for i in conveyor.active})
+            _stamp_routes()
             if use_ground_truth:
                 for item in conveyor.active:
-                    story.note(item.serial, item.material_class, item.channel)
+                    chute = item.channel
+                    if routing_session is not None:
+                        chute = routing_session.chute_for(item.serial, item.channel)
+                    story.note(item.serial, item.material_class, chute)
             for name, channel in _placed(
                 mujoco, model, data, conveyor, plan.chutes, mouth, surface
             ).items():
@@ -1073,16 +1123,20 @@ def run(
             if use_ground_truth and task.active and data.time >= next_ground_truth:
                 next_ground_truth = data.time + ground_truth_steer
                 now_gt = int(data.time * NANOS_PER_SECOND)
-                standing = ground_truth_markers(
-                    model,
-                    data,
-                    conveyor.active,
-                    plan,
-                    effector,
-                    surface,
-                    now_gt,
-                    tracker.window_exit,
-                    feeding.speed,
+                standing = _routed(
+                    ground_truth_markers(
+                        model,
+                        data,
+                        conveyor.active,
+                        plan,
+                        effector,
+                        surface,
+                        now_gt,
+                        tracker.window_exit,
+                        feeding.speed,
+                    ),
+                    _gt_beliefs(),
+                    data.time,
                 )
                 flange = _flange(indices, data)
                 queue = selector.update(standing, flange, feeding.speed, now_gt)
@@ -1152,12 +1206,25 @@ def run(
                     tracker.window_exit,
                     feeding.speed,
                 )
+                beliefs = _gt_beliefs()
             else:
                 standing = markers_for(records, effector, surface)
+                beliefs = record_beliefs(
+                    [
+                        (record.track_id, record.material, record.posterior)
+                        for record in records
+                    ],
+                    tracker.settings.posterior_floor,
+                )
+            standing = _routed(standing, beliefs, data.time)
 
             flange = _flange(indices, data)
             if not use_ground_truth:
                 for record in records:
+                    if routing_session is not None and routing_session.decided(
+                        record.track_id
+                    ):
+                        continue
                     try:
                         chute = channel_of(record.material)
                     except KeyError:
@@ -1165,7 +1232,7 @@ def run(
                     story.note(record.track_id, record.material, chute)
             queue = selector.update(standing, flange, feeding.speed, now)
 
-            routes.update({item.index: item.channel for item in conveyor.active})
+            _stamp_routes()
             for name, channel in _placed(
                 mujoco,
                 model,
@@ -1260,6 +1327,14 @@ def run(
             telemetry.close()
         if opened:
             cv2.destroyAllWindows()
+
+    if routing_session is not None:
+        comparison = out / "routing-comparison.txt"
+        comparison.write_text(
+            routing_session.notes(seed) + "\n",
+            encoding="utf-8",
+        )
+        LOGGER.info("routing comparison written: %s", comparison)
 
     report = DebugRunReport(
         captures=captures,

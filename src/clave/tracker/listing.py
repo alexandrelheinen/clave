@@ -83,6 +83,11 @@ def described_fields(record: WasteObject) -> dict[str, str]:
         "simulated": (
             ", ".join(sorted(record.simulated)) if record.simulated else "nothing"
         ),
+        "posterior": (
+            " ".join(f"{weight:.3f}" for weight in record.posterior)
+            if record.posterior
+            else "not recorded"
+        ),
         "grasp_point": (
             f"({record.grasp_point[0]:.3f}, {record.grasp_point[1]:.3f}, "
             f"{record.grasp_point[2]:.3f}) m"
