@@ -3,6 +3,8 @@
 use clave_decision::{ChannelId, Confidence, MaterialClass};
 
 use crate::channel_map::ChannelMap;
+use crate::cost::{CostTable, OUTCOME_COUNT};
+use crate::error::RoutingError;
 
 /// Why an object went to the reject channel.
 ///
@@ -15,6 +17,8 @@ pub enum RejectReason {
     BelowThreshold,
     /// The operator's mapping names no channel for this class.
     UnmappedClass,
+    /// The reject channel minimizes expected cost.
+    ExpectedCost,
 }
 
 /// Where one object goes.
@@ -60,13 +64,58 @@ impl Routed {
 #[derive(Debug, Clone)]
 pub struct Resolver {
     map: ChannelMap,
+    costs: Option<CostTable<OUTCOME_COUNT>>,
 }
 
 impl Resolver {
-    /// Returns a resolver over a loaded mapping.
+    /// Returns a resolver over a loaded mapping, using the confidence floor.
     #[must_use]
     pub const fn new(map: ChannelMap) -> Self {
-        Self { map }
+        Self { map, costs: None }
+    }
+
+    /// Returns a resolver that chooses the channel of minimum expected cost.
+    ///
+    /// The confidence floor is not consulted. [`Resolver::resolve`] on this
+    /// value still applies the floor, so a caller picks the rule by which
+    /// method it calls.
+    ///
+    /// # Errors
+    ///
+    /// Returns the load errors of [`CostTable::for_channels`].
+    pub fn with_expected_cost(
+        map: ChannelMap,
+        rows: impl IntoIterator<Item = (ChannelId, [f64; OUTCOME_COUNT])>,
+    ) -> Result<Self, RoutingError> {
+        let costs = CostTable::for_channels(&map.known_channels(), map.reject_channel(), rows)?;
+        Ok(Self {
+            map,
+            costs: Some(costs),
+        })
+    }
+
+    /// Returns whether this resolver was loaded with a cost table.
+    #[must_use]
+    pub const fn uses_expected_cost(&self) -> bool {
+        self.costs.is_some()
+    }
+
+    /// Chooses the channel of minimum expected cost.
+    ///
+    /// Returns `None` when this resolver has no cost table. The leading class
+    /// is not an input: the caller keeps it on the decision.
+    #[must_use]
+    pub fn choose_expected_cost(&self, posterior: &[f64; OUTCOME_COUNT]) -> Option<Routed> {
+        let costs = self.costs.as_ref()?;
+        let (channel, _) = costs.minimizing_channel(posterior);
+        Some(if channel == self.map.reject_channel() {
+            Routed::Rejected {
+                channel,
+                reason: RejectReason::ExpectedCost,
+            }
+        } else {
+            Routed::Sorted(channel)
+        })
     }
 
     /// Returns the mapping this resolver was built with.

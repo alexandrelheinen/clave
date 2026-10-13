@@ -11,9 +11,11 @@
 //! line that starts and then misroutes is worse than a line that refuses to
 //! start.
 //!
-//! Two routes end at the reject channel and they are told apart by their
-//! reason: an object the classifier was not sure enough about, and an object
-//! whose class the operator mapped no channel for.
+//! Three routes end at the reject channel and they are told apart by their
+//! reason: an object the classifier was not sure enough about, an object
+//! whose class the operator mapped no channel for, and an object whose
+//! posterior makes the reject channel the minimum expected cost. The floor
+//! and the cost table do not blend. A configuration picks one.
 //!
 //! # Examples
 //!
@@ -46,9 +48,11 @@
 #![forbid(unsafe_code)]
 
 mod channel_map;
+mod cost;
 mod error;
 mod resolver;
 
 pub use crate::channel_map::ChannelMap;
+pub use crate::cost::{CostTable, OUTCOME_COUNT};
 pub use crate::error::RoutingError;
 pub use crate::resolver::{RejectReason, Resolver, Routed};
