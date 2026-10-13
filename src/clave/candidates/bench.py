@@ -8,8 +8,6 @@ Latency is measured one frame at a time because that is CLAVE's access pattern:
 a conveyor produces frames singly and batching across objects is not available.
 """
 
-from __future__ import annotations
-
 import platform
 import statistics
 import time
