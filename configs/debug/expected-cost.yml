@@ -1,0 +1,21 @@
+# Debug routing. The shipped runtime file stays on confidence_floor.
+# clave sim reads this only when --routing names it. The cost file is
+# the reasoned default. This file does not edit those cells.
+
+routing:
+  rule: expected_cost
+  cost_file: ../routing/expected-cost-default.yml
+  reject_channel: 0
+  confidence_floor: 0.60
+  channels:
+    M-01: 1
+    M-02: 2
+    M-03: 3
+    M-04: 4
+    M-05: 5
+    M-06: 6
+    M-07: 7
+    M-08: 8
+    M-09: 8
+    M-10: 8
+    M-11: 0

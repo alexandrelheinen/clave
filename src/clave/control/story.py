@@ -107,6 +107,7 @@ class StoryLog:
         self._materials: dict[int, str] = {}
         self._channels: dict[int, str] = {}
         self._grasp_misses: set[int] = set()
+        self._routed: dict[int, tuple[str, str, str]] = {}
 
     def note(self, track_id: int, material: str, channel: str) -> None:
         """Remember what a track is, without letting an empty note erase one.
@@ -120,6 +121,42 @@ class StoryLog:
             self._materials[track_id] = material
         if channel:
             self._channels[track_id] = channel
+
+    def route(
+        self,
+        at_seconds: float,
+        track_id: int,
+        leading_class: str,
+        channel: str,
+        expected_cost: float,
+    ) -> None:
+        """Narrate one expected-cost decision, once per choice.
+
+        A later capture that repeats the class, the chute, and the cost is
+        the same decision. The printed cost uses three decimal places, the
+        same width the time column uses.
+
+        Args:
+            at_seconds: Simulated time.
+            track_id: The identity the task layer serves.
+            leading_class: The class the posterior still reports.
+            channel: The chute the decision selected.
+            expected_cost: The expected cost of that chute.
+        """
+        shown = f"{expected_cost:.3f}"
+        signature = (leading_class, channel, shown)
+        if self._routed.get(track_id) == signature:
+            return
+        self._routed[track_id] = signature
+        self.note(track_id, leading_class, channel)
+        phrase = material_phrase(leading_class)
+        self.tell(
+            at_seconds,
+            f"{phrase} minimizes expected cost at {shown}",
+            f"route {self.refer(track_id)}",
+            "pending",
+            channel=channel,
+        )
 
     def material_of(self, track_id: int | None) -> str:
         """Return the noted material class, or empty when none was noted."""

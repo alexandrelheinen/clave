@@ -22,7 +22,9 @@ turns the bar off so the two do not write over each other.
 plan, which phase of that plan, a re-aim whose choice changed, a miss, an
 abandonment, a fault. The queue rebuilds that change who is next. The close,
 the lift, and the place, which are the three moments a visit succeeds or
-fails. A watch that opens one episode for jaw-to-belt contact, vertical
+fails. A routing decision, when a debug run selects expected cost: the
+leading class, the chute, and the expected cost, one line when that choice
+is new. A watch that opens one episode for jaw-to-belt contact, vertical
 acceleration, tracking lag, and a servo refusal. The `--no-progress` flag on
 `clave sim`.
 
@@ -45,6 +47,7 @@ the decisions a person can read, and a line at either rate is noise.
 | Queue rebuilt | The order of candidates changed, or it was rebuilt and did not | Why (`appeared`, `retired`, `anchor`), and whether the head changed. A head replaced while it is still waiting is the churn that sends the arm elsewhere |
 | Queue has no head | Nothing is served | That no visit will start |
 | Plan committed | The arm leaves park and flies a timed visit | The object, the material, the chute, the duration, and the phases in order, which is the manner of the visit |
+| Expected-cost route | The chute is the minimum of expected cost, rather than the class map | The leading class, the chute, and the expected cost. One line when this becomes the decision. A later capture that repeats the class, the chute, and the cost is the same decision |
 | Reference-only track begins | The arm follows a marker at approach height | The object, and that this profile does not grasp |
 | Flange outside the trusted region | The arm goes home instead of committing, and the object is not marked missed | That the recovery is the park pose, because a plan that starts outside the region is refused forever |
 | No interception | The object is skipped | How much belt it had left, or that the grasp pose would put the jaw in the belt |
@@ -201,6 +204,11 @@ differs from the previous re-aim of the visit; the visit shall still record
 every refresh. A watch condition shall be reported again only after it has
 stayed clear for the quiet interval, so a sample that crosses the threshold
 at the physics rate is not a new line.
+
+`AC-STORY-11`: When a debug run selects expected cost, the narrative shall
+emit one line for a new routing decision. The line shall name the leading
+class, the chute, and the expected cost of that chute. A later capture that
+repeats the same class, chute, and printed cost shall emit nothing.
 
 ## Design notes
 

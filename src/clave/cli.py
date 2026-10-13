@@ -1058,6 +1058,16 @@ def _build_parser() -> argparse.ArgumentParser:
         dest="demo_mode",
         help="alias for --render-mode demo (realistic presentation rendering)",
     )
+    sim.add_argument(
+        "--routing",
+        type=Path,
+        default=None,
+        help=(
+            "routing file for this run. Absent, each object stays on the "
+            "channel its class maps to. The shipped runtime file stays on "
+            "the confidence floor"
+        ),
+    )
 
     still = sub.add_parser(
         "still",
@@ -1205,7 +1215,7 @@ def _debug_tracker(root: Path, args: Any) -> int:
         "out=%s, video=%s, camera_video=%s, frames=%s, telemetry=%s, "
         "telemetry_rate=%.3f, "
         "trajectory_seconds=%.3f, window=%s, view=%s, ground_truth_tracker=%s, "
-        "progress=%s, render_mode=%s",
+        "progress=%s, render_mode=%s, routing=%s",
         args.seconds,
         args.seed,
         args.out,
@@ -1220,6 +1230,7 @@ def _debug_tracker(root: Path, args: Any) -> int:
         args.ground_truth_tracker,
         not args.no_progress,
         render_mode,
+        args.routing,
     )
     telemetry_path = None
     if args.telemetry:
@@ -1244,6 +1255,7 @@ def _debug_tracker(root: Path, args: Any) -> int:
         belt_speed=args.belt_speed,
         progress=not args.no_progress,
         render_mode=render_mode,
+        routing_path=args.routing,
     )
     for line in report_lines(report):
         _log_output(line)
