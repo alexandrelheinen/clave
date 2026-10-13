@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import urllib.request
-from typing import Any
+from typing import Any, Sequence
 
 from clave.errors import ClaveError
 from clave.storage.config import D1Config
@@ -272,6 +272,73 @@ class D1Client:
             if "duplicate column" not in str(exc).lower():
                 raise
 
+    def execute_batch(
+        self, statements: list[tuple[str, list[Any] | None]]
+    ) -> list[list[dict[str, Any]]]:
+        """Execute a batch of SQL statements against D1 in a single request.
+
+        Args:
+            statements: A list of tuples, each containing an SQL string and
+                optional positional parameters.
+
+        Returns:
+            A list of result row lists, one per statement.
+
+        Raises:
+            D1Error: If execution fails or HTTP returns non-200.
+        """
+        if not statements:
+            return []
+
+        payload_list = []
+        for sql, params in statements:
+            payload_list.append({"sql": sql, "params": params or []})
+
+        payload = json.dumps(payload_list).encode("utf-8")
+        req = urllib.request.Request(self.endpoint, data=payload, method="POST")
+        req.add_header("Authorization", f"Bearer {self.config.api_token}")
+        req.add_header("Content-Type", "application/json")
+
+        try:
+            with urllib.request.urlopen(req) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as err:
+            err_body = err.read().decode("utf-8", errors="replace")
+            raise D1Error(f"D1 HTTP {err.code}: {err.reason} - {err_body}") from err
+        except urllib.error.URLError as err:
+            raise D1Error(f"connection error contacting D1: {err.reason}") from err
+
+        if not isinstance(data, list):
+            # If we sent a list, D1 might return a list of responses
+            # Or if it fails it might return a dict. Let's handle both.
+            if not data.get("success"):
+                errors = data.get("errors", [])
+                raise D1Error(f"D1 query error: {errors}")
+            # If it wrapped a single statement response, which it shouldn't for arrays
+            data_list = [data]
+        else:
+            data_list = data
+
+        results_out: list[list[dict[str, Any]]] = []
+        for i, stmt_result in enumerate(data_list):
+            if not stmt_result.get("success"):
+                errors = stmt_result.get("errors", [])
+                raise D1Error(f"D1 query error in statement {i}: {errors}")
+
+            result_blocks = stmt_result.get("result", [])
+            if not result_blocks:
+                results_out.append([])
+                continue
+            first = result_blocks[0]
+            if not first.get("success", False):
+                raise D1Error(
+                    f"D1 statement error in stmt {i}: {first.get('error', 'unknown')}"
+                )
+            rows: list[dict[str, Any]] = first.get("results", [])
+            results_out.append(rows)
+
+        return results_out
+
     def record_dataset(
         self,
         digest: str,
@@ -382,6 +449,52 @@ class D1Client:
                 r2_key,
             ],
         )
+
+    def record_dataset_files(
+        self,
+        digest: str,
+        files: Sequence[Any],
+    ) -> None:
+        """Record a batch of archives in the file index (AC-CORPUS-05)."""
+        if not files:
+            return
+
+        sql = """
+        INSERT INTO dataset_files (
+            digest, name, sha256, byte_count, frame_count, seed,
+            belt_speed_meters_per_second, spacing_meters, camera_ids, r2_key
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(digest, name) DO UPDATE SET
+            sha256=excluded.sha256,
+            byte_count=excluded.byte_count,
+            frame_count=excluded.frame_count,
+            seed=excluded.seed,
+            belt_speed_meters_per_second=excluded.belt_speed_meters_per_second,
+            spacing_meters=excluded.spacing_meters,
+            camera_ids=excluded.camera_ids,
+            r2_key=excluded.r2_key
+        """
+        statements: list[tuple[str, list[Any] | None]] = []
+        for archived in files:
+            statements.append(
+                (
+                    sql,
+                    [
+                        digest,
+                        archived.name,
+                        archived.sha256,
+                        archived.byte_count,
+                        archived.frame_count,
+                        archived.seed,
+                        archived.belt_speed_meters_per_second,
+                        archived.spacing_meters,
+                        ",".join(archived.camera_ids),
+                        f"datasets/{digest}/{archived.name}",
+                    ],
+                )
+            )
+
+        self.execute_batch(statements)
 
     def record_corpus_evaluation(
         self,

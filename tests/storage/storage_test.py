@@ -156,6 +156,8 @@ def test_ac_data_02_and_04_dataset_push(tmp_path: Path) -> None:
     assert kwargs["seed"] == 42
     assert kwargs["config_digest"] == "config_digest_123"
 
+    d1_mock.record_dataset_files.assert_called_once()
+
 
 def test_ac_data_03_dataset_pull_verification(tmp_path: Path) -> None:
     """AC-DATA-03: Pull downloads from R2 and verifies local digest."""
