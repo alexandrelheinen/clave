@@ -229,8 +229,10 @@ the caller.
 Channel numbers belong to the line rather than to the taxonomy, so they are
 configuration. Anything below the confidence floor goes to the reject channel
 whatever its class. When `routing.rule` is `expected_cost`, the same crate
-chooses the channel that minimizes expected cost. The shipped rule stays
-`confidence_floor`.
+chooses the channel that minimizes expected cost. The simulator applies that
+minimum when `clave sim --routing` names a file whose rule is `expected_cost`.
+`configs/debug/expected-cost.yml` names the reasoned default. The shipped
+rule stays `confidence_floor`.
 
 ### Count estimator
 
@@ -291,9 +293,10 @@ environment, so a figure can be traced to the world that produced it.
 `clave sim --log-level DEBUG` tells the visit as it happens: why the queue
 changed, which object the arm committed to and by which phases, whether the
 jaw closed, which chute the object crossed, and the collisions, acceleration
-spikes, and losses of control a watch reports when an episode begins. A
-physics tick and a capture that repeat the same decision are not lines. The
-sentences
+spikes, and losses of control a watch reports when an episode begins. When
+the run selects expected cost, one line names the leading class, the chute,
+and the expected cost of that chute. A physics tick and a capture that
+repeat the same decision are not lines. The sentences
 and the watches are specified in
 [requirements/simulation-narrative.md](requirements/simulation-narrative.md).
 The watch does not command the arm. `--no-progress` turns the step bar off

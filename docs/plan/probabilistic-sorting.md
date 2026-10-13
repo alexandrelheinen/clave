@@ -1,11 +1,13 @@
 # Plan for probabilistic sorting
 
-Status: phases 1 through 5 are implemented. The channel decider loads
+Status: phases 1 through 6 are implemented. The channel decider loads
 the reasoned cost default when `routing.rule` is `expected_cost`.
 `clave estimate-belief` writes prior and sensor counts from a count
-log and does not edit the cost file. The shipped rule stays
-`confidence_floor`. Phases 6 and 7 are not implemented. An operator
-opts in.
+log and does not edit the cost file.
+`configs/debug/expected-cost.yml` selects `expected_cost` and names
+that default. `clave sim` reads it only when `--routing` points at a
+file. The shipped rule stays `confidence_floor`. Phase 7 is not
+implemented. An operator opts in.
 
 The specification is
 [docs/spec/probabilistic-sorting.md](../spec/probabilistic-sorting.md).
@@ -163,8 +165,7 @@ cite it before that run.
 `AC-SORT-17`, `AC-SORT-18`, `AC-SORT-21`.
 
 **Stops.** The default configuration remains `confidence_floor`. Phase 4
-does not add the estimator. The debug narrative does not mention
-expected cost.
+does not add the estimator. Phase 4 does not extend the narrative.
 
 ## Phase 5. Estimate tables from operational counts
 
