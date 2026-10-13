@@ -2,10 +2,9 @@
 #
 # configs/runtime/sitl.yml keeps routing.rule at confidence_floor, and a
 # confidence-floor runtime does not read this file. An expected_cost
-# configuration names it with routing.cost_file. Phase 5 estimates
-# replace these cells. The estimator does not write this file
-# (AC-SORT-14). Replacing the cells is a reviewed edit of this default
-# once those estimates exist.
+# configuration names it with routing.cost_file. The estimator writes
+# count tables and does not write this file (AC-SORT-14). Replacing
+# these cells is a reviewed edit of this default.
 #
 # version 1. Columns follow OUTCOMES: M-01 through M-11, then reject.
 # Rows are the channel ids in configs/runtime/sitl.yml. A zero is the

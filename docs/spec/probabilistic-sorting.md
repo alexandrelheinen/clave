@@ -1,14 +1,15 @@
 # Probabilistic sorting
 
-Status: phases 1 through 3 of the plan are the implementation this
-document covers. The reasoned cost default is recorded below. The
-channel change and the estimator stay open.
+Status: phases 1 through 5 of the plan are implemented. Expected cost
+can choose the channel when `routing.rule` is `expected_cost`. The
+estimator writes count tables from a count log and does not edit the
+cost file. The shipped rule stays `confidence_floor`. Phases 6 and 7
+are not implemented.
 
 The phased work is
 [docs/plan/probabilistic-sorting.md](../plan/probabilistic-sorting.md).
-Phases 4 through 7 stay gated on wiring that default into the resolver
-and on an explicit later change of the routing rule. The default rule
-stays `confidence_floor`.
+An operator opts in by setting `expected_cost`. The default rule stays
+`confidence_floor`.
 
 This follows the spec-anchored bar in
 [.guidelines/workflow/sdd.md](../../.guidelines/workflow/sdd.md): an
@@ -302,8 +303,9 @@ Damage costs for this taxonomy have not been measured. The line's first
 table is the reasoned default in
 [configs/routing/expected-cost-default.yml](../../configs/routing/expected-cost-default.yml),
 spelled out under [Reasoned default](#reasoned-default). It is not
-loaded while `routing.rule` is `confidence_floor`. Phase 5 estimates
-replace it. A zero on the mapped channel, a moderate reject cost, and
+loaded while `routing.rule` is `confidence_floor`. A reviewed edit of
+that file replaces it. The estimator writes counts and does not write
+the file. A zero on the mapped channel, a moderate reject cost, and
 a higher cost on a damaging channel is the shape taken from the
 chapter. Asymmetric pairs, such as aluminum against ferrous metal, are
 why a later operator might leave the confidence floor.
@@ -314,11 +316,15 @@ table is the rule the runtime loads.
 
 ### Learning
 
-The estimator reads pairs `(category, sensor reading)` whose category is a
-simulation label or a later audit. It writes counts. A discrete table is
-those counts plus one pseudo-count per cell, normalized by GTSAM when the
-conditional is built. A Gaussian mass model, if a mass sensor is ever
-configured, stores the sample mean and the unbiased variance.
+The estimator reads pairs `(category, sensor reading)` from the count log
+under [Data](#data). The category is a simulation label or a later audit.
+Image corpora and tracker evidence store a material class, and they do
+not store a hard sensor reading beside it, so the estimator does not
+read them and does not recover a label from a video. It writes counts.
+A discrete table is those counts plus one pseudo-count per cell,
+normalized by GTSAM when the conditional is built. A Gaussian mass
+model, when the log carries a mass series, stores the sample mean and
+the unbiased variance.
 
 The estimator does not run inside the control loop, does not change the
 behavior-cloning checkpoint, and does not edit the cost table. A failed
@@ -408,9 +414,29 @@ consumer reads one.
 
 ### Estimator
 
-An offline command reads a log of labels and hard sensor outcomes, writes
-the count files, and does not start the simulator. Its inputs and outputs
-are files. It has no socket.
+`clave estimate-belief` reads a count log and writes `prior_counts` and
+`sensor_cpts`. The command is offline. Its inputs and outputs are files.
+It has no socket, and it does not start the simulator.
+
+The destination is refused when it is the reasoned cost file, a path
+named with `--cost`, a path under a directory named `checkpoints`, or a
+file whose name ends in `.pt`. Those are the cost table and the
+behavior-cloning checkpoints. The command does not import the trainer
+or the scripted expert.
+
+The written file is version 1. `prior_counts` and each sensor table
+follow `OUTCOMES` order, rows for the true outcome and columns for the
+hard reading. Every cell includes one pseudo-count, so a row the log
+never saw still sums to a positive count and `AC-SORT-03` can load the
+two tables once a cost table is supplied beside them. The command does
+not write that cost table.
+
+When a category has at least two mass samples, the file also carries
+`mass`, with `mean` and `variance` for that category. The variance is
+the unbiased sample variance, the sum of squared deviations divided by
+N - 1. A single mass sample has no unbiased variance, and the command
+refuses the log. The posterior fold does not read `mass`. A Gaussian
+factor still takes a mean and a deviation from its caller.
 
 ## Data
 
@@ -430,19 +456,30 @@ paper. Weight Gaussians as in section 2.3.
 
 The line's prior and sensor tables, once the rule is `expected_cost`,
 are configuration. The cost table that rule loads first is the reasoned
-default below. Training corpora and checkpoints are unchanged. The
-estimator may read a corpus that already stores labels. It does not
-invent a new dataset format in the first cut. If the logged hard label
-is not in an existing record, the plan's learning phase says so and
-stops. It does not scrape a label out of a side channel.
+default below. Training corpora and checkpoints are unchanged.
+
+### Count log
+
+A count log is YAML, version 1, and it is the estimator's input. `records`
+is a list. A counting record names `category`, one of `OUTCOMES`. It may
+name `readings`, a mapping from a sensor name to a hard label that is
+also one of `OUTCOMES`. It may name `mass`, a finite number. Each
+counting record is one observation of that category, so two sensors on
+one object belong on one record when the prior should move once. A
+record needs a reading or a mass.
+
+A record whose `kind` is `grasp_failed`, `overridden`, or `collision`
+is not a category observation. A category, a reading, or a mass on that
+record is ignored. Any other `kind`, and any field outside `category`,
+`readings`, `mass`, and `kind`, is refused. A motion log does not have
+this shape, and the command does not search one for a category.
 
 ### Reasoned default
 
-This is a reasoned default, not measured data. Phase 5 estimates
-replace it. The estimator writes counts and sensor tables and refuses
-to write this file (`AC-SORT-14`). Putting those estimates into the
-cost cells is a reviewed edit of the default, not a write the command
-performs.
+This is a reasoned default, not measured data. The estimator writes
+counts and sensor tables and refuses to write this file (`AC-SORT-14`).
+A reviewed edit of the default is how a count estimate enters the cost
+cells.
 
 The file is
 [configs/routing/expected-cost-default.yml](../../configs/routing/expected-cost-default.yml),
@@ -609,10 +646,10 @@ Ids begin at `AC-SORT-01`.
 | `AC-SORT-09` | `ac_sort_09_residue_cheaper_on_a_sorted_channel_fails_load` |
 | `AC-SORT-10` | `test_ac_sort_10_prior_cost_and_conductivity_match_the_chapter` |
 | `AC-SORT-11` | `test_ac_sort_11_the_given_posterior_selects_nop` and `ac_sort_11_the_book_posterior_selects_the_nop` |
-| `AC-SORT-12` | The estimator does not exist yet |
-| `AC-SORT-13` | The estimator does not exist yet |
-| `AC-SORT-14` | The estimator does not exist yet |
-| `AC-SORT-15` | The estimator does not exist yet |
+| `AC-SORT-12` | `test_ac_sort_12_pseudo_counts_load_through_the_category_model` and `test_ac_sort_12_a_known_conditional_is_closer_than_uniform` |
+| `AC-SORT-13` | `test_ac_sort_13_mass_stores_the_mean_and_the_unbiased_variance` |
+| `AC-SORT-14` | `test_ac_sort_14_a_checkpoint_and_the_cost_file_are_not_written` |
+| `AC-SORT-15` | `test_ac_sort_15_a_failed_grasp_an_override_and_a_collision_are_not_counts` |
 | `AC-SORT-16` | `ac_sort_16_the_safety_manifest_does_not_name_gtsam` |
 | `AC-SORT-17` | `ac_sort_17_a_version_2_runtime_refuses_version_1_before_other_fields` |
 | `AC-SORT-18` | `ac_sort_18_a_class_or_confidence_that_disagrees_with_the_posterior_is_refused` |
@@ -672,7 +709,8 @@ Runtime code does not import it.
    default for `M-01` through `M-11` is
    [configs/routing/expected-cost-default.yml](../../configs/routing/expected-cost-default.yml),
    version 1, copied under [Reasoned default](#reasoned-default). It is
-   not measured data. Phase 5 estimates replace it. `routing.rule` in
+   not measured data. The estimator writes counts and does not edit
+   this file. Replacing the cells is a reviewed edit. `routing.rule` in
    the shipped runtime file stays `confidence_floor`, and this file is
    not loaded there.
 2. Default rule. Answered: `routing.rule` stays `confidence_floor`. An

@@ -228,7 +228,19 @@ the caller.
 `crates/clave-routing` turns a material class and a confidence into a channel.
 Channel numbers belong to the line rather than to the taxonomy, so they are
 configuration. Anything below the confidence floor goes to the reject channel
-whatever its class.
+whatever its class. When `routing.rule` is `expected_cost`, the same crate
+chooses the channel that minimizes expected cost. The shipped rule stays
+`confidence_floor`.
+
+### Count estimator
+
+`clave estimate-belief` reads a count log of category labels and hard sensor
+readings and writes `prior_counts` and `sensor_cpts`. It adds one pseudo-count
+per cell. A mass series in that log stores a sample mean and an unbiased
+variance. The command does not start the simulator, does not edit the cost
+table, and does not write a behavior-cloning checkpoint. The sorting
+specification states the record shape. Image corpora do not carry the pair
+the estimator counts.
 
 ### Decision contract
 

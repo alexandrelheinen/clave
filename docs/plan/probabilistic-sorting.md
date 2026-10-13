@@ -1,9 +1,11 @@
 # Plan for probabilistic sorting
 
-Status: phases 1 through 4 are implemented. The channel decider loads
-the reasoned cost default when `routing.rule` is `expected_cost`. The
-shipped rule stays `confidence_floor`. Phases 5 through 7 are not
-implemented. An operator opts in.
+Status: phases 1 through 5 are implemented. The channel decider loads
+the reasoned cost default when `routing.rule` is `expected_cost`.
+`clave estimate-belief` writes prior and sensor counts from a count
+log and does not edit the cost file. The shipped rule stays
+`confidence_floor`. Phases 6 and 7 are not implemented. An operator
+opts in.
 
 The specification is
 [docs/spec/probabilistic-sorting.md](../spec/probabilistic-sorting.md).
@@ -160,38 +162,36 @@ cite it before that run.
 **Acceptance.** `AC-SORT-07`, `AC-SORT-08`, `AC-SORT-09`, `AC-SORT-16`,
 `AC-SORT-17`, `AC-SORT-18`, `AC-SORT-21`.
 
-**Stops.** The default configuration remains `confidence_floor`. The
-estimator does not exist yet. The debug narrative does not yet mention
+**Stops.** The default configuration remains `confidence_floor`. Phase 4
+does not add the estimator. The debug narrative does not mention
 expected cost.
 
 ## Phase 5. Estimate tables from operational counts
 
-Add an offline command that reads labeled pairs and writes `prior_counts`
-and `sensor_cpts`. Pseudo-count is 1 per cell (`AC-SORT-12`). A mass
-series, if the input contains one, stores the sample mean and the
-unbiased variance (`AC-SORT-13`). The command refuses to write a
-checkpoint path or the cost file (`AC-SORT-14`).
+`clave estimate-belief` reads a count log and writes `prior_counts` and
+`sensor_cpts`. Image corpora and tracker evidence do not store a hard
+sensor reading beside the ground-truth category, so the log format is
+the count log in the specification. The command does not recover a
+label from a video, and it does not parse a motion log.
+
+Pseudo-count is 1 per cell (`AC-SORT-12`). A mass series stores the
+sample mean and the unbiased variance (`AC-SORT-13`). One mass sample
+has no unbiased variance, and the command refuses it. The command
+refuses a checkpoint path and the cost file (`AC-SORT-14`).
 
 A failed grasp, an override, and a collision are not rows
-(`AC-SORT-15`). The command's input is category against sensor outcome.
-Motion logs do not satisfy that shape, and the command does not parse
-them looking for a category.
+(`AC-SORT-15`).
 
-If the corpus does not already store the hard label beside the ground
-truth category, stop and extend the log format in this phase, with a
-short addition to the specification, before estimating anything. Do not
-reconstruct the label from a video.
-
-Run the estimator on a synthetic sensor whose conditional table is known.
-The recovered table, after the pseudo-count, should sit closer to the
-generating table than a uniform table does, on a sample large enough that
-the pseudo-count is not the dominant term. That is a test on the
-estimator, not a claim about the perception head.
+A synthetic sensor with a known conditional is an estimator test. After
+the pseudo-count, on a sample large enough that the pseudo-count is not
+the dominant term, the recovered table sits closer to the generating
+table than a uniform table does. That result is about the estimator.
 
 **Acceptance.** `AC-SORT-12`, `AC-SORT-13`, `AC-SORT-14`, `AC-SORT-15`.
 
 **Stops.** The command does not launch `clave sim` and does not change
-`routing.rule`.
+`routing.rule`. A count estimate enters the cost cells only through a
+reviewed edit of the reasoned default.
 
 ## Phase 6. Close the loop in simulation
 
