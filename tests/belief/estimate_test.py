@@ -55,9 +55,7 @@ def _with_cost(written: dict[str, object]) -> dict[str, object]:
         "prior_counts": written["prior_counts"],
         "sensor_cpts": written["sensor_cpts"],
         "channels": channels,
-        "cost": [
-            {"channel": index, "costs": [1.0] * WIDTH} for index in range(WIDTH)
-        ],
+        "cost": [{"channel": index, "costs": [1.0] * WIDTH} for index in range(WIDTH)],
     }
 
 
