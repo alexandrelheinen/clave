@@ -7,7 +7,6 @@ governed by AC-DATA-04, AC-DATA-05, AC-DATA-06, and AC-DATA-07.
 from __future__ import annotations
 
 import json
-import urllib.error
 import urllib.request
 from typing import Any
 
