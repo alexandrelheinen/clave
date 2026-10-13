@@ -1,6 +1,7 @@
 //! The operator-supplied mapping from a material class to a channel.
 
 use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 
 use clave_decision::{ChannelId, Confidence, MaterialClass};
 
@@ -74,5 +75,16 @@ impl ChannelMap {
     #[must_use]
     pub const fn threshold(&self) -> Confidence {
         self.threshold
+    }
+
+    /// Returns every channel this map can name, including the reject channel.
+    #[must_use]
+    pub(crate) fn known_channels(&self) -> BTreeSet<ChannelId> {
+        let mut known = BTreeSet::new();
+        for channel in self.channels.values() {
+            known.insert(*channel);
+        }
+        known.insert(self.reject);
+        known
     }
 }
