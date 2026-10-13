@@ -11,7 +11,7 @@ import torch
 from clave.training import objectives
 
 
-def test_multilabel_presence():
+def test_multilabel_presence() -> None:
     batch_size = 2
     images = torch.zeros((batch_size, 3, 224, 224))
     targets = torch.tensor([[1.0, 0.0, 1.0], [0.0, 1.0, 0.0]])
