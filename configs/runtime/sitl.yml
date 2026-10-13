@@ -40,6 +40,9 @@ runtime:
   belt_frame: belt
 
 routing:
+  # Names the rule in force. Expected cost is a later rule and is not
+  # selected here, so the channel still follows the confidence floor.
+  rule: confidence_floor
   reject_channel: 0
   # The floor below which an object goes to reject whatever its class. It
   # depends on a trained model, so it is configuration rather than a constant.
