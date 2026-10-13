@@ -4,7 +4,7 @@ use std::num::NonZeroUsize;
 
 use clave_publish::{DecisionSink, Publisher};
 use clave_routing::RejectReason;
-use clave_safety::{Envelope, Proposal, Verdict};
+use clave_safety::{Envelope, PROPOSAL_VERSION, PROPOSAL_VERSION_POSTERIOR, Proposal, Verdict};
 use serde::Serialize;
 
 use clave_routing::Resolver;
@@ -33,6 +33,8 @@ pub struct RunCounters {
     pub rejected_low_confidence: u64,
     /// Proposals whose class the operator mapped to no channel.
     pub rejected_unmapped: u64,
+    /// Proposals the cost table sent to the reject channel.
+    pub rejected_expected_cost: u64,
     /// Proposals overridden because the point lies beyond the effector's reach.
     pub overridden_reach: u64,
     /// Proposals overridden because the point lies below the belt surface.
@@ -118,7 +120,12 @@ impl<S: DecisionSink> Service<S> {
     /// one bad message is worse than one that reports it.
     pub fn handle(&mut self, payload: &[u8]) -> Outcome {
         self.counters.proposals = self.counters.proposals.saturating_add(1);
-        let proposal = match Proposal::decode(payload) {
+        let version = if self.resolver.uses_expected_cost() {
+            PROPOSAL_VERSION_POSTERIOR
+        } else {
+            PROPOSAL_VERSION
+        };
+        let proposal = match Proposal::decode_as(payload, version) {
             Ok(proposal) => proposal,
             Err(error) => {
                 self.counters.refused = self.counters.refused.saturating_add(1);
@@ -179,6 +186,11 @@ impl<S: DecisionSink> Service<S> {
                         self.counters.rejected_unmapped =
                             self.counters.rejected_unmapped.saturating_add(1);
                         Some("unmapped_class")
+                    }
+                    Some(RejectReason::ExpectedCost) => {
+                        self.counters.rejected_expected_cost =
+                            self.counters.rejected_expected_cost.saturating_add(1);
+                        Some("expected_cost")
                     }
                 };
                 // The publisher discards a decision whose window has already
