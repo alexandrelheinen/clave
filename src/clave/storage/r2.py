@@ -9,10 +9,12 @@ from __future__ import annotations
 import datetime
 import hashlib
 import hmac
-import urllib.request
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
+from urllib.error import HTTPError, URLError
+from urllib.parse import quote, urlparse
+from urllib.request import Request, urlopen
 
 from clave.errors import ClaveError
 from clave.storage.config import R2Config
@@ -45,7 +47,7 @@ class R2Client:
 
     def __init__(self, config: R2Config) -> None:
         self.config = config
-        parsed = urllib.parse.urlparse(config.endpoint_url)
+        parsed = urlparse(config.endpoint_url)
         self.host = parsed.netloc
         self.scheme = parsed.scheme or "https"
 
@@ -56,13 +58,13 @@ class R2Client:
         query_params: dict[str, str] | None = None,
         payload: bytes = b"",
         extra_headers: dict[str, str] | None = None,
-    ) -> urllib.request.Request:
+    ) -> Request:
         """Construct and sign an HTTP request with AWS SigV4 (AC-DATA-02)."""
         now = datetime.datetime.now(datetime.UTC)
         amz_date = now.strftime("%Y%m%dT%H%M%SZ")
         date_stamp = now.strftime("%Y%m%d")
 
-        canonical_uri = urllib.parse.quote(path, safe="/-_.~")
+        canonical_uri = quote(path, safe="/-_.~")
         if not canonical_uri.startswith("/"):
             canonical_uri = "/" + canonical_uri
 
@@ -70,8 +72,8 @@ class R2Client:
         if query_params:
             sorted_params = sorted(query_params.items())
             canonical_querystring = "&".join(
-                f"{urllib.parse.quote(k, safe='-_.~')}="
-                f"{urllib.parse.quote(v, safe='-_.~')}"
+                f"{quote(k, safe='-_.~')}="
+                f"{quote(v, safe='-_.~')}"
                 for k, v in sorted_params
             )
 
@@ -132,7 +134,7 @@ class R2Client:
             url = f"{url}?{canonical_querystring}"
 
         req_data = payload if method.upper() in ("PUT", "POST") else None
-        req = urllib.request.Request(url, data=req_data, method=method.upper())
+        req = Request(url, data=req_data, method=method.upper())
         req.add_header("Authorization", authorization_header)
         for k, v in headers.items():
             if k != "host":
@@ -145,15 +147,15 @@ class R2Client:
         path = f"/{self.config.bucket}/{clean_key}"
         req = self._build_request("HEAD", path)
         try:
-            with urllib.request.urlopen(req) as resp:
+            with urlopen(req) as resp:
                 return {k.lower(): v for k, v in resp.headers.items()}
-        except urllib.error.HTTPError as err:
+        except HTTPError as err:
             if err.code == 404:
                 return None
             raise R2Error(
                 f"HEAD failed for {key}: HTTP {err.code} {err.reason}"
             ) from err
-        except urllib.error.URLError as err:
+        except URLError as err:
             raise R2Error(
                 f"connection error contacting R2 for {key}: {err.reason}"
             ) from err
@@ -172,15 +174,15 @@ class R2Client:
             "PUT", path, payload=data, extra_headers=extra_headers
         )
         try:
-            with urllib.request.urlopen(req) as resp:
+            with urlopen(req) as resp:
                 if resp.status not in (200, 201, 204):
                     raise R2Error(f"PUT failed for {key}: HTTP {resp.status}")
-        except urllib.error.HTTPError as err:
+        except HTTPError as err:
             body = err.read().decode("utf-8", errors="replace")
             raise R2Error(
                 f"PUT failed for {key}: HTTP {err.code} {err.reason} - {body}"
             ) from err
-        except urllib.error.URLError as err:
+        except URLError as err:
             raise R2Error(
                 f"connection error uploading {key} to R2: {err.reason}"
             ) from err
@@ -191,14 +193,14 @@ class R2Client:
         path = f"/{self.config.bucket}/{clean_key}"
         req = self._build_request("GET", path)
         try:
-            with urllib.request.urlopen(req) as resp:
+            with urlopen(req) as resp:
                 data = resp.read()
                 return bytes(data)
-        except urllib.error.HTTPError as err:
+        except HTTPError as err:
             raise R2Error(
                 f"GET failed for {key}: HTTP {err.code} {err.reason}"
             ) from err
-        except urllib.error.URLError as err:
+        except URLError as err:
             raise R2Error(
                 f"connection error downloading {key} from R2: {err.reason}"
             ) from err
@@ -229,11 +231,11 @@ class R2Client:
             query["prefix"] = prefix.lstrip("/")
         req = self._build_request("GET", path, query_params=query)
         try:
-            with urllib.request.urlopen(req) as resp:
+            with urlopen(req) as resp:
                 body = resp.read()
-        except urllib.error.HTTPError as err:
+        except HTTPError as err:
             raise R2Error(f"list_objects failed: HTTP {err.code} {err.reason}") from err
-        except urllib.error.URLError as err:
+        except URLError as err:
             raise R2Error(f"connection error listing R2 objects: {err.reason}") from err
 
         root = ET.fromstring(body)
