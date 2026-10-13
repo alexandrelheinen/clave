@@ -1,13 +1,14 @@
 # Probabilistic sorting
 
 Status: phases 1 through 3 of the plan are the implementation this
-document covers. The cost table, the channel change, and the estimator
-stay open.
+document covers. The reasoned cost default is recorded below. The
+channel change and the estimator stay open.
 
 The phased work is
 [docs/plan/probabilistic-sorting.md](../plan/probabilistic-sorting.md).
-Phases 4 through 7 stay gated on a provisional cost table and on an
-explicit change of the default routing rule.
+Phases 4 through 7 stay gated on wiring that default into the resolver
+and on an explicit later change of the routing rule. The default rule
+stays `confidence_floor`.
 
 This follows the spec-anchored bar in
 [.guidelines/workflow/sdd.md](../../.guidelines/workflow/sdd.md): an
@@ -296,17 +297,16 @@ sorted channel cheaper than reject for `M-11` is refused at load. The
 taxonomy already requires residue on the reject channel, and expected cost
 has to be unable to route around that.
 
-The shipped table is configuration, with no numeric default in source.
 The book's 4 by 5 numbers are the fixture and are not the line's costs.
-Damage costs for this taxonomy have not been measured. A provisional
-table is an operator setting, written when phase 4 starts, and either
-the implementer or the operator may fill the cells. It stays out of the
-shipped configuration while the rule is `confidence_floor`, and it is
-not recorded as a measurement. A flat reject cost, a zero on the mapped
-channel, and a higher cost on every other channel is the shape that
-generalizes the chapter's table. Asymmetric pairs, such as aluminum
-read as ferrous metal, are the reason to leave the confidence floor
-behind. The numbers in those cells are that provisional setting.
+Damage costs for this taxonomy have not been measured. The line's first
+table is the reasoned default in
+[configs/routing/expected-cost-default.yml](../../configs/routing/expected-cost-default.yml),
+spelled out under [Reasoned default](#reasoned-default). It is not
+loaded while `routing.rule` is `confidence_floor`. Phase 5 estimates
+replace it. A zero on the mapped channel, a moderate reject cost, and
+a higher cost on a damaging channel is the shape taken from the
+chapter. Asymmetric pairs, such as aluminum against ferrous metal, are
+why a later operator might leave the confidence floor.
 
 While the confidence floor remains the configured rule, behavior of the
 line does not change. The floor is removed only after a reviewed cost
@@ -420,12 +420,71 @@ Prior counts `200/300/250/200/50`. Conductivity table
 `2/88/10 2/20/78 33/33/34 33/33/34 95/2/3`, columns bottle, cardboard,
 paper. Weight Gaussians as in section 2.3.
 
-The line's data, once the rule is `expected_cost`, are the three
-configuration tables above. Training corpora and checkpoints are
-unchanged. The estimator may read a corpus that already stores labels. It
-does not invent a new dataset format in the first cut. If the logged hard
-label is not in an existing record, the plan's learning phase says so and
+The line's prior and sensor tables, once the rule is `expected_cost`,
+are configuration. The cost table that rule loads first is the reasoned
+default below. Training corpora and checkpoints are unchanged. The
+estimator may read a corpus that already stores labels. It does not
+invent a new dataset format in the first cut. If the logged hard label
+is not in an existing record, the plan's learning phase says so and
 stops. It does not scrape a label out of a side channel.
+
+### Reasoned default
+
+This is a reasoned default, not measured data. Phase 5 estimates
+replace it. The estimator writes counts and sensor tables and refuses
+to write this file (`AC-SORT-14`). Putting those estimates into the
+cost cells is a reviewed edit of the default, not a write the command
+performs.
+
+The file is
+[configs/routing/expected-cost-default.yml](../../configs/routing/expected-cost-default.yml),
+version 1. Columns are `OUTCOMES`: `M-01` through `M-11`, then
+`reject`. Rows are the channel ids in
+[configs/runtime/sitl.yml](../../configs/runtime/sitl.yml). The scale
+is the chapter's, integers from 0 to 10. A correct placement is 0.
+Reject costs 2 on a recoverable class, the moderate nop. There is no
+battery class in [waste-taxonomy.md](../waste-taxonomy.md). The
+pressure hazard that document does name is the aerosol, filed under
+`M-06`.
+
+| Channel | M-01 | M-02 | M-03 | M-04 | M-05 | M-06 | M-07 | M-08 | M-09 | M-10 | M-11 | reject |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 0 reject | 2 | 2 | 2 | 2 | 2 | 2 | 2 | 2 | 2 | 2 | 0 | 0 |
+| 1 PET | 0 | 3 | 3 | 8 | 6 | 8 | 6 | 3 | 3 | 4 | 10 | 6 |
+| 2 HDPE | 3 | 0 | 2 | 5 | 6 | 8 | 6 | 3 | 3 | 4 | 10 | 6 |
+| 3 PP | 3 | 2 | 0 | 5 | 6 | 8 | 6 | 3 | 3 | 4 | 10 | 6 |
+| 4 other plastic | 3 | 2 | 2 | 0 | 5 | 8 | 6 | 2 | 2 | 3 | 10 | 6 |
+| 5 aluminum | 3 | 3 | 3 | 4 | 0 | 8 | 5 | 3 | 3 | 3 | 10 | 6 |
+| 6 ferrous | 3 | 3 | 3 | 4 | 5 | 0 | 5 | 3 | 3 | 3 | 10 | 6 |
+| 7 glass | 3 | 3 | 3 | 4 | 5 | 6 | 0 | 3 | 3 | 3 | 10 | 6 |
+| 8 fiber | 4 | 4 | 4 | 6 | 6 | 10 | 8 | 0 | 0 | 0 | 10 | 6 |
+
+Reject costs 2 for every recoverable class and 0 for `M-11` and for the
+reject outcome, which are already home on channel 0.
+
+The four resin channels cost 0 on their own class. HDPE and PP swap at
+2, a polyolefin mix. Other plastic in the PET channel is 8, because
+`M-04` includes PVC and film, and PET in the other-plastic channel is
+3, a loss of grade into a stream that is already mixed.
+
+Aluminum and ferrous swap asymmetrically: ferrous in the aluminum
+channel is 8, aluminum in the ferrous channel is 5. Steel contaminates
+the higher-value non-ferrous stream, and the camera cannot separate
+the two cans. A coin flip between them prefers reject over either bin.
+
+Glass takes the chapter's metal-in-glass cells, 5 for aluminum and 6
+for ferrous. Glass in the fiber channel is 8, because container glass
+fractures into the fiber bale. Fiber in the glass channel stays at 3,
+the chapter's mild paper-in-glass direction.
+
+The fiber channel is 0 for `M-08`, `M-09`, and `M-10`, because those
+three share channel 8 on this mapping. Ferrous in that channel is 10,
+the chapter's scrap-in-paper cell, and the class includes the aerosol.
+Fiber in a metal channel stays at 3, the chapter's forgiving metal bin.
+
+`M-11` costs 0 on reject and 10 on every sorted channel, so no sorted
+channel is cheaper than reject for residue. The reject outcome costs 0
+on reject and 6 on every sorted channel.
 
 ## Assumptions
 
@@ -435,8 +494,8 @@ stops. It does not scrape a label out of a side channel.
   contract already marks those fields as simulated.
 - The spawn mix in the corpus is the right prior for simulation. A
   different stream needs its own counts.
-- The cost table is an operator judgment until someone measures damage.
-  The mechanism does not supply that judgment.
+- The cost table is the reasoned default in this document until phase 5
+  estimates replace it. The mechanism does not measure damage.
 - GTSAM 4.3.0's discrete constructors used above stay stable for the pin.
   The pin is exact, `gtsam==4.3.0`, so a later upload does not move it.
 - Numpy stays compatible with that wheel. The import check ran with numpy
@@ -574,11 +633,9 @@ Uncalibrated logits treated as a likelihood would put a training loss on
 the wrong side of Bayes' rule. `AC-SORT-02` and the hard-label table are
 the guard.
 
-A cost table copied from the chapter, or filled in to look plausible,
-would be a measured number that was never measured.
-[measurements.md](../measurements.md) is where such a number has to land
-if it is ever claimed. Until then the table is an operator setting, and
-the book's numbers stay in the fixture.
+The reasoned default is not a measurement. Citing it as one would put
+an unmeasured number where [measurements.md](../measurements.md)
+belongs. The book's 4 by 5 numbers stay in the fixture.
 
 The code factor's down-weight is a CLAVE correction the chapter does not
 have. Dropping it to match the textbook product would double-count a
@@ -605,15 +662,15 @@ Runtime code does not import it.
 
 ## Open questions
 
-These block the phases the plan names. They do not block the fixture or
-the posterior builder.
-
-1. The first cost table for `M-01` through `M-11`, including any
-   asymmetric pair. The cells are an unmeasured operator setting. The
-   implementer writes a provisional table when phase 4 starts. Phases 1
-   through 3 do not contain that table.
-2. Whether `routing.rule` defaults to `expected_cost` once a table exists,
-   or only when an operator sets it. The plan keeps the default on
-   `confidence_floor` until that choice is written down.
-3. Whether a later calibration of the perception head should replace the
-   hard-label conditional table. The first cut does not.
+1. Cost table. Answered: there is no measured damage data. The reasoned
+   default for `M-01` through `M-11` is
+   [configs/routing/expected-cost-default.yml](../../configs/routing/expected-cost-default.yml),
+   version 1, copied under [Reasoned default](#reasoned-default). It is
+   not measured data. Phase 5 estimates replace it. `routing.rule` in
+   the shipped runtime file stays `confidence_floor`, and this file is
+   not loaded there.
+2. Default rule. Answered: `routing.rule` stays `confidence_floor`. An
+   operator opts in by setting `expected_cost`.
+3. Perception head. Answered: the first cut stands. The hard label is
+   the argmax, and the likelihood is the conditional table. A calibrated
+   vector does not replace that table.
