@@ -1,10 +1,10 @@
 # Probabilistic sorting
 
-Status: phases 1 through 5 of the plan are implemented. Expected cost
+Status: phases 1 through 6 of the plan are implemented. Expected cost
 can choose the channel when `routing.rule` is `expected_cost`. The
 estimator writes count tables from a count log and does not edit the
-cost file. The shipped rule stays `confidence_floor`. Phases 6 and 7
-are not implemented.
+cost file. A debug routing file selects expected cost for `clave sim`.
+The shipped rule stays `confidence_floor`. Phase 7 is not implemented.
 
 The phased work is
 [docs/plan/probabilistic-sorting.md](../plan/probabilistic-sorting.md).
@@ -696,6 +696,19 @@ the chapter calls.
 `clave-routing` gains an expected-cost function beside `Resolver::resolve`.
 The confidence-floor function stays until `AC-SORT-21` is retired on
 purpose. The two functions do not blend: a configuration picks one.
+
+`configs/debug/expected-cost.yml` selects `expected_cost` and names the
+reasoned default. `clave sim` reads that file only when `--routing`
+points at it. Without the flag the arm uses the class channel, and the
+shipped runtime file stays on `confidence_floor`. The run writes
+`routing-comparison.txt` beside the report: each arrival's floor chute,
+the chute expected cost chose, and the chute the marker flew. A class
+posterior that keeps its spare mass on the true class still minimizes
+on the mapped channel, because that cell is 0 and reject is 2. The
+table is not edited to force a difference. When the chosen chute has
+no mouth on the line, the marker keeps the chute it already had. The
+narrative emits one line for a new decision and stays silent when the
+same class, chute, and cost repeat (`AC-STORY-11`).
 
 Integer keys inside GTSAM are allocated by the builder and discarded with
 the factor. `gtbook.discrete.Variables` is not required for that. The
