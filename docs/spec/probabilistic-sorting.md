@@ -1,10 +1,10 @@
 # Probabilistic sorting
 
-Status: phases 1 through 6 of the plan are implemented. Expected cost
+Status: phases 1 through 7 of the plan are settled. Expected cost
 can choose the channel when `routing.rule` is `expected_cost`. The
 estimator writes count tables from a count log and does not edit the
 cost file. A debug routing file selects expected cost for `clave sim`.
-The shipped rule stays `confidence_floor`. Phase 7 is not implemented.
+Phase 7 keeps the shipped rule on `confidence_floor`.
 
 The phased work is
 [docs/plan/probabilistic-sorting.md](../plan/probabilistic-sorting.md).
@@ -727,7 +727,10 @@ Runtime code does not import it.
    the shipped runtime file stays `confidence_floor`, and this file is
    not loaded there.
 2. Default rule. Answered: `routing.rule` stays `confidence_floor`. An
-   operator opts in by setting `expected_cost`.
+   operator opts in by setting `expected_cost`. Phase 7 confirms that
+   answer. On the phase 6 seed the two rules choose the same chute for
+   every class spike, so the floor, the key, and proposal version 1
+   stay.
 3. Perception head. Answered: the first cut stands. The hard label is
    the argmax, and the likelihood is the conditional table. A calibrated
    vector does not replace that table.
