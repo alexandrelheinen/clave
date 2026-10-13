@@ -614,6 +614,36 @@ def _still(root: Path, name: str, out: Path) -> int:
     return 0
 
 
+def _estimate_belief(
+    root: Path,
+    source: Path,
+    destination: Path,
+    cost_files: list[Path] | None,
+) -> int:
+    """Write prior and sensor counts from a count log.
+
+    Args:
+        root: Repository root. Relative paths are joined to it.
+        source: The count log.
+        destination: The count file. A cost file or a checkpoint path is refused.
+        cost_files: Extra cost files the command must not overwrite.
+
+    Returns:
+        A process exit code.
+    """
+    from clave.belief.estimate import estimate_belief
+
+    written = estimate_belief(
+        source,
+        destination,
+        root=root,
+        cost_files=() if cost_files is None else tuple(cost_files),
+    )
+    _log_output(f"  counts   {destination}")
+    _log_output(f"  sensors  {', '.join(written.sensors)}")
+    return 0
+
+
 def _dataset_push(root: Path, path: Path) -> int:
     """Push local dataset to Cloudflare R2 and register in D1 (AC-DATA-02, AC-DATA-04).
 
@@ -1058,6 +1088,21 @@ def _build_parser() -> argparse.ArgumentParser:
         help="logging verbosity (default: INFO)",
     )
 
+    estimate = sub.add_parser(
+        "estimate-belief",
+        help="estimate prior and sensor counts from a count log",
+    )
+    estimate.add_argument("--in", dest="count_log", type=Path, required=True)
+    estimate.add_argument("--out", dest="count_out", type=Path, required=True)
+    estimate.add_argument(
+        "--cost",
+        dest="cost_files",
+        type=Path,
+        action="append",
+        default=None,
+        help="another cost file this command must not overwrite",
+    )
+
     return parser
 
 
@@ -1116,6 +1161,10 @@ def main(argv: list[str] | None = None) -> int:
             return _debug_tracker(args.root, args)
         if args.command == "still":
             return _still(args.root, args.scenario, args.out)
+        if args.command == "estimate-belief":
+            return _estimate_belief(
+                args.root, args.count_log, args.count_out, args.cost_files
+            )
         if args.command == "benchmark":
             return _benchmark(args.root, args.config, args.out, sync=args.sync)
         if args.command == "validate-run":
