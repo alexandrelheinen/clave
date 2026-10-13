@@ -362,9 +362,12 @@ which is the rule the contract already states for an unknown version.
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `version` | integer | `2` when the posterior is present |
-| `posterior` | array of 12 numbers | `OUTCOMES` order, sums to 1 within a stated tolerance |
-| `material_class` | string | Leading class of `posterior` |
-| `confidence` | number | Probability of that class |
+| `posterior` | array of 12 numbers | `OUTCOMES` order, sums to 1 within an absolute tolerance of `1e-6` |
+| `material_class` | string | First maximum among the eleven taxonomy weights |
+| `confidence` | number | Probability of that class, within an absolute tolerance of `1e-5` |
+
+The twelfth weight is the reject outcome. It is a cost column, not a class.
+A posterior that peaks there still reports the best taxonomy class.
 
 The pose, the window, and `object_id` are unchanged. If `material_class`
 or `confidence` disagrees with `posterior`, the runtime refuses the
@@ -375,18 +378,23 @@ choose it.
 
 `routing.rule` is `confidence_floor` or `expected_cost`.
 
-Under `expected_cost` the runtime requires:
+Under `expected_cost` the posterior builder requires `prior_counts` and
+`sensor_cpts`, and the channel decider requires `cost`.
 
 - `prior_counts`, twelve positive numbers, `OUTCOMES` order.
 - `sensor_cpts`, one table per discrete sensor in use. Each row is a
   category, each entry an unnormalized count, and a row must contain at
   least one positive count.
 - `cost`, one row per channel id the map knows, one column per outcome.
-  Costs are finite and greater than or equal to zero.
+  Costs are finite and greater than or equal to zero. The runtime JSON
+  carries these rows. `routing.cost_file` names the file they are read
+  from, or `routing.cost` carries them inline.
 
-`confidence_floor` keeps today's keys and does not require the three
-tables. A file that selects `expected_cost` and omits a table fails at
-load, naming the key.
+`confidence_floor` keeps today's keys and does not read the three tables,
+even when a file contains them. A file that selects `expected_cost` and
+omits a table fails at load, naming the key. The two rules do not blend:
+expected cost does not also apply the confidence floor. A tie in expected
+cost keeps the lowest channel id.
 
 ### Decision
 
@@ -588,32 +596,30 @@ Ids begin at `AC-SORT-01`.
 
 ## Traceability
 
-Tests do not exist yet. The plan names the phase that adds each one.
-
-| ID | Planned test |
+| ID | Test |
 | --- | --- |
-| `AC-SORT-01` | Posterior product against a hand-computed two-factor case |
-| `AC-SORT-02` | A material factor carries no channel field |
-| `AC-SORT-03` | Load refuses a missing prior, CPT, and cost row |
-| `AC-SORT-04` | Gaussian factor matches the density at a fixed mass |
-| `AC-SORT-05` | Absent mass leaves the posterior unchanged by weight |
-| `AC-SORT-06` | Shipped routing config has no conductivity key |
-| `AC-SORT-07` | Resolver argmin matches an independent multiply |
-| `AC-SORT-08` | Reject wins, leading class is unchanged |
-| `AC-SORT-09` | Residue cheaper on a sorted channel fails load |
-| `AC-SORT-10` | Book prior costs and conductivity-false posterior |
-| `AC-SORT-11` | Book posterior selects nop |
-| `AC-SORT-12` | Pseudo-counts round-trip through the loader |
-| `AC-SORT-13` | Mean and `N - 1` variance |
-| `AC-SORT-14` | Estimator output paths exclude checkpoints and the cost file |
-| `AC-SORT-15` | A failed grasp does not increment a category count |
-| `AC-SORT-16` | Existing envelope tests still pass; safety `Cargo.toml` has no GTSAM |
-| `AC-SORT-17` | Version 1 payload refused by a version 2 runtime |
-| `AC-SORT-18` | Mismatched class or confidence refused |
-| `AC-SORT-19` | Import graph of the core packages |
-| `AC-SORT-20` | Repository search finds neither notebook sources nor chapter prose |
-| `AC-SORT-21` | Existing routing tests unchanged under `confidence_floor` |
-| `AC-SORT-22` | A numerical zero from a Gaussian is lifted to the floor |
+| `AC-SORT-01` | `test_ac_sort_01_two_likelihoods_match_a_hand_product` |
+| `AC-SORT-02` | `test_ac_sort_02_the_soft_vector_is_not_the_likelihood` |
+| `AC-SORT-03` | `test_ac_sort_03_a_missing_table_names_the_key` |
+| `AC-SORT-04` | `test_ac_sort_04_a_gaussian_matches_the_density_at_a_fixed_mass` |
+| `AC-SORT-05` | `test_ac_sort_05_a_missing_mass_omits_the_weight_factor` |
+| `AC-SORT-06` | `test_ac_sort_06_shipped_configuration_has_no_conductivity` |
+| `AC-SORT-07` | `ac_sort_07_the_resolver_argmin_matches_an_independent_multiply` |
+| `AC-SORT-08` | `ac_sort_08_reject_wins_and_the_leading_class_stays_on_the_decision` |
+| `AC-SORT-09` | `ac_sort_09_residue_cheaper_on_a_sorted_channel_fails_load` |
+| `AC-SORT-10` | `test_ac_sort_10_prior_cost_and_conductivity_match_the_chapter` |
+| `AC-SORT-11` | `test_ac_sort_11_the_given_posterior_selects_nop` and `ac_sort_11_the_book_posterior_selects_the_nop` |
+| `AC-SORT-12` | The estimator does not exist yet |
+| `AC-SORT-13` | The estimator does not exist yet |
+| `AC-SORT-14` | The estimator does not exist yet |
+| `AC-SORT-15` | The estimator does not exist yet |
+| `AC-SORT-16` | `ac_sort_16_the_safety_manifest_does_not_name_gtsam` |
+| `AC-SORT-17` | `ac_sort_17_a_version_2_runtime_refuses_version_1_before_other_fields` |
+| `AC-SORT-18` | `ac_sort_18_a_class_or_confidence_that_disagrees_with_the_posterior_is_refused` |
+| `AC-SORT-19` | `test_ac_sort_19_only_the_posterior_imports_gtsam` |
+| `AC-SORT-20` | `test_ac_sort_20_the_repository_has_neither_the_notebooks_nor_the_sentence` |
+| `AC-SORT-21` | `test_ac_sort_21_the_confidence_floor_does_not_read_the_tables` and `ac_sort_21_resolve_keeps_the_confidence_floor_beside_a_cost_table` |
+| `AC-SORT-22` | `test_ac_sort_22_the_book_weight_underflow_is_lifted_to_the_floor` |
 
 ## Risks
 

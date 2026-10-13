@@ -1,9 +1,9 @@
 # Plan for probabilistic sorting
 
-Status: phases 1 through 3 are implemented. The reasoned cost default
-is recorded in the specification. Phases 4 through 7 stay gated on
-wiring it. The default rule stays `confidence_floor`. An operator opts
-in.
+Status: phases 1 through 4 are implemented. The channel decider loads
+the reasoned cost default when `routing.rule` is `expected_cost`. The
+shipped rule stays `confidence_floor`. Phases 5 through 7 are not
+implemented. An operator opts in.
 
 The specification is
 [docs/spec/probabilistic-sorting.md](../spec/probabilistic-sorting.md).
