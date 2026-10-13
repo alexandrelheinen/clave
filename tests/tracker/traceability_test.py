@@ -46,10 +46,14 @@ def test_the_golden_vectors_were_not_touched_when_the_documents_were() -> None:
 
     The other half, and the reason the documents moved instead of the frame. A
     vector that changes proves nothing, which its own README says, so correcting
-    the prose had to leave every byte of these alone.
+    the prose had to leave the original three alone. `diverted.hex` is a later
+    vector of the same contract version.
     """
     vectors = ROOT / "crates" / "clave-decision" / "contract" / "vectors" / "v1"
+    # diverted.hex was added under the same contract version. The original
+    # three stay, which is what makes a change to one of them visible here.
     assert sorted(p.name for p in vectors.glob("*.hex")) == [
+        "diverted.hex",
         "nominal.hex",
         "rejected.hex",
         "unknown-version.hex",

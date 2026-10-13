@@ -27,7 +27,7 @@ fails immediately rather than waiting.
 
 | Field | Type | Unit and meaning |
 | --- | --- | --- |
-| `version` | integer | Wire version. This build implements 1 |
+| `version` | integer | Wire version. A confidence-floor runtime implements 1. An expected-cost runtime implements 2 |
 | `object_id` | integer | Identity the tracker assigned, carried unchanged into the decision |
 | `material_class` | string | Taxonomy identifier, `M-01` to `M-11`, from `docs/waste-taxonomy.md` |
 | `confidence` | number | Classifier confidence, 0.0 to 1.0 inclusive |
@@ -38,15 +38,27 @@ fails immediately rather than waiting.
 | `reference_time_nanos` | integer | Instant the pose is predicted for, system monotonic clock |
 | `window_start_nanos` | integer | Earliest instant the object is reachable |
 | `window_end_nanos` | integer | Latest instant the object is reachable |
+| `posterior` | array of 12 numbers | Version 2 only. Outcome weights in `OUTCOMES` order: `M-01` through `M-11`, then the reject outcome. Finite, nonnegative, and the sum is within `1e-6` of 1 |
 
-Every field is required. The frame, the units and the clock are the ones the
-published decision uses, so nothing is converted at the boundary.
+Every field except `posterior` is required on both versions. `posterior` is
+required on version 2 and absent on version 1. The frame, the units and the
+clock are the ones the published decision uses, so nothing is converted at
+the boundary.
+
+On version 2, `material_class` is the leading taxonomy class of `posterior`
+and `confidence` is that class's weight, within an absolute tolerance of
+`1e-5`. The leading class is the first maximum among the eleven taxonomy
+weights. The twelfth weight is the reject outcome. It is a cost column, not
+a class, so a posterior that peaks there still reports the best taxonomy
+class. A tie keeps the earlier class.
 
 ## What the runtime refuses
 
 | Condition | Response |
 | --- | --- |
-| `version` is not 1 | The whole proposal is refused, on the version alone, before any other field is read |
+| `version` is not the version this runtime implements | The whole proposal is refused, on the version alone, before any other field is read. A confidence-floor runtime implements 1. An expected-cost runtime implements 2 and refuses a version 1 payload even when the later fields would not parse |
+| `posterior` is missing, the wrong length, negative, non-finite, or does not sum to 1 within `1e-6` | Refused, on a version 2 payload |
+| `material_class` or `confidence` disagrees with `posterior` | Refused, on a version 2 payload |
 | The payload is not JSON, or a field is missing or of the wrong type | Refused, naming what the decoder expected |
 | A coordinate is not finite | Refused, naming the field |
 | `material_class` is outside the taxonomy | Refused, naming the identifier |
@@ -65,12 +77,21 @@ time a round trip and count what happened without parsing CBOR.
 ```json
 {"verdict": "accepted", "object_id": 7, "channel": 1, "reject_reason": null}
 {"verdict": "accepted", "object_id": 7, "channel": 0, "reject_reason": "below_threshold"}
+{"verdict": "accepted", "object_id": 7, "channel": 6, "reject_reason": null}
+{"verdict": "accepted", "object_id": 7, "channel": 0, "reject_reason": "expected_cost"}
 {"verdict": "overridden", "check": "reach"}
 {"verdict": "refused", "reason": "proposal declares version 2, which this build does not implement"}
+{"verdict": "refused", "reason": "proposal declares version 1, which this build does not implement"}
 ```
 
-`check` is one of `reach`, `belt_surface` or `belt_extent`. `reject_reason` is
-`below_threshold`, `unmapped_class`, or absent when the object was sorted.
+The version 2 refusal is what a confidence-floor runtime says. The version 1
+refusal is what an expected-cost runtime says. `check` is one of `reach`,
+`tool_height`, `belt_surface` or `belt_extent`. `reject_reason` is
+`below_threshold`, `unmapped_class`, `expected_cost`, or absent when the
+object was sorted. A channel with no reject reason can differ from the
+channel the leading class maps to, when the rule is expected cost. The
+example that reports channel 6 for a cardboard object is that case. The
+decision contract states it.
 
 An accepted proposal also produces one published decision on the decision
 socket, encoded as `pick-decision.cddl` specifies. An overridden one produces

@@ -1,13 +1,17 @@
 //! The published schema and the golden vectors a consumer implements against.
 #![expect(clippy::unwrap_used, reason = "test assertions")]
 
-use clave_decision::{ChannelId, ContractError, MaterialClass, MonotonicNanos, ObjectId, codec};
+use clave_decision::{
+    BeltPoint, ChannelId, Confidence, ContractError, MaterialClass, MonotonicNanos, ObjectId,
+    PickDecision, PickPose, PickWindow, codec,
+};
 
 const SCHEMA: &str = include_str!("../contract/pick-decision.cddl");
 const VECTOR_INDEX: &str = include_str!("../contract/vectors/v1/README.md");
 const NOMINAL: &str = include_str!("../contract/vectors/v1/nominal.hex");
 const REJECTED: &str = include_str!("../contract/vectors/v1/rejected.hex");
 const UNKNOWN_VERSION: &str = include_str!("../contract/vectors/v1/unknown-version.hex");
+const DIVERTED: &str = include_str!("../contract/vectors/v1/diverted.hex");
 
 fn bytes_of(vector: &str) -> Vec<u8> {
     let digits: String = vector
@@ -138,6 +142,46 @@ fn the_schema_names_every_field_and_every_class() {
             class.taxonomy_id()
         );
     }
+}
+
+fn diverted_decision() -> PickDecision {
+    let window = PickWindow::new(
+        MonotonicNanos::new(9_000_000_000),
+        MonotonicNanos::new(9_250_000_000),
+    )
+    .unwrap();
+    PickDecision::new(
+        ObjectId::new(4_815_162_344),
+        MaterialClass::Cardboard,
+        ChannelId::new(6),
+        PickPose::new(
+            BeltPoint::new(0.412, -0.085, 0.031),
+            1.047,
+            MonotonicNanos::new(9_100_000_000),
+        ),
+        window,
+        Confidence::new(0.6).unwrap(),
+    )
+    .unwrap()
+}
+
+/// Expected cost can publish a sorted channel that is not the class map.
+/// The vector is new. The older vectors stay byte-identical.
+#[test]
+fn the_diverted_vector_carries_cardboard_on_the_ferrous_channel() {
+    let bytes = bytes_of(DIVERTED);
+    let decision = codec::decode(&bytes).unwrap();
+    let built = diverted_decision();
+
+    assert_eq!(decision.version(), 1);
+    assert_eq!(decision.class(), MaterialClass::Cardboard);
+    assert_eq!(decision.channel(), ChannelId::new(6));
+    assert_eq!(decision.confidence().get().to_bits(), 0.6_f32.to_bits());
+    assert_eq!(decision.object(), built.object());
+    assert_eq!(codec::encode(&decision).unwrap(), bytes);
+    assert_eq!(codec::encode(&built).unwrap(), bytes);
+    assert!(SCHEMA.contains("expected cost"));
+    assert!(VECTOR_INDEX.contains("diverted.hex"));
 }
 
 /// The schema tells a consumer what to do with a version it does

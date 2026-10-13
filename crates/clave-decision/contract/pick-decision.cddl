@@ -47,10 +47,14 @@ pick-decision = {
   ; The material class the classifier assigned.
   class: material-class,
 
-  ; The channel the line operator's mapping resolved for this object,
-  ; including the reject channel. The mapping from class to channel is
+  ; The channel the routing policy resolved for this object, including the
+  ; reject channel. Under the confidence floor this is the operator's mapped
+  ; channel, or the reject channel. Under expected cost it is the channel of
+  ; minimum expected cost, which can be a sorted channel other than the
+  ; mapped channel of `class`. The mapping from class to channel is
   ; configuration the operator supplies, so this number carries no meaning
-  ; beyond naming an installed channel.
+  ; beyond naming an installed channel. vectors/v1/diverted.hex is that case:
+  ; class Cardboard, channel 6.
   channel: uint,
 
   ; Where the object is predicted to be, and when that prediction holds.
