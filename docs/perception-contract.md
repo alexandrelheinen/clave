@@ -125,6 +125,7 @@ WasteObject
 
   material             taxonomy class, M-01 to M-11, or reject
   material_confidence
+  posterior            outcome weights, or empty when no belief was folded
   density              from the material
   mass                 estimate
   mass_uncertainty     a band, not a number, and the reason is below
@@ -151,7 +152,8 @@ configuration and why they live behind the same resolver the safety layer
 already calls. This record carried a `channel` field until the tracker was
 built, and perception could only ever have written a null into it. A field that
 is always absent is worse than an absent field, so the consumer asks the
-resolver.
+resolver. `posterior` is the belief that resolver reads, one weight per
+outcome.
 
 **The record says what it did not perceive.** `simulated` names the fields that
 came from `GroundTruth` rather than from a sensor. No per-instance classifier

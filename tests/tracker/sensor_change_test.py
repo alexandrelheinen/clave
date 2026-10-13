@@ -241,6 +241,7 @@ def test_the_record_shape_is_asserted_against_something_that_can_change() -> Non
                 "codes",
                 "evidence",
                 "simulated",
+                "posterior",
             }
         )
         == RECORD_FIELDS
