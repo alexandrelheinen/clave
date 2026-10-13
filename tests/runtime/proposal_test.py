@@ -4,7 +4,13 @@ import json
 
 import pytest
 
-from clave.runtime.proposal import PROPOSAL_VERSION, Outcome, Proposal, ProposalError
+from clave.runtime.proposal import (
+    PROPOSAL_VERSION,
+    PROPOSAL_VERSION_POSTERIOR,
+    Outcome,
+    Proposal,
+    ProposalError,
+)
 
 
 def proposal(**overrides: object) -> Proposal:
@@ -47,6 +53,28 @@ def test_a_window_that_ends_before_it_starts_is_refused() -> None:
     """Such a window names no reachable interval."""
     with pytest.raises(ProposalError, match="ends before it starts"):
         proposal(window_start_nanos=2_000, window_end_nanos=1_000)
+
+
+def test_a_version_2_proposal_carries_the_posterior() -> None:
+    """The posterior is present only when the caller supplies one."""
+    weights = (1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+    encoded = json.loads(
+        proposal(posterior=weights, material_class="M-01", confidence=1.0).encode()
+    )
+    assert encoded["version"] == PROPOSAL_VERSION_POSTERIOR
+    assert encoded["posterior"] == list(weights)
+    floor = json.loads(proposal().encode())
+    assert floor["version"] == PROPOSAL_VERSION
+    assert "posterior" not in floor
+
+
+def test_a_posterior_that_disagrees_with_the_class_is_not_encoded() -> None:
+    """The producer refuses the same disagreement the runtime refuses."""
+    weights = (0.0, 0.0, 0.0, 0.0, 0.0, 0.4, 0.0, 0.6, 0.0, 0.0, 0.0, 0.0)
+    with pytest.raises(ProposalError, match="M-08"):
+        proposal(posterior=weights, material_class="M-01", confidence=0.6)
+    with pytest.raises(ProposalError, match="confidence"):
+        proposal(posterior=weights, material_class="M-08", confidence=0.9)
 
 
 def test_a_pose_timed_outside_its_window_is_refused() -> None:

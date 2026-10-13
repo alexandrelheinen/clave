@@ -9,6 +9,7 @@ has learned nothing the check here could not have told it.
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass
 from typing import Any
 
@@ -17,13 +18,37 @@ from numpy.typing import NDArray
 
 from clave.errors import ClaveError
 from clave.taxonomy import BY_ID
+from clave.tracker.fusion import OUTCOMES
 
 PROPOSAL_VERSION = 1
-"""The wire version this build speaks.
+"""The wire version a confidence-floor runtime implements.
 
 A runtime that meets a version it does not implement refuses the whole message
 rather than reading fields under the wrong meaning.
 """
+
+PROPOSAL_VERSION_POSTERIOR = 2
+"""The wire version that carries a posterior.
+
+An expected-cost runtime implements this version and refuses version 1.
+"""
+
+POSTERIOR_SUM_TOLERANCE = 1e-6
+"""Absolute tolerance on a posterior summing to one.
+
+The proposal contract states this bound. It is a numerical limit of the wire,
+not a routing parameter.
+"""
+
+CONFIDENCE_AGREEMENT_TOLERANCE = 1e-5
+"""Absolute tolerance between confidence and the leading class weight.
+
+Confidence is the f32 the decision carries, and the posterior weight is wider,
+so the two copies of one probability disagree in the last bits. The proposal
+contract states this bound.
+"""
+
+_CLASS_COUNT = len(OUTCOMES) - 1
 
 STOP = b""
 """The stop signal: a datagram with no version and no fields."""
@@ -46,6 +71,8 @@ class Proposal:
         reference_time_nanos: Instant the pose is predicted for.
         window_start_nanos: Earliest instant the object is reachable.
         window_end_nanos: Latest instant the object is reachable.
+        posterior: Outcome weights, in `OUTCOMES` order, when the proposal
+            speaks version 2. Absent on a confidence-floor proposal.
     """
 
     object_id: int
@@ -56,6 +83,7 @@ class Proposal:
     reference_time_nanos: int
     window_start_nanos: int
     window_end_nanos: int
+    posterior: tuple[float, ...] | None = None
 
     def __post_init__(self) -> None:
         """Refuse a proposal the runtime would refuse, and coerce the point.
@@ -85,6 +113,8 @@ class Proposal:
             raise ProposalError(
                 f"reference time {self.reference_time_nanos} falls outside the window"
             )
+        if self.posterior is not None:
+            _check_posterior(self.material_class, self.confidence, self.posterior)
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Proposal):
@@ -98,6 +128,7 @@ class Proposal:
             and self.reference_time_nanos == other.reference_time_nanos
             and self.window_start_nanos == other.window_start_nanos
             and self.window_end_nanos == other.window_end_nanos
+            and self.posterior == other.posterior
         )
 
     def encode(self) -> bytes:
@@ -107,22 +138,74 @@ class Proposal:
             The UTF-8 JSON the runtime reads.
         """
         x, y, z = (float(self.point[0]), float(self.point[1]), float(self.point[2]))
-        return json.dumps(
-            {
-                "version": PROPOSAL_VERSION,
-                "object_id": self.object_id,
-                "material_class": self.material_class,
-                "confidence": self.confidence,
-                "x_meters": x,
-                "y_meters": y,
-                "z_meters": z,
-                "yaw_radians": self.yaw_radians,
-                "reference_time_nanos": self.reference_time_nanos,
-                "window_start_nanos": self.window_start_nanos,
-                "window_end_nanos": self.window_end_nanos,
-            },
-            sort_keys=True,
-        ).encode("utf-8")
+        version = (
+            PROPOSAL_VERSION_POSTERIOR
+            if self.posterior is not None
+            else PROPOSAL_VERSION
+        )
+        payload: dict[str, Any] = {
+            "version": version,
+            "object_id": self.object_id,
+            "material_class": self.material_class,
+            "confidence": self.confidence,
+            "x_meters": x,
+            "y_meters": y,
+            "z_meters": z,
+            "yaw_radians": self.yaw_radians,
+            "reference_time_nanos": self.reference_time_nanos,
+            "window_start_nanos": self.window_start_nanos,
+            "window_end_nanos": self.window_end_nanos,
+        }
+        if self.posterior is not None:
+            payload["posterior"] = [float(weight) for weight in self.posterior]
+        return json.dumps(payload, sort_keys=True).encode("utf-8")
+
+
+def _check_posterior(
+    material_class: str, confidence: float, posterior: tuple[float, ...]
+) -> None:
+    """Refuse a posterior the version 2 runtime would refuse.
+
+    Args:
+        material_class: The class the proposal reports.
+        confidence: The confidence the proposal reports.
+        posterior: Outcome weights, in `OUTCOMES` order.
+
+    Raises:
+        ProposalError: Naming the disagreement.
+    """
+    if len(posterior) != len(OUTCOMES):
+        raise ProposalError(
+            f"posterior has {len(posterior)} weights and the contract has "
+            f"{len(OUTCOMES)}"
+        )
+    if any(not math.isfinite(weight) or weight < 0.0 for weight in posterior):
+        raise ProposalError("posterior holds a weight that is negative or not finite")
+    if abs(math.fsum(posterior) - 1.0) > POSTERIOR_SUM_TOLERANCE:
+        raise ProposalError("posterior does not sum to 1 within the contract tolerance")
+    leading, weight = _leading_class(posterior)
+    if leading != material_class:
+        raise ProposalError(
+            f"material_class {material_class} disagrees with the leading "
+            f"class {leading}"
+        )
+    if abs(weight - confidence) > CONFIDENCE_AGREEMENT_TOLERANCE:
+        raise ProposalError("confidence disagrees with the leading class weight")
+
+
+def _leading_class(posterior: tuple[float, ...]) -> tuple[str, float]:
+    """Return the first maximum among the taxonomy classes.
+
+    The reject outcome is the last weight and is not a class.
+
+    Args:
+        posterior: Outcome weights, in `OUTCOMES` order.
+
+    Returns:
+        The taxonomy identifier and its weight.
+    """
+    best = max(range(_CLASS_COUNT), key=lambda index: posterior[index])
+    return OUTCOMES[best], posterior[best]
 
 
 @dataclass(frozen=True)

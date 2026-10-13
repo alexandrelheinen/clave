@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -18,12 +19,14 @@ from typing import Any
 import numpy as np
 import yaml
 
+from clave.belief.model import CONFIDENCE_FLOOR, EXPECTED_COST
 from clave.errors import ClaveError
 from clave.runtime.bridge import Bridge, BridgePaths, locate_binary
 from clave.runtime.inference import Predictor
 from clave.runtime.proposal import Proposal
 from clave.taxonomy import BY_ID
 from clave.tracker.evidence import Role
+from clave.tracker.fusion import OUTCOMES
 from clave.tracker.sensors import load_sensors, require_role
 from clave.world import arm as armmod
 from clave.world import belt, config, scene
@@ -63,11 +66,16 @@ class RoutingPolicy:
         channels: Taxonomy identifier to channel number.
         reject_channel: Where everything unroutable goes.
         confidence_floor: Below this, an object goes to reject whatever it is.
+        rule: `confidence_floor` or `expected_cost`.
+        cost: One row per channel the map names, when the rule is expected
+            cost. Absent under the confidence floor, which does not read it.
     """
 
     channels: dict[str, int]
     reject_channel: int
     confidence_floor: float
+    rule: str
+    cost: tuple[tuple[int, tuple[float, ...]], ...] | None
 
 
 @dataclass(frozen=True)
@@ -149,6 +157,8 @@ class RuntimeSettings:
                 confidence_floor=float(
                     _require(routing, "confidence_floor", "routing")
                 ),
+                rule=str(routing.get("rule", CONFIDENCE_FLOOR)),
+                cost=_cost_for_rule(routing, path),
             ),
         )
         LOGGER.debug(
@@ -185,6 +195,151 @@ def _require(mapping: Any, key: str, path: str = "") -> Any:
     return mapping[key]
 
 
+def _cost_for_rule(
+    routing: dict[str, Any], settings_path: Path
+) -> tuple[tuple[int, tuple[float, ...]], ...] | None:
+    """Read the cost table only when the rule is expected cost.
+
+    Args:
+        routing: The routing block of the settings file.
+        settings_path: The settings file, used to resolve a relative cost file.
+
+    Returns:
+        The rows, or `None` under the confidence floor.
+
+    Raises:
+        RuntimeConfigError: If the rule is unknown or the table is unusable.
+    """
+    rule = str(routing.get("rule", CONFIDENCE_FLOOR))
+    if rule == CONFIDENCE_FLOOR:
+        return None
+    if rule != EXPECTED_COST:
+        raise RuntimeConfigError(f"routing.rule {rule!r} is not a known routing rule")
+    return _load_cost_rows(routing, settings_path)
+
+
+def _load_cost_rows(
+    routing: dict[str, Any], settings_path: Path
+) -> tuple[tuple[int, tuple[float, ...]], ...]:
+    """Read cost rows from the block or from the file it names.
+
+    Args:
+        routing: The routing block.
+        settings_path: The settings file, used to resolve a relative cost file.
+
+    Returns:
+        One row per channel the map names, in channel order.
+
+    Raises:
+        RuntimeConfigError: Naming the key or the channel that is wrong.
+    """
+    if "cost" in routing and "cost_file" in routing:
+        raise RuntimeConfigError("routing.cost and routing.cost_file are both set")
+    if "cost_file" in routing:
+        raw = _cost_from_file(routing["cost_file"], settings_path)
+    elif "cost" in routing:
+        raw = routing["cost"]
+    else:
+        raise RuntimeConfigError("required configuration key 'routing.cost' is missing")
+    return _parse_cost_rows(raw, routing)
+
+
+def _cost_from_file(cost_file: object, settings_path: Path) -> Any:
+    """Read the `cost` list out of a YAML file.
+
+    Args:
+        cost_file: The path the settings named.
+        settings_path: The settings file a relative path is resolved against.
+
+    Returns:
+        The cost list.
+
+    Raises:
+        RuntimeConfigError: If the file cannot be read or has no cost list.
+    """
+    file_path = Path(str(cost_file))
+    if not file_path.is_absolute():
+        file_path = settings_path.parent / file_path
+    try:
+        loaded = yaml.safe_load(file_path.read_text(encoding="utf-8"))
+    except OSError as error:
+        raise RuntimeConfigError(
+            f"routing.cost_file {file_path} could not be read: {error}"
+        ) from error
+    if not isinstance(loaded, dict):
+        raise RuntimeConfigError("routing.cost_file does not hold a mapping")
+    return _require(loaded, "cost", "routing.cost_file")
+
+
+def _parse_cost_rows(
+    raw: Any, routing: dict[str, Any]
+) -> tuple[tuple[int, tuple[float, ...]], ...]:
+    """Validate cost rows against the channel map and the residue rule.
+
+    Args:
+        raw: The cost list.
+        routing: The routing block, for the channels and the reject channel.
+
+    Returns:
+        The rows, in channel order.
+
+    Raises:
+        RuntimeConfigError: Naming the row that fails.
+    """
+    if not isinstance(raw, list):
+        raise RuntimeConfigError("routing.cost is not a list of rows")
+    width = len(OUTCOMES)
+    by_channel: dict[int, tuple[float, ...]] = {}
+    for index, row in enumerate(raw):
+        if not isinstance(row, dict) or "channel" not in row or "costs" not in row:
+            raise RuntimeConfigError(
+                f"routing.cost[{index}] needs a channel and a costs list"
+            )
+        channel = int(row["channel"])
+        costs_raw = row["costs"]
+        if not isinstance(costs_raw, list) or len(costs_raw) != width:
+            raise RuntimeConfigError(
+                f"routing.cost channel {channel} needs {width} costs"
+            )
+        costs = tuple(float(value) for value in costs_raw)
+        if any(not math.isfinite(value) or value < 0.0 for value in costs):
+            raise RuntimeConfigError(
+                f"routing.cost channel {channel} holds a negative cost"
+            )
+        if channel in by_channel:
+            raise RuntimeConfigError(
+                f"routing.cost prices channel {channel} more than once"
+            )
+        by_channel[channel] = costs
+    channels = routing["channels"]
+    if not isinstance(channels, dict):
+        raise RuntimeConfigError("routing.channels is not a mapping")
+    reject = int(routing["reject_channel"])
+    known = {int(value) for value in channels.values()}
+    known.add(reject)
+    for channel in sorted(known):
+        if channel not in by_channel:
+            raise RuntimeConfigError(
+                "required configuration key 'routing.cost' is missing a row "
+                f"for channel {channel}"
+            )
+    for channel in by_channel:
+        if channel not in known:
+            raise RuntimeConfigError(
+                f"routing.cost prices channel {channel}, which the channel map "
+                "does not name"
+            )
+    residue = OUTCOMES.index("M-11")
+    reject_cost = by_channel[reject][residue]
+    for channel, costs in by_channel.items():
+        if channel != reject and costs[residue] < reject_cost:
+            raise RuntimeConfigError(
+                f"routing.cost prices M-11 cheaper on channel {channel} than "
+                f"on the reject channel {reject}"
+            )
+    return tuple((channel, by_channel[channel]) for channel in sorted(by_channel))
+
+
 def runtime_config(world: dict[str, Any], routing: RoutingPolicy) -> dict[str, Any]:
     """Build what the Rust runtime reads, from the world and the policy.
 
@@ -209,7 +364,7 @@ def runtime_config(world: dict[str, Any], routing: RoutingPolicy) -> dict[str, A
     band = [
         float(value) for value in config.require(arm, "tool_above_base_meters", "arm")
     ]
-    return {
+    document = {
         # Where the arm stands, which is the top of its pedestal. The reach test
         # is radial about this point.
         "base_meters": base,
@@ -231,6 +386,19 @@ def runtime_config(world: dict[str, Any], routing: RoutingPolicy) -> dict[str, A
         "reject_channel": routing.reject_channel,
         "confidence_floor": routing.confidence_floor,
     }
+    if routing.rule == CONFIDENCE_FLOOR:
+        return document
+    if routing.rule != EXPECTED_COST:
+        raise RuntimeConfigError(
+            f"routing.rule {routing.rule!r} is not a known routing rule"
+        )
+    if routing.cost is None:
+        raise RuntimeConfigError("required configuration key 'routing.cost' is missing")
+    document["rule"] = EXPECTED_COST
+    document["cost"] = [
+        {"channel": channel, "costs": list(costs)} for channel, costs in routing.cost
+    ]
+    return document
 
 
 @dataclass(frozen=True)
