@@ -4,9 +4,11 @@ Each file holds the hex bytes of one CBOR message, with `#` comment lines and
 whitespace ignored. A consumer checks its own decoder against these bytes and
 the values below before it ever sees a live decision.
 
-These files are frozen. Contract version 2 ships a `vectors/v2/` directory
-beside this one and leaves this one untouched, because a vector that changes is
-a vector that proves nothing.
+The original three files are frozen. Contract version 2 ships a
+`vectors/v2/` directory beside this one and leaves those three untouched,
+because a vector that changes is a vector that proves nothing. `diverted.hex`
+was added later, under the same contract version, because the field set did
+not change. It shows a sorted channel that is not the class's mapped channel.
 
 ## `nominal.hex`
 
@@ -47,6 +49,29 @@ decision: a consumer reads it and acts on its channel exactly as it does for
 | `window.earliest` | 12300000000 |
 | `window.latest` | 12600000000 |
 | `confidence` | 0.41 |
+
+## `diverted.hex`
+
+Cardboard resolved to channel 6, 221 bytes. On the shipped line, cardboard
+maps to channel 8. This decision's channel is 6 because expected cost
+selected the ferrous channel. The posterior is not on this message. A
+consumer that assumes the channel is always the class's mapped channel,
+except when the channel is reject, will misread it.
+
+| Field | Value |
+| --- | --- |
+| `version` | 1 |
+| `object` | 4815162344 |
+| `class` | `Cardboard`, taxonomy `M-08` |
+| `channel` | 6 |
+| `pose.point.x_meters` | 0.412 |
+| `pose.point.y_meters` | -0.085 |
+| `pose.point.z_meters` | 0.031 |
+| `pose.yaw_radians` | 1.047 |
+| `pose.reference_time` | 9100000000 |
+| `window.earliest` | 9000000000 |
+| `window.latest` | 9250000000 |
+| `confidence` | 0.6 |
 
 ## `unknown-version.hex`
 

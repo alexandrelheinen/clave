@@ -6,8 +6,8 @@
 )]
 
 use clave_decision::{ChannelId, Confidence, MaterialClass};
-use clave_routing::{ChannelMap, RejectReason, Resolver};
-use clave_safety::{Check, Envelope, Proposal, SafetyError, Verdict};
+use clave_routing::{ChannelMap, OUTCOME_COUNT, RejectReason, Resolver, Routed};
+use clave_safety::{Check, Envelope, PROPOSAL_VERSION_POSTERIOR, Proposal, SafetyError, Verdict};
 
 const REJECT: ChannelId = ChannelId::new(0);
 
@@ -216,7 +216,9 @@ fn the_crate_links_no_machine_learning_framework() {
     let manifest = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml"))
         .unwrap()
         .to_lowercase();
-    for framework in ["ort", "tch", "torch", "onnx", "candle", "burn", "tract"] {
+    for framework in [
+        "ort", "tch", "torch", "onnx", "candle", "burn", "tract", "gtsam",
+    ] {
         assert!(
             !manifest.contains(&format!("\n{framework}")),
             "the safety crate declares {framework}"
@@ -254,4 +256,197 @@ fn an_overridden_proposal_carries_no_decision_to_publish() {
         Some(7)
     );
     assert_eq!(verdict.overridden_check(), None);
+}
+
+fn set(row: &mut [f64; OUTCOME_COUNT], index: usize, value: f64) {
+    if let Some(slot) = row.get_mut(index) {
+        *slot = value;
+    }
+}
+
+fn weights(pairs: &[(usize, f64)]) -> [f64; OUTCOME_COUNT] {
+    let mut posterior = [0.0; OUTCOME_COUNT];
+    for &(index, weight) in pairs {
+        set(&mut posterior, index, weight);
+    }
+    posterior
+}
+
+fn weights_json(pairs: &[(usize, f64)]) -> String {
+    weights(pairs)
+        .iter()
+        .map(|weight| format!("{weight}"))
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+fn wire_v2(class: &str, confidence: f64, pairs: &[(usize, f64)]) -> String {
+    let posterior = weights_json(pairs);
+    format!(
+        r#"{{"version":2,"object_id":7,"material_class":"{class}","confidence":{confidence},
+            "posterior":[{posterior}],
+            "x_meters":0.0,"y_meters":0.0,"z_meters":0.95,"yaw_radians":0.0,
+            "reference_time_nanos":1000,"window_start_nanos":1000,
+            "window_end_nanos":2000}}"#
+    )
+}
+
+fn cost_resolver(
+    classes: &[(MaterialClass, u16)],
+    rows: &[(u16, [f64; OUTCOME_COUNT])],
+) -> Resolver {
+    let entries = classes
+        .iter()
+        .map(|(class, channel)| (*class, ChannelId::new(*channel)));
+    let map = ChannelMap::new(entries, REJECT, Confidence::new(0.6).unwrap()).unwrap();
+    let cost_rows = rows
+        .iter()
+        .map(|(channel, costs)| (ChannelId::new(*channel), *costs));
+    Resolver::with_expected_cost(map, cost_rows).unwrap()
+}
+
+/// AC-SORT-16: the safety manifest does not name GTSAM.
+#[test]
+fn ac_sort_16_the_safety_manifest_does_not_name_gtsam() {
+    let manifest = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml"))
+        .unwrap()
+        .to_lowercase();
+    assert!(
+        !manifest.contains("gtsam"),
+        "the safety crate declares gtsam"
+    );
+}
+
+/// AC-SORT-17: a version 2 runtime refuses version 1 before the broken field.
+#[test]
+fn ac_sort_17_a_version_2_runtime_refuses_version_1_before_other_fields() {
+    let payload = br#"{"version":1,"material_class":99}"#;
+    let error = Proposal::decode_as(payload, PROPOSAL_VERSION_POSTERIOR).unwrap_err();
+    assert!(matches!(
+        error,
+        SafetyError::UnsupportedVersion { found: 1 }
+    ));
+}
+
+/// AC-SORT-18: class and confidence have to match the posterior.
+#[test]
+fn ac_sort_18_a_class_or_confidence_that_disagrees_with_the_posterior_is_refused() {
+    let peaked = &[(7, 0.6), (5, 0.4)];
+    let wrong_class = wire_v2("M-01", 0.6, peaked);
+    let class_error =
+        Proposal::decode_as(wrong_class.as_bytes(), PROPOSAL_VERSION_POSTERIOR).unwrap_err();
+    assert!(
+        format!("{class_error}").contains("M-08"),
+        "the error does not name the leading class: {class_error}"
+    );
+
+    let wrong_confidence = wire_v2("M-08", 0.9, peaked);
+    let confidence_error =
+        Proposal::decode_as(wrong_confidence.as_bytes(), PROPOSAL_VERSION_POSTERIOR).unwrap_err();
+    assert!(
+        format!("{confidence_error}").contains("confidence"),
+        "the error does not name confidence: {confidence_error}"
+    );
+}
+
+/// AC-SORT-07: a version 2 proposal takes the minimum expected-cost channel,
+/// which is not the channel the leading class maps to.
+#[test]
+fn ac_sort_07_a_version_2_proposal_takes_the_minimum_expected_cost_channel() {
+    let mut reject_row = [2.0; OUTCOME_COUNT];
+    let mut ferrous = [3.0; OUTCOME_COUNT];
+    let mut fiber = [4.0; OUTCOME_COUNT];
+    set(&mut reject_row, 10, 0.0);
+    set(&mut reject_row, 11, 0.0);
+    set(&mut ferrous, 5, 0.0);
+    set(&mut ferrous, 7, 3.0);
+    set(&mut ferrous, 10, 10.0);
+    set(&mut fiber, 5, 10.0);
+    set(&mut fiber, 7, 0.0);
+    set(&mut fiber, 10, 10.0);
+    let resolver = cost_resolver(
+        &[(MaterialClass::Cardboard, 8), (MaterialClass::Ferrous, 6)],
+        &[(0, reject_row), (6, ferrous), (8, fiber)],
+    );
+    let payload = wire_v2("M-08", 0.6, &[(7, 0.6), (5, 0.4)]);
+    let proposal = Proposal::decode_as(payload.as_bytes(), PROPOSAL_VERSION_POSTERIOR).unwrap();
+    let verdict = envelope().judge(&proposal, &resolver).unwrap();
+    let decision = verdict.decision().unwrap();
+
+    assert_eq!(decision.class(), MaterialClass::Cardboard);
+    assert_eq!(decision.channel(), ChannelId::new(6));
+    assert!(matches!(
+        verdict,
+        Verdict::Accepted {
+            routed: Routed::Sorted(channel),
+            ..
+        } if channel == ChannelId::new(6)
+    ));
+}
+
+/// AC-SORT-08: when reject minimizes expected cost, the decision keeps the
+/// leading class and publishes the reject channel.
+#[test]
+fn ac_sort_08_reject_wins_and_the_leading_class_stays_on_the_decision() {
+    let mut reject_row = [2.0; OUTCOME_COUNT];
+    let mut aluminum = [3.0; OUTCOME_COUNT];
+    let mut ferrous = [3.0; OUTCOME_COUNT];
+    set(&mut reject_row, 10, 0.0);
+    set(&mut reject_row, 11, 0.0);
+    set(&mut aluminum, 4, 0.0);
+    set(&mut aluminum, 5, 8.0);
+    set(&mut aluminum, 10, 10.0);
+    set(&mut ferrous, 4, 5.0);
+    set(&mut ferrous, 5, 0.0);
+    set(&mut ferrous, 10, 10.0);
+    let resolver = cost_resolver(
+        &[(MaterialClass::Aluminum, 5), (MaterialClass::Ferrous, 6)],
+        &[(0, reject_row), (5, aluminum), (6, ferrous)],
+    );
+    let payload = wire_v2("M-05", 0.5, &[(4, 0.5), (5, 0.5)]);
+    let proposal = Proposal::decode_as(payload.as_bytes(), PROPOSAL_VERSION_POSTERIOR).unwrap();
+    let verdict = envelope().judge(&proposal, &resolver).unwrap();
+    let decision = verdict.decision().unwrap();
+
+    assert_eq!(decision.class(), MaterialClass::Aluminum);
+    assert_eq!(decision.channel(), REJECT);
+    assert!(matches!(
+        verdict,
+        Verdict::Accepted {
+            routed: Routed::Rejected {
+                channel: REJECT,
+                reason: RejectReason::ExpectedCost,
+            },
+            ..
+        }
+    ));
+}
+
+/// Expected cost still sorts when the leading weight is below the floor.
+#[test]
+fn expected_cost_sorts_below_the_confidence_floor() {
+    let mut reject_row = [2.0; OUTCOME_COUNT];
+    let mut pet = [3.0; OUTCOME_COUNT];
+    let mut hdpe = [3.0; OUTCOME_COUNT];
+    set(&mut reject_row, 10, 0.0);
+    set(&mut pet, 0, 0.0);
+    set(&mut pet, 1, 3.0);
+    set(&mut pet, 10, 10.0);
+    set(&mut hdpe, 0, 3.0);
+    set(&mut hdpe, 1, 0.0);
+    set(&mut hdpe, 10, 10.0);
+    let resolver = cost_resolver(
+        &[(MaterialClass::Pet, 1), (MaterialClass::Hdpe, 2)],
+        &[(0, reject_row), (1, pet), (2, hdpe)],
+    );
+    let payload = wire_v2("M-01", 0.55, &[(0, 0.55), (1, 0.45)]);
+    let proposal = Proposal::decode_as(payload.as_bytes(), PROPOSAL_VERSION_POSTERIOR).unwrap();
+    let decision = envelope()
+        .judge(&proposal, &resolver)
+        .unwrap()
+        .decision()
+        .unwrap();
+
+    assert_eq!(decision.channel(), ChannelId::new(1));
+    assert!((f64::from(decision.confidence().get()) - 0.55).abs() < 1e-6);
 }

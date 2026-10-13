@@ -107,9 +107,12 @@ impl Envelope {
     ///
     /// The geometric checks run first and in a fixed order, and the first one
     /// that fails names the verdict. A proposal that survives them is routed
-    /// through the operator's policy, so a confidence below the floor becomes
-    /// a reject route rather than a safety override: conflating the two would
-    /// make the override count meaningless.
+    /// through the operator's policy. A resolver with no cost table applies the
+    /// confidence floor, so a confidence below the floor becomes a reject
+    /// route rather than a safety override. A resolver with a cost table
+    /// chooses the channel of minimum expected cost and does not apply the
+    /// floor. Conflating a reject route with an override would make the
+    /// override count meaningless.
     ///
     /// # Errors
     ///
@@ -122,7 +125,18 @@ impl Envelope {
         if let Some(check) = self.failed_check(proposal.pose().point()) {
             return Ok(Verdict::Overridden { check });
         }
-        let routed = resolver.resolve(proposal.class(), proposal.confidence());
+        let routed = if resolver.uses_expected_cost() {
+            let posterior = proposal.posterior().ok_or_else(|| SafetyError::Malformed {
+                reason: "expected-cost routing received a proposal with no posterior".to_owned(),
+            })?;
+            resolver
+                .choose_expected_cost(posterior)
+                .ok_or_else(|| SafetyError::Malformed {
+                    reason: "expected-cost routing has no cost table".to_owned(),
+                })?
+        } else {
+            resolver.resolve(proposal.class(), proposal.confidence())
+        };
         let decision = PickDecision::new(
             proposal.object(),
             proposal.class(),

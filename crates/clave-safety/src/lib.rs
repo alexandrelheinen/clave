@@ -67,5 +67,5 @@ mod verdict;
 
 pub use crate::envelope::Envelope;
 pub use crate::error::SafetyError;
-pub use crate::proposal::{PROPOSAL_VERSION, Proposal};
+pub use crate::proposal::{PROPOSAL_VERSION, PROPOSAL_VERSION_POSTERIOR, Proposal};
 pub use crate::verdict::{Check, Verdict};
