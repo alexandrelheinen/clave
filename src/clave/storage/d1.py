@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import json
 import urllib.request
-from typing import Any, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 from clave.errors import ClaveError
 from clave.storage.config import D1Config
