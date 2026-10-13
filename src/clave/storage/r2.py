@@ -9,8 +9,6 @@ from __future__ import annotations
 import datetime
 import hashlib
 import hmac
-import urllib.error
-import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 from pathlib import Path
