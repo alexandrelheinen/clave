@@ -44,6 +44,11 @@ else
   "${PY_RUN}ruff" check src tests
   "${PY_RUN}ruff" format --check src tests
   "${PY_RUN}mypy"
+  # The chapter oracle skips itself when this import fails. The gate must
+  # not pass that way, so the missing extra is a failure here.
+  if ! "${PY_RUN}python" -c "import gtsam" >/dev/null 2>&1; then
+    fail "gtsam is not installed, so the category oracle would be skipped. Run: uv sync --locked --extra dev --extra world --extra belief"
+  fi
   "${PY_RUN}pytest" --cov=clave --cov-report=term-missing --cov-fail-under=80 -q
 
   echo "--- corpus manifest ---"

@@ -60,7 +60,7 @@ jobs:
           # genuinely exercised here rather than skipped. The candidate extra is
           # deliberately not installed: it is over a gigabyte and its adapters
           # are covered by the benchmark sweep instead.
-          uv sync --locked --extra dev --extra world
+          uv sync --locked --extra dev --extra world --extra belief
 
       # Object meshes are pinned by digest, not as submodules. Without them the
       # world cannot compile and the gate fails before it tests anything.
