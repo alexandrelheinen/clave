@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -252,11 +253,12 @@ def build_frame_sample(
 
 def _archive_frame_count(dataset: Path, rollout_id: str) -> int:
     """Frame count of an archive whose description has no file record."""
-    archive = np.load(dataset / f"{rollout_id}.npz", allow_pickle=False)
-    try:
-        return int(archive["frames"].shape[0])
-    finally:
-        archive.close()
+    path = dataset / f"{rollout_id}.npz"
+    with zipfile.ZipFile(path, "r") as z:
+        with z.open("frames.npy") as f:
+            version = np.lib.format.read_magic(f)
+            shape, _, _ = np.lib.format._read_array_header(f, version)
+            return int(shape[0])
 
 
 def capture_interval_seconds(dataset: Path, rollout_id: str) -> float:
