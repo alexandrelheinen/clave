@@ -190,7 +190,7 @@ def record(
         rollout_id: Identity for this rollout within a dataset.
         belt_speed: Meters per second to hold, instead of the speed the world
             draws. None leaves the draw in place.
-        spacing: Metres of belt between releases. None leaves the
+        spacing: Meters of belt between releases. None leaves the
             world's range in place, so each gap is drawn.
         drive_arm: Whether to move the arm toward the scripted expert. A corpus
             records the stream with the arm parked.
@@ -208,7 +208,7 @@ def record(
     rng = np.random.default_rng(seed)
     model, data, plan = scene.build(raw, rng, root)
     spawn = config.require(raw, "spawn")
-    spacing = (
+    gaps = (
         Range(spacing, spacing)
         if spacing is not None
         else config.require_range(spawn, "spacing", "spawn")
@@ -216,7 +216,7 @@ def record(
     conveyor = belt.Conveyor(
         plan,
         rng,
-        spacing,
+        gaps,
         config.require_range(spawn, "lateral_offset", "spawn"),
         config.require_range(spawn, "drop_height", "spawn"),
         belt.flat_tilt(spawn),
