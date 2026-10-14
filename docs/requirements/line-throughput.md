@@ -142,11 +142,25 @@ operator also passes a belt speed, that speed shall win over the file.
 `AC-RATE-13`: The system shall accept a spacing range in that same debug
 feed file and shall release objects at that spacing for the run. The
 shipped world spacing shall stay unchanged. The belt speed the file names
-shall lie inside the shipped drive range. The spacing used for the
-high-flow run shall be greater than the sum of the bounding radii of the
-two largest packages. It shall also be the dense spacing at which a
-thirty-second run still finishes: a closer gap lets a stalled package
-be caught by the next one, and the step overflows.
+shall lie inside the shipped drive range.
+
+`AC-RATE-14`: When a package rests on the belt, the system shall drive it
+from the bottom of its geometry. A package whose origin sits above the
+height tolerance, and whose bottom rests on the surface, shall be driven
+at belt speed. A package whose bottom is above the surface by more than
+the height tolerance shall not be driven. When two packages are touching,
+the system shall leave the velocity the contact solver produced on that
+step, so the drive does not ram one through the other. A linear velocity
+past the configured contact speed limit shall be cut back to that limit.
+
+`AC-RATE-15`: The high-flow file shall space centers at 0.125 m. At the
+drive floor of 0.25 m/s that spacing carries 2.0 objects per second.
+Packages may touch. The file shall name a pool large enough that the
+feeder does not stall while that many packages are on the belt, and the
+shipped pool shall stay unchanged. A package that has left the belt past
+a side guide, and is still at belt height, shall return to the pool. A
+package the arm has lifted shall not. A package already over a chute
+mouth shall not, so a release can fall through and be counted.
 
 ## A faster feed for one run
 
@@ -159,18 +173,34 @@ would like a slower belt, and the drive will not go below 0.25 m/s.
 Ten times that flow is 2.0 objects per second. At the shipped spacing
 that needs 2.40 m/s. v1.6.3 did that, and the arm had no interception,
 so it picked nothing. At 0.25 m/s the same rate needs centers 0.125 m
-apart. The two largest packages have bounding radii that sum to 0.180 m,
-so 0.125 m can put them through each other once one tips onto its long
-side. 0.19 m clears those radii, and a package that rolls into the side
-guide then stops being driven until the next one catches it. That jam
-overflows the step. 0.22 m is the dense spacing at which a thirty-second
-seed still finishes, and at 0.25 m/s that is 1.14 objects per second.
-The setpoint stays 0.125 so the controller holds the drive floor
-instead of raising the belt.
+apart.
+
+v1.6.4 stopped at 0.22 m. Closer than that, a package whose origin sits
+more than the height tolerance above the belt was not driven, even while
+its bottom rested on the surface. It became a wall. The next package was
+driven into it, and the step overflowed. The two largest packages have
+bounding radii that sum to 0.180 m, so 0.125 m centers can touch once a
+package tips. Touching is what a real line does, and it is allowed.
+What is not allowed is a resting package that the belt has stopped
+carrying.
+
+The drive follows the bottom of the geometry (`AC-RATE-14`). A package
+that has left the belt past a side guide, still at belt height, returns
+to the pool, so it does not sit there as a wall. A package the arm has
+lifted is not driven and is not recycled. A package already over a
+chute mouth is a release, and it stays until it falls through. The high-flow file spaces
+centers at 0.125 m (`AC-RATE-15`), which at 0.25 m/s is 2.0 objects per
+second, and names a pool large enough for the packages that spacing puts
+on the belt at once. The setpoint stays 0.125 objects per second, so the
+controller holds the drive floor instead of raising the belt.
+
+The shipped belt is not 0.125 m/s. 0.125 is the feed setpoint, in
+objects per second. The drive range is 0.25 to 0.35 m/s, and the belt
+this setpoint produces is the floor, 0.25 m/s.
 
 Editing `configs/world/sorting_line.yml` would move every other run. A
-debug file names the rate, the speed and the spacing for the run that
-asks for it.
+debug file names the rate, the speed, the spacing and, when the gap
+needs it, the pool for the run that asks for it.
 
 A second arm is out of this change. The task machine, the chutes and the
 safety envelope are one arm, and a feed file does not start another.

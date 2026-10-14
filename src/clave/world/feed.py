@@ -84,11 +84,15 @@ class FeedScenario:
             trims belt speed toward it, inside the shipped drive.
         belt_speed: Meters per second the belt starts at.
         spacing: Metres of belt travel between objects, centre to centre.
+        pool_size: How many object bodies to compile for this run, or None
+            to keep the shipped pool. A dense spacing puts more packages
+            on the belt at once than the shipped pool can hold.
     """
 
     rate: float
     belt_speed: float
     spacing: Range
+    pool_size: int | None = None
 
     @classmethod
     def load(cls, path: Path) -> FeedScenario:
@@ -105,10 +109,12 @@ class FeedScenario:
                 speed is not above zero.
         """
         raw = load(path)
+        pool = raw.get("pool_size")
         return cls(
             rate=_positive(raw, "rate_objects_per_second", where=""),
             belt_speed=_positive(raw, "belt_speed_meters_per_second", where=""),
             spacing=require_range(raw, "spacing_meters"),
+            pool_size=None if pool is None else _pool_size(pool),
         )
 
 
@@ -131,6 +137,23 @@ def apply_scenario(
     """
     speed = scenario.belt_speed if belt_speed is None else belt_speed
     return replace(settings, rate=scenario.rate), speed
+
+
+def apply_pool(raw: dict[str, Any], scenario: FeedScenario) -> None:
+    """Copy the file's pool into the world dict for this run.
+
+    The scene is compiled from that dict, so this runs before the build.
+    A file that names no pool leaves the shipped pool alone. The file on
+    disk is not what this writes.
+
+    Args:
+        raw: The parsed world configuration, modified in place.
+        scenario: The debug feed file.
+    """
+    if scenario.pool_size is None:
+        return
+    spawn = require(raw, "spawn")
+    spawn["pool_size"] = scenario.pool_size
 
 
 @dataclass
@@ -218,6 +241,26 @@ class RateController:
             self._accumulated += error * timestep
         self.speed = bounded
         return bounded
+
+
+def _pool_size(value: Any) -> int:
+    """Read a pool size, which has to be a whole number above zero.
+
+    Args:
+        value: The parsed YAML value.
+
+    Returns:
+        The size.
+
+    Raises:
+        WorldConfigError: If the value is not a positive integer. A pool of
+            zero compiles a line with nothing on it.
+    """
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise WorldConfigError(
+            f"pool_size is {value}, and a pool has to be a whole number above zero"
+        )
+    return value
 
 
 def _positive(block: dict[str, Any], key: str, where: str = "feed") -> float:

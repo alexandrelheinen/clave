@@ -36,6 +36,7 @@ def layout(speed: float, offset: float) -> SceneLayout:
             surface_height=0.90,
             speed=speed,
             height_tolerance=0.05,
+            speed_limit=1.0,
         ),
         arm_base=np.asarray((0.0, offset, 0.90), dtype=np.float64),
         reach_min=_REACH_MIN,
@@ -156,10 +157,17 @@ def test_objects_reach_belt_speed_and_enter_the_window() -> None:
 
 
 def test_a_lifted_object_is_not_driven_by_the_belt() -> None:
-    """A grasped object keeps its motion after it leaves the belt."""
+    """A grasped object keeps its motion after it leaves the belt.
+
+    AC-RATE-14. The height that counts is the bottom of the geometry.
+    A point with no extent uses its own z, which is what a lifted origin
+    was tested as before the bottom was available.
+    """
     plan = layout(speed=0.3, offset=-0.34)
     assert belt._on_belt((0.0, 0.0, 0.90), plan)
     assert not belt._on_belt((0.0, 0.0, 0.951), plan)
+    assert belt._on_belt((0.0, 0.0, 0.979), plan, bottom=0.90)
+    assert not belt._on_belt((0.0, 0.0, 0.979), plan, bottom=0.96)
 
 
 def test_an_unpicked_object_is_not_removed() -> None:
@@ -334,6 +342,205 @@ def test_an_object_on_the_belt_keeps_turning_ac_rate_11() -> None:
         f"the parcel was turning at {spin:.2f} rad/s half a second after 5.0: "
         f"zero means the belt is pinning it, five means nothing damps it"
     )
+
+
+def _rest_on_surface(
+    mujoco: Any, model: Any, data: Any, slot: int, plan: SceneLayout
+) -> float:
+    """Put one pooled body upright with its bottom on the belt.
+
+    Args:
+        mujoco: The imported module.
+        model: The compiled model.
+        data: Its state, modified in place.
+        slot: Pool slot.
+        plan: The resolved layout.
+
+    Returns:
+        How far the origin sits above the bottom. Above the height tolerance
+        means the origin test would have left this package undriven.
+    """
+    body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, f"object_{slot}")
+    address = model.jnt_qposadr[model.body_jntadr[body]]
+    surface = plan.belt.surface_height
+    data.qpos[address : address + 7] = [0.0, 0.0, surface, 1.0, 0.0, 0.0, 0.0]
+    velocity = model.jnt_dofadr[model.body_jntadr[body]]
+    data.qvel[velocity : velocity + 6] = 0.0
+    mujoco.mj_kinematics(model, data)
+    bottom = belt._body_bottom(model, data, body)
+    rise = surface - bottom
+    data.qpos[address + 2] = surface + rise
+    mujoco.mj_kinematics(model, data)
+    return rise
+
+
+def test_a_package_resting_on_its_bottom_is_driven_ac_rate_14() -> None:
+    """AC-RATE-14: a tall package is driven from its bottom, not its origin.
+
+    The identity orientation is not the pose these meshes settle into. A
+    settled soup can stands with its origin above the height tolerance while
+    its bottom stays on the surface. The origin test left that can still.
+    """
+    mujoco = pytest.importorskip("mujoco")
+
+    raw, rng, model, data, plan = built(0)
+    conveyor = conveyor_for(raw, rng, plan)
+    conveyor.spacing = config.Range(0.125, 0.125)
+    conveyor.speed = 0.25
+    surface = plan.belt.surface_height
+    tolerance = plan.belt.height_tolerance
+    found = False
+    for _ in range(int(6.0 / plan.timestep)):
+        mujoco.mj_step(model, data)
+        conveyor.step(model, data)
+        for item in conveyor.active:
+            body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, item.name)
+            address = model.jnt_qposadr[model.body_jntadr[body]]
+            origin_z = float(data.qpos[address + 2])
+            bottom = belt._body_bottom(model, data, body)
+            if origin_z <= surface + tolerance:
+                continue
+            if not belt._near_surface(bottom, plan):
+                continue
+            velocity = model.jnt_dofadr[model.body_jntadr[body]]
+            speed = float(data.qvel[velocity])
+            assert np.isfinite(speed)
+            assert abs(speed) < 2.0
+            found = True
+    assert found, "no settled package stood taller than the height tolerance"
+
+
+def test_a_package_past_the_side_guide_returns_to_the_pool_ac_rate_15() -> None:
+    """AC-RATE-15: a package past the side guide, still at belt height, returns."""
+    mujoco = pytest.importorskip("mujoco")
+
+    raw, rng, model, data, plan = built(0)
+    conveyor = conveyor_for(raw, rng, plan)
+    slot = 0
+    _rest_on_surface(mujoco, model, data, slot, plan)
+    body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, f"object_{slot}")
+    address = model.jnt_qposadr[model.body_jntadr[body]]
+    data.qpos[address + 1] = plan.belt.width / 2.0 + 0.05
+    mujoco.mj_kinematics(model, data)
+    conveyor._next_free = 1
+    conveyor.active.append(
+        belt.SpawnedObject(
+            index=slot,
+            name=f"object_{slot}",
+            material_class="M-01",
+            channel="CH-PET",
+            serial=1,
+        )
+    )
+    conveyor.step(model, data)
+    assert conveyor.active == []
+    assert slot in conveyor._free
+    assert conveyor.retired == 1
+
+
+def test_a_package_over_a_chute_stays_until_it_falls() -> None:
+    """AC-RATE-15: a package over a chute mouth is not returned to the pool.
+
+    The release lowers the package back through belt height beside the
+    belt. Recycling it there removes the place before the mouth can count it.
+    """
+    mujoco = pytest.importorskip("mujoco")
+
+    raw, rng, model, data, plan = built(0)
+    conveyor = conveyor_for(raw, rng, plan)
+    slot = 0
+    _rest_on_surface(mujoco, model, data, slot, plan)
+    body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, f"object_{slot}")
+    address = model.jnt_qposadr[model.body_jntadr[body]]
+    mouth = next(iter(plan.chutes.values()))
+    data.qpos[address] = float(mouth[0])
+    data.qpos[address + 1] = float(mouth[1])
+    mujoco.mj_kinematics(model, data)
+    assert belt._beside_chute(float(mouth[0]), float(mouth[1]), plan)
+    conveyor._next_free = 1
+    item = belt.SpawnedObject(
+        index=slot,
+        name=f"object_{slot}",
+        material_class="M-01",
+        channel="CH-PET",
+        serial=1,
+    )
+    conveyor.active.append(item)
+    conveyor.step(model, data)
+    assert conveyor.active == [item]
+
+
+def test_a_lifted_package_past_the_belt_stays_with_the_arm() -> None:
+    """AC-RATE-15: a lifted package past the belt edge is not recycled."""
+    mujoco = pytest.importorskip("mujoco")
+
+    raw, rng, model, data, plan = built(0)
+    conveyor = conveyor_for(raw, rng, plan)
+    slot = 0
+    rise = _rest_on_surface(mujoco, model, data, slot, plan)
+    body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, f"object_{slot}")
+    address = model.jnt_qposadr[model.body_jntadr[body]]
+    data.qpos[address + 1] = -(plan.belt.width / 2.0 + 0.05)
+    data.qpos[address + 2] = (
+        float(data.qpos[address + 2]) + plan.belt.height_tolerance + 0.02
+    )
+    mujoco.mj_kinematics(model, data)
+    bottom = belt._body_bottom(model, data, body)
+    assert bottom > plan.belt.surface_height + plan.belt.height_tolerance
+    conveyor._next_free = 1
+    item = belt.SpawnedObject(
+        index=slot,
+        name=f"object_{slot}",
+        material_class="M-01",
+        channel="CH-PET",
+        serial=1,
+    )
+    conveyor.active.append(item)
+    conveyor.step(model, data)
+    assert conveyor.active == [item]
+    assert rise > 0.0
+
+
+def test_close_centers_keep_moving_ac_rate_14() -> None:
+    """AC-RATE-14: packages at 0.125 m centers stay on the belt speed.
+
+    This is the gap that used to stall a tall package and overflow the step.
+    """
+    mujoco = pytest.importorskip("mujoco")
+
+    raw, rng, model, data, plan = built(0)
+    conveyor = conveyor_for(raw, rng, plan)
+    conveyor.spacing = config.Range(0.125, 0.125)
+    conveyor.speed = 0.25
+    steps = int(8.0 / plan.timestep)
+    for _ in range(steps):
+        mujoco.mj_step(model, data)
+        conveyor.step(model, data)
+        if not np.isfinite(data.qpos).all() or not np.isfinite(data.qvel).all():
+            raise AssertionError("the belt state left the finite range")
+        for item in conveyor.active:
+            body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, item.name)
+            dof = model.jnt_dofadr[model.body_jntadr[body]]
+            for axis in range(3):
+                assert abs(float(data.qvel[dof + axis])) <= plan.belt.speed_limit
+    on_belt = 0
+    speeds: list[float] = []
+    for item in conveyor.active:
+        body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, item.name)
+        address = model.jnt_qposadr[model.body_jntadr[body]]
+        velocity = model.jnt_dofadr[model.body_jntadr[body]]
+        position = data.qpos[address : address + 3]
+        assert abs(float(position[0])) < plan.belt.length
+        assert abs(float(position[1])) < 1.0
+        assert float(position[2]) < 2.0
+        bottom = belt._body_bottom(model, data, body)
+        if not belt._on_belt(position, plan, bottom):
+            continue
+        speeds.append(float(data.qvel[velocity]))
+        on_belt += 1
+    assert on_belt >= 8, "packages left the belt instead of riding it"
+    assert len(conveyor.arrivals) >= 10
+    assert float(np.median(speeds)) == pytest.approx(conveyor.running, abs=0.05)
 
 
 def test_a_slot_returns_to_the_pool_once_its_object_leaves() -> None:

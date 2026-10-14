@@ -38,6 +38,7 @@ def layout(arm_x: float) -> SceneLayout:
             surface_height=0.90,
             speed=0.31,
             height_tolerance=0.05,
+            speed_limit=1.0,
         ),
         arm_base=np.asarray((arm_x, -0.70, 0.90), dtype=np.float64),
         reach_min=_REACH_MIN,

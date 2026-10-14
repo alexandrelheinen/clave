@@ -3,6 +3,32 @@
 The product version is the git tag. Package metadata in `pyproject.toml`
 and the crate manifests stays on its own numbers.
 
+## v1.6.5
+
+Centers at 0.125 m on the belt the shipped line already runs.
+
+- The shipped figure 0.125 is a feed setpoint in objects per second.
+  The drive range is 0.25 to 0.35 m/s, so that setpoint already holds
+  the belt at 0.25 m/s. It is not a belt speed of 0.125 m/s.
+- The belt used to decide a package was on it from the body origin.
+  Six of the ten packages stand with that origin above the height
+  tolerance, so they were not driven. The next package was pushed
+  through the stalled one and the step overflowed below 0.22 m centers.
+  The drive now follows the bottom of the collision geometry. A package
+  the arm has lifted is still not driven.
+- A package that leaves the belt past a side guide, still at belt
+  height, returns to the pool. A lifted package does not.
+- While two packages touch, the belt leaves the velocity the contact
+  solver just produced. A linear speed past
+  `contact_speed_limit_meters_per_second` (1.0 m/s) is cut back, so a
+  deep overlap cannot throw a package at many times belt speed.
+- `configs/debug/high-flow.yml` spaces centers at 0.125 m and names a
+  pool of 64. At 0.25 m/s that is 2.0 objects per second, ten times the
+  flow the v1.6.2 seed carried. Packages may touch. The shipped rate
+  and the shipped drive range are unchanged.
+
+`AC-RATE-14` and `AC-RATE-15` hold.
+
 ## v1.6.4
 
 A closer feed on the belt the shipped line already runs.

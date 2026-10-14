@@ -13,7 +13,13 @@ from pathlib import Path
 import pytest
 
 from clave.world.config import WorldConfigError, load, require_range
-from clave.world.feed import FeedScenario, FeedSettings, RateController, apply_scenario
+from clave.world.feed import (
+    FeedScenario,
+    FeedSettings,
+    RateController,
+    apply_pool,
+    apply_scenario,
+)
 
 LOW, HIGH = 0.25, 0.35
 TIMESTEP = 0.002
@@ -211,6 +217,50 @@ def test_a_feed_file_refuses_a_missing_spacing(tmp_path: Path) -> None:
         "rate_objects_per_second: 0.125\nbelt_speed_meters_per_second: 0.25\n"
     )
     with pytest.raises(WorldConfigError, match="spacing_meters"):
+        FeedScenario.load(path)
+
+
+def test_a_feed_file_without_a_pool_keeps_the_shipped_one(tmp_path: Path) -> None:
+    """AC-RATE-15: a feed file that names no pool keeps the shipped one."""
+    path = tmp_path / "feed.yml"
+    path.write_text(
+        "rate_objects_per_second: 0.125\n"
+        "belt_speed_meters_per_second: 0.25\n"
+        "spacing_meters: [0.125, 0.125]\n"
+    )
+    scenario = FeedScenario.load(path)
+    assert scenario.pool_size is None
+    root = Path(__file__).resolve().parents[2]
+    raw = load(root / "configs" / "world" / "sorting_line.yml")
+    shipped = raw["spawn"]["pool_size"]
+    apply_pool(raw, scenario)
+    assert raw["spawn"]["pool_size"] == shipped
+
+
+def test_the_high_flow_pool_is_applied_in_memory_only() -> None:
+    """AC-RATE-15: the high-flow pool replaces the shipped one for the run."""
+    root = Path(__file__).resolve().parents[2]
+    scenario = FeedScenario.load(root / "configs" / "debug" / "high-flow.yml")
+    raw = load(root / "configs" / "world" / "sorting_line.yml")
+    shipped = int(raw["spawn"]["pool_size"])
+    assert scenario.pool_size is not None
+    assert scenario.pool_size > shipped
+    apply_pool(raw, scenario)
+    assert raw["spawn"]["pool_size"] == scenario.pool_size
+    again = load(root / "configs" / "world" / "sorting_line.yml")
+    assert int(again["spawn"]["pool_size"]) == shipped
+
+
+def test_a_feed_file_refuses_a_pool_that_is_not_a_count(tmp_path: Path) -> None:
+    """AC-RATE-15: a feed file refuses a pool that is not a count."""
+    path = tmp_path / "feed.yml"
+    path.write_text(
+        "rate_objects_per_second: 0.125\n"
+        "belt_speed_meters_per_second: 0.25\n"
+        "spacing_meters: [0.125, 0.125]\n"
+        "pool_size: 0\n"
+    )
+    with pytest.raises(WorldConfigError, match="pool_size"):
         FeedScenario.load(path)
 
 

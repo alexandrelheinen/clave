@@ -1040,8 +1040,9 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help=(
             "debug feed file naming a rate, a belt speed and a spacing for "
-            "this run. The shipped world file stays as it is. A --belt-speed "
-            "on the same command wins over the speed in the file"
+            "this run, and a pool size when the file names one. The shipped "
+            "world file stays as it is. A --belt-speed on the same command "
+            "wins over the speed in the file"
         ),
     )
     sim.add_argument(

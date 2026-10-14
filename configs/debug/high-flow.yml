@@ -7,24 +7,28 @@
 # objects per second, with the belt on the drive floor. That floor is
 # 0.25 m/s. The shipped setpoint of 0.125 objects per second asks for
 # 0.15 m/s at the shipped spacing, which the drive cannot do, so the
-# controller already sits at 0.25 m/s. This file keeps that setpoint and
-# that belt speed.
+# controller already sits at 0.25 m/s. 0.125 is not a belt speed.
 #
-# Ten times the v1.6.2 flow is 2.0 objects per second, which at 0.25 m/s
-# needs centers 0.125 m apart. The two largest packages, measured from
-# the compiled meshes, have bounding radii 0.091 m and 0.089 m. Centers
-# closer than 0.180 m can interpenetrate once a package tips onto its
-# long side. v1.6.3 ran the belt at 2.40 m/s to reach 2.0 objects per
-# second at the shipped spacing, and the arm picked nothing.
+# Ten times the v1.6.2 flow is 2.0 objects per second. At 0.25 m/s that
+# needs centers 0.125 m apart. v1.6.3 reached the rate by running the
+# belt at 2.40 m/s, and the arm picked nothing. v1.6.4 stopped at 0.22 m
+# because a package whose origin sat above the height tolerance was not
+# driven, became a wall, and the next package was pushed through it.
+# The drive now follows the bottom of the package. Centers may touch.
 #
-# 0.19 m clears those radii and still jams. A package that rolls into
-# the side guide stops being driven, the next one catches it, and the
-# step overflows. 0.20 m does the same on a thirty-second seed. 0.22 m
-# is the dense spacing at which that seed still finishes. At 0.25 m/s
-# the line then carries 0.25 / 0.22 = 1.14 objects per second. The
-# setpoint stays 0.125, below what the drive floor delivers, so the
-# controller holds the floor instead of speeding the belt up.
+# The belt is 3.00 m long and objects enter 0.08 m in from the upstream
+# end, so about 2.92 / 0.125 = 24 packages are on it at once when they
+# keep moving. A package that is touching its neighbour is not forced
+# through it, so the line can hold them longer than that transit, and a
+# thirty-second run then asks for about 60 packages. The shipped pool
+# is 22. 64 is above that ask, so the feeder does not stall while the
+# packages are still in the world.
+#
+# The setpoint stays 0.125, below what the drive floor delivers, so the
+# controller holds 0.25 m/s instead of speeding the belt up. The realised
+# rate is 0.25 / 0.125 = 2.0 objects per second.
 
 rate_objects_per_second: 0.125
 belt_speed_meters_per_second: 0.25
-spacing_meters: [0.22, 0.22]
+spacing_meters: [0.125, 0.125]
+pool_size: 64

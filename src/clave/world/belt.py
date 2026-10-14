@@ -27,6 +27,12 @@ the rotation stays where it is and the yaw is carried forward on the control
 side instead, which is written up in
 [measurements.md](measurements.md#what-the-reported-run-turned-out-to-be).
 
+**Rest is the bottom of the geometry, not the body origin.** Six of the ten
+packages stand with their origins more than the height tolerance above the
+belt. Driving from the origin left those packages still, and the next one was
+pushed through them until the step overflowed. The bottom of the collision
+geometry is what sits on the surface, so that is what the drive tests.
+
 An object that passes the reachable window is left alone. A real line does not
 stop, so an unpicked object is a throughput loss rather than a fault.
 """
@@ -306,6 +312,21 @@ class Conveyor:
         self.active.append(spawned)
         return spawned
 
+    def _park_slot(self, model: Any, data: Any, slot: int) -> None:
+        """Pin one pool slot clear of the belt."""
+        import mujoco
+
+        body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, f"object_{slot}")
+        address = model.jnt_qposadr[model.body_jntadr[body]]
+        velocity = model.jnt_dofadr[model.body_jntadr[body]]
+        data.qpos[address : address + 3] = [
+            PARKED_X + 0.3 * slot,
+            PARKED_X,
+            PARKED_Z,
+        ]
+        data.qpos[address + 3 : address + 7] = [1.0, 0.0, 0.0, 0.0]
+        data.qvel[velocity : velocity + 6] = 0.0
+
     def _hold_parked(self, model: Any, data: Any) -> None:
         """Pin every unspawned pool slot in place.
 
@@ -314,20 +335,9 @@ class Conveyor:
         identical from one run to the next, since a body settling under gravity
         is one more thing that would have to converge the same way twice.
         """
-        import mujoco
-
         parked = list(range(self._next_free, self.plan.pool_size)) + self._free
         for slot in parked:
-            body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, f"object_{slot}")
-            address = model.jnt_qposadr[model.body_jntadr[body]]
-            velocity = model.jnt_dofadr[model.body_jntadr[body]]
-            data.qpos[address : address + 3] = [
-                PARKED_X + 0.3 * slot,
-                PARKED_X,
-                PARKED_Z,
-            ]
-            data.qpos[address + 3 : address + 7] = [1.0, 0.0, 0.0, 0.0]
-            data.qvel[velocity : velocity + 6] = 0.0
+            self._park_slot(model, data, slot)
 
     def _claim(self) -> int | None:
         """Return a pool slot to spawn into, or None when the pool is full.
@@ -367,19 +377,37 @@ class Conveyor:
             body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, item.name)
             address = model.jnt_qposadr[model.body_jntadr[body]]
             x = float(data.qpos[address])
+            y = float(data.qpos[address + 1])
             z = float(data.qpos[address + 2])
-            # Off either end, or fallen below the belt into a chute or the
-            # floor. The upstream end is not a formality: a body that leaves
-            # the belt backwards is one no arm can reach and one the belt will
-            # not carry back, so leaving it in the pool is a slot held by an
-            # object the line has lost. Measured before this was here: an
-            # object parked 1.5 m upstream of the entrance stayed on the active
-            # list for 668 ticks while its slot was handed back and spawned
-            # into, which put two objects in one pool slot.
-            gone = x > past or x < -past or z < 0.05
+            bottom = _body_bottom(model, data, body)
+            # Off either end, fallen below the belt into a chute or the floor,
+            # or past a side guide while still at belt height. The upstream
+            # end is not a formality: a body that leaves the belt backwards is
+            # one no arm can reach and one the belt will not carry back, so
+            # leaving it in the pool is a slot held by an object the line has
+            # lost. Measured before this was here: an object parked 1.5 m
+            # upstream of the entrance stayed on the active list for 668 ticks
+            # while its slot was handed back and spawned into, which put two
+            # objects in one pool slot.
+            #
+            # A package that has climbed a side guide and stopped is the same
+            # kind of loss, and it is also a wall for the package behind it.
+            # A package the arm has lifted is above the height tolerance, and
+            # a package already over a chute mouth is a release, not a wall.
+            past_side = (
+                abs(y) > self.plan.belt.width / 2.0
+                and abs(x) <= past
+                and _near_surface(bottom, self.plan)
+                and not _beside_chute(x, y, self.plan)
+            )
+            gone = x > past or x < -past or z < 0.05 or past_side
             if gone:
                 self._free.append(item.index)
                 self._retired += 1
+                # Park before the next physics step. A body left where it
+                # fell still collides, which is the wall this return exists
+                # to remove.
+                self._park_slot(model, data, item.index)
             else:
                 staying.append(item)
         self.active = staying
@@ -413,19 +441,29 @@ class Conveyor:
                 self._due = self.spacing.sample(self.rng)
                 self._arrived.append(float(data.time))
 
+        # Spawn and parking write qpos without a forward pass. The bottom
+        # test reads geom poses, so those poses have to match qpos before
+        # anyone is driven. One kinematics pass, not another dynamics step.
+        mujoco.mj_kinematics(model, data)
+        # Forcing belt speed through a contact undoes the separation the
+        # solver just computed, and the next step rams the packages together
+        # until one of them leaves at a speed the belt never had.
+        touching = _packages_in_contact(mujoco, model, data)
+
         for item in self.active:
             body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, item.name)
             address = model.jnt_qposadr[model.body_jntadr[body]]
             velocity = model.jnt_dofadr[model.body_jntadr[body]]
             position = data.qpos[address : address + 3]
-            on_belt = _on_belt(position, self.plan)
-            if on_belt:
+            on_belt = _on_belt(position, self.plan, _body_bottom(model, data, body))
+            if on_belt and body not in touching:
                 # Drive travel only. Vertical motion and rotation stay with
                 # physics, so contacts with the chutes and the arm remain real.
                 data.qvel[velocity] = self.running
             elif _on_takeaway(position, self.plan):
                 # Drive sorted objects along the take-away conveyor away from the line.
                 data.qvel[velocity + 1] = -self.plan.takeaway.speed
+            _limit_speed(data, velocity, self.plan.belt.speed_limit)
             if on_belt and within_reach(
                 np.asarray(
                     (float(position[0]), float(position[1]), float(position[2])),
@@ -440,15 +478,135 @@ class Conveyor:
         return [item for item in self.active if item.entered_window]
 
 
-def _on_belt(position: Any, plan: SceneLayout) -> bool:
-    """Return whether a body is still resting in the driven belt region."""
+def _on_belt(position: Any, plan: SceneLayout, bottom: float | None = None) -> bool:
+    """Return whether a body is still resting in the driven belt region.
+
+    Args:
+        position: Body origin, in world meters. The horizontal test uses it.
+        plan: The resolved scene layout.
+        bottom: Lowest point of the collision geometry, in world meters.
+            When omitted, the origin height is used, which is the whole
+            body for a point with no extent.
+    """
+    height = float(position[2] if bottom is None else bottom)
+    return bool(
+        abs(float(position[0])) <= plan.belt.length / 2.0
+        and abs(float(position[1])) <= plan.belt.width / 2.0
+        and _near_surface(height, plan)
+    )
+
+
+def _near_surface(height: float, plan: SceneLayout) -> bool:
+    """Return whether a height is still within the belt's vertical band."""
     surface = plan.belt.surface_height
     tolerance = plan.belt.height_tolerance
-    return bool(
-        abs(position[0]) <= plan.belt.length / 2.0
-        and abs(position[1]) <= plan.belt.width / 2.0
-        and surface - tolerance < position[2] <= surface + tolerance
-    )
+    return bool(surface - tolerance < height <= surface + tolerance)
+
+
+def _geom_bottom(model: Any, data: Any, geom: int) -> float:
+    """Lowest world z of one geom's local box, after the geom's rotation."""
+    center = np.asarray(model.geom_aabb[geom, :3], dtype=np.float64)
+    half = np.asarray(model.geom_aabb[geom, 3:], dtype=np.float64)
+    row = np.asarray(data.geom_xmat[geom], dtype=np.float64).reshape(3, 3)[2]
+    return float(data.geom_xpos[geom][2] + row @ center - np.abs(row) @ half)
+
+
+def _body_bottom(model: Any, data: Any, body: int) -> float:
+    """Lowest world z of a body's collision geometry.
+
+    A marker painted above a package is not collision geometry, and it must
+    not lift this answer off the mesh that actually rests on the belt.
+
+    Args:
+        model: The compiled model.
+        data: Its state. Kinematics have to be current.
+        body: Body id.
+
+    Returns:
+        The lowest collision point, or the origin height when the body has
+        no geometry.
+    """
+    start = int(model.body_geomadr[body])
+    count = int(model.body_geomnum[body])
+    lowest: float | None = None
+    any_bottom: float | None = None
+    for geom in range(start, start + count):
+        z = _geom_bottom(model, data, geom)
+        if any_bottom is None or z < any_bottom:
+            any_bottom = z
+        collides = (
+            int(model.geom_contype[geom]) != 0 or int(model.geom_conaffinity[geom]) != 0
+        )
+        if collides and (lowest is None or z < lowest):
+            lowest = z
+    if lowest is not None:
+        return lowest
+    if any_bottom is not None:
+        return any_bottom
+    address = int(model.jnt_qposadr[int(model.body_jntadr[body])])
+    return float(data.qpos[address + 2])
+
+
+def _limit_speed(data: Any, velocity: int, limit: float) -> None:
+    """Cut a package's linear velocity back to the belt's speed limit.
+
+    Args:
+        data: The state, modified in place.
+        velocity: Index of the body's first linear degree of freedom.
+        limit: Fastest component allowed, in meters per second.
+    """
+    for axis in range(3):
+        value = float(data.qvel[velocity + axis])
+        if value > limit:
+            data.qvel[velocity + axis] = limit
+        elif value < -limit:
+            data.qvel[velocity + axis] = -limit
+
+
+def _packages_in_contact(mujoco: Any, model: Any, data: Any) -> set[int]:
+    """Return body ids of packages that are touching another package.
+
+    Args:
+        mujoco: The imported module.
+        model: The compiled model.
+        data: Its state, after the dynamics step that resolved contacts.
+    """
+    touching: set[int] = set()
+    for index in range(int(data.ncon)):
+        first = int(model.geom_bodyid[int(data.contact[index].geom1)])
+        second = int(model.geom_bodyid[int(data.contact[index].geom2)])
+        if first == second:
+            continue
+        first_name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, first) or ""
+        second_name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, second) or ""
+        if first_name.startswith("object_") and second_name.startswith("object_"):
+            touching.add(first)
+            touching.add(second)
+    return touching
+
+
+def _beside_chute(x: float, y: float, plan: SceneLayout) -> bool:
+    """Return whether a point is inside a chute mouth.
+
+    The mouth is the opening the arm releases over, not the take-away
+    that runs on past it. A package lowered into that opening passes
+    through belt height on its way down, and returning it to the pool
+    would remove it before the place is counted. A package that has
+    stopped on the lip, short of the opening, is still a wall.
+
+    Args:
+        x: World x, in meters.
+        y: World y, in meters.
+        plan: The resolved scene layout.
+    """
+    half_x = plan.mouth[0] / 2.0
+    half_y = plan.mouth[1] / 2.0
+    if half_x <= 0.0 or half_y <= 0.0:
+        return False
+    for cx, cy, _ in plan.chutes.values():
+        if abs(x - float(cx)) <= half_x and abs(y - float(cy)) <= half_y:
+            return True
+    return False
 
 
 def _on_takeaway(position: Any, plan: SceneLayout) -> bool:
