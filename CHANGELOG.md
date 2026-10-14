@@ -11,10 +11,12 @@ A closer feed on the belt the shipped line already runs.
   The arm had no interception and picked nothing.
 - `configs/debug/high-flow.yml` keeps the shipped setpoint of 0.125
   objects per second and the drive floor of 0.25 m/s, and spaces package
-  centers at 0.19 m. The two largest packages have bounding radii that
+  centers at 0.22 m. The two largest packages have bounding radii that
   sum to 0.180 m, so 0.125 m centers, which ten times the flow would
   need at this belt speed, can interpenetrate once a package tips.
-- At 0.25 m/s and 0.19 m the line carries 1.32 objects per second. The
+  0.19 m clears those radii and still jams: a stalled package is caught
+  by the next one and the step overflows.
+- At 0.25 m/s and 0.22 m the line carries 1.14 objects per second. The
   controller holds the drive floor because the setpoint is below what
   that floor delivers. The shipped world file is unchanged.
 

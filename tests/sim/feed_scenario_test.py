@@ -41,8 +41,9 @@ def test_high_flow_spacing_clears_the_two_largest_packages() -> None:
     """AC-RATE-13: high-flow spacing clears the two largest packages.
 
     The bound is the sum of the bounding radii about each mesh origin.
-    Centers closer than that can interpenetrate at some orientation. The
-    file sits just above the bound, which is the dense end of the clearance.
+    Centers closer than that can interpenetrate at some orientation.
+    0.19 m clears the bound and still jams, so the file sits a little
+    above it: the dense spacing at which a thirty-second seed finishes.
     """
     mujoco = pytest.importorskip("mujoco")
     import numpy as np
@@ -65,4 +66,4 @@ def test_high_flow_spacing_clears_the_two_largest_packages() -> None:
     radii.sort(reverse=True)
     clearance = radii[0] + radii[1]
     assert scenario.spacing.low > clearance
-    assert scenario.spacing.low <= clearance + 0.015
+    assert scenario.spacing.low <= clearance + 0.05
