@@ -317,9 +317,9 @@ def run(
         routing_path: A routing file for this run. Absent, each object stays
             on the channel its class maps to. The shipped runtime file is
             not what this argument reads.
-        feed_path: A debug feed file naming a rate and a belt speed for this
-            run, or None to keep the shipped setpoint. The shipped world
-            file is not edited.
+        feed_path: A debug feed file naming a rate, a belt speed and a
+            spacing for this run, or None to keep the shipped line. The
+            shipped world file is not edited.
 
     Returns:
         The report.
@@ -413,10 +413,13 @@ def run(
     if belt_speed is not None:
         plan = replace(plan, belt=replace(plan.belt, speed=belt_speed))
     spawn = config.require(raw, "spawn")
+    spacing = config.require_range(spawn, "spacing_meters", "spawn")
+    if scenario is not None:
+        spacing = scenario.spacing
     conveyor = belt.Conveyor(
         plan,
         np.random.default_rng(seed),
-        config.require_range(spawn, "spacing_meters", "spawn"),
+        spacing,
         config.require_range(spawn, "lateral_offset_meters", "spawn"),
         config.require_range(spawn, "drop_height_meters", "spawn"),
         entry_margin=float(config.require(spawn, "entry_margin_meters", "spawn")),

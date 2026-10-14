@@ -1,17 +1,27 @@
-# A feed faster than one arm clears, for one run.
+# A closer feed for one run, on the belt the shipped line already runs.
 #
-# The shipped setpoint stays in configs/world/sorting_line.yml. Ask for
-# this file with `clave sim --feed configs/debug/high-flow.yml`.
+# Ask for this file with `clave sim --feed configs/debug/high-flow.yml`.
+# The shipped world file is not edited.
 #
-# The v1.6.2 seed, thirty seconds of ground truth, carried about six
-# arrivals, near 0.2 objects per second. Ten times that flow is 2.0
-# objects per second. Mean spacing on the shipped line is 1.20 m, so
-# the belt has to run at 2.40 m/s. The shipped drive is 0.25 to 0.35 m/s
-# and cannot deliver this rate. Passing --belt-speed alone does not
-# hold it: the controller trims speed back toward the shipped setpoint.
+# The v1.6.2 seed carried about six arrivals in thirty seconds, near 0.2
+# objects per second, with the belt on the drive floor. That floor is
+# 0.25 m/s. The shipped setpoint of 0.125 objects per second asks for
+# 0.15 m/s at the shipped spacing, which the drive cannot do, so the
+# controller already sits at 0.25 m/s. This file keeps that setpoint and
+# that belt speed.
 #
-# This file does not add an arm. The task machine, the chutes and the
-# safety envelope stay one arm.
+# Ten times the v1.6.2 flow is 2.0 objects per second, which at 0.25 m/s
+# needs centers 0.125 m apart. The two largest packages, measured from
+# the compiled meshes, have bounding radii 0.091 m and 0.089 m. Centers
+# closer than 0.180 m can interpenetrate once a package tips onto its
+# long side. v1.6.3 ran the belt at 2.40 m/s to reach 2.0 objects per
+# second at the shipped spacing, and the arm picked nothing.
+#
+# 0.19 m is the dense spacing that still clears those two radii. At
+# 0.25 m/s the line then carries 0.25 / 0.19 = 1.32 objects per second.
+# The setpoint stays 0.125, below what the drive floor delivers, so the
+# controller holds the floor instead of speeding the belt up.
 
-rate_objects_per_second: 2.0
-belt_speed_meters_per_second: 2.4
+rate_objects_per_second: 0.125
+belt_speed_meters_per_second: 0.25
+spacing_meters: [0.19, 0.19]

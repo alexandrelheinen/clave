@@ -1039,9 +1039,9 @@ def _build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=None,
         help=(
-            "debug feed file naming a rate and a belt speed for this run. "
-            "The shipped world file stays as it is. A --belt-speed on the "
-            "same command wins over the speed in the file"
+            "debug feed file naming a rate, a belt speed and a spacing for "
+            "this run. The shipped world file stays as it is. A --belt-speed "
+            "on the same command wins over the speed in the file"
         ),
     )
     sim.add_argument(
