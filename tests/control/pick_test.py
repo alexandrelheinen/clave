@@ -19,6 +19,7 @@ from clave.control.pick import (
     JAW_SHUT,
     Plan,
     nearer_parallel_yaw,
+    parallel_yaw_error,
     plan_pick,
     refine,
     retarget_descent,
@@ -908,6 +909,18 @@ def test_commanded_yaw_picks_the_nearer_parallel_grip() -> None:
     # Target near −π/2 while the tool sits near +π/2: flipping lands closer.
     chosen = nearer_parallel_yaw(-math.pi / 2.0, math.pi / 2.0)
     assert chosen == pytest.approx(math.pi / 2.0, abs=1e-9)
+
+
+def test_a_parallel_jaw_folds_yaw_error_into_a_right_angle() -> None:
+    """AC-BEHAVE-05: 44 degrees is a miss and 46 degrees is the same grip flipped."""
+    assert parallel_yaw_error(0.0, 0.0) == pytest.approx(0.0)
+    assert parallel_yaw_error(0.0, math.radians(17.0)) == pytest.approx(
+        math.radians(17.0), abs=1e-9
+    )
+    assert parallel_yaw_error(0.0, math.radians(44.0)) == pytest.approx(
+        math.radians(44.0), abs=1e-9
+    )
+    assert parallel_yaw_error(0.0, math.radians(90.0)) == pytest.approx(0.0, abs=1e-9)
 
 
 def test_descent_retarget_does_not_project_lateral_drift() -> None:

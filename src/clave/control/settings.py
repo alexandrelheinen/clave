@@ -14,6 +14,7 @@ controller aims inside cannot drift from the region the safety layer enforces.
 from __future__ import annotations
 
 import enum
+import math
 from dataclasses import dataclass
 from typing import Any
 
@@ -132,6 +133,25 @@ class TaskSettings:
         closing_rise_seconds: How long the flange rises while the jaw closes
             at the start of a hold.
         leg_samples: Poses per plan leg in the trusted-region check.
+        release_dwell_seconds: How long the arm stays over the chute with the
+            jaw opening after a visit's arcs run out. Zero finishes the visit
+            on the tick the plan ends.
+        grasp_yaw_tolerance: How far the tool may stand from the commanded
+            grasp yaw, in radians, before the jaw is allowed to close. Folded
+            into the right angle a parallel jaw is symmetric about.
+        grasp_align_limit_seconds: How long the wrist may keep the jaw open
+            at the grasp pose while it catches that yaw. Past it the visit is
+            given up before the jaw closes, so it is not an attempt.
+        grasp_seat_fraction: How far the driver joint has to travel, as a
+            fraction of its stroke, before the rise may lift the pinch. The
+            dwell is the backup when a package stops the fingers short of it.
+        grasp_gap_limit: How far the nearest object may sit from the pinch,
+            in meters, at the moment the jaw would close. Farther than this,
+            the visit is given up before the jaw shuts.
+        release_belt_margin: How much of the belt ride during a close is
+            left on the release, in meters. The part of the ride past this
+            is given back, so the release stays inside the mouth and the
+            pinch is not dragged back by the whole wait.
     """
 
     profile: Profile
@@ -149,6 +169,12 @@ class TaskSettings:
     closing_rise_seconds: float
     leg_samples: int
     safe_clearance: float | None = None
+    release_dwell_seconds: float = 0.0
+    grasp_yaw_tolerance: float = math.pi
+    grasp_align_limit_seconds: float = 0.50
+    grasp_seat_fraction: float = 0.70
+    grasp_gap_limit: float = 0.025
+    release_belt_margin: float = 0.08
 
     def __init__(
         self,
@@ -167,6 +193,12 @@ class TaskSettings:
         drift_horizon: float | None = None,
         closing_rise_seconds: float | None = None,
         leg_samples: int | None = None,
+        release_dwell_seconds: float = 0.0,
+        grasp_yaw_tolerance: float = math.pi,
+        grasp_align_limit_seconds: float = 0.50,
+        grasp_seat_fraction: float = 0.70,
+        grasp_gap_limit: float = 0.025,
+        release_belt_margin: float = 0.08,
         *,
         park_position: NDArray[np.float64] | None = None,
     ) -> None:
@@ -204,6 +236,12 @@ class TaskSettings:
         object.__setattr__(self, "drift_horizon", drift_horizon)
         object.__setattr__(self, "closing_rise_seconds", closing_rise_seconds)
         object.__setattr__(self, "leg_samples", leg_samples)
+        object.__setattr__(self, "release_dwell_seconds", release_dwell_seconds)
+        object.__setattr__(self, "grasp_yaw_tolerance", grasp_yaw_tolerance)
+        object.__setattr__(self, "grasp_align_limit_seconds", grasp_align_limit_seconds)
+        object.__setattr__(self, "grasp_seat_fraction", grasp_seat_fraction)
+        object.__setattr__(self, "grasp_gap_limit", grasp_gap_limit)
+        object.__setattr__(self, "release_belt_margin", release_belt_margin)
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, TaskSettings):
@@ -231,6 +269,12 @@ class TaskSettings:
             and self.drift_horizon == other.drift_horizon
             and self.closing_rise_seconds == other.closing_rise_seconds
             and self.leg_samples == other.leg_samples
+            and self.release_dwell_seconds == other.release_dwell_seconds
+            and self.grasp_yaw_tolerance == other.grasp_yaw_tolerance
+            and self.grasp_align_limit_seconds == other.grasp_align_limit_seconds
+            and self.grasp_seat_fraction == other.grasp_seat_fraction
+            and self.grasp_gap_limit == other.grasp_gap_limit
+            and self.release_belt_margin == other.release_belt_margin
         )
 
     @property
@@ -378,6 +422,18 @@ class ControlSettings:
                 drift_horizon=_positive(task, "drift_horizon_seconds", "task"),
                 closing_rise_seconds=_positive(task, "closing_rise_seconds", "task"),
                 leg_samples=int(require(task, "leg_samples", "task")),
+                release_dwell_seconds=_positive(task, "release_dwell_seconds", "task"),
+                grasp_yaw_tolerance=_positive(
+                    task, "grasp_yaw_tolerance_radians", "task"
+                ),
+                grasp_align_limit_seconds=_positive(
+                    task, "grasp_align_limit_seconds", "task"
+                ),
+                grasp_seat_fraction=_positive(task, "grasp_seat_fraction", "task"),
+                grasp_gap_limit=_positive(task, "grasp_gap_limit_meters", "task"),
+                release_belt_margin=_positive(
+                    task, "release_belt_margin_meters", "task"
+                ),
             ),
             motion=MotionSettings(
                 max_speed=_positive(motion, "max_speed_meters_per_second", "motion"),

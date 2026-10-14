@@ -75,11 +75,11 @@ and when.
 
 Versions already tagged stay where they are. v1.2.0, v1.4.0 and v1.5.0 were
 named while the work was open and were never tagged. The latest tag is
-v1.6.5. v1.6.0 remains the feed-rate minor. v1.6.2 is the
+v1.6.4. v1.6.0 remains the feed-rate minor. v1.6.2 is the
 probabilistic-sorting patch. v1.6.3 asked one run for a faster belt,
-v1.6.4 closed the spacing to 0.22 m, and v1.6.5 drives a resting
-package from the bottom of its geometry so the same belt can carry
-centers at 0.125 m. They do not close a ladder step. The work that was still open under the
+v1.6.4 closed the spacing to 0.22 m, and v1.6.5 drives a crushed
+package from the bottom of its geometry, holding it to the belt until
+the arm touches it, so the same belt can carry centers at 0.125 m. They do not close a ladder step. The work that was still open under the
 earlier names continues as v1.7.0, v1.8.0
 and v1.9.0. A later minor is greater than v1.6.0.
 
@@ -116,13 +116,19 @@ demo. The same debug feed file kept the belt at the drive floor,
 0.25 m/s, and spaced package centers at 0.22 m, because a closer gap
 stalled a package the origin test was not driving.
 
-**v1.6.5.** Tagged. The belt drives a package from the bottom of its
-geometry, so a tall package resting on the surface moves at belt speed
-even when its origin is above the height tolerance. The high-flow file
-spaces centers at 0.125 m, which at 0.25 m/s is 2.0 objects per second.
-Packages may touch. The shipped setpoint of 0.125 is objects per
-second, and the belt it produces is the drive floor, 0.25 m/s. A
-second arm is not part of this patch.
+**v1.6.5.** The belt drives a package from the bottom of its
+geometry, so a package resting on the surface moves at belt speed
+even when its origin is above the height tolerance. Each package is
+turned onto a flat face the jaw can still close on, and a taller face
+is crushed to the configured height. A round package stands on its
+flat end. Until the arm touches it, it travels with the belt and does
+not roll, slide, or tumble. The constraint stops at that contact, so
+the grasp lifts it. The high-flow file spaces centers at 0.125 m,
+which at 0.25 m/s is 2.0 objects per second. Packages may touch. The
+shipped setpoint of 0.125 is objects per second, and the belt it
+produces is the drive floor, 0.25 m/s. A pick counts as an attempt
+only once the jaw shuts, and every attempt on the seed-0 thirty
+second run was placed. A second arm is not part of this patch.
 
 | Version | Spec | What lands | State |
 | --- | --- | --- | --- |

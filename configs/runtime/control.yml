@@ -85,6 +85,48 @@ task:
   # full stroke closure and stable pad contact before retreat.
   dwell_seconds: 0.40
 
+  # How long the arm stays over the chute after the arcs run out, with the
+  # jaw opening. A release that lands on a capture starts the next visit
+  # while the fingers are still shut, and the object is dragged back off
+  # the mouth. Object 1, released with the arm still, crossed the mouth
+  # 0.21 s after the open command. The linkage takes 0.40 s to open, which
+  # is the same stroke it takes to close, so the arm waits that long.
+  release_dwell_seconds: 0.40
+
+  # How far the tool may stand from the commanded grasp yaw, in radians,
+  # before the jaw is allowed to close. Folded into the 90 degrees a
+  # parallel jaw is symmetric about, so the bound is at most 45 degrees.
+  # A hold at 17 degrees kept the object. A close at 44 degrees did not.
+  # 0.35 rad is 20 degrees.
+  grasp_yaw_tolerance_radians: 0.35
+
+  # How long the wrist may hold the jaw open at the grasp pose while it
+  # catches that yaw. The wrist's joint cap is 2.09 rad/s, and 45 degrees
+  # is 0.38 s at that cap. 0.50 s covers it. Past the limit the visit is
+  # given up before the jaw closes, and the object is not an attempt.
+  grasp_align_limit_seconds: 0.50
+
+  # How far the driver joint has to travel, as a fraction of its stroke,
+  # before the hold may lift the pinch. The pads meet a package before the
+  # joint hits its stop. 0.70 is that meeting. A package that stops the
+  # fingers short of it still gets the dwell, which is the measured close.
+  grasp_seat_fraction: 0.70
+
+  # How far the nearest object may sit from the pinch, in meters, before
+  # the jaw is allowed to close. On the seed-0 high-flow run, gaps of
+  # 10, 15 and 17 mm were held and a gap of 36 mm was not. 25 mm sits
+  # between those. A visit past the limit is given up before the close,
+  # so it is not an attempt.
+  grasp_gap_limit_meters: 0.025
+
+  # How much of the belt ride during a close is left on the release, in
+  # meters. The command rides forward with the package while the clock
+  # waits. Giving the whole ride back yanks a pinch that is already on
+  # the package. The mouth is 0.22 m along the belt, so 0.08 m of residual
+  # still lands inside it, with room for a package that is not on the
+  # centre of the pinch.
+  release_belt_margin_meters: 0.08
+
   # How far above the object a planned approach ends, and how far the retreat
   # lifts it afterwards.
   #

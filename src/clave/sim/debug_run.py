@@ -663,6 +663,11 @@ def run(
     # object was resting when the plan was made. A visit can be perfect and
     # this still read zero, which is the whole point of measuring it apart.
     lifts: list[float] = []
+    # Taken when the jaw is commanded open over the chute, not when the
+    # release dwell ends. By then the object has fallen and the nearest
+    # body is whatever is still on the belt.
+    release_lift: float | None = None
+    previous_grip = 0.0
     # The arm's own vertical motion, integrated at the physics rate rather than
     # sampled at the capture rate: a grasp that slips unloads the arm mid-lift
     # and that is an acceleration lasting ticks, where every pose the plan asks
@@ -861,7 +866,40 @@ def run(
             place = _flange(indices, data)
             was_active = task.active
             active_track = None if task.plan is None else task.plan.track_id
-            flown = task.tick(data.time, place)
+            object_yaw = None
+            pinch_gap = None
+            if use_ground_truth:
+                under_jaw = _in_the_jaw(
+                    mujoco, model, data, conveyor, _pinch(indices, data)
+                )
+                if under_jaw is not None:
+                    pinch_gap = under_jaw[1]
+                    short_axis = _short_axis_degrees(mujoco, model, data, under_jaw[0])
+                    if short_axis is not None:
+                        object_yaw = math.radians(short_axis)
+            driver = mujoco.mj_name2id(
+                model, mujoco.mjtObj.mjOBJ_JOINT, "arm_grip_right_driver_joint"
+            )
+            jaw_travel = None
+            if driver >= 0:
+                low, high = model.jnt_range[driver]
+                span = float(high - low)
+                if span > 0.0:
+                    travelled = float(data.qpos[model.jnt_qposadr[driver]]) - float(low)
+                    jaw_travel = travelled / span
+            # One step short of the clock the loop actually reaches, so a
+            # close that would finish on a tick this run never takes is
+            # given up before the jaw shuts.
+            horizon = seconds - float(data.time) - float(plan.timestep)
+            flown = task.tick(
+                data.time,
+                place,
+                tool_yaw=armmod.tool_yaw(data, indices),
+                object_yaw=object_yaw,
+                jaw_travel=jaw_travel,
+                seconds_left=max(0.0, horizon),
+                pinch_gap=pinch_gap,
+            )
             rise = (place[2] - last_flange_z) / plan.timestep
             accel_sample = abs(rise - last_rise) / plan.timestep
             if flown is not None or was_active:
@@ -881,7 +919,22 @@ def run(
                     aim=flown.position,
                 )
                 armmod.hold(data, indices, flown.grip)
-                if flown.phase is Phase.HOLD and len(gaps) < len(lifts) + 1:
+                if previous_grip >= 0.5 and flown.grip < 0.5 and release_lift is None:
+                    opened_on = _in_the_jaw(
+                        mujoco, model, data, conveyor, _pinch(indices, data)
+                    )
+                    release_lift = (
+                        0.0
+                        if opened_on is None or opened_on[0] not in resting
+                        else _object_place(mujoco, model, data, opened_on[0])[2]
+                        - resting[opened_on[0]]
+                    )
+                previous_grip = flown.grip
+                if (
+                    flown.phase is Phase.HOLD
+                    and flown.grip >= 0.5
+                    and len(gaps) < len(lifts) + 1
+                ):
                     # The first tick of the hold is the instant the jaw
                     # reaches the object, which is the one a pick is decided
                     # on. Later ticks are the carry.
@@ -920,28 +973,36 @@ def run(
                 motion = Reference(position=command.position, speed=command.speed)
             elif was_active:
                 telemetry_phase = Phase.STANDBY
-                # The plan ran out on this tick and the visit is recorded.
-                # Open the jaw, stand still, and let the next capture decide.
+                # The plan ran out on this tick. Open the jaw and stand
+                # still. A visit given up before the jaw shut is not an
+                # attempt, and it does not get a lift (`AC-BEHAVE-05`).
                 armmod.hold(data, indices, JAW_OPEN)
-                nearest = _in_the_jaw(
-                    mujoco, model, data, conveyor, _pinch(indices, data)
-                )
-                lift = (
-                    0.0
-                    if nearest is None or nearest[0] not in resting
-                    else _object_place(mujoco, model, data, nearest[0])[2]
-                    - resting[nearest[0]]
-                )
-                lifts.append(lift)
-                story.visit_ended(
-                    data.time,
-                    active_track,
-                    lift,
-                    held=lift >= GRASPED_METERS,
-                )
-                lurches.append(lurch)
-                climbs.append(climb)
+                if task.last_visit_closed:
+                    nearest = _in_the_jaw(
+                        mujoco, model, data, conveyor, _pinch(indices, data)
+                    )
+                    lift = (
+                        release_lift
+                        if release_lift is not None
+                        else (
+                            0.0
+                            if nearest is None or nearest[0] not in resting
+                            else _object_place(mujoco, model, data, nearest[0])[2]
+                            - resting[nearest[0]]
+                        )
+                    )
+                    lifts.append(lift)
+                    story.visit_ended(
+                        data.time,
+                        active_track,
+                        lift,
+                        held=lift >= GRASPED_METERS,
+                    )
+                    lurches.append(lurch)
+                    climbs.append(climb)
                 lurch, climb = 0.0, 0.0
+                release_lift = None
+                previous_grip = 0.0
                 resting = {}
                 goal = None
                 moving = zeros()
@@ -1369,6 +1430,7 @@ def run(
         reorders=reorders,
         head_churn=head_churn,
         served=task.served,
+        attempted=len(lifts) + (1 if task.active and task.jaw_committed else 0),
         missed=task.missed,
         arrivals=task.arrivals,
         lifts=tuple(lifts),

@@ -1244,3 +1244,205 @@ def test_a_motion_only_visit_narrates_the_track_and_the_arrival() -> None:
         "count the visit to object 7" in line and line.endswith(": success")
         for line in lines
     )
+
+
+def test_the_arm_holds_the_release_until_the_object_can_fall() -> None:
+    """AC-BEHAVE-05: the next visit cannot start while the jaw is still shut."""
+    arm = machine(profile=Profile.FULL_VISIT, release_dwell_seconds=0.25)
+    only = candidate(1, x=0.30)
+    arm.step(queue_of(only), PARK, 0.0)
+    assert arm.plan is not None
+    end = arm.plan.started_at + arm.plan.duration
+    at_seconds = 0.0
+    last = None
+    while at_seconds <= end + 1e-9:
+        at_seconds += 0.01
+        last = arm.tick(at_seconds, PARK)
+        assert last is not None
+    opened = arm.tick(end + 0.02, PARK)
+    assert opened is not None
+    assert opened.grip == pytest.approx(0.0)
+    assert opened.velocity == pytest.approx((0.0, 0.0, 0.0))
+    assert last is not None
+    assert opened.position == pytest.approx(last.position)
+    still = arm.tick(end + 0.20, PARK)
+    assert still is not None
+    assert still.grip == pytest.approx(0.0)
+    held_open = arm.served
+    assert held_open == ()
+    assert arm.tick(end + 0.30, PARK) is None
+    closed = arm.served
+    assert closed == (1,)
+    assert arm.last_visit_closed is True
+
+
+def test_the_jaw_stays_open_until_the_wrist_matches() -> None:
+    """AC-BEHAVE-05: a late yaw holds the jaw open, then closes once it matches."""
+    arm = machine(
+        profile=Profile.FULL_VISIT,
+        grasp_yaw_tolerance=0.20,
+        grasp_align_limit_seconds=1.0,
+    )
+    arm.step(queue_of(candidate(1, x=0.30)), PARK, 0.0)
+    assert arm.plan is not None
+    # 0.8 rad is about 46 degrees, which folds to a miss of about 44 degrees.
+    off = (arm.plan.target_yaw or 0.0) + 0.8
+    at_seconds = 0.0
+    waiting = None
+    while at_seconds < 8.0:
+        at_seconds += 0.01
+        flown = arm.tick(at_seconds, PARK, tool_yaw=off)
+        if flown is not None and flown.phase is Phase.HOLD:
+            waiting = flown
+            break
+    assert waiting is not None
+    assert waiting.grip == pytest.approx(0.0)
+    held = waiting.position.copy()
+    later = arm.tick(at_seconds + 0.05, PARK, tool_yaw=off)
+    assert later is not None
+    assert later.grip == pytest.approx(0.0)
+    assert later.position[2] == pytest.approx(held[2])
+    assert later.position[0] == pytest.approx(held[0] + BELT_SPEED * 0.05)
+    matched = arm.tick(at_seconds + 0.06, PARK, tool_yaw=waiting.yaw)
+    assert matched is not None
+    assert matched.grip == pytest.approx(1.0)
+    assert arm.served == ()
+
+
+def test_a_wrist_that_cannot_match_is_not_an_attempt() -> None:
+    """AC-BEHAVE-05: giving up before the jaw shuts does not count as a pick."""
+    arm = machine(
+        profile=Profile.FULL_VISIT,
+        grasp_yaw_tolerance=0.05,
+        grasp_align_limit_seconds=0.12,
+    )
+    arm.step(queue_of(candidate(1, x=0.30)), PARK, 0.0)
+    assert arm.plan is not None
+    off = (arm.plan.target_yaw or 0.0) + 0.8
+    at_seconds = 0.0
+    finished = None
+    while at_seconds < 8.0:
+        at_seconds += 0.01
+        finished = arm.tick(at_seconds, PARK, tool_yaw=off)
+        if finished is None:
+            break
+    assert finished is None
+    assert arm.served == ()
+    assert arm.last_visit_closed is False
+    assert arm.abandoned
+    assert "grasp yaw" in arm.abandoned[0][1]
+
+
+def test_the_rise_waits_until_the_fingers_have_closed() -> None:
+    """AC-BEHAVE-05: the pinch stays down until the fingers have seated."""
+    arm = machine(
+        profile=Profile.FULL_VISIT,
+        grasp_seat_fraction=0.70,
+        dwell_seconds=0.40,
+    )
+    arm.step(queue_of(candidate(1, x=0.30)), PARK, 0.0)
+    at_seconds = 0.0
+    seated = None
+    while at_seconds < 8.0:
+        at_seconds += 0.01
+        seated = arm.tick(at_seconds, PARK, jaw_travel=0.0, seconds_left=30.0)
+        if seated is not None and seated.phase is Phase.HOLD and seated.grip >= 0.5:
+            break
+    assert seated is not None
+    assert seated.grip == pytest.approx(1.0)
+    held = seated.position.copy()
+    still = arm.tick(at_seconds + 0.20, PARK, jaw_travel=0.2, seconds_left=30.0)
+    assert still is not None
+    assert still.grip == pytest.approx(1.0)
+    assert still.position[2] == pytest.approx(held[2])
+    assert still.position[0] == pytest.approx(held[0] + BELT_SPEED * 0.20)
+    assert arm.jaw_committed is True
+    arm.tick(at_seconds + 0.21, PARK, jaw_travel=0.90, seconds_left=30.0)
+    carried = arm.tick(at_seconds + 0.45, PARK, jaw_travel=0.90, seconds_left=30.0)
+    assert carried is not None
+    # The pinch rode the belt while the fingers closed, and the clock was
+    # still on the grasp. Once they have seated it, the rise may start.
+    assert carried.position[2] >= held[2] - 1e-6
+    assert carried.position[0] > held[0] + BELT_SPEED * 0.30
+
+
+def test_a_close_that_cannot_finish_is_not_an_attempt() -> None:
+    """AC-BEHAVE-05: a release that would outlast the run never shuts the jaw."""
+    arm = machine(profile=Profile.FULL_VISIT, release_dwell_seconds=0.40)
+    arm.step(queue_of(candidate(1, x=0.30)), PARK, 0.0)
+    at_seconds = 0.0
+    finished = None
+    while at_seconds < 8.0:
+        at_seconds += 0.01
+        finished = arm.tick(at_seconds, PARK, jaw_travel=0.0, seconds_left=0.05)
+        if finished is None and arm.abandoned:
+            break
+    assert finished is None
+    assert arm.served == ()
+    assert arm.last_visit_closed is False
+    assert arm.jaw_committed is False
+    assert arm.abandoned
+    assert "end of the run" in arm.abandoned[0][1]
+
+
+def test_a_far_object_is_not_an_attempt() -> None:
+    """AC-BEHAVE-05: a pinch that is not on the object never shuts the jaw."""
+    arm = machine(profile=Profile.FULL_VISIT, grasp_gap_limit=0.025)
+    arm.step(queue_of(candidate(1, x=0.30)), PARK, 0.0)
+    at_seconds = 0.0
+    finished = None
+    while at_seconds < 8.0:
+        at_seconds += 0.01
+        finished = arm.tick(at_seconds, PARK, pinch_gap=0.036, seconds_left=30.0)
+        if finished is None and arm.abandoned:
+            break
+    assert finished is None
+    assert arm.served == ()
+    assert arm.last_visit_closed is False
+    assert arm.jaw_committed is False
+    assert "too far from the pinch" in arm.abandoned[0][1]
+
+
+def test_the_release_is_still_the_planned_chute() -> None:
+    """AC-BEHAVE-05: the release stays within the margin of the planned chute."""
+    chute = np.asarray((0.90, -0.80, BELT_SURFACE), dtype=np.float64)
+    margin = 0.08
+    arm = machine(
+        profile=Profile.FULL_VISIT,
+        dwell_seconds=0.40,
+        release_belt_margin=margin,
+        chutes={"CH-HDPE": chute},
+    )
+    aimed_at = Candidate(
+        track_id=1,
+        anchor=np.asarray((0.30, 0.0, PINCH_Z), dtype=np.float64),
+        flange=np.asarray((0.30, 0.0, PICK_Z), dtype=np.float64),
+        closing_axis=math.pi / 2.0,
+        distance_before_leaving=1.5,
+        channel="CH-HDPE",
+    )
+    arm.step(queue_of(aimed_at), PARK, 0.0)
+    assert arm.plan is not None
+    aimed = arm.plan.legs[-1].segment.end.position.copy()
+    at_seconds = 0.0
+    while at_seconds < 12.0:
+        at_seconds += 0.01
+        flown = arm.tick(at_seconds, PARK, jaw_travel=0.0, seconds_left=30.0)
+        if flown is not None and flown.phase is Phase.HOLD and flown.grip >= 0.5:
+            break
+    # The seat rides the pinch forward with the belt. Only the part of that
+    # ride past the margin is given back, so the release lands one margin
+    # downstream of the chute the plan aimed at.
+    for _ in range(80):
+        at_seconds += 0.01
+        arm.tick(at_seconds, PARK, jaw_travel=0.2, seconds_left=30.0)
+    last = None
+    while at_seconds < 20.0:
+        at_seconds += 0.01
+        flown = arm.tick(at_seconds, PARK, jaw_travel=1.0, seconds_left=30.0)
+        if flown is None:
+            break
+        last = flown
+    assert last is not None
+    assert arm.served == (1,)
+    assert last.position[0] == pytest.approx(float(aimed[0]) + margin, abs=0.015)
