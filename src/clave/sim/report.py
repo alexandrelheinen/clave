@@ -47,6 +47,10 @@ class DebugRunReport:
             rebuild that keeps its head costs nothing, and one that does not
             sends the arm somewhere else mid-traverse.
         served: Tracks the arm finished a visit to.
+        attempted: Picks the arm closed the jaw on, including one still in
+            the air when the run ended. An object the arm let pass, and a
+            visit given up before the jaw shut, are not attempts. The count
+            of places has to match this (`AC-BEHAVE-05`).
         missed: Tracks no interception existed for, which the arm gave up
             rather than chased. Distinct from a fault: the pose was fine and
             the timing was not.
@@ -173,6 +177,7 @@ class DebugRunReport:
     min_jaw_clearance: float | None
     belt_contacts: int
     worst_tool_tilt_degrees: float | None
+    attempted: int = 0
     abandoned: tuple[tuple[int, str], ...] = ()
     worst_aim_drift: float | None = None
     grasp_yaw_errors: tuple[float, ...] = ()
@@ -258,6 +263,14 @@ def report_lines(report: DebugRunReport) -> tuple[str, ...]:
         f"{report.feed_rate:.3f} objects/s, belt at {report.belt_speed:.3f} m/s"
     )
     lines.append(f"  visits served   {len(report.served)} {list(report.served)}")
+    placed_total = sum(report.placed.values())
+    lines.append(f"  attempted       {report.attempted}")
+    if report.placed or report.misrouted:
+        each = ", ".join(f"{c}: {n}" for c, n in sorted(report.placed.items()))
+        lines.append(f"  placed          {placed_total} down a chute ({each})")
+        lines.append(f"  misrouted       {report.misrouted} of {placed_total}")
+    else:
+        lines.append("  placed          0")
     if report.missed:
         lines.append(f"  no interception {len(report.missed)} {list(report.missed)}")
     if report.abandoned:
@@ -285,11 +298,6 @@ def report_lines(report: DebugRunReport) -> tuple[str, ...]:
     if report.grasp_yaw_errors:
         each = ", ".join(f"{error:.1f}" for error in report.grasp_yaw_errors)
         lines.append(f"  tool turned off {each} deg from the object's own axis")
-    if report.placed or report.misrouted:
-        total = sum(report.placed.values())
-        each = ", ".join(f"{c}: {n}" for c, n in sorted(report.placed.items()))
-        lines.append(f"  placed          {total} down a chute ({each})")
-        lines.append(f"  misrouted       {report.misrouted} of {total}")
     if report.lifts:
         held = sum(1 for lift in report.lifts if lift >= GRASPED_METERS)
         each = ", ".join(f"{lift * 1000:.0f}" for lift in report.lifts)

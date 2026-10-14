@@ -304,21 +304,12 @@ def test_a_recycled_slot_is_a_new_identity_ac_gt_06() -> None:
         assert len(serials) > 1, f"slot {slot} reported one identity twice"
 
 
-def test_an_object_on_the_belt_keeps_turning_ac_rate_11() -> None:
-    """AC-RATE-11: the belt carries an object without pinning its rotation.
+def test_a_resting_package_does_not_move_relative_to_the_belt_ac_rate_16() -> None:
+    """AC-RATE-16: a resting package travels with the belt and does not turn.
 
-    The spin about the belt normal is left to physics and damped rather than
-    pinned, and this exists because both halves were measured. Objects here
-    turn at up to 5.4 radians per second on their way down the belt, which
-    makes a grasp yaw claimed half a second earlier wrong by up to 40 degrees
-    at the instant the jaws close -- and pinning is worse than the problem:
-    with the spin set to zero every tick the contact becomes a reaction that
-    tips the parcel over, and over the same 60 second run the pad-to-belt
-    contact moved from −0.6 mm over 4 ticks to −2.8 mm over 54, the worst
-    vertical lurch from 99 to 934 m/s², and the grasps held from one of seven
-    to none. So the rotation is damped over a configured time constant, and a
-    test that found it *stopped* dead within half a second would be describing
-    the thing that was removed.
+    The spin is cleared after each step while the arm is not touching the
+    package. Keeping that pin after the arm has made contact is the failure
+    AC-RATE-11 records, and it is not what this test asks for.
     """
     pytest.importorskip("mujoco")
     import mujoco
@@ -332,16 +323,96 @@ def test_an_object_on_the_belt_keeps_turning_ac_rate_11() -> None:
     assert conveyor.active, "nothing was on the belt to test"
     item = conveyor.active[0]
     body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, item.name)
+    address = model.jnt_qposadr[model.body_jntadr[body]]
     dof = model.jnt_dofadr[model.body_jntadr[body]]
+    start_x = float(data.qpos[address])
+    start_y = float(data.qpos[address + 1])
     data.qvel[dof + 5] = 5.0
-    for _ in range(int(0.5 / plan.timestep)):
+    data.qvel[dof + 1] = 0.4
+    elapsed = 0.5
+    for _ in range(int(elapsed / plan.timestep)):
         mujoco.mj_step(model, data)
         conveyor.step(model, data)
-    spin = abs(float(data.qvel[dof + 5]))
-    assert 0.05 < spin < 5.0, (
-        f"the parcel was turning at {spin:.2f} rad/s half a second after 5.0: "
-        f"zero means the belt is pinning it, five means nothing damps it"
+    assert abs(float(data.qvel[dof + 5])) < 1e-6
+    assert abs(float(data.qvel[dof + 1])) < 1e-6
+    assert float(data.qvel[dof]) == pytest.approx(0.35)
+    assert float(data.qpos[address]) == pytest.approx(
+        start_x + 0.35 * elapsed, abs=0.01
     )
+    assert float(data.qpos[address + 1]) == pytest.approx(start_y, abs=0.01)
+
+
+def test_packages_lie_flat_and_stay_graspable_ac_rate_16() -> None:
+    """AC-RATE-16: a package lies flat, and one horizontal side still fits the jaw."""
+    pytest.importorskip("mujoco")
+    import mujoco
+
+    raw, _rng, model, data, plan = built(0)
+    height = float(raw["spawn"]["crushed_height_meters"])
+    minimum = float(raw["spawn"]["minimum_rest_height_meters"])
+    opening = float(raw["arm"]["max_grasp_width_meters"])
+    mujoco.mj_forward(model, data)
+    seen = 0
+    for index, spec in enumerate(plan.objects):
+        geom = mujoco.mj_name2id(
+            model, mujoco.mjtObj.mjOBJ_GEOM, f"object_{index}_geom"
+        )
+        mesh = int(model.geom_dataid[geom])
+        start, count = model.mesh_vertadr[mesh], model.mesh_vertnum[mesh]
+        local = np.asarray(model.mesh_vert[start : start + count], dtype=np.float64)
+        rotation = np.asarray(data.geom_xmat[geom], dtype=np.float64).reshape(3, 3)
+        world = local @ rotation.T
+        extents = world.max(axis=0) - world.min(axis=0)
+        standing = float(extents[2])
+        assert minimum - 1e-3 <= standing <= height + 1e-3, spec.name
+        assert min(float(extents[0]), float(extents[1])) < opening, spec.name
+        seen += 1
+    assert seen == len(plan.objects)
+
+
+def test_an_arm_contact_releases_the_rest_constraint_ac_rate_16() -> None:
+    """AC-RATE-16: a package the arm is touching keeps the velocity it has.
+
+    The rest write stops at that contact. Continuing it is the pin that
+    tips the package under the jaw.
+    """
+    pytest.importorskip("mujoco")
+    import mujoco
+
+    raw, rng, model, data, plan = built(0)
+    conveyor = conveyor_for(raw, rng, plan)
+    for _ in range(int(8.0 / plan.timestep)):
+        mujoco.mj_step(model, data)
+        conveyor.step(model, data)
+        if conveyor.active:
+            break
+    assert conveyor.active, "nothing spawned to put under the jaw"
+    item = conveyor.active[0]
+    body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, item.name)
+    pad = None
+    for geom in range(model.ngeom):
+        name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, geom) or ""
+        if name.endswith("pad1"):
+            pad = geom
+            break
+    assert pad is not None
+    mujoco.mj_forward(model, data)
+    address = model.jnt_qposadr[model.body_jntadr[body]]
+    data.qpos[address : address + 3] = data.geom_xpos[pad]
+    data.qpos[address + 3 : address + 7] = [1.0, 0.0, 0.0, 0.0]
+    velocity = model.jnt_dofadr[model.body_jntadr[body]]
+    data.qvel[velocity : velocity + 6] = 0.0
+    mujoco.mj_step(model, data)
+    assert body in belt._packages_touching_arm(mujoco, model, data)
+    # The contact is the one the step just resolved. Move the package onto
+    # the belt before the drive runs, without another dynamics step, so the
+    # drive sees a resting package that the arm is already touching.
+    data.qpos[address : address + 3] = [0.0, 0.0, plan.belt.surface_height]
+    data.qvel[velocity] = 0.1
+    data.qvel[velocity + 5] = 1.5
+    conveyor.step(model, data)
+    assert float(data.qvel[velocity + 5]) == pytest.approx(1.5)
+    assert float(data.qvel[velocity]) == pytest.approx(0.1)
 
 
 def _rest_on_surface(
@@ -375,39 +446,34 @@ def _rest_on_surface(
 
 
 def test_a_package_resting_on_its_bottom_is_driven_ac_rate_14() -> None:
-    """AC-RATE-14: a tall package is driven from its bottom, not its origin.
+    """AC-RATE-14: a package is driven from its bottom, not its origin.
 
-    The identity orientation is not the pose these meshes settle into. A
-    settled soup can stands with its origin above the height tolerance while
-    its bottom stays on the surface. The origin test left that can still.
+    A crushed package can sit with its origin inside the height tolerance.
+    The drive still has to follow the bottom: an origin above the tolerance
+    whose bottom is on the surface is on the belt, and a package placed that
+    way is carried at belt speed.
     """
     mujoco = pytest.importorskip("mujoco")
 
     raw, rng, model, data, plan = built(0)
     conveyor = conveyor_for(raw, rng, plan)
-    conveyor.spacing = config.Range(0.125, 0.125)
     conveyor.speed = 0.25
     surface = plan.belt.surface_height
     tolerance = plan.belt.height_tolerance
-    found = False
-    for _ in range(int(6.0 / plan.timestep)):
+    assert belt._on_belt((0.0, 0.0, surface + tolerance + 0.02), plan, bottom=surface)
+    for _ in range(int(8.0 / plan.timestep)):
         mujoco.mj_step(model, data)
         conveyor.step(model, data)
-        for item in conveyor.active:
-            body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, item.name)
-            address = model.jnt_qposadr[model.body_jntadr[body]]
-            origin_z = float(data.qpos[address + 2])
-            bottom = belt._body_bottom(model, data, body)
-            if origin_z <= surface + tolerance:
-                continue
-            if not belt._near_surface(bottom, plan):
-                continue
-            velocity = model.jnt_dofadr[model.body_jntadr[body]]
-            speed = float(data.qvel[velocity])
-            assert np.isfinite(speed)
-            assert abs(speed) < 2.0
-            found = True
-    assert found, "no settled package stood taller than the height tolerance"
+        if conveyor.active:
+            break
+    assert conveyor.active, "nothing spawned to rest on the belt"
+    item = conveyor.active[0]
+    _rest_on_surface(mujoco, model, data, item.index, plan)
+    mujoco.mj_step(model, data)
+    conveyor.step(model, data)
+    body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, item.name)
+    velocity = model.jnt_dofadr[model.body_jntadr[body]]
+    assert float(data.qvel[velocity]) == pytest.approx(0.25)
 
 
 def test_a_package_past_the_side_guide_returns_to_the_pool_ac_rate_15() -> None:

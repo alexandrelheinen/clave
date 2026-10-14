@@ -115,6 +115,26 @@ def nearer_parallel_yaw(target: float, reference: float) -> float:
     return wrap(target)
 
 
+def parallel_yaw_error(commanded: float, measured: float) -> float:
+    """Return how far a jaw command stands from the tool, folded to a right angle.
+
+    A parallel jaw grips the same way at θ and at θ plus a right angle. The
+    miss that matters is the distance to the nearest equivalent heading,
+    which is at most 45 degrees (`AC-BEHAVE-05`).
+
+    Args:
+        commanded: The yaw the plan asked for, in radians.
+        measured: The yaw the tool holds, in radians.
+
+    Returns:
+        The absolute miss, in radians, from 0 to π/4.
+    """
+    delta = (commanded - measured + math.pi) % (2.0 * math.pi) - math.pi
+    right_angle = math.pi / 2.0
+    folded = (delta + right_angle / 2.0) % right_angle - right_angle / 2.0
+    return abs(folded)
+
+
 def _drift_velocity(velocity: NDArray[np.float64]) -> NDArray[np.float64]:
     """Return the velocity used only to aim the target origin for a while.
 

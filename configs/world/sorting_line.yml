@@ -99,6 +99,26 @@ spawn:
   # this range does not deliberately place objects the arm has to refuse.
   lateral_offset_meters: [-0.17, 0.17]
   drop_height_meters: [0.01, 0.03]
+  # Standing height of a crushed package, in meters. A face taller than
+  # this is scaled down to it. The pads close on a plane 30 mm up and span
+  # 37.5 mm, so 55 mm fills that band and is still flat against the 84 to
+  # 168 mm the scans stand at.
+  crushed_height_meters: 0.055
+  # Shortest face the pads can meet from the side, in meters. A thinner face
+  # puts the pinch on the top edge and the pads on the belt. A package whose
+  # flattest face is thinner than this is turned onto the next face.
+  minimum_rest_height_meters: 0.040
+  # Two sides within this fraction of each other, with a longer third, are a
+  # round package. It stands on the flat end. Laying that side down is how
+  # a can rolls.
+  round_extent_ratio: 0.10
+  # Slide, torsion and roll. The rest constraint holds a package until the
+  # arm touches it. These are what keep it from skating in the ticks after
+  # that constraint lets go, and while two packages are touching and the
+  # drive has left their linear velocity to the solver. Roll friction is
+  # live only at condim 6.
+  rest_friction: [1.0, 0.05, 0.02]
+  rest_condim: 6
 
 # Holding the line at a rate rather than letting it be whatever the feeder
 # produced. docs/requirements/line-throughput.md carries the spec.
@@ -282,14 +302,13 @@ effector:
   # which for the compiled jaw is 27.7 mm, and a load refuses a value below it
   # rather than letting the tracker's markers close the pads on the belt.
   #
-  # It is not a height the pads need in order to reach an object. On the
-  # shipped set the plane follows the object's own centre -- measured from the
-  # compiled model, the shortest object is 83.7 mm tall and the tallest
-  # 168.2 mm, so every centre stands at 41.9 mm or above -- and at every plane
-  # either number produces, the narrowest width the objects present inside the
-  # pads' 37.5 mm of vertical extent is 17.0 to 65.8 mm against a jaw that
-  # opens to 85 mm. There is no object here the jaw cannot close on at the
-  # height it closes at.
+  # It is not a height the pads need in order to reach an object. The scans
+  # stand 83.7 to 168.2 mm and are crushed to `spawn.crushed_height_meters`
+  # before they are spawned, so the side the jaw meets is that crushed
+  # height rather than the scan. The ground-truth marker follows the
+  # crushed package's own centre, clamped to the jaw's clearance. The
+  # narrowest horizontal width is unchanged by a vertical scale, and it
+  # stays inside the 85 mm opening.
   grasp_height_meters: 0.030
 
   # The torque the fingers may apply to what they close on, in newton meters.

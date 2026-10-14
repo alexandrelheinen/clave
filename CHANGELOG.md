@@ -25,6 +25,23 @@ Centers at 0.125 m on the belt the shipped line already runs.
   solver just produced. A linear speed past
   `contact_speed_limit_meters_per_second` (1.0 m/s) is cut back, so a
   deep overlap cannot throw a package at many times belt speed.
+- A pick counts as an attempt only once the jaw is commanded shut, and
+  every attempt has to be placed. The jaw stays open at the grasp pose
+  while the tool yaw is outside 0.35 rad of the command, and the visit
+  is given up before the close if the wrist has not arrived in 0.50 s.
+  After the arcs run out the arm holds the release pose for 0.40 s with
+  the jaw opening, so the next visit cannot drag the object back off
+  the chute. The belt ride during the close is given back only past
+  0.08 m, so the release stays inside the mouth.
+- Every package is turned onto a face that lies flat and still fits the
+  jaw, and a face taller than 55 mm is scaled down to that. A round
+  package stands on its flat end, so the can stays and does not roll.
+  Until the arm touches it, the belt carries it at belt speed with no
+  lateral velocity and no rotation. The constraint stops at that
+  contact, so the grasp can lift it. On the seed-0 high-flow run,
+  thirty seconds, ground truth: 3 attempts, 3 placed, lifts 105, 131
+  and 122 mm. The feed measured 2.000 of 0.125 objects/s with the belt
+  at 0.250 m/s.
 - `configs/debug/high-flow.yml` spaces centers at 0.125 m and names a
   pool of 64. At 0.25 m/s that is 2.0 objects per second, ten times the
   flow the v1.6.2 seed carried. Packages may touch. The shipped rate

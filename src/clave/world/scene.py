@@ -1010,22 +1010,199 @@ def _dress(mujoco: Any, spec: Any, world: Any, raw: dict[str, Any], root: Path) 
     return True
 
 
+def _rest_contact(spawn_cfg: dict[str, Any]) -> tuple[list[float], int]:
+    """Read the friction and contact dimension a resting package uses.
+
+    Args:
+        spawn_cfg: The `spawn` block.
+
+    Returns:
+        Three friction coefficients and the contact dimension.
+
+    Raises:
+        WorldConfigError: If the friction is not three non-negative numbers,
+            or the contact dimension is not one MuJoCo accepts.
+    """
+    raw_friction = require(spawn_cfg, "rest_friction", "spawn")
+    if not isinstance(raw_friction, (list, tuple)) or len(raw_friction) != 3:
+        raise WorldConfigError(
+            "spawn.rest_friction must be three coefficients: slide, torsion, roll"
+        )
+    friction = [float(value) for value in raw_friction]
+    if any(value < 0.0 for value in friction):
+        raise WorldConfigError("spawn.rest_friction coefficients must be non-negative")
+    condim = int(require(spawn_cfg, "rest_condim", "spawn"))
+    if condim not in (1, 3, 4, 6):
+        raise WorldConfigError(
+            f"spawn.rest_condim is {condim}; MuJoCo accepts 1, 3, 4 or 6"
+        )
+    return friction, condim
+
+
+def _posed_extents(
+    mujoco: Any, path: Path, quat: list[float], scale: list[float]
+) -> NDArray[np.float64]:
+    """Return the world-axis extents of a mesh at one orientation and scale.
+
+    The file's axes are not the world's, and shortening the long axis can
+    make the compiler stand the mesh up on a different face. The extents
+    are read back from a compiled geom, which is the pose the belt sees.
+
+    Args:
+        mujoco: The imported module.
+        path: The mesh file.
+        quat: Geom orientation, `(w, x, y, z)`.
+        scale: Three file-axis scale factors.
+
+    Returns:
+        Extents along world x, y and z, in meters.
+    """
+    spec = mujoco.MjSpec()
+    spec.add_mesh(name="extent", file=str(path), scale=scale)
+    body = spec.worldbody.add_body(name="extent")
+    body.add_geom(
+        name="extent",
+        type=mujoco.mjtGeom.mjGEOM_MESH,
+        meshname="extent",
+        quat=quat,
+    )
+    model = spec.compile()
+    data = mujoco.MjData(model)
+    mujoco.mj_forward(model, data)
+    count = int(model.mesh_vertnum[0])
+    local = np.asarray(model.mesh_vert[:count], dtype=np.float64)
+    rotation = np.asarray(data.geom_xmat[0], dtype=np.float64).reshape(3, 3)
+    world = local @ rotation.T
+    return np.asarray(world.max(axis=0) - world.min(axis=0), dtype=np.float64)
+
+
+def _orientation_quaternions() -> list[list[float]]:
+    """Return the quarter-turn orientations, including the identity.
+
+    A package is a box for this choice: the faces that can lie on the belt
+    are the quarter turns of the scan, and a finer yaw does not change which
+    face is down.
+    """
+    basis: list[list[float]] = []
+    for axis in range(3):
+        for turn in range(4):
+            angle = turn * math.pi / 2.0
+            quat = [math.cos(angle / 2.0), 0.0, 0.0, 0.0]
+            quat[axis + 1] = math.sin(angle / 2.0)
+            basis.append(quat)
+
+    def multiply(left: list[float], right: list[float]) -> list[float]:
+        lw, lx, ly, lz = left
+        rw, rx, ry, rz = right
+        return [
+            lw * rw - lx * rx - ly * ry - lz * rz,
+            lw * rx + lx * rw + ly * rz - lz * ry,
+            lw * ry - lx * rz + ly * rw + lz * rx,
+            lw * rz + lx * ry - ly * rx + lz * rw,
+        ]
+
+    return [multiply(left, right) for left in basis for right in basis]
+
+
+def _flat_pose(
+    mujoco: Any,
+    path: Path,
+    height: float,
+    minimum: float,
+    opening: float,
+    round_ratio: float,
+) -> tuple[list[float], list[float]]:
+    """Choose the scale and geom orientation that lays a package flat.
+
+    A round package, two shorter sides in agreement and a longer axis,
+    stands on its flat end so the curved side is not the face on the belt.
+    Anything else lies on the shortest face that still leaves one horizontal
+    side inside the jaw, and not so short that the pads close on the top
+    edge. A face taller than `height` is scaled down to it.
+
+    Args:
+        mujoco: The imported module.
+        path: The mesh file.
+        height: Standing height to crush down to, in meters.
+        minimum: Shortest face the pads can still meet from the side, in
+            meters.
+        opening: Jaw opening, in meters.
+        round_ratio: How close two sides must be, as a fraction of the
+            longer of them, before the package is treated as round.
+
+    Returns:
+        The file-axis scale and the geom quaternion.
+
+    Raises:
+        WorldConfigError: If no face is both graspable and crushable to
+            `height`, or no file axis scales the standing height.
+    """
+    seen: dict[tuple[float, float, float], list[float]] = {}
+    for quat in _orientation_quaternions():
+        extents = _posed_extents(mujoco, path, quat, [1.0, 1.0, 1.0])
+        key = (
+            round(float(extents[0]), 4),
+            round(float(extents[1]), 4),
+            round(float(extents[2]), 4),
+        )
+        seen.setdefault(key, quat)
+    poses = [(np.asarray(key, dtype=np.float64), quat) for key, quat in seen.items()]
+    dims = sorted(float(value) for value in poses[0][0])
+    longer = dims[1]
+    roundish = (
+        longer > 0.0
+        and (longer - dims[0]) / longer <= round_ratio
+        and dims[2] > longer * (1.0 + round_ratio)
+    )
+    graspable = [
+        (float(extents[2]), quat, extents)
+        for extents, quat in poses
+        if min(float(extents[0]), float(extents[1])) < opening
+    ]
+    if not graspable:
+        raise WorldConfigError(
+            f"mesh {path.name} has no face with a side inside the jaw opening"
+        )
+    if roundish:
+        standing, quat, _extents = max(graspable, key=lambda item: item[0])
+    else:
+        tall = [item for item in graspable if item[0] >= minimum]
+        standing, quat, _extents = min(tall or graspable, key=lambda item: item[0])
+    scale = [1.0, 1.0, 1.0]
+    if standing <= height:
+        return scale, quat
+    for index in range(3):
+        trial = [1.0, 1.0, 1.0]
+        trial[index] = 0.5
+        probed = _posed_extents(mujoco, path, quat, trial)
+        probed_height = float(probed[2])
+        grasp = min(float(probed[0]), float(probed[1]))
+        if probed_height < standing * 0.75 and grasp < opening:
+            scale[index] = 0.5 * (height / probed_height)
+            return scale, quat
+    raise WorldConfigError(
+        f"mesh {path.name} has no file axis that scales its standing height, "
+        "so it cannot be crushed onto the belt"
+    )
+
+
 def _check_mesh_objects_fit(
-    mujoco: Any, model: Any, plan: SceneLayout, limit: float
+    mujoco: Any, model: Any, data: Any, plan: SceneLayout, limit: float
 ) -> None:
     """Refuse a scanned object the gripper cannot close on.
 
     A primitive declares its size, so `clave.world.objects` checks it at load.
     A mesh carries its size in the file, so the check happens here, against the
-    vertices MuJoCo compiled. Both ask the same question.
+    pose the geom actually has. Both ask the same question.
 
-    Both of the two narrowest extents must fit the opening. A single thin side
-    is not enough: a flat object with one thin edge and two broad sides still
-    cannot fit between the fingers.
+    Both of the two narrowest extents of that pose must fit the opening. A
+    single thin side is not enough: a flat object with one thin edge and two
+    broad sides still cannot fit between the fingers.
 
     Args:
         mujoco: The imported module.
         model: The compiled model.
+        data: Its state. Kinematics are refreshed here.
         plan: The resolved layout, naming which objects are meshes.
         limit: The widest object the gripper can close on, in meters.
 
@@ -1034,15 +1211,21 @@ def _check_mesh_objects_fit(
     """
     from clave.world.config import WorldConfigError
 
-    for spec in plan.objects:
+    mujoco.mj_forward(model, data)
+    for index, spec in enumerate(plan.objects):
         if not spec.is_mesh:
             continue
-        mesh = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_MESH, f"asset_{spec.name}")
-        if mesh < 0:
+        geom = mujoco.mj_name2id(
+            model, mujoco.mjtObj.mjOBJ_GEOM, f"object_{index}_geom"
+        )
+        if geom < 0:
             continue
+        mesh = int(model.geom_dataid[geom])
         start, count = model.mesh_vertadr[mesh], model.mesh_vertnum[mesh]
-        vertices = model.mesh_vert[start : start + count]
-        extents = vertices.max(axis=0) - vertices.min(axis=0)
+        local = np.asarray(model.mesh_vert[start : start + count], dtype=np.float64)
+        rotation = np.asarray(data.geom_xmat[geom], dtype=np.float64).reshape(3, 3)
+        world = local @ rotation.T
+        extents = world.max(axis=0) - world.min(axis=0)
         narrowest = sorted(float(extent) for extent in extents)[:2]
         if not _two_narrowest_sides_fit(extents, limit):
             raise WorldConfigError(
@@ -1572,6 +1755,22 @@ def build(
     mouths = _add_chutes(mujoco, world, plan, chutes_cfg)
 
     drop = require_range(spawn_cfg, "drop_height_meters", "spawn")
+    crushed = float(require(spawn_cfg, "crushed_height_meters", "spawn"))
+    minimum_rest = float(require(spawn_cfg, "minimum_rest_height_meters", "spawn"))
+    round_ratio = float(require(spawn_cfg, "round_extent_ratio", "spawn"))
+    opening = float(require(require(raw, "arm"), "max_grasp_width_meters", "arm"))
+    if not crushed > 0.0:
+        raise WorldConfigError(
+            f"spawn.crushed_height_meters is {crushed}, and a package of no "
+            "height is not one the jaw can meet"
+        )
+    if not 0.0 < minimum_rest <= crushed:
+        raise WorldConfigError(
+            f"spawn.minimum_rest_height_meters is {minimum_rest} and the crushed "
+            f"height is {crushed}; the pads need a face between the two"
+        )
+    friction, condim = _rest_contact(spawn_cfg)
+    flat_quat: dict[str, list[float]] = {}
     for spec in plan.objects:
         if not spec.is_mesh or spec.mesh is None:
             continue
@@ -1583,7 +1782,15 @@ def build(
                 f"object {spec.name!r} names the mesh {spec.mesh}, which is not "
                 "on disk. Run: python scripts/import_scene_assets.py --objects"
             )
-        mujoco_spec.add_mesh(name=f"asset_{spec.name}", file=str(spec_mesh))
+        scale, quat = _flat_pose(
+            mujoco, spec_mesh, crushed, minimum_rest, opening, round_ratio
+        )
+        flat_quat[spec.name] = quat
+        mujoco_spec.add_mesh(
+            name=f"asset_{spec.name}",
+            file=str(spec_mesh),
+            scale=scale,
+        )
         if spec.texture is not None and (root / spec.texture).is_file():
             mujoco_spec.add_texture(
                 name=f"asset_{spec.name}",
@@ -1611,7 +1818,10 @@ def build(
                 name=f"object_{index}_geom",
                 type=mujoco.mjtGeom.mjGEOM_MESH,
                 meshname=f"asset_{template.name}",
+                quat=flat_quat[template.name],
                 density=density,
+                friction=friction,
+                condim=condim,
                 material=(
                     f"asset_{template.name}"
                     if template.texture is not None
@@ -1625,6 +1835,8 @@ def build(
                 type=mujoco.mjtGeom.mjGEOM_CYLINDER,
                 size=[size_a, size_b, 0.0],
                 density=density,
+                friction=friction,
+                condim=condim,
                 rgba=[0.8, 0.6, 0.2, 1.0],
             )
         else:
@@ -1633,6 +1845,8 @@ def build(
                 type=mujoco.mjtGeom.mjGEOM_BOX,
                 size=[size_a, size_a, size_b],
                 density=density,
+                friction=friction,
+                condim=condim,
                 rgba=[0.7, 0.5, 0.3, 1.0],
             )
 
@@ -1666,15 +1880,16 @@ def build(
         mujoco_spec.attach(_armed(root, closing_torque), prefix="arm_", frame=frame)
 
     model = mujoco_spec.compile()
+    data = mujoco.MjData(model)
     if presentation:
         _finish_presentation_lights(mujoco, model)
     _stiffen_arm_actuators(mujoco, model)
     _check_mesh_objects_fit(
         mujoco,
         model,
+        data,
         plan,
         float(require(require(raw, "arm"), "max_grasp_width_meters", "arm")),
     )
-    data = mujoco.MjData(model)
     _ = drop
     return model, data, plan

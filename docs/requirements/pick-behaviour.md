@@ -48,6 +48,31 @@ positive after wrap to (−π, π], shoulder lift at or below zero) rather
 than the folded branch that parks with `wrist_2` near 270°. Returned
 angles shall be folded into (−π, π] inside the joint limits.
 
+`AC-BEHAVE-05`: A pick is an attempt only once the jaw is commanded shut.
+Every attempt shall be released over its chute and counted as placed.
+The run report shall give the attempt count and the place count, and
+the two shall be equal. A visit given up before the jaw shuts, and an
+object no interception was planned for, are not attempts. The jaw shall
+stay open at the grasp pose while the tool yaw is outside the configured
+tolerance of the commanded grasp yaw, and the plan clock shall wait with
+it. If the wrist has not arrived when the align limit runs out, the
+visit shall be given up before the jaw shuts. Once the jaw is commanded
+shut, the flange shall stay at the grasp height and ride with the belt
+until the fingers have travelled the configured fraction of the driver
+stroke, or until the close dwell has elapsed when a package stops the
+fingers short of that fraction. A wait for the wrist shall ride with
+the belt the same way, with the jaw still open. A close whose release, including that seat and the release
+dwell, would run past the time the caller has left shall be given up
+before the jaw shuts. A close whose nearest object sits farther from
+the pinch than the configured gap shall be given up before the jaw
+shuts. The belt shift that keeps the pinch over the package during a
+wait shall be given back only past the configured margin, so the release
+stays within that margin of the chute the plan aimed at and a pinch that
+is already on the package is not dragged back by the whole wait. After
+the arcs run out, the arm shall hold the
+release pose with the jaw opening for the configured release dwell, so
+the next visit cannot start while the fingers are still shut.
+
 ## Test plan
 
 | Criterion | Test |
@@ -56,3 +81,4 @@ angles shall be folded into (−π, π] inside the joint limits.
 | `AC-BEHAVE-02` | `test_descent_retarget_does_not_project_lateral_drift`, existing AC-MOVE-63 |
 | `AC-BEHAVE-03` | `test_commanded_yaw_picks_the_nearer_parallel_grip` |
 | `AC-BEHAVE-04` | `test_the_solver_prefers_an_extended_reach_over_a_folded_wrist` |
+| `AC-BEHAVE-05` | `test_the_arm_holds_the_release_until_the_object_can_fall`, `test_the_jaw_stays_open_until_the_wrist_matches`, `test_a_wrist_that_cannot_match_is_not_an_attempt`, `test_the_rise_waits_until_the_fingers_have_closed`, `test_a_close_that_cannot_finish_is_not_an_attempt`, `test_a_far_object_is_not_an_attempt`, `test_the_release_is_still_the_planned_chute` |

@@ -1,30 +1,27 @@
 """The conveyor: spawning, carrying, and reachability.
 
-MuJoCo has no conveyor primitive. Objects are free bodies whose horizontal
-velocity is driven to the belt speed while they rest on the belt, leaving
-vertical motion, rotation and contact to physics. This is a driven constraint
-rather than a friction model, which is the honest description: objects do not
-slip, and a real line's slip is a disturbance this world does not reproduce.
+MuJoCo has no conveyor primitive. Objects are free bodies. While one rests
+on the belt and the arm is not touching it, its travel is driven to belt
+speed and its lateral velocity and rotation are held at rest. That is a
+constraint written after the step, not a weld: the body stays free, and
+the constraint stops at the first contact with the arm so the grasp can
+lift it.
 
-**The rotation is left to physics, and that was measured four ways.** With the
-belt driving the centre velocity and the belt's friction acting under it, a
-parcel turns at up to 5.4 radians per second on its way down the belt, which is
-155 degrees over the half second between the capture that claims a grasp yaw and
-the instant the jaws close. Every repair on this side of the seam was tried and
-measured against the same 60 second run, and every one of them cost more than it
-bought:
+**The pin must not continue through the grasp.** That was measured. With
+the spin held at zero while the jaw was already on the package, the belt's
+drag became a reaction that tipped the parcel, the pads met a flat upper
+edge, and the close pulled the jaw onto the belt:
 
 | Repair | Pad-to-belt contact | Worst vertical lurch | Grasps held |
 | --- | --- | --- | --- |
 | none, as shipped | −0.6 mm over 4 ticks | 99 m/s² | 1 of 7 |
-| the spin pinned to zero each tick | **−2.8 mm, 54 ticks** | **934 m/s²** | none of 7 |
-| the spin damped, 0.3 s constant | **−18.6 mm, 17 ticks** | 170 m/s² | none of 8 |
+| spin pinned through the grasp | **−2.8 mm, 54 ticks** | **934 m/s²** | none of 7 |
+| spin damped through the grasp | **−18.6 mm, 17 ticks** | 170 m/s² | none of 8 |
 
-Pinning turns the belt's drag into a reaction that tips the parcel over.
-Damping leaves the parcels lying flat, which puts more of them under a jaw that
-then closes on a flat parcel's upper edge and is pulled down onto the belt. So
-the rotation stays where it is and the yaw is carried forward on the control
-side instead, which is written up in
+The rest constraint therefore covers the ride up to the arm and no
+further. A crushed package that is still free to spin rolls the way the
+standing cans did, which is the motion this drive exists to remove. The
+measurement is written up in
 [measurements.md](measurements.md#what-the-reported-run-turned-out-to-be).
 
 **Rest is the bottom of the geometry, not the body origin.** Six of the ten
@@ -449,6 +446,7 @@ class Conveyor:
         # solver just computed, and the next step rams the packages together
         # until one of them leaves at a speed the belt never had.
         touching = _packages_in_contact(mujoco, model, data)
+        held = _packages_touching_arm(mujoco, model, data)
 
         for item in self.active:
             body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, item.name)
@@ -456,10 +454,16 @@ class Conveyor:
             velocity = model.jnt_dofadr[model.body_jntadr[body]]
             position = data.qpos[address : address + 3]
             on_belt = _on_belt(position, self.plan, _body_bottom(model, data, body))
-            if on_belt and body not in touching:
-                # Drive travel only. Vertical motion and rotation stay with
-                # physics, so contacts with the chutes and the arm remain real.
-                data.qvel[velocity] = self.running
+            if on_belt and body not in held:
+                # Rest until the arm arrives. Vertical motion stays with the
+                # contact solver so the package can settle, and so a lift is
+                # not fought on the tick the constraint lets go.
+                _rest_package(
+                    data,
+                    velocity,
+                    self.running,
+                    body in touching,
+                )
             elif _on_takeaway(position, self.plan):
                 # Drive sorted objects along the take-away conveyor away from the line.
                 data.qvel[velocity + 1] = -self.plan.takeaway.speed
@@ -561,6 +565,62 @@ def _limit_speed(data: Any, velocity: int, limit: float) -> None:
             data.qvel[velocity + axis] = limit
         elif value < -limit:
             data.qvel[velocity + axis] = -limit
+
+
+def _rest_package(
+    data: Any, velocity: int, speed: float, touching_package: bool
+) -> None:
+    """Hold a resting package to the belt without welding it there.
+
+    Travel matches the belt. Lateral velocity and rotation are cleared so
+    the package cannot slide or tumble. Vertical velocity is left alone:
+    the contact solver is what sits the package on the surface, and what
+    lifts it once this function is no longer called.
+
+    A package that is touching another package keeps the linear velocity
+    the solver just produced. Forcing belt speed through that contact
+    undoes the separation and the next step rams them together. The
+    rotation is still cleared, so the bump does not start a roll.
+
+    Args:
+        data: The state, modified in place.
+        velocity: Index of the body's first linear degree of freedom.
+        speed: Belt speed, in meters per second.
+        touching_package: Whether this body is in contact with another
+            package on this step.
+    """
+    if not touching_package:
+        data.qvel[velocity] = speed
+        data.qvel[velocity + 1] = 0.0
+    for axis in range(3, 6):
+        data.qvel[velocity + axis] = 0.0
+
+
+def _packages_touching_arm(mujoco: Any, model: Any, data: Any) -> set[int]:
+    """Return body ids of packages an arm geom is touching.
+
+    The rest constraint stops for these. The grasp is contact physics, and
+    writing the package's velocity after the arm has met it is the pin that
+    was measured to tip the package and pull the jaw onto the belt.
+
+    Args:
+        mujoco: The imported module.
+        model: The compiled model.
+        data: Its state, after the dynamics step that resolved contacts.
+    """
+    held: set[int] = set()
+    for index in range(int(data.ncon)):
+        first = int(model.geom_bodyid[int(data.contact[index].geom1)])
+        second = int(model.geom_bodyid[int(data.contact[index].geom2)])
+        if first == second:
+            continue
+        first_name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, first) or ""
+        second_name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, second) or ""
+        if first_name.startswith("object_") and second_name.startswith("arm_"):
+            held.add(first)
+        elif second_name.startswith("object_") and first_name.startswith("arm_"):
+            held.add(second)
+    return held
 
 
 def _packages_in_contact(mujoco: Any, model: Any, data: Any) -> set[int]:

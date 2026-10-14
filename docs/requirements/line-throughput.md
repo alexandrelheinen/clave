@@ -128,11 +128,29 @@ its rate from one that saturated.
 and a test shall prove the counter reads the simulator rather than the
 tracker.
 
-`AC-RATE-11`: The system shall leave an object's rotation to physics while it
-rides the belt, and a test shall prove the driven constraint does not pin it:
-taking the spin about the belt normal out was measured and made the line worse,
-because pinning a body's rotation while the belt drags it turns the contact
-into a reaction that tips the parcel over.
+`AC-RATE-11`: Pinning a package's rotation while the arm is already touching
+it was measured and made the line worse. The belt's drag becomes a reaction
+that tips the package, the jaw meets a flat upper edge, and the close pulls
+the pads onto the belt. The rest constraint in `AC-RATE-16` therefore stops
+writing velocity at the first arm contact. A test that keeps the pin through
+that contact is describing the failure this measurement recorded.
+
+`AC-RATE-16`: When a package rests on the belt and no arm geometry is
+touching it, the system shall carry it at belt speed, with no lateral
+velocity and no rotation, so it does not roll, slide, or tumble relative
+to the belt. Vertical motion stays with the contact solver, so the package
+can settle on the surface. When two packages touch, the system shall still
+hold the rotation at rest but shall leave the linear velocity the contact
+solver produced, so the drive does not ram one through the other. When arm
+geometry touches the package, the system shall stop writing its velocity,
+so the grasp can lift it. A package the arm has lifted is not driven. Each scanned package shall be
+turned onto a face that lies flat and still has one horizontal side inside
+the jaw, and a face taller than the configured crushed height shall be
+scaled down to it. A round package shall stand on its flat end. A face
+thinner than the configured minimum shall not be the one on the belt,
+because the pads would close on its top edge. The contact coefficients
+that hold a package once the constraint has released shall come from
+configuration.
 
 `AC-RATE-12`: The system shall accept a debug feed file that names a rate
 and a belt speed for one simulation run, and shall report that rate. The

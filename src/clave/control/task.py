@@ -65,9 +65,13 @@ import numpy as np
 from numpy.typing import NDArray
 
 from clave.control.pick import (
+    JAW_OPEN,
+    JAW_SHUT,
+    Leg,
     Plan,
     VisitTick,
     nearer_parallel_yaw,
+    parallel_yaw_error,
     plan_pick,
     refine,
     retarget_descent,
@@ -81,11 +85,30 @@ from clave.control.settings import (
     TaskSettings,
 )
 from clave.control.story import StoryLog
-from clave.control.trajectory import State, distance, same, where_carried, zeros
+from clave.control.trajectory import (
+    Segment,
+    State,
+    distance,
+    same,
+    where_carried,
+    zeros,
+)
 from clave.errors import ClaveError
 from clave.world.effector import Effector
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _along_belt(state: State, delta: float) -> State:
+    """Return `state` moved along the belt by `delta` meters."""
+    position = np.asarray(state.position, dtype=np.float64).copy()
+    position[0] += delta
+    return State(
+        position=position,
+        velocity=np.asarray(state.velocity, dtype=np.float64),
+        acceleration=np.asarray(state.acceleration, dtype=np.float64),
+    )
+
 
 NANOS_PER_SECOND = 1_000_000_000
 """Nanoseconds in a second, for the instant a goal records."""
@@ -346,6 +369,21 @@ class TaskMachine:
         self._story = story if story is not None else StoryLog()
         self._plan_refusal = ""
         self._told_reaim: tuple[int, str] | None = None
+        self._jaw_committed = False
+        self._last_visit_closed = False
+        self._prev_tick: float | None = None
+        self._aligning = False
+        self._align_lag = 0.0
+        self._align_wait = 0.0
+        self._release_until: float | None = None
+        self._release_pose: NDArray[np.float64] | None = None
+        self._release_yaw: float | None = None
+        self._seating = False
+        self._seated = False
+        self._seat_lag = 0.0
+        self._seat_wait = 0.0
+        self._told_seat = False
+        self._release_aimed = False
 
     @property
     def belt_surface(self) -> float:
@@ -356,6 +394,24 @@ class TaskMachine:
     def served(self) -> tuple[int, ...]:
         """Every track this machine finished a visit to, in order."""
         return tuple(self._served)
+
+    @property
+    def jaw_committed(self) -> bool:
+        """Whether the active visit has commanded the jaw shut.
+
+        A close is an attempt. A visit given up before this is true is an
+        object the arm let pass.
+        """
+        return self._jaw_committed
+
+    @property
+    def last_visit_closed(self) -> bool:
+        """Whether the visit that just ended had closed the jaw.
+
+        Read on the tick [tick] returns None. False when the visit was given
+        up before the jaw shut, so a caller does not record that as a pick.
+        """
+        return self._last_visit_closed
 
     @property
     def arrivals(self) -> tuple[float, ...]:
@@ -589,6 +645,11 @@ class TaskMachine:
         flange_position_world: NDArray[np.float64] | None = None,
         *,
         flange: NDArray[np.float64] | None = None,
+        tool_yaw: float | None = None,
+        object_yaw: float | None = None,
+        jaw_travel: float | None = None,
+        seconds_left: float | None = None,
+        pinch_gap: float | None = None,
     ) -> VisitTick | None:
         """Drive one tick of a planned visit, or report that none is active.
 
@@ -596,11 +657,38 @@ class TaskMachine:
         physics rate: a goal half a second old is still the right goal, and a
         joint command half a second old is a lurch.
 
+        The jaw stays open at the grasp pose while the tool yaw is outside
+        `grasp_yaw_tolerance` of the command (`AC-BEHAVE-05`). The clock of
+        the plan waits with it. If the wrist has not arrived when
+        `grasp_align_limit_seconds` runs out, the visit is given up before
+        the jaw closes, and it is not an attempt. After the arcs run out,
+        the arm holds the release pose with the jaw opening for
+        `release_dwell_seconds` so the next visit cannot drag the object
+        back off the chute.
+
         Args:
             at_seconds: Simulated time.
             flange_position_world: Where the flange stands, read only to
                 measure how near it came to the object when the jaw closed.
             flange: Legacy keyword alias for flange_position_world.
+            tool_yaw: The tool's yaw about the belt normal, in radians. None
+                skips the alignment gate, which is how a caller with no
+                measured tool drives the plan as written.
+            object_yaw: The object's short-axis yaw, in radians, when the
+                caller can see it. While the wrist is catching up, the
+                command follows this instead of the yaw the plan froze.
+            jaw_travel: How far the fingers have closed, from 0 open to 1
+                shut. None skips the seat, which is how a test drives the
+                plan as written. While this is below the seat, the flange
+                stays at the grasp height and rides with the belt, so the
+                rise does not lift the pinch off the object before the pads
+                have closed.
+            seconds_left: How long the run has left, in seconds. None means
+                the caller has no horizon. A close whose release would run
+                past it is given up before the jaw shuts.
+            pinch_gap: How far the nearest object sits from the pinch, in
+                meters. None skips the gap gate. A gap past the limit is
+                given up before the jaw shuts.
 
         Returns:
             What to command, or None when no plan is active. None on the tick
@@ -614,25 +702,171 @@ class TaskMachine:
             raise TypeError("tick requires flange_position_world or flange")
         if self._plan is None:
             return None
-        sampled = self._plan.at(at_seconds)
+        dt = 0.0 if self._prev_tick is None else max(0.0, at_seconds - self._prev_tick)
+        self._prev_tick = at_seconds
+        query = at_seconds - self._align_lag - self._seat_lag
+        sampled = self._plan.at(query)
         if sampled is None:
-            self._finish(flange_pos, at_seconds)
-            return None
+            return self._release_or_finish(flange_pos, at_seconds)
         phase, state, grip = sampled
+        yaw = self._plan.yaw_at(query)
+        if yaw is None:
+            yaw = self._plan_yaw
+        aimed = object_yaw if object_yaw is not None else yaw
+        if self._yaw_is_late(phase, grip, aimed, tool_yaw):
+            assert self._plan is not None
+            if object_yaw is not None:
+                self._plan = self._plan.with_yaw(
+                    target_yaw=object_yaw, initial_yaw=object_yaw
+                )
+                self._plan_yaw = object_yaw
+                yaw = object_yaw
+            if not self._aligning:
+                self._aligning = True
+                self._align_lag = at_seconds - self._plan.pick_at
+                self._story.tell(
+                    at_seconds,
+                    "the tool yaw is off the grasp",
+                    f"hold the jaw open on {self._story.refer(self._plan.track_id)} "
+                    "until the wrist arrives",
+                    "pending",
+                    channel=self._story.channel_of(self._plan.track_id),
+                )
+            else:
+                self._align_wait += dt
+                self._align_lag += dt
+            if self._align_wait > self._settings.grasp_align_limit_seconds:
+                track = self._plan.track_id
+                self._last_visit_closed = False
+                self._abandon(
+                    track,
+                    at_seconds,
+                    "the wrist could not match the grasp yaw before the jaw closed",
+                    None,
+                    False,
+                )
+                return None
+            frozen = self._plan.at(self._plan.pick_at)
+            if frozen is None:
+                frozen = sampled
+            phase, state, _ignored = frozen
+            grip = JAW_OPEN
+            frozen_yaw = self._plan.yaw_at(self._plan.pick_at)
+            if frozen_yaw is not None:
+                yaw = frozen_yaw
+        if (
+            seconds_left is not None
+            and not self._jaw_committed
+            and phase is Phase.HOLD
+            and grip >= 0.5
+            and self._plan is not None
+        ):
+            # A package that stops the fingers short of the seat keeps the
+            # flange at the grasp for the whole close dwell before the plan
+            # clock moves again, so that dwell has to fit in what is left.
+            seat_budget = (
+                0.0
+                if jaw_travel is None
+                or jaw_travel >= self._settings.grasp_seat_fraction
+                else self._settings.dwell_seconds
+            )
+            remaining = (
+                self._plan.started_at
+                + self._plan.duration
+                - self._plan.pick_at
+                + self._settings.release_dwell_seconds
+                + seat_budget
+            )
+            if remaining > seconds_left:
+                track = self._plan.track_id
+                self._last_visit_closed = False
+                self._abandon(
+                    track,
+                    at_seconds,
+                    "the release would run past the end of the run",
+                    None,
+                    False,
+                )
+                return None
+        if (
+            pinch_gap is not None
+            and not self._jaw_committed
+            and phase is Phase.HOLD
+            and grip >= 0.5
+            and pinch_gap > self._settings.grasp_gap_limit
+            and self._plan is not None
+        ):
+            track = self._plan.track_id
+            self._last_visit_closed = False
+            self._abandon(
+                track,
+                at_seconds,
+                "the object is too far from the pinch to close on",
+                pinch_gap,
+                False,
+            )
+            return None
+        if (
+            jaw_travel is not None
+            and not self._seated
+            and phase is Phase.HOLD
+            and grip >= 0.5
+            and self._plan is not None
+        ):
+            # The seat is a fraction of the driver stroke. The dwell is the
+            # backup when a package stops the fingers short of it, so the
+            # rise still waits out the close.
+            seated = jaw_travel >= self._settings.grasp_seat_fraction or (
+                self._seating and self._seat_wait >= self._settings.dwell_seconds
+            )
+            if not seated:
+                if not self._seating:
+                    self._seating = True
+                    self._seat_lag = at_seconds - self._align_lag - self._plan.pick_at
+                    if not self._told_seat:
+                        self._told_seat = True
+                        referred = self._story.refer(self._plan.track_id)
+                        self._story.tell(
+                            at_seconds,
+                            "the fingers have not closed on the object yet",
+                            f"keep the pinch on {referred} until they have",
+                            "pending",
+                            channel=self._story.channel_of(self._plan.track_id),
+                        )
+                else:
+                    self._seat_wait += dt
+                    self._seat_lag += dt
+                frozen = self._plan.at(self._plan.pick_at)
+                if frozen is not None:
+                    phase, state, _ignored = frozen
+                grip = JAW_SHUT
+                seated_yaw = self._plan.yaw_at(self._plan.pick_at)
+                if seated_yaw is not None:
+                    yaw = seated_yaw
+            else:
+                if not self._seated:
+                    self._seated = True
+                    self._aim_release_at_the_chute()
         if phase is not self._phase:
             self._narrate_phase(phase, at_seconds)
-        if phase is Phase.HOLD and self._pick_error is None:
+        if phase is Phase.HOLD and self._pick_error is None and grip >= 0.5:
             # The hold begins at the instant the jaw reaches the object, so
-            # the first tick of it is the one a pick is decided on. Later
-            # ticks are the carry, and measuring there would report how well
-            # the arm rides the belt rather than how well it arrived.
+            # the first tick the jaw is allowed to close is the one a pick is
+            # decided on. An open jaw waiting on the wrist is not that tick.
             self._pick_error = distance(flange_pos, state.position)
         self._phase = phase
-        yaw = self._plan.yaw_at(at_seconds)
         if yaw is None:
             yaw = self._plan_yaw
         self._last_yaw = yaw
-
+        if grip >= 0.5:
+            self._jaw_committed = True
+        # The plan clock waits while the wrist arrives and while the fingers
+        # close, so the rise does not start early. The object does not wait
+        # with it. The belt keeps carrying the package, and the command has
+        # to ride that same distance or the pinch is left behind.
+        state = self._shift_for_wait(state, phase, query)
+        self._release_pose = np.asarray(state.position, dtype=np.float64)
+        self._release_yaw = yaw
         return VisitTick(
             phase=phase,
             position=state.position,
@@ -640,6 +874,144 @@ class TaskMachine:
             yaw=yaw,
             grip=grip,
         )
+
+    def _shift_for_wait(self, state: State, phase: Phase, query: float) -> State:
+        """Return `state` moved along the belt by the time the clock has waited.
+
+        The shift is constant, so it does not change the commanded velocity.
+        [_aim_release_at_the_chute] has already moved the delivery's end
+        back by the same distance, and the two cancel over the chute.
+
+        Args:
+            state: The pose the plan clock sampled.
+            phase: Unused. The shift does not depend on the phase.
+            query: Unused. The wait is already in the lags.
+
+        Returns:
+            The same pose, shifted by belt speed times the wait, or `state`
+            when the clock has not waited.
+        """
+        del phase, query
+        waited = self._align_lag + self._seat_lag
+        if waited <= 0.0 or self._belt_speed <= 0.0:
+            return state
+        position = np.asarray(state.position, dtype=np.float64).copy()
+        position[0] += self._belt_speed * waited
+        return State(
+            position=position,
+            velocity=np.asarray(state.velocity, dtype=np.float64),
+            acceleration=np.asarray(state.acceleration, dtype=np.float64),
+        )
+
+    def _aim_release_at_the_chute(self) -> None:
+        """Move the delivery back along the belt by the wait, once it is known.
+
+        The command rides forward with the package while the clock waits.
+        The delivery was aimed at the chute from the pose the plan froze, so
+        leaving it there would release one wait downstream of the mouth.
+        Pulling the delivery waypoints back by that wait, and leaving the
+        retreat's end where it is, makes the ridden command land on the mouth.
+        """
+        if self._plan is None or self._release_aimed:
+            return
+        waited = self._align_lag + self._seat_lag
+        if waited <= 0.0 or self._belt_speed <= 0.0:
+            self._release_aimed = True
+            return
+        # Only the part of the wait that would carry the release outside the
+        # mouth is given back. A smaller correction leaves a pinch that is
+        # already on the package in the jaw.
+        carried = self._belt_speed * waited
+        back = max(0.0, carried - self._settings.release_belt_margin)
+        legs: list[Leg] = []
+        seen_deliver = False
+        for leg in self._plan.legs:
+            if leg.phase is not Phase.DELIVER:
+                legs.append(leg)
+                continue
+            start = leg.segment.start
+            end = leg.segment.end
+            if seen_deliver:
+                start = _along_belt(start, -back)
+            end = _along_belt(end, -back)
+            seen_deliver = True
+            legs.append(
+                Leg(
+                    phase=leg.phase,
+                    segment=Segment(
+                        start=start,
+                        end=end,
+                        duration=leg.segment.duration,
+                    ),
+                    grip=leg.grip,
+                )
+            )
+        self._plan = Plan(
+            track_id=self._plan.track_id,
+            legs=tuple(legs),
+            started_at=self._plan.started_at,
+            pick_at=self._plan.pick_at,
+            target_yaw=self._plan.target_yaw,
+            initial_yaw=self._plan.initial_yaw,
+            transport_velocity=self._plan.transport_velocity,
+        )
+        self._release_aimed = True
+
+    def _yaw_is_late(
+        self,
+        phase: Phase,
+        grip: float,
+        yaw: float | None,
+        tool_yaw: float | None,
+    ) -> bool:
+        """Whether the jaw would close before the tool has reached the grasp yaw."""
+        if self._jaw_committed or tool_yaw is None or yaw is None:
+            return False
+        if phase is not Phase.HOLD or grip < 0.5:
+            return False
+        return parallel_yaw_error(yaw, tool_yaw) > self._settings.grasp_yaw_tolerance
+
+    def _release_or_finish(
+        self, flange: NDArray[np.float64], at_seconds: float
+    ) -> VisitTick | None:
+        """Hold the release, then record the visit.
+
+        Args:
+            flange: Where the flange stands.
+            at_seconds: Simulated time.
+
+        Returns:
+            A tick that stays at the release pose with the jaw opening, or
+            None once that wait is over and the visit has been recorded.
+        """
+        dwell = self._settings.release_dwell_seconds
+        if (
+            self._jaw_committed
+            and dwell > 0.0
+            and self._release_until is None
+            and self._release_pose is not None
+        ):
+            self._release_until = at_seconds + dwell
+            track = self._plan.track_id if self._plan is not None else self._serving
+            self._story.tell(
+                at_seconds,
+                "the arcs have run out over the chute",
+                f"hold station with the jaw opening until "
+                f"{self._story.refer(track)} has left the fingers",
+                "pending",
+                channel=self._story.channel_of(track),
+            )
+        if self._release_until is not None and at_seconds < self._release_until:
+            assert self._release_pose is not None
+            return VisitTick(
+                phase=Phase.DELIVER,
+                position=self._release_pose,
+                velocity=zeros(),
+                yaw=self._release_yaw,
+                grip=JAW_OPEN,
+            )
+        self._finish(flange, at_seconds)
+        return None
 
     def _narrate_phase(self, phase: Phase, at_seconds: float) -> None:
         """Say that an active visit has entered another phase.
@@ -1264,6 +1636,9 @@ class TaskMachine:
         self._serving, self._arrived_at = None, None
         self._told_reaim = None
         self._phase = Phase.STANDBY
+        self._jaw_committed = False
+        self._last_visit_closed = False
+        self._clear_visit_clock()
 
     def _commit(
         self,
@@ -1551,12 +1926,29 @@ class TaskMachine:
             self._plan.track_id,
             error,
         )
+        self._last_visit_closed = self._jaw_committed
+        self._jaw_committed = False
         self._plan = None
         self._plan_yaw = None
         self._pick_error = None
         self._serving = None
         self._arrived_at = None
         self._told_reaim = None
+        self._clear_visit_clock()
+
+    def _clear_visit_clock(self) -> None:
+        """Drop the alignment and release timers a finished visit was using."""
+        self._prev_tick = None
+        self._aligning = False
+        self._align_lag = 0.0
+        self._align_wait = 0.0
+        self._release_until = None
+        self._seating = False
+        self._seated = False
+        self._seat_lag = 0.0
+        self._seat_wait = 0.0
+        self._told_seat = False
+        self._release_aimed = False
         self._phase = Phase.STANDBY
 
     def _next(self, queue: Queue) -> Candidate | None:
