@@ -111,7 +111,12 @@ class GraspPathWatch:
         if self._last is not None:
             self._belt += belt_speed * (time - self._last)
         self._last = time
-        if track is None or track in self._closed:
+        # A tick with no plan is not a new visit. Sealing here split one
+        # descent into a sample per tick, and the worst height was a list
+        # instead of a figure.
+        if track is None:
+            return
+        if track in self._closed:
             self._seal(closed=False)
             return
         if self._open is None or self._open.track != track:

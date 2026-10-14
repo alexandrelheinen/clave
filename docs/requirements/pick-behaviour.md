@@ -93,7 +93,11 @@ Between the first contact of the jaw with the target and the jaw being
 commanded shut, the target's horizontal displacement and its rotation
 relative to the belt shall stay about zero. The run report shall give that
 displacement and that rotation, and the lowest the jaw sat above the
-package's top while the pinch was more than 5 mm off it.
+package's top while the pinch was more than 5 mm off it, one figure per
+visit. The servo lead shall stay on along the belt and vertically through
+the descent and the hold. Switching it off leaves the flange one lead-time
+upstream, about 8 mm at the shipped belt speed, while the jaw is already
+below the package. The across-belt component of that lead shall stay off.
 
 ## Test plan
 
@@ -105,4 +109,4 @@ package's top while the pinch was more than 5 mm off it.
 | `AC-BEHAVE-04` | `test_the_solver_prefers_an_extended_reach_over_a_folded_wrist` |
 | `AC-BEHAVE-05` | `test_the_arm_holds_the_release_until_the_object_can_fall`, `test_the_jaw_stays_open_until_the_wrist_matches`, `test_a_wrist_that_cannot_match_is_not_an_attempt`, `test_the_rise_waits_until_the_fingers_have_closed`, `test_a_close_that_cannot_finish_is_not_an_attempt`, `test_a_far_object_is_not_an_attempt`, `test_the_release_is_still_the_planned_chute`, `test_the_close_stays_on_the_hold_when_the_pick_falls_in_the_descent` |
 | `AC-BEHAVE-06` | `test_a_contact_velocity_does_not_aim_the_jaw_ahead` |
-| `AC-BEHAVE-07` | `test_the_descent_is_vertical_in_the_object_frame`, `test_the_jaw_is_over_the_package_before_any_part_drops_below_it`, `test_a_package_that_rides_the_belt_does_not_count_as_shoved`, `test_a_shove_before_the_jaw_shuts_is_the_slide_and_the_turn` |
+| `AC-BEHAVE-07` | `test_the_descent_is_vertical_in_the_object_frame`, `test_the_jaw_is_over_the_package_before_any_part_drops_below_it`, `test_a_package_that_rides_the_belt_does_not_count_as_shoved`, `test_a_shove_before_the_jaw_shuts_is_the_slide_and_the_turn`, `test_the_descent_keeps_the_along_belt_lead`, `test_a_gap_in_the_plan_does_not_split_one_visit` |

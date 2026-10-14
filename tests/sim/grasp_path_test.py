@@ -121,6 +121,31 @@ def test_a_visit_that_never_shuts_the_jaw_has_no_slide() -> None:
     assert watch.above[0] == pytest.approx(1.0 - 0.95)
 
 
+def test_a_gap_in_the_plan_does_not_split_one_visit() -> None:
+    """AC-BEHAVE-07: one visit reports one worst height, gap or no gap.
+
+    A tick with no plan used to seal the visit. The next tick opened
+    another, so one descent was reported as a hundred heights and the
+    worst of them was buried in the list.
+    """
+    watch = GraspPathWatch()
+    for step, lowest in enumerate((1.05, 1.02, 0.99)):
+        watch.observe(
+            track=None if step == 1 else 5,
+            time=step * 0.01,
+            pinch_xy=(0.0, 0.02),
+            lowest_z=lowest,
+            object_xy=(0.0, 0.0),
+            object_top_z=0.95,
+            object_quat=_flat(),
+            belt_speed=0.25,
+            contacting=False,
+            jaw_shut=False,
+        )
+    watch.finish()
+    assert watch.above == pytest.approx([0.99 - 0.95])
+
+
 def test_turn_radians_ignores_the_sign_of_a_quaternion() -> None:
     """The same rotation written with either sign is no turn."""
     assert turn_radians(_flat(), (1.0, 0.0, 0.0, 0.0)) == 0.0

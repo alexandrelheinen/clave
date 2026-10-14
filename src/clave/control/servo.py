@@ -41,6 +41,36 @@ from clave.control.pick import nearer_parallel_yaw
 from clave.world import arm as armmod
 
 
+def lead_velocity(
+    velocity: NDArray[np.float64],
+    *,
+    drop_lateral: bool,
+) -> NDArray[np.float64]:
+    """Return the velocity the servo lead may extrapolate.
+
+    The lead cancels the lag of a position loop against a moving command.
+    On the descent and the hold that command moves with the belt, and
+    dropping the lead there leaves the flange one lead-time upstream of the
+    package while the jaw is already below it (`AC-BEHAVE-07`).
+
+    The across-belt component is dropped on those phases. A residual there,
+    led forward, is the sideways jab a descent used to make.
+
+    Args:
+        velocity: The command velocity, in meters per second. The first
+            component is along the belt, the second across it.
+        drop_lateral: Whether to zero the across-belt component.
+
+    Returns:
+        The velocity to multiply by the lead time. The caller's array is
+        left as it was.
+    """
+    led = np.array(velocity, dtype=np.float64, copy=True)
+    if drop_lateral:
+        led[1] = 0.0
+    return led
+
+
 @dataclass(frozen=True)
 class Step:
     """What one servo tick did.

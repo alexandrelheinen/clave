@@ -64,7 +64,7 @@ from numpy.typing import NDArray
 from clave.control.motion import Command, Reference, toward
 from clave.control.pick import JAW_OPEN
 from clave.control.selection import Selector, pickable_in_belt
-from clave.control.servo import follow
+from clave.control.servo import follow, lead_velocity
 from clave.control.settings import ControlSettings, Phase
 from clave.control.story import AnomalyWatch, StoryLog
 from clave.control.task import TaskMachine
@@ -1049,23 +1049,31 @@ def run(
             tick_refusal: str | None = None
             if command is not None:
                 moving = command.velocity
-                # Lead cancels lag on a moving approach. Through DESCEND/HOLD the
-                # command should already match the object; extrapolating a large
-                # lateral quintic residual (seed-0 peak |vy| ≈ 0.94 m/s) only
-                # throws the jaw past the grasp.
-                lead = (
-                    0.0
-                    if flown is not None and flown.phase in (Phase.DESCEND, Phase.HOLD)
-                    else control.servo.lead_seconds
+                # The lead stays on through the descent and the hold. Turning
+                # it off there leaves the flange one lead-time upstream of a
+                # command that is moving at belt speed, and the jaw is already
+                # below the package while that error grows (AC-BEHAVE-07).
+                # The across-belt component stays unleaded: a residual there,
+                # led forward, is the sideways jab a descent used to make.
+                on_package = flown is not None and flown.phase in (
+                    Phase.DESCEND,
+                    Phase.HOLD,
+                )
+                servo_command = Command(
+                    position=command.position,
+                    yaw=command.yaw,
+                    speed=command.speed,
+                    velocity=lead_velocity(command.velocity, drop_lateral=on_package),
+                    aim=command.aim,
                 )
                 stepped = follow(
                     model,
                     data,
                     indices,
-                    command,
+                    servo_command,
                     control.servo.gain,
                     max_joint_step=joint_step,
-                    lead_seconds=lead,
+                    lead_seconds=control.servo.lead_seconds,
                     keep_inside=keep_inside,
                 )
                 if stepped.refusal is not None:
