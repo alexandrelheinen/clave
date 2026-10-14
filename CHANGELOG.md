@@ -42,16 +42,15 @@ Centers at 0.125 m on the belt the shipped line already runs.
   lies on the body and the bottom lies at the body's height. Clearing
   the spin left a tall face free to tip during the contact step and
   then ride on its side, where the jaw closes and the package does not
-  rise. Until the arm touches it, the flat pose is restored. A pinch
-  more than 15 mm from the package is given up before the jaw shuts.
-  On the crushed set a 25 mm gap rose 14 mm and was not placed, and a
-  10 mm gap was.
-  Until the arm touches it, the belt carries it at belt speed with no
-  lateral velocity and no rotation. The constraint stops at that
-  contact, so the grasp can lift it. On the seed-0 high-flow run,
-  thirty seconds, ground truth: 3 attempts, 3 placed, lifts 105, 131
-  and 122 mm. The feed measured 2.000 of 0.125 objects/s with the belt
-  at 0.250 m/s.
+  rise. Until the arm touches it, the flat pose is restored and the
+  belt carries it at belt speed with no lateral velocity and no
+  rotation. The constraint stops at that contact, so the grasp can
+  lift it. A pinch more than 15 mm from the package is given up before
+  the jaw shuts. On the crushed set a 25 mm gap rose 14 mm and was not
+  placed, and a 10 mm gap was. On the seed-0 high-flow run, thirty
+  seconds, ground truth: 1 attempt, 1 placed (CH-FERROUS), lift 117 mm,
+  jaw 7 mm from the object. The feed measured 2.000 of 0.125 objects/s
+  with the belt at 0.250 m/s.
 - `configs/debug/high-flow.yml` spaces centers at 0.125 m and names a
   pool of 64. At 0.25 m/s that is 2.0 objects per second, ten times the
   flow the v1.6.2 seed carried. Packages may touch. The shipped rate

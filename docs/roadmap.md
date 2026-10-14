@@ -6,7 +6,7 @@ CLAVE sorts waste on a simulated conveyor belt with a learned perception and
 pick policy, under a Rust safety layer that can override it. The loop closes
 end to end in simulation, and every number it produces comes from simulation.
 
-The tagged line runs through v1.6.5. What remains is identity taken from
+The latest tag is v1.6.4. What remains is identity taken from
 observation, a grip that holds through the carry, and a cycle time measured
 to a chute. `docs/architecture.md` records, under what is absent, that the
 proposal loop still borrows object identity from the simulator.
@@ -111,8 +111,7 @@ demo. A debug feed file and `clave sim --feed`, so a run can ask for
 2.0 objects per second on a 2.40 m/s belt without editing the shipped
 line. The arm picked nothing at that speed.
 
-**v1.6.4.** Tagged, and marked a pre-release once v1.6.5 replaced its
-demo. The same debug feed file kept the belt at the drive floor,
+**v1.6.4.** Tagged. The same debug feed file kept the belt at the drive floor,
 0.25 m/s, and spaced package centers at 0.22 m, because a closer gap
 stalled a package the origin test was not driving.
 
