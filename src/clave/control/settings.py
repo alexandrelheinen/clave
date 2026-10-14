@@ -173,7 +173,7 @@ class TaskSettings:
     grasp_yaw_tolerance: float = math.pi
     grasp_align_limit_seconds: float = 0.50
     grasp_seat_fraction: float = 0.70
-    grasp_gap_limit: float = 0.025
+    grasp_gap_limit: float = 0.015
     release_belt_margin: float = 0.08
 
     def __init__(
@@ -197,7 +197,7 @@ class TaskSettings:
         grasp_yaw_tolerance: float = math.pi,
         grasp_align_limit_seconds: float = 0.50,
         grasp_seat_fraction: float = 0.70,
-        grasp_gap_limit: float = 0.025,
+        grasp_gap_limit: float = 0.015,
         release_belt_margin: float = 0.08,
         *,
         park_position: NDArray[np.float64] | None = None,

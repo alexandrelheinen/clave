@@ -113,11 +113,12 @@ task:
   grasp_seat_fraction: 0.70
 
   # How far the nearest object may sit from the pinch, in meters, before
-  # the jaw is allowed to close. On the seed-0 high-flow run, gaps of
-  # 10, 15 and 17 mm were held and a gap of 36 mm was not. 25 mm sits
-  # between those. A visit past the limit is given up before the close,
-  # so it is not an attempt.
-  grasp_gap_limit_meters: 0.025
+  # the jaw is allowed to close. On the crushed packages a 10 mm gap was
+  # carried to the chute and a 25 mm gap rose 14 mm and was not placed.
+  # 15 mm is inside the gap that used to hold and outside the one that
+  # did not. A visit past the limit is given up before the close, so it
+  # is not an attempt.
+  grasp_gap_limit_meters: 0.015
 
   # How much of the belt ride during a close is left on the release, in
   # meters. The command rides forward with the package while the clock
