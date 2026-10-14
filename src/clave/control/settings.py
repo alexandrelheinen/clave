@@ -411,29 +411,27 @@ class ControlSettings:
         return cls(
             selection=SelectionSettings(
                 exit_weight=float(require(selection, "exit_weight", "selection")),
-                anchor_radius=_positive(selection, "anchor_radius_meters", "selection"),
+                anchor_radius=_positive(selection, "anchor_radius", "selection"),
             ),
             task=TaskSettings(
                 profile=_profile(task),
-                approach_height=_positive(task, "approach_height_meters", "task"),
-                arrival_tolerance=_positive(task, "arrival_tolerance_meters", "task"),
+                approach_height=_positive(task, "approach_height", "task"),
+                arrival_tolerance=_positive(task, "arrival_tolerance", "task"),
                 dwell_seconds=float(require(task, "dwell_seconds", "task")),
-                grasp_clearance=_positive(task, "grasp_clearance_meters", "task"),
-                approach_speed=_positive(
-                    task, "approach_speed_meters_per_second", "task"
-                ),
+                grasp_clearance=_positive(task, "grasp_clearance", "task"),
+                approach_speed=_positive(task, "approach_speed", "task"),
                 interception_limit=_positive(
                     task, "interception_limit_seconds", "task"
                 ),
                 interception_margin=_positive(task, "interception_margin", "task"),
-                park_position_world=_point(task, "park_position_meters", "task"),
+                park_position_world=_point(task, "park_position", "task"),
                 park_marker_color=_color(task, "park_marker_color", "task"),
                 safe_clearance=(
-                    _positive(task, "safe_clearance_meters", "task")
-                    if "safe_clearance_meters" in task
+                    _positive(task, "safe_clearance", "task")
+                    if "safe_clearance" in task
                     else None
                 ),
-                aim_tolerance=_positive(task, "aim_tolerance_meters", "task"),
+                aim_tolerance=_positive(task, "aim_tolerance", "task"),
                 drift_horizon=_positive(task, "drift_horizon_seconds", "task"),
                 closing_rise_seconds=_positive(task, "closing_rise_seconds", "task"),
                 leg_samples=int(require(task, "leg_samples", "task")),
@@ -448,19 +446,17 @@ class ControlSettings:
                 grasp_contact_fraction=_positive(
                     task, "grasp_contact_fraction", "task"
                 ),
-                grasp_gap_limit=_positive(task, "grasp_gap_limit_meters", "task"),
-                release_belt_margin=_positive(
-                    task, "release_belt_margin_meters", "task"
-                ),
+                grasp_gap_limit=_positive(task, "grasp_gap_limit", "task"),
+                release_belt_margin=_positive(task, "release_belt_margin", "task"),
                 grasp_yaw_rate=_positive(
                     task, "grasp_yaw_rate_radians_per_second", "task"
                 ),
             ),
             motion=MotionSettings(
-                max_speed=_positive(motion, "max_speed_meters_per_second", "motion"),
+                max_speed=_positive(motion, "max_speed", "motion"),
                 max_acceleration=_positive(
                     motion,
-                    "max_acceleration_meters_per_second_squared",
+                    "max_acceleration",
                     "motion",
                 ),
                 intercept_passes=int(require(motion, "intercept_passes", "motion")),
@@ -484,9 +480,7 @@ class ControlSettings:
                 lead_seconds=float(require(servo, "lead_seconds", "servo")),
             ),
             calibration=CalibrationSettings(
-                flange_offset=_point(
-                    calibration, "flange_offset_meters", "calibration"
-                ),
+                flange_offset=_point(calibration, "flange_offset", "calibration"),
             ),
         )
 

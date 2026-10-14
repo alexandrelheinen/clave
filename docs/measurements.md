@@ -268,7 +268,7 @@ rather than off a datasheet.
 | Command range | 0 to 255, which is the scale a real 2F-85 takes |
 | Force range | plus or minus 5 N at the tendon |
 
-`arm.max_grasp_width_meters` is the catalogue stroke of 85 mm rather than the
+`arm.max_grasp_width` is the catalogue stroke of 85 mm rather than the
 98.4 mm measured between body origins, because the clear opening between pad
 faces is the smaller figure and the catalogue states it.
 
@@ -740,7 +740,7 @@ compiled world, with and without the shipped lead:
 The lag is a time constant, as `servo.lead_seconds` says it is, and the lead
 cancels 96 to 99 percent of it at every speed. So the lag is not an open defect:
 it is a solved one whose solution the *other* number never heard about.
-`task.arrival_tolerance_meters` is 0.070 m and its comment rests on "the settled
+`task.arrival_tolerance` is 0.070 m and its comment rests on "the settled
 error at 24.3 mm over most of the width and 60.9 mm at the far edge", measured
 before the servo carried a feedforward term — the comment even names the fix
 that has since been made. At 1.0 to 1.25 mm of settled error the tolerance is

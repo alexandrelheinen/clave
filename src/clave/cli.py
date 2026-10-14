@@ -142,11 +142,11 @@ def _world_probe(root: Path, seconds: float, seed: int) -> int:
     conveyor = belt.Conveyor(
         plan,
         rng,
-        config.require_range(spawn, "spacing_meters", "spawn"),
-        config.require_range(spawn, "lateral_offset_meters", "spawn"),
-        config.require_range(spawn, "drop_height_meters", "spawn"),
+        config.require_range(spawn, "spacing", "spawn"),
+        config.require_range(spawn, "lateral_offset", "spawn"),
+        config.require_range(spawn, "drop_height", "spawn"),
         belt.flat_tilt(spawn),
-        entry_margin=float(config.require(spawn, "entry_margin_meters", "spawn")),
+        entry_margin=float(config.require(spawn, "entry_margin", "spawn")),
     )
     report = conveyor.report
     _log_output(
@@ -442,7 +442,7 @@ def _train(
     try:
         run = train(
             config,
-            config.window_exit_meters,
+            config.window_exit,
             budget=budget,
             world=world,
             thresholds=thresholds,

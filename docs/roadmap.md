@@ -207,7 +207,7 @@ What is still open. Closed items stay in the commits and in
   [learned-tracker](requirements/learned-tracker.md) at v1.7.0. See
   [measurements.md](measurements.md#what-the-arm-aims-at-with-the-tracker-in-the-loop).
 
-- **`association_radius_meters: 0.12` is still the proposal loop's gate.** The
+- **`association_radius: 0.12` is still the proposal loop's gate.** The
   comment in `configs/runtime/sitl.yml` sizes it for a 0.16 m belt. The belt is
   0.50 m. Widening the constant would admit the behavior-cloning proposals,
   which land 0.445 m from the expert's choice. The sim tracker already gates

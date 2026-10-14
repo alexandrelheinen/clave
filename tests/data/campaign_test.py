@@ -15,14 +15,10 @@ def test_train_and_validation_cover_the_grid_with_disjoint_seeds() -> None:
     config = CampaignConfig.load(CONFIG)
     planned = assignments(config)
     cells = {
-        (item.belt_speed, item.spacing_meters)
-        for item in planned
-        if item.role == "train"
+        (item.belt_speed, item.spacing) for item in planned if item.role == "train"
     }
     validation_cells = {
-        (item.belt_speed, item.spacing_meters)
-        for item in planned
-        if item.role == "validation"
+        (item.belt_speed, item.spacing) for item in planned if item.role == "validation"
     }
     expected = {
         (speed, spacing) for speed in config.belt_speeds for spacing in config.spacings
@@ -49,5 +45,5 @@ def test_a_corpus_config_names_a_missing_key(tmp_path: Path) -> None:
     """A missing level fails at load, naming the key."""
     path = tmp_path / "corpus.yml"
     path.write_text("corpus:\n  seed: 0\n")
-    with pytest.raises(CampaignError, match="belt_speeds_meters_per_second"):
+    with pytest.raises(CampaignError, match="belt_speeds"):
         CampaignConfig.load(path)

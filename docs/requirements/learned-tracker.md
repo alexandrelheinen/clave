@@ -212,7 +212,7 @@ introduces no estimator.
 
 Where an estimator does pay is association, which is this spec. A covariance
 is a principled association gate, and the roadmap already records the defect
-it would close: `association_radius_meters` is a global constant sized for a
+it would close: `association_radius` is a global constant sized for a
 0.16 m belt, and the belt is 0.50 m. The repair recorded there is that the
 radius becomes the track's own propagated footprint plus a gate. A Mahalanobis distance is that gate. It also buys outlier rejection,
 which matters more than it sounds: one residual in the same measurement run

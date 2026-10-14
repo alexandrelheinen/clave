@@ -45,25 +45,25 @@ def test_the_shipped_configuration_loads() -> None:
     ("block", "key"),
     [
         ("selection", "exit_weight"),
-        ("selection", "anchor_radius_meters"),
+        ("selection", "anchor_radius"),
         ("task", "profile"),
-        ("task", "approach_height_meters"),
+        ("task", "approach_height"),
         ("task", "dwell_seconds"),
         ("task", "release_dwell_seconds"),
         ("task", "grasp_yaw_tolerance_radians"),
         ("task", "grasp_align_limit_seconds"),
         ("task", "grasp_seat_fraction"),
         ("task", "grasp_contact_fraction"),
-        ("task", "grasp_gap_limit_meters"),
-        ("task", "release_belt_margin_meters"),
+        ("task", "grasp_gap_limit"),
+        ("task", "release_belt_margin"),
         ("task", "grasp_yaw_rate_radians_per_second"),
-        ("task", "park_position_meters"),
+        ("task", "park_position"),
         ("task", "park_marker_color"),
-        ("motion", "max_speed_meters_per_second"),
-        ("motion", "max_acceleration_meters_per_second_squared"),
+        ("motion", "max_speed"),
+        ("motion", "max_acceleration"),
         ("servo", "gain"),
         ("servo", "max_joint_speed_radians_per_second"),
-        ("calibration", "flange_offset_meters"),
+        ("calibration", "flange_offset"),
     ],
 )
 def test_an_absent_key_fails_at_load_naming_itself(block: str, key: str) -> None:
@@ -104,10 +104,10 @@ def test_both_profiles_are_selectable() -> None:
 @pytest.mark.parametrize(
     ("block", "key"),
     [
-        ("selection", "anchor_radius_meters"),
-        ("task", "approach_height_meters"),
-        ("motion", "max_speed_meters_per_second"),
-        ("motion", "max_acceleration_meters_per_second_squared"),
+        ("selection", "anchor_radius"),
+        ("task", "approach_height"),
+        ("motion", "max_speed"),
+        ("motion", "max_acceleration"),
         ("servo", "max_joint_speed_radians_per_second"),
     ],
 )
@@ -126,8 +126,8 @@ def test_a_bound_at_or_below_zero_is_refused(block: str, key: str) -> None:
 def test_a_point_that_is_not_three_numbers_is_refused() -> None:
     """A point that is not three numbers is refused."""
     parsed = raw()
-    parsed["task"]["park_position_meters"] = [0.45, -1.00]
-    with pytest.raises(ClaveError, match="park_position_meters"):
+    parsed["task"]["park_position"] = [0.45, -1.00]
+    with pytest.raises(ClaveError, match="park_position"):
         ControlSettings.load(parsed)
 
 
@@ -153,12 +153,12 @@ def test_the_park_pose_lies_inside_the_region_the_arm_is_trusted_over() -> None:
 
     park = shipped().task.park_position
     world = load(WORLD)
-    base = [float(value) for value in world["arm"]["base_position_meters"]]
+    base = [float(value) for value in world["arm"]["base_position"]]
 
-    band = [float(v) for v in world["arm"]["tool_above_base_meters"]]
+    band = [float(v) for v in world["arm"]["tool_above_base"]]
     bounds = armmod.ReachBounds(
-        float(world["arm"]["reach_min_meters"]),
-        float(world["arm"]["reach_max_meters"]),
+        float(world["arm"]["reach_min"]),
+        float(world["arm"]["reach_max"]),
         (band[0], band[1]),
     )
     assert armmod.reaches((base[0], base[1]), park[0], park[1], bounds)
@@ -178,11 +178,11 @@ def test_the_park_pose_stands_clear_of_the_sensing_gate() -> None:
     gate = next(
         entry for entry in world["cameras"] if str(entry["role"]) == "detection"
     )
-    gate_x = float(gate["position_meters"][0])
+    gate_x = float(gate["position"][0])
     half_span = 0.92 / 2.0
     assert abs(park[0] - gate_x) > half_span, "the arm parks inside the gate"
 
-    half_width = float(world["belt"]["width_meters"]) / 2.0
+    half_width = float(world["belt"]["width"]) / 2.0
     assert abs(park[1]) > half_width, "the arm parks over the belt"
 
 
@@ -303,10 +303,10 @@ def test_the_park_marker_is_visible_from_the_default_view() -> None:
     mujoco.mj_forward(model, data)
 
     camera = mujoco.MjvCamera()
-    camera.azimuth = float(view["azimuth_degrees"])
-    camera.elevation = float(view["elevation_degrees"])
-    camera.distance = float(view["distance_meters"])
-    camera.lookat[:] = [float(value) for value in view["lookat_meters"]]
+    camera.azimuth = float(view["azimuth_deg"])
+    camera.elevation = float(view["elevation_deg"])
+    camera.distance = float(view["distance"])
+    camera.lookat[:] = [float(value) for value in view["lookat"]]
 
     renderer = mujoco.Renderer(model, height=270, width=480)
     try:
@@ -319,7 +319,7 @@ def test_the_park_marker_is_visible_from_the_default_view() -> None:
             settings.task.park_marker_color,
             belt_surface=float(
                 world_config.require(
-                    world_config.require(world, "belt"), "surface_height_meters"
+                    world_config.require(world, "belt"), "surface_height"
                 )
             ),
         )

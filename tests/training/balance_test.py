@@ -27,7 +27,7 @@ def _text(balance: str, candidate: str = "resnet50-baseline") -> str:
         "  learning_rate: 0.0001\n"
         "  seed: 0\n"
         "  samples_per_crossing: 3\n"
-        "  window_exit_meters: 1.034\n"
+        "  window_exit: 1.034\n"
         "  act_chunk_size: 10\n"
         "  accumulation_steps: 1\n"
         f"  class_balance: {balance}\n"
@@ -113,7 +113,7 @@ def test_class_weight_count_logs_before_the_first_archive(
     sample = FrameSample(
         samples_per_crossing=1,
         dataset_digest="digest",
-        along_travel_meters=0.92,
+        along_travel=0.92,
         capture_interval_seconds=0.2,
         seed=0,
         picks={"rollout_000": (0,), "rollout_001": (1,)},

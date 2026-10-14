@@ -10,6 +10,7 @@ test in this file enforces.
 
 from __future__ import annotations
 
+import math
 import re
 from pathlib import Path
 
@@ -48,7 +49,9 @@ def test_a_sensor_carries_the_optics_its_parts_imply() -> None:
     """
     wide = require_role(shipped(), Role.DETECTION)
     assert wide.optics.camera_height == pytest.approx(1.942)
-    assert wide.optics.fovy_degrees == pytest.approx(55.65, abs=0.05)
+    assert wide.optics.fovy == pytest.approx(
+        math.radians(55.65), abs=math.radians(0.05)
+    )
     assert wide.pixels == (2448, 2048)
 
 
@@ -102,7 +105,7 @@ def test_adding_a_camera_of_an_existing_role_changes_nothing_else() -> None:
         dict(
             next(camera for camera in raw["cameras"] if camera["role"] == "code"),
             id="gate_code_fourth",
-            position_meters=[-1.0, 0.16, 1.63],
+            position=[-1.0, 0.16, 1.63],
         ),
     ]
     after = load_sensors(raw)

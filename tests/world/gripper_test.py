@@ -131,7 +131,7 @@ def test_no_object_in_the_set_is_wider_than_the_jaw() -> None:
     inferring it from a build that happened not to fail.
     """
     raw = load(WORLD)
-    assert float(raw["arm"]["max_grasp_width_meters"]) == pytest.approx(0.085)
+    assert float(raw["arm"]["max_grasp_width"]) == pytest.approx(0.085)
     assert not [
         entry for entry in raw["objects"] if entry.get("name") == "master_chef_can"
     ], "an object the jaw cannot close on is back in the set"

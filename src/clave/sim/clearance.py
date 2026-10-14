@@ -26,14 +26,14 @@ class JawState:
         clearance: That height less the belt surface, in meters. Negative means
             the geometry is inside the belt.
         contact: Whether any of that geometry is touching the belt.
-        tilt_degrees: How far the tool's own axis stands from the belt normal,
-            in degrees.
+        tilt: How far the tool's own axis stands from the belt normal, in
+            radians.
     """
 
     lowest_z: float
     clearance: float
     contact: bool
-    tilt_degrees: float
+    tilt: float
 
 
 def _jaw_collision_geoms(model: Any, arm: Any) -> tuple[int, ...]:
@@ -192,10 +192,10 @@ def _jaw_state(
             touching = True
             break
     axis = data.site_xmat[arm.tool_site].reshape(3, 3)[:, 2]
-    tilt = math.degrees(math.acos(max(-1.0, min(1.0, -float(axis[2])))))
+    tilt = math.acos(max(-1.0, min(1.0, -float(axis[2]))))
     return JawState(
         lowest_z=lowest,
         clearance=lowest - surface,
         contact=touching,
-        tilt_degrees=tilt,
+        tilt=tilt,
     )

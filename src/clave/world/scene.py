@@ -103,7 +103,7 @@ DEFAULT_DEMO_PRESENTATION: dict[str, Any] = {
     },
     "lights": [
         {
-            "position_meters": [1.40, -2.10, 1.15],
+            "position": [1.40, -2.10, 1.15],
             "direction": [-0.55, 0.72, -0.30],
             "directional": True,
             "diffuse": [0.82, 0.80, 0.74],
@@ -111,7 +111,7 @@ DEFAULT_DEMO_PRESENTATION: dict[str, Any] = {
             "cast_shadow": True,
         },
         {
-            "position_meters": [-1.70, 1.90, 1.05],
+            "position": [-1.70, 1.90, 1.05],
             "direction": [0.68, -0.66, -0.28],
             "directional": True,
             "diffuse": [0.48, 0.50, 0.54],
@@ -119,7 +119,7 @@ DEFAULT_DEMO_PRESENTATION: dict[str, Any] = {
             "cast_shadow": False,
         },
         {
-            "position_meters": [2.20, -0.40, 0.95],
+            "position": [2.20, -0.40, 0.95],
             "direction": [-0.80, 0.20, -0.40],
             "directional": True,
             "diffuse": [0.28, 0.24, 0.18],
@@ -379,50 +379,44 @@ def layout(raw: dict[str, Any], rng: np.random.Generator) -> SceneLayout:
     spawn_cfg = require(raw, "spawn")
     specs = parse(
         require(raw, "objects"),
-        float(require(arm_cfg, "max_grasp_width_meters", "arm")),
+        float(require(arm_cfg, "max_grasp_width", "arm")),
     )
     LOGGER.debug(
         "world layout: %d object templates, jaw limit %.3f m, seed state initialized",
         len(specs),
-        float(require(arm_cfg, "max_grasp_width_meters", "arm")),
+        float(require(arm_cfg, "max_grasp_width", "arm")),
     )
 
     belt = BeltGeometry(
-        length=float(require(belt_cfg, "length_meters", "belt")),
-        width=float(require(belt_cfg, "width_meters", "belt")),
-        surface_height=float(require(belt_cfg, "surface_height_meters", "belt")),
-        speed=require_range(belt_cfg, "speed_meters_per_second", "belt").sample(rng),
-        height_tolerance=float(require(belt_cfg, "height_tolerance_meters", "belt")),
-        speed_limit=float(
-            require(belt_cfg, "contact_speed_limit_meters_per_second", "belt")
-        ),
+        length=float(require(belt_cfg, "length", "belt")),
+        width=float(require(belt_cfg, "width", "belt")),
+        surface_height=float(require(belt_cfg, "surface_height", "belt")),
+        speed=require_range(belt_cfg, "speed", "belt").sample(rng),
+        height_tolerance=float(require(belt_cfg, "height_tolerance", "belt")),
+        speed_limit=float(require(belt_cfg, "contact_speed_limit", "belt")),
         jaw_release_fraction=float(require(belt_cfg, "jaw_release_fraction", "belt")),
     )
     takeaway_cfg = require(require(raw, "chutes"), "takeaway", "chutes")
     takeaway = TakeawayDrive(
-        speed=float(
-            require(takeaway_cfg, "speed_meters_per_second", "chutes.takeaway")
-        ),
-        height_min=float(require(takeaway_cfg, "height_min_meters", "chutes.takeaway")),
-        height_max=float(require(takeaway_cfg, "height_max_meters", "chutes.takeaway")),
+        speed=float(require(takeaway_cfg, "speed", "chutes.takeaway")),
+        height_min=float(require(takeaway_cfg, "height_min", "chutes.takeaway")),
+        height_max=float(require(takeaway_cfg, "height_max", "chutes.takeaway")),
         mouth_half_width=float(
-            require(takeaway_cfg, "mouth_half_width_meters", "chutes.takeaway")
+            require(takeaway_cfg, "mouth_half_width", "chutes.takeaway")
         ),
-        past_mouth=float(require(takeaway_cfg, "past_mouth_meters", "chutes.takeaway")),
-        toward_mouth=float(
-            require(takeaway_cfg, "toward_mouth_meters", "chutes.takeaway")
-        ),
+        past_mouth=float(require(takeaway_cfg, "past_mouth", "chutes.takeaway")),
+        toward_mouth=float(require(takeaway_cfg, "toward_mouth", "chutes.takeaway")),
     )
-    base = require(arm_cfg, "base_position_meters", "arm")
-    band = require(arm_cfg, "tool_above_base_meters", "arm")
-    pedestal = require(arm_cfg, "pedestal_footprint_meters", "arm")
+    base = require(arm_cfg, "base_position", "arm")
+    band = require(arm_cfg, "tool_above_base", "arm")
+    pedestal = require(arm_cfg, "pedestal_footprint", "arm")
     return SceneLayout(
         belt=belt,
         arm_base=np.asarray(
             (float(base[0]), float(base[1]), float(base[2])), dtype=np.float64
         ),
-        reach_min=float(require(arm_cfg, "reach_min_meters", "arm")),
-        reach_max=float(require(arm_cfg, "reach_max_meters", "arm")),
+        reach_min=float(require(arm_cfg, "reach_min", "arm")),
+        reach_max=float(require(arm_cfg, "reach_max", "arm")),
         tool_above_base=(float(band[0]), float(band[1])),
         pedestal=(float(pedestal[0]), float(pedestal[1])),
         channels=channels(specs),
@@ -468,15 +462,15 @@ def _add_chutes(
             a channel that can never be served, and catching that at load
             beats counting it as a fault at run time.
     """
-    mouth = [float(v) for v in require(cfg, "mouth_meters", "chutes")]
-    throat = [float(v) for v in require(cfg, "throat_meters", "chutes")]
-    fall = float(require(cfg, "throat_height_meters", "chutes"))
+    mouth = [float(v) for v in require(cfg, "mouth", "chutes")]
+    throat = [float(v) for v in require(cfg, "throat", "chutes")]
+    fall = float(require(cfg, "throat_height", "chutes"))
     takeaway = require(cfg, "takeaway", "chutes")
     takeaway_surface_height_world = float(
-        require(takeaway, "surface_height_meters", "chutes.takeaway")
+        require(takeaway, "surface_height", "chutes.takeaway")
     )
-    away_wide = float(require(takeaway, "width_meters", "chutes.takeaway"))
-    away_long = float(require(takeaway, "length_meters", "chutes.takeaway"))
+    away_wide = float(require(takeaway, "width", "chutes.takeaway"))
+    away_long = float(require(takeaway, "length", "chutes.takeaway"))
 
     belt_surface_height_world = plan.belt.surface_height
     mouths: dict[str, Any] = {}
@@ -686,7 +680,7 @@ def _mouth(cfg: dict[str, Any]) -> tuple[float, float]:
     Returns:
         The opening in meters.
     """
-    opening = require(cfg, "mouth_meters", "chutes")
+    opening = require(cfg, "mouth", "chutes")
     return (float(opening[0]), float(opening[1]))
 
 
@@ -706,9 +700,9 @@ def _chute_mouths(
     Raises:
         WorldConfigError: If a key is absent.
     """
-    offset = float(require(cfg, "offset_from_belt_meters", "chutes"))
-    first = float(require(cfg, "first_position_meters", "chutes"))
-    spacing = float(require(cfg, "spacing_meters", "chutes"))
+    offset = float(require(cfg, "offset_from_belt", "chutes"))
+    first = float(require(cfg, "first_position", "chutes"))
+    spacing = float(require(cfg, "spacing", "chutes"))
     return {
         channel: np.asarray(
             (first + index * spacing, offset, surface), dtype=np.float64
@@ -780,7 +774,7 @@ def _light_for_presentation(
     for index, light in enumerate(presentation.get("lights", [])):
         kwargs: dict[str, Any] = {
             "name": f"presentation_light_{index}",
-            "pos": [float(v) for v in require(light, "position_meters", "lights")],
+            "pos": [float(v) for v in require(light, "position", "lights")],
             "dir": [float(v) for v in require(light, "direction", "lights")],
             "diffuse": [float(v) for v in require(light, "diffuse", "lights")],
             "specular": [float(v) for v in light.get("specular", [0.1, 0.1, 0.1])],
@@ -880,7 +874,7 @@ def _annotate_for_presentation(
     ring = annotations.get("reach_ring")
     if ring:
         rgba = [float(v) for v in require(ring, "rgba", "annotations.reach_ring")]
-        thickness = float(require(ring, "thickness_meters", "annotations.reach_ring"))
+        thickness = float(require(ring, "thickness", "annotations.reach_ring"))
         count = int(require(ring, "segment_count", "annotations.reach_ring"))
         # The radii are the layout's, so a ring cannot outlive the
         # workspace it describes.
@@ -904,10 +898,8 @@ def _annotate_for_presentation(
     edges = annotations.get("window_edges")
     if edges:
         rgba = [float(v) for v in require(edges, "rgba", "annotations.window_edges")]
-        thickness = float(
-            require(edges, "thickness_meters", "annotations.window_edges")
-        )
-        height = float(require(edges, "height_meters", "annotations.window_edges"))
+        thickness = float(require(edges, "thickness", "annotations.window_edges"))
+        height = float(require(edges, "height", "annotations.window_edges"))
         # The sweep places these, so the figure and the safety layer
         # cannot disagree about where an object enters and leaves reach.
         for label, position in zip(
@@ -924,8 +916,8 @@ def _annotate_for_presentation(
 
     tags = annotations.get("class_markers")
     if tags:
-        radius = float(require(tags, "radius_meters", "annotations.class_markers"))
-        above = float(require(tags, "height_above_meters", "annotations.class_markers"))
+        radius = float(require(tags, "radius", "annotations.class_markers"))
+        above = float(require(tags, "height_above", "annotations.class_markers"))
         # The color is the object's own channel rather than a value
         # the scenario assigns per slot, so the legend cannot drift from the
         # object set.
@@ -998,8 +990,8 @@ def _dress(mujoco: Any, spec: Any, world: Any, raw: dict[str, Any], root: Path) 
             continue
         mesh_name = f"prop_{index}"
         spec.add_mesh(name=mesh_name, file=str(path))
-        position = [float(v) for v in require(prop, "position_meters", name)]
-        yaw = math.radians(float(require(prop, "yaw_degrees", name)))
+        position = [float(v) for v in require(prop, "position", name)]
+        yaw = math.radians(float(require(prop, "yaw_deg", name)))
         world.add_geom(
             name=mesh_name,
             type=mujoco.mjtGeom.mjGEOM_MESH,
@@ -1386,9 +1378,9 @@ def _add_supports(
         belt_legs: Whether to stand the belt on a frame and legs. False when
             the conveyor modules are drawn, since they carry their own.
     """
-    leg = float(require(structure, "leg_side_meters", "structure"))
-    inset = float(require(structure, "leg_inset_meters", "structure"))
-    frame_depth = float(require(structure, "frame_depth_meters", "structure"))
+    leg = float(require(structure, "leg_side", "structure"))
+    inset = float(require(structure, "leg_inset", "structure"))
+    frame_depth = float(require(structure, "frame_depth", "structure"))
     steel = [0.32, 0.33, 0.36, 1.0]
 
     if belt_legs:
@@ -1593,11 +1585,11 @@ def field_of_view(
     return 2.0 * math.degrees(math.atan(across / (2.0 * focal)))
 
 
-def along_travel_meters(
+def along_travel(
     camera: dict[str, Any],
     sensors: dict[str, Any],
     lenses: dict[str, Any],
-    standoff_meters: float,
+    standoff: float,
 ) -> float:
     """Return the belt length a nadir camera sees along travel.
 
@@ -1608,7 +1600,7 @@ def along_travel_meters(
         camera: One entry from the `cameras` list.
         sensors: The `sensors` catalog.
         lenses: The `lenses` catalog.
-        standoff_meters: Distance from the lens to the belt plane.
+        standoff: Distance from the lens to the belt plane.
 
     Returns:
         The along-travel footprint in meters.
@@ -1616,9 +1608,9 @@ def along_travel_meters(
     Raises:
         WorldConfigError: If the standoff or the focal length cannot form an image.
     """
-    if not math.isfinite(standoff_meters) or standoff_meters <= 0.0:
+    if not math.isfinite(standoff) or standoff <= 0.0:
         raise WorldConfigError(
-            f"camera {camera.get('id')!r} has standoff {standoff_meters!r}, "
+            f"camera {camera.get('id')!r} has standoff {standoff!r}, "
             f"which does not meet the belt"
         )
     _across, along = sensor_span_millimeters(camera, sensors, lenses)
@@ -1633,10 +1625,10 @@ def along_travel_meters(
         raise WorldConfigError(
             f"lens {name!r} has focal length {focal!r}, which forms no image"
         )
-    return standoff_meters * (along / focal)
+    return standoff * (along / focal)
 
 
-def detection_along_travel_meters(raw: dict[str, Any]) -> float:
+def detection_along_travel(raw: dict[str, Any]) -> float:
     """Return the along-travel footprint of the first detection camera.
 
     Args:
@@ -1650,7 +1642,7 @@ def detection_along_travel_meters(raw: dict[str, Any]) -> float:
             is incomplete.
     """
     belt = require(raw, "belt")
-    surface = float(require(belt, "surface_height_meters", "belt"))
+    surface = float(require(belt, "surface_height", "belt"))
     chosen: dict[str, Any] | None = None
     for camera in require(raw, "cameras"):
         if isinstance(camera, dict) and camera.get("role") == "detection":
@@ -1658,9 +1650,9 @@ def detection_along_travel_meters(raw: dict[str, Any]) -> float:
             break
     if chosen is None:
         raise WorldConfigError("the world has no camera with role 'detection'")
-    position = require(chosen, "position_meters", "cameras")
+    position = require(chosen, "position", "cameras")
     standoff = float(position[2]) - surface
-    return along_travel_meters(
+    return along_travel(
         chosen, require(raw, "sensors"), require(raw, "lenses"), standoff
     )
 
@@ -1710,19 +1702,19 @@ def build(
     # a command to respect it. Read here and applied to the vendored gripper
     # spec, which is why the number is not in the control configuration.
     closing_torque = float(
-        require(require(raw, "effector"), "closing_torque_newton_meters", "effector")
+        require(require(raw, "effector"), "closing_torque", "effector")
     )
     if not closing_torque > 0.0:
         raise WorldConfigError(
-            f"effector.closing_torque_newton_meters is {closing_torque}, and a jaw "
+            f"effector.closing_torque is {closing_torque}, and a jaw "
             f"that may not close holds nothing"
         )
     closing_torque = float(
-        require(require(raw, "effector"), "closing_torque_newton_meters", "effector")
+        require(require(raw, "effector"), "closing_torque", "effector")
     )
     if not closing_torque > 0.0:
         raise WorldConfigError(
-            f"effector.closing_torque_newton_meters is {closing_torque}, and a jaw "
+            f"effector.closing_torque is {closing_torque}, and a jaw "
             f"that may not close holds nothing"
         )
     mujoco_spec = mujoco.MjSpec()
@@ -1800,7 +1792,7 @@ def build(
     # Side guides. A real sorting line has them, and without them a cylinder
     # that lands and tips simply rolls off the belt, which showed up as objects
     # recorded at lateral positions outside the belt's own width.
-    rail = float(require(require(raw, "belt"), "guide_height_meters", "belt"))
+    rail = float(require(require(raw, "belt"), "guide_height", "belt"))
     for sign in (-1.0, 1.0):
         world.add_geom(
             name=f"belt_guide_{'left' if sign < 0 else 'right'}",
@@ -1812,19 +1804,19 @@ def build(
 
     mouths = _add_chutes(mujoco, world, plan, chutes_cfg)
 
-    drop = require_range(spawn_cfg, "drop_height_meters", "spawn")
-    crushed = float(require(spawn_cfg, "crushed_height_meters", "spawn"))
-    minimum_rest = float(require(spawn_cfg, "minimum_rest_height_meters", "spawn"))
+    drop = require_range(spawn_cfg, "drop_height", "spawn")
+    crushed = float(require(spawn_cfg, "crushed_height", "spawn"))
+    minimum_rest = float(require(spawn_cfg, "minimum_rest_height", "spawn"))
     round_ratio = float(require(spawn_cfg, "round_extent_ratio", "spawn"))
-    opening = float(require(require(raw, "arm"), "max_grasp_width_meters", "arm"))
+    opening = float(require(require(raw, "arm"), "max_grasp_width", "arm"))
     if not crushed > 0.0:
         raise WorldConfigError(
-            f"spawn.crushed_height_meters is {crushed}, and a package of no "
+            f"spawn.crushed_height is {crushed}, and a package of no "
             "height is not one the jaw can meet"
         )
     if not 0.0 < minimum_rest <= crushed:
         raise WorldConfigError(
-            f"spawn.minimum_rest_height_meters is {minimum_rest} and the crushed "
+            f"spawn.minimum_rest_height is {minimum_rest} and the crushed "
             f"height is {crushed}; the pads need a face between the two"
         )
     friction, condim = _rest_contact(spawn_cfg)
@@ -1919,7 +1911,7 @@ def build(
     # points it straight down at the belt. Rotating it by 180 degrees about x,
     # which looks correct at a glance, aims it at the sky and renders black.
     for sensor in camera_cfg:
-        position = require(sensor, "position_meters", "cameras")
+        position = require(sensor, "position", "cameras")
         world.add_camera(
             name=str(require(sensor, "id", "cameras")),
             pos=[float(position[0]), float(position[1]), float(position[2])],
@@ -1950,7 +1942,7 @@ def build(
         model,
         data,
         plan,
-        float(require(require(raw, "arm"), "max_grasp_width_meters", "arm")),
+        float(require(require(raw, "arm"), "max_grasp_width", "arm")),
     )
     _ = drop
     return model, data, plan

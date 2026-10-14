@@ -109,7 +109,7 @@ class ScoredConfiguration:
             "overridden": self.result.overridden,
             "decisions_outside_window": self.result.outside_window,
             "decisions_per_simulated_second": self.result.decision_rate,
-            "belt_speeds_meters_per_second": list(self.result.belt_speeds),
+            "belt_speeds": list(self.result.belt_speeds),
             "overall_accuracy": self.accuracy,
             "majority_class_share": self.majority_class_share,
             "class_support": self.class_support,

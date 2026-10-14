@@ -9,12 +9,12 @@ use clave_decision::{MaterialClass, codec};
 use clave_sitl::{ServeConfig, serve};
 
 const CONFIG: &str = r#"{
-  "base_meters": [0.0, -0.70, 0.90],
-  "reach_meters": [0.25, 1.25],
-  "tool_above_base_meters": [-0.05, 0.45],
-  "belt_surface_z_meters": 0.90,
-  "belt_x_meters": [-1.5, 1.5],
-  "belt_y_meters": [-0.5, 0.5],
+  "base": [0.0, -0.70, 0.90],
+  "reach": [0.25, 1.25],
+  "tool_above_base": [-0.05, 0.45],
+  "belt_surface_z": 0.90,
+  "belt_x": [-1.5, 1.5],
+  "belt_y": [-0.5, 0.5],
   "channels": {"M-01": 1, "M-05": 2},
   "reject_channel": 0,
   "confidence_floor": 0.6

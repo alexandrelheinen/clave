@@ -50,8 +50,8 @@ class VideoSettings:
         interval_seconds: Simulated seconds between rendered frames. The loop
             decides every half simulated second, which is far too sparse to
             watch, so the video renders on its own cadence.
-        azimuth: Camera azimuth in degrees.
-        elevation: Camera elevation in degrees.
+        azimuth: Camera azimuth, in radians.
+        elevation: Camera elevation, in radians.
         distance: Camera distance from its target, in meters.
         lookat: What the camera points at, in world meters.
     """

@@ -57,7 +57,7 @@ def _sample(looks: int = 3) -> FrameSample:
     return FrameSample(
         samples_per_crossing=looks,
         dataset_digest="a" * 64,
-        along_travel_meters=0.92,
+        along_travel=0.92,
         capture_interval_seconds=0.2,
         seed=0,
         picks={},
@@ -212,7 +212,7 @@ def test_a_pick_uses_the_archive_when_the_rollout_recorded_a_speed(
                 10,
                 4,
                 0,
-                belt_speed_meters_per_second=None,
+                belt_speed=None,
             ),
         ),
     )
@@ -234,7 +234,7 @@ def test_a_pick_uses_the_archive_when_the_rollout_recorded_a_speed(
                 10,
                 30,
                 0,
-                belt_speed_meters_per_second=0.25,
+                belt_speed=0.25,
             ),
         ),
     )
