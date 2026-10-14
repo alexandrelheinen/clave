@@ -6,7 +6,7 @@ CLAVE sorts waste on a simulated conveyor belt with a learned perception and
 pick policy, under a Rust safety layer that can override it. The loop closes
 end to end in simulation, and every number it produces comes from simulation.
 
-The tagged line runs through v1.6.4. What remains is identity taken from
+The tagged line runs through v1.6.5. What remains is identity taken from
 observation, a grip that holds through the carry, and a cycle time measured
 to a chute. `docs/architecture.md` records, under what is absent, that the
 proposal loop still borrows object identity from the simulator.
@@ -75,10 +75,11 @@ and when.
 
 Versions already tagged stay where they are. v1.2.0, v1.4.0 and v1.5.0 were
 named while the work was open and were never tagged. The latest tag is
-v1.6.4. v1.6.0 remains the feed-rate minor. v1.6.2 is the
+v1.6.5. v1.6.0 remains the feed-rate minor. v1.6.2 is the
 probabilistic-sorting patch. v1.6.3 asked one run for a faster belt,
-and v1.6.4 keeps that belt on the shipped drive and closes the spacing
-instead. They do not close a ladder step. The work that was still open under the
+v1.6.4 closed the spacing to 0.22 m, and v1.6.5 drives a resting
+package from the bottom of its geometry so the same belt can carry
+centers at 0.125 m. They do not close a ladder step. The work that was still open under the
 earlier names continues as v1.7.0, v1.8.0
 and v1.9.0. A later minor is greater than v1.6.0.
 
@@ -110,12 +111,18 @@ demo. A debug feed file and `clave sim --feed`, so a run can ask for
 2.0 objects per second on a 2.40 m/s belt without editing the shipped
 line. The arm picked nothing at that speed.
 
-**v1.6.4.** Tagged. The same debug feed file now keeps the belt at the
-drive floor, 0.25 m/s, and spaces package centers at 0.22 m. That is
-the dense spacing at which a thirty-second seed still finishes. It
-carries 1.14 objects per second. Ten times the v1.6.2 flow would need
-0.125 m centers at this speed, inside the 0.180 m the two largest
-packages need once one tips. A second arm is not part of this patch.
+**v1.6.4.** Tagged, and marked a pre-release once v1.6.5 replaced its
+demo. The same debug feed file kept the belt at the drive floor,
+0.25 m/s, and spaced package centers at 0.22 m, because a closer gap
+stalled a package the origin test was not driving.
+
+**v1.6.5.** Tagged. The belt drives a package from the bottom of its
+geometry, so a tall package resting on the surface moves at belt speed
+even when its origin is above the height tolerance. The high-flow file
+spaces centers at 0.125 m, which at 0.25 m/s is 2.0 objects per second.
+Packages may touch. The shipped setpoint of 0.125 is objects per
+second, and the belt it produces is the drive floor, 0.25 m/s. A
+second arm is not part of this patch.
 
 | Version | Spec | What lands | State |
 | --- | --- | --- | --- |

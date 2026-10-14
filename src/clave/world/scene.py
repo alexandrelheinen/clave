@@ -141,6 +141,10 @@ class BeltGeometry:
         speed: Belt speed in meters per second, resolved from its range.
         height_tolerance: Vertical allowance for deciding an object still
             rests on the belt, in meters.
+        speed_limit: Fastest a package's linear velocity is allowed to
+            stay, in meters per second. A contact that drives it past this
+            is no longer a motion of the belt, and the extra is cut back
+            so the step stays finite.
     """
 
     length: float
@@ -148,6 +152,7 @@ class BeltGeometry:
     surface_height: float
     speed: float
     height_tolerance: float
+    speed_limit: float
 
 
 @dataclass(frozen=True)
@@ -190,6 +195,8 @@ class SceneLayout:
             Computed here rather than where the geometry is built, so the
             arm releasing over an opening and the opening itself come from
             one arithmetic.
+        mouth: Mouth opening, along the belt and across it, in meters. Zero
+            when a layout has no chutes.
         takeaway: How the take-away conveyor drives sorted objects.
         objects: The object set the pool draws from.
         pool_size: How many object bodies exist.
@@ -212,6 +219,7 @@ class SceneLayout:
     timestep: float
     takeaway: TakeawayDrive
     chutes: dict[str, NDArray[np.float64]] = field(default_factory=dict)
+    mouth: tuple[float, float] = (0.0, 0.0)
     dressed: bool = False
 
     def __post_init__(self) -> None:
@@ -249,6 +257,7 @@ class SceneLayout:
             and self.timestep == other.timestep
             and self.takeaway == other.takeaway
             and chutes_match
+            and self.mouth == other.mouth
             and self.dressed == other.dressed
         )
 
@@ -380,6 +389,9 @@ def layout(raw: dict[str, Any], rng: np.random.Generator) -> SceneLayout:
         surface_height=float(require(belt_cfg, "surface_height_meters", "belt")),
         speed=require_range(belt_cfg, "speed_meters_per_second", "belt").sample(rng),
         height_tolerance=float(require(belt_cfg, "height_tolerance_meters", "belt")),
+        speed_limit=float(
+            require(belt_cfg, "contact_speed_limit_meters_per_second", "belt")
+        ),
     )
     takeaway_cfg = require(require(raw, "chutes"), "takeaway", "chutes")
     takeaway = TakeawayDrive(
@@ -412,6 +424,7 @@ def layout(raw: dict[str, Any], rng: np.random.Generator) -> SceneLayout:
         chutes=_chute_mouths(
             require(raw, "chutes"), channels(specs), belt.surface_height
         ),
+        mouth=_mouth(require(raw, "chutes")),
         takeaway=takeaway,
         objects=specs,
         pool_size=int(require(spawn_cfg, "pool_size", "spawn")),
@@ -657,6 +670,19 @@ def _refuse_over_pedestal(
             f"the pedestal at x={plan.arm_base[0]:+.3f} m, so its take-away "
             f"conveyor would run through the structure carrying the arm"
         )
+
+
+def _mouth(cfg: dict[str, Any]) -> tuple[float, float]:
+    """Return the chute mouth opening, along the belt and across it.
+
+    Args:
+        cfg: The `chutes` configuration block.
+
+    Returns:
+        The opening in meters.
+    """
+    opening = require(cfg, "mouth_meters", "chutes")
+    return (float(opening[0]), float(opening[1]))
 
 
 def _chute_mouths(

@@ -115,7 +115,13 @@ from clave.tracker.track import Tracker
 from clave.world import arm as armmod
 from clave.world import belt, config, scene
 from clave.world.effector import Effector
-from clave.world.feed import FeedScenario, FeedSettings, RateController, apply_scenario
+from clave.world.feed import (
+    FeedScenario,
+    FeedSettings,
+    RateController,
+    apply_pool,
+    apply_scenario,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -373,6 +379,9 @@ def run(
         scenario = FeedScenario.load(resolved_feed)
         if belt_speed is None:
             belt_speed = scenario.belt_speed
+        # Before the scene is compiled. The pool is a body count, not a
+        # quantity the controller can change once the model exists.
+        apply_pool(raw, scenario)
     sensors = load_sensors(raw)
     try:
         # Every detection camera, not the first one. A line with a single

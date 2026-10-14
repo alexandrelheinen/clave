@@ -40,6 +40,12 @@ belt:
   surface_height_meters: 0.90
   # Vertical allowance for deciding an object still rests on the belt, in meters.
   height_tolerance_meters: 0.05
+  # Fastest a package is allowed to keep moving, in meters per second.
+  # A contact between two packages can leave one of them at many times
+  # belt speed. That is not a motion of this line. Cutting it back here
+  # keeps the step finite. The value sits above a drop from the spawn
+  # height and below the impulse a deep overlap produces.
+  contact_speed_limit_meters_per_second: 1.0
   # A range, drawn once per run from the seed, not a fixed speed. A line whose
   # speed never varies trains a policy that has memorised one speed.
   #
