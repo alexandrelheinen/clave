@@ -19,7 +19,7 @@ from clave.training.sample import (
     resolve_stored_sample,
 )
 from clave.world.config import load
-from clave.world.scene import detection_along_travel_meters
+from clave.world.scene import detection_along_travel
 
 ROOT = Path(__file__).resolve().parents[2]
 ALONG = 0.920
@@ -34,7 +34,7 @@ def _file(name: str, speed: float | None, frames: int = 150) -> DatasetFile:
         10,
         frames,
         0,
-        belt_speed_meters_per_second=speed,
+        belt_speed=speed,
     )
 
 
@@ -64,7 +64,7 @@ def test_ac_sample_01_stride_keeps_n_looks_per_crossing() -> None:
             indexes = kept_indexes(
                 150,
                 belt_speed=speed,
-                along_travel_meters=ALONG,
+                along_travel=ALONG,
                 capture_interval_seconds=INTERVAL,
                 samples_per_crossing=samples,
                 phase=0,
@@ -77,7 +77,7 @@ def test_ac_sample_01_stride_keeps_n_looks_per_crossing() -> None:
     assert kept_indexes(
         150,
         belt_speed=0.35,
-        along_travel_meters=ALONG,
+        along_travel=ALONG,
         capture_interval_seconds=INTERVAL,
         samples_per_crossing=100,
         phase=0,
@@ -92,7 +92,7 @@ def test_ac_sample_02_a_rollout_without_belt_speed_keeps_every_frame() -> None:
     )
     sample = build_frame_sample(
         description,
-        along_travel_meters=ALONG,
+        along_travel=ALONG,
         capture_interval_seconds=INTERVAL,
         samples_per_crossing=3,
         seed=0,
@@ -108,14 +108,14 @@ def test_ac_sample_03_the_same_seed_draws_the_same_indexes() -> None:
     )
     first = build_frame_sample(
         description,
-        along_travel_meters=ALONG,
+        along_travel=ALONG,
         capture_interval_seconds=INTERVAL,
         samples_per_crossing=3,
         seed=0,
     )
     second = build_frame_sample(
         description,
-        along_travel_meters=ALONG,
+        along_travel=ALONG,
         capture_interval_seconds=INTERVAL,
         samples_per_crossing=3,
         seed=0,
@@ -143,7 +143,7 @@ def test_ac_sample_04_the_configuration_names_samples_per_crossing(
         "  batch_size: 1\n"
         "  learning_rate: 0.0001\n"
         "  seed: 0\n"
-        "  window_exit_meters: 1.034\n"
+        "  window_exit: 1.034\n"
         "  act_chunk_size: 10\n"
     )
     missing = tmp_path / "missing.yml"
@@ -164,7 +164,7 @@ def test_ac_sample_05_a_checkpoint_reloads_its_stored_pick() -> None:
     description = _description((_file("rollout_000.npz", 0.25),), ["rollout_000"])
     stored = build_frame_sample(
         description,
-        along_travel_meters=ALONG,
+        along_travel=ALONG,
         capture_interval_seconds=INTERVAL,
         samples_per_crossing=3,
         seed=1,
@@ -187,7 +187,7 @@ def test_a_stored_pick_roundtrips_through_its_manifest(tmp_path: Path) -> None:
     )
     sample = build_frame_sample(
         description,
-        along_travel_meters=ALONG,
+        along_travel=ALONG,
         capture_interval_seconds=INTERVAL,
         samples_per_crossing=3,
         seed=1,
@@ -208,7 +208,7 @@ def test_a_stored_pick_refuses_a_field_that_is_not_the_one_it_wrote() -> None:
     )
     payload = build_frame_sample(
         description,
-        along_travel_meters=ALONG,
+        along_travel=ALONG,
         capture_interval_seconds=INTERVAL,
         samples_per_crossing=1,
         seed=0,
@@ -224,7 +224,7 @@ def test_a_stored_pick_refuses_a_field_that_is_not_the_one_it_wrote() -> None:
     with pytest.raises(SampleError, match="integer"):
         FrameSample.from_payload({**payload, "seed": True})
     with pytest.raises(SampleError, match="number"):
-        FrameSample.from_payload({**payload, "along_travel_meters": True})
+        FrameSample.from_payload({**payload, "along_travel": True})
 
 
 def test_a_crossing_refuses_fewer_than_one_look() -> None:
@@ -239,7 +239,7 @@ def test_a_part_the_description_does_not_have_is_refused() -> None:
     with pytest.raises(SampleError, match="no validation part"):
         build_frame_sample(
             description,
-            along_travel_meters=ALONG,
+            along_travel=ALONG,
             capture_interval_seconds=INTERVAL,
             samples_per_crossing=1,
             seed=0,
@@ -253,7 +253,7 @@ def test_a_rollout_without_a_file_record_needs_the_archive(tmp_path: Path) -> No
     with pytest.raises(SampleError, match="no file record"):
         build_frame_sample(
             description,
-            along_travel_meters=ALONG,
+            along_travel=ALONG,
             capture_interval_seconds=INTERVAL,
             samples_per_crossing=1,
             seed=0,
@@ -263,7 +263,7 @@ def test_a_rollout_without_a_file_record_needs_the_archive(tmp_path: Path) -> No
     np.savez(tmp_path / "rollout_000.npz", frames=frames, times=times)
     sample = build_frame_sample(
         description,
-        along_travel_meters=ALONG,
+        along_travel=ALONG,
         capture_interval_seconds=INTERVAL,
         samples_per_crossing=3,
         seed=0,
@@ -288,4 +288,4 @@ def test_a_capture_interval_needs_two_increasing_timestamps(tmp_path: Path) -> N
 def test_ac_sample_06_the_shipped_gate_covers_0_920_m_along_travel() -> None:
     """AC-SAMPLE-06: the crossing length is the along-belt footprint, not fovy."""
     raw = load(ROOT / "configs" / "world" / "sorting_line.yml")
-    assert detection_along_travel_meters(raw) == pytest.approx(0.920, abs=0.001)
+    assert detection_along_travel(raw) == pytest.approx(0.920, abs=0.001)

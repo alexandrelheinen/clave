@@ -45,7 +45,7 @@ metering feeder does on a real line, the arrival rate is
 $$r = \frac{v}{s}$$
 
 and belt speed is the throughput knob directly. That is the model this spec
-adopts: `spawn.interval_seconds` is replaced by `spawn.spacing_meters`.
+adopts: `spawn.interval_seconds` is replaced by `spawn.spacing`.
 
 The controller is then not trivial, because `s` is drawn per object from a
 range rather than fixed. The realised rate wanders around `v/\bar{s}`, and
@@ -68,7 +68,7 @@ counts separately.
 ## Constraints
 
 - **Belt speed stays inside its configured range.** The existing
-  `speed_meters_per_second` pair becomes the controller's saturation limits
+  `speed` pair becomes the controller's saturation limits
   rather than a distribution to draw one value from. A controller that can
   stop the belt, or run it past what the drive does, is modelling a machine
   nobody built.

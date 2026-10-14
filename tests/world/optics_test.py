@@ -31,7 +31,7 @@ def camera(**overrides: object) -> dict[str, object]:
         "sensor": "imx264",
         "lens": "eight",
         "long_axis": "across",
-        "position_meters": [0.0, 0.0, 2.0],
+        "position": [0.0, 0.0, 2.0],
     }
     entry.update(overrides)
     return entry
@@ -97,12 +97,12 @@ def test_every_configured_camera_covers_the_whole_belt_width() -> None:
     """
     raw = load(CONFIG)
     sensors, lenses = require(raw, "sensors"), require(raw, "lenses")
-    surface = float(require(require(raw, "belt"), "surface_height_meters", "belt"))
-    width = float(require(require(raw, "belt"), "width_meters", "belt"))
+    surface = float(require(require(raw, "belt"), "surface_height", "belt"))
+    width = float(require(require(raw, "belt"), "width", "belt"))
 
     spans = []
     for entry in require(raw, "cameras"):
-        standoff = float(entry["position_meters"][2]) - surface
+        standoff = float(entry["position"][2]) - surface
         assert standoff > 0.0, entry["id"]
         fovy = field_of_view(entry, sensors, lenses)
         across = 2.0 * standoff * math.tan(math.radians(fovy) / 2.0)
@@ -122,17 +122,17 @@ def test_the_code_cameras_tile_the_belt_rather_than_sample_it() -> None:
     """
     raw = load(CONFIG)
     sensors, lenses = require(raw, "sensors"), require(raw, "lenses")
-    surface = float(require(require(raw, "belt"), "surface_height_meters", "belt"))
-    half = float(require(require(raw, "belt"), "width_meters", "belt")) / 2.0
+    surface = float(require(require(raw, "belt"), "surface_height", "belt"))
+    half = float(require(require(raw, "belt"), "width", "belt")) / 2.0
 
     bands = []
     for entry in require(raw, "cameras"):
         if str(entry["role"]) != "code":
             continue
-        standoff = float(entry["position_meters"][2]) - surface
+        standoff = float(entry["position"][2]) - surface
         fovy = field_of_view(entry, sensors, lenses)
         reach = standoff * math.tan(math.radians(fovy) / 2.0)
-        center = float(entry["position_meters"][1])
+        center = float(entry["position"][1])
         bands.append((center - reach, center + reach))
 
     assert len(bands) >= 2, "one code camera cannot tile anything"
@@ -148,12 +148,12 @@ def test_the_code_cameras_resolve_a_barcode_module() -> None:
     across it, so 0.165 mm per pixel is the floor rather than a target."""
     raw = load(CONFIG)
     sensors, lenses = require(raw, "sensors"), require(raw, "lenses")
-    surface = float(require(require(raw, "belt"), "surface_height_meters", "belt"))
+    surface = float(require(require(raw, "belt"), "surface_height", "belt"))
 
     for entry in require(raw, "cameras"):
         if str(entry["role"]) != "code":
             continue
-        standoff = float(entry["position_meters"][2]) - surface
+        standoff = float(entry["position"][2]) - surface
         fovy = field_of_view(entry, sensors, lenses)
         across = 2.0 * standoff * math.tan(math.radians(fovy) / 2.0)
         pixels = max(require(sensors[str(entry["sensor"])], "pixels", "sensors"))
@@ -164,14 +164,14 @@ def test_the_detection_camera_sees_every_lateral_position_an_object_spawns_at() 
     """Coverage is not enough if the objects sit outside it."""
     raw = load(CONFIG)
     sensors, lenses = require(raw, "sensors"), require(raw, "lenses")
-    surface = float(require(require(raw, "belt"), "surface_height_meters", "belt"))
-    lateral = require_range(require(raw, "spawn"), "lateral_offset_meters", "spawn")
+    surface = float(require(require(raw, "belt"), "surface_height", "belt"))
+    lateral = require_range(require(raw, "spawn"), "lateral_offset", "spawn")
 
     wide = next(e for e in require(raw, "cameras") if str(e["role"]) == "detection")
-    standoff = float(wide["position_meters"][2]) - surface
+    standoff = float(wide["position"][2]) - surface
     reach = standoff * math.tan(
         math.radians(field_of_view(wide, sensors, lenses)) / 2.0
     )
-    center = float(wide["position_meters"][1])
+    center = float(wide["position"][1])
     assert center - reach <= lateral.low
     assert center + reach >= lateral.high

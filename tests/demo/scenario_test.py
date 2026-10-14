@@ -1,5 +1,6 @@
 """Tests for the one-line demonstration."""
 
+import math
 import shutil
 import subprocess
 from pathlib import Path
@@ -65,8 +66,8 @@ def settings(path: Path) -> VideoSettings:
         height=48,
         frames_per_second=10,
         interval_seconds=0.1,
-        azimuth=150.0,
-        elevation=-20.0,
+        azimuth=math.radians(150.0),
+        elevation=math.radians(-20.0),
         distance=2.0,
         lookat=np.asarray((0.0, 0.0, 0.4), dtype=np.float64),
     )
@@ -175,8 +176,8 @@ def test_the_recorder_drains_the_encoder_rather_than_deadlocking(
             height=48,
             frames_per_second=30,
             interval_seconds=0.03,
-            azimuth=90.0,
-            elevation=-20.0,
+            azimuth=math.radians(90.0),
+            elevation=math.radians(-20.0),
             distance=3.0,
             lookat=np.asarray((0.0, 0.0, 1.0), dtype=np.float64),
         )

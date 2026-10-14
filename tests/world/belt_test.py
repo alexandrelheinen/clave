@@ -12,11 +12,11 @@ from clave.world.scene import BeltGeometry, SceneLayout, TakeawayDrive
 
 ROOT = Path(__file__).resolve().parents[2]
 _ARM = config.load(ROOT / "configs" / "world" / "sorting_line.yml")["arm"]
-_REACH_MIN = float(_ARM["reach_min_meters"])
-_REACH_MAX = float(_ARM["reach_max_meters"])
+_REACH_MIN = float(_ARM["reach_min"])
+_REACH_MAX = float(_ARM["reach_max"])
 _TOOL_ABOVE = (
-    float(_ARM["tool_above_base_meters"][0]),
-    float(_ARM["tool_above_base_meters"][1]),
+    float(_ARM["tool_above_base"][0]),
+    float(_ARM["tool_above_base"][1]),
 )
 CONFIG = ROOT / "configs" / "world" / "sorting_line.yml"
 
@@ -123,11 +123,11 @@ def conveyor_for(
     return belt.Conveyor(
         plan,
         rng,
-        config.require_range(spawn, "spacing_meters", "spawn"),
-        config.require_range(spawn, "lateral_offset_meters", "spawn"),
-        config.require_range(spawn, "drop_height_meters", "spawn"),
+        config.require_range(spawn, "spacing", "spawn"),
+        config.require_range(spawn, "lateral_offset", "spawn"),
+        config.require_range(spawn, "drop_height", "spawn"),
         belt.flat_tilt(spawn),
-        entry_margin=float(spawn["entry_margin_meters"]),
+        entry_margin=float(spawn["entry_margin"]),
     )
 
 
@@ -143,11 +143,11 @@ def test_objects_reach_belt_speed_and_enter_the_window() -> None:
     conveyor = belt.Conveyor(
         plan,
         rng,
-        config.require_range(spawn, "spacing_meters", "spawn"),
-        config.require_range(spawn, "lateral_offset_meters", "spawn"),
-        config.require_range(spawn, "drop_height_meters", "spawn"),
+        config.require_range(spawn, "spacing", "spawn"),
+        config.require_range(spawn, "lateral_offset", "spawn"),
+        config.require_range(spawn, "drop_height", "spawn"),
         belt.flat_tilt(spawn),
-        entry_margin=float(spawn["entry_margin_meters"]),
+        entry_margin=float(spawn["entry_margin"]),
     )
     for _ in range(12000):
         mujoco.mj_step(model, data)
@@ -193,11 +193,11 @@ def test_an_unpicked_object_is_not_removed() -> None:
     conveyor = belt.Conveyor(
         plan,
         rng,
-        config.require_range(spawn, "spacing_meters", "spawn"),
-        config.require_range(spawn, "lateral_offset_meters", "spawn"),
-        config.require_range(spawn, "drop_height_meters", "spawn"),
+        config.require_range(spawn, "spacing", "spawn"),
+        config.require_range(spawn, "lateral_offset", "spawn"),
+        config.require_range(spawn, "drop_height", "spawn"),
         belt.flat_tilt(spawn),
-        entry_margin=float(spawn["entry_margin_meters"]),
+        entry_margin=float(spawn["entry_margin"]),
     )
     seen: dict[str, float] = {}
     left_from: dict[str, float] = {}
@@ -375,9 +375,9 @@ def test_packages_lie_flat_and_stay_graspable_ac_rate_16() -> None:
     import mujoco
 
     raw, _rng, model, data, plan = built(0)
-    height = float(raw["spawn"]["crushed_height_meters"])
-    minimum = float(raw["spawn"]["minimum_rest_height_meters"])
-    opening = float(raw["arm"]["max_grasp_width_meters"])
+    height = float(raw["spawn"]["crushed_height"])
+    minimum = float(raw["spawn"]["minimum_rest_height"])
+    opening = float(raw["arm"]["max_grasp_width"])
     mujoco.mj_forward(model, data)
     seen = 0
     for index, spec in enumerate(plan.objects):

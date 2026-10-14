@@ -20,7 +20,7 @@ pub enum Check {
     /// The point lies outside the vertical band the tool is trusted over,
     /// either below its floor or above its ceiling.
     ///
-    /// The band is `tool_above_base_meters`, measured relative to the arm's own
+    /// The band is `tool_above_base`, measured relative to the arm's own
     /// base because that is the frame the sweep measured in. There is no
     /// prismatic axis to travel along: a vertical move is inverse kinematics
     /// solved at each waypoint with the tool axis held down, so what this check

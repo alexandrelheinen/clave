@@ -449,9 +449,11 @@ def _recorder(view: dict[str, Any], out: Path, fps: int, interval: float) -> Any
             height=int(config.require(view, "height", "view")),
             frames_per_second=fps,
             interval_seconds=interval,
-            azimuth=float(config.require(view, "azimuth_degrees", "view")),
-            elevation=float(config.require(view, "elevation_degrees", "view")),
-            distance=float(config.require(view, "distance_meters", "view")),
+            azimuth=math.radians(float(config.require(view, "azimuth_deg", "view"))),
+            elevation=math.radians(
+                float(config.require(view, "elevation_deg", "view"))
+            ),
+            distance=float(config.require(view, "distance", "view")),
             lookat=_lookat(view),
         )
     )
@@ -492,11 +494,10 @@ def _lookat(view: dict[str, Any]) -> NDArray[np.float64]:
     Raises:
         DebugRunError: If the key does not hold three numbers.
     """
-    values = [float(value) for value in config.require(view, "lookat_meters", "view")]
+    values = [float(value) for value in config.require(view, "lookat", "view")]
     if len(values) != 3:
         raise DebugRunError(
-            f"view.lookat_meters holds {len(values)} numbers, and a camera "
-            f"target is three"
+            f"view.lookat holds {len(values)} numbers, and a camera target is three"
         )
     return np.asarray((values[0], values[1], values[2]), dtype=np.float64)
 

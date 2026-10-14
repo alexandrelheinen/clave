@@ -112,8 +112,8 @@ class FeedScenario:
         pool = raw.get("pool_size")
         return cls(
             rate=_positive(raw, "rate_objects_per_second", where=""),
-            belt_speed=_positive(raw, "belt_speed_meters_per_second", where=""),
-            spacing=require_range(raw, "spacing_meters"),
+            belt_speed=_positive(raw, "belt_speed", where=""),
+            spacing=require_range(raw, "spacing"),
             pool_size=None if pool is None else _pool_size(pool),
         )
 

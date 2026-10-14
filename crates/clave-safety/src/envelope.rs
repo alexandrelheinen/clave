@@ -32,11 +32,11 @@ use crate::verdict::{Check, Verdict};
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Envelope {
     base: BeltPoint,
-    reach_meters: (f64, f64),
-    tool_above_base_meters: (f64, f64),
-    belt_surface_z_meters: f64,
-    belt_x_meters: (f64, f64),
-    belt_y_meters: (f64, f64),
+    reach: (f64, f64),
+    tool_above_base: (f64, f64),
+    belt_surface_z: f64,
+    belt_x: (f64, f64),
+    belt_y: (f64, f64),
 }
 
 impl Envelope {
@@ -72,14 +72,14 @@ impl Envelope {
             serde_json::from_slice(bytes).map_err(|error| SafetyError::Malformed {
                 reason: error.to_string(),
             })?;
-        let base = triple(&value, "base_meters")?;
+        let base = triple(&value, "base")?;
         let envelope = Self {
             base: BeltPoint::new(base[0], base[1], base[2]),
-            reach_meters: interval(&value, "reach_meters")?,
-            tool_above_base_meters: interval(&value, "tool_above_base_meters")?,
-            belt_surface_z_meters: number(&value, "belt_surface_z_meters")?,
-            belt_x_meters: interval(&value, "belt_x_meters")?,
-            belt_y_meters: interval(&value, "belt_y_meters")?,
+            reach: interval(&value, "reach")?,
+            tool_above_base: interval(&value, "tool_above_base")?,
+            belt_surface_z: number(&value, "belt_surface_z")?,
+            belt_x: interval(&value, "belt_x")?,
+            belt_y: interval(&value, "belt_y")?,
         };
         envelope.validate()?;
         Ok(envelope)
@@ -93,14 +93,14 @@ impl Envelope {
 
     /// Returns the inner and outer radii of the annulus the tool sweeps.
     #[must_use]
-    pub const fn reach_meters(&self) -> (f64, f64) {
-        self.reach_meters
+    pub const fn reach(&self) -> (f64, f64) {
+        self.reach
     }
 
     /// Returns the height of the belt surface, in meters.
     #[must_use]
-    pub const fn belt_surface_z_meters(&self) -> f64 {
-        self.belt_surface_z_meters
+    pub const fn belt_surface_z(&self) -> f64 {
+        self.belt_surface_z
     }
 
     /// Reaches a verdict on one proposal.
@@ -158,16 +158,14 @@ impl Envelope {
         if !self.within_reach(point) {
             return Some(Check::Reach);
         }
-        if point.z_meters() < self.belt_surface_z_meters {
+        if point.z() < self.belt_surface_z {
             return Some(Check::BeltSurface);
         }
-        let above = point.z_meters() - self.base.z_meters();
-        if above < self.tool_above_base_meters.0 || above > self.tool_above_base_meters.1 {
+        let above = point.z() - self.base.z();
+        if above < self.tool_above_base.0 || above > self.tool_above_base.1 {
             return Some(Check::ToolHeight);
         }
-        if !on_belt(point.x_meters(), self.belt_x_meters)
-            || !on_belt(point.y_meters(), self.belt_y_meters)
-        {
+        if !on_belt(point.x(), self.belt_x) || !on_belt(point.y(), self.belt_y) {
             return Some(Check::BeltExtent);
         }
         None
@@ -180,20 +178,20 @@ impl Envelope {
     /// greater than any radius. The arithmetic here cannot produce an
     /// acceptance it should not.
     fn within_reach(&self, point: BeltPoint) -> bool {
-        let dx = point.x_meters() - self.base.x_meters();
-        let dy = point.y_meters() - self.base.y_meters();
+        let dx = point.x() - self.base.x();
+        let dy = point.y() - self.base.y();
         let radius = dx.hypot(dy);
-        let (inner, outer) = self.reach_meters;
+        let (inner, outer) = self.reach;
         radius >= inner && radius <= outer
     }
 
     /// Refuses an envelope that describes no usable volume.
     fn validate(&self) -> Result<(), SafetyError> {
         for (key, (low, high)) in [
-            ("reach_meters", self.reach_meters),
-            ("tool_above_base_meters", self.tool_above_base_meters),
-            ("belt_x_meters", self.belt_x_meters),
-            ("belt_y_meters", self.belt_y_meters),
+            ("reach", self.reach),
+            ("tool_above_base", self.tool_above_base),
+            ("belt_x", self.belt_x),
+            ("belt_y", self.belt_y),
         ] {
             if !(low.is_finite() && high.is_finite() && low <= high) {
                 return Err(SafetyError::InvalidEnvelope {

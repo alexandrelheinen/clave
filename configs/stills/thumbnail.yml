@@ -47,21 +47,21 @@ lighting:
   lights:
     # Near-horizontal key from the arm's side. Rakes the vertical faces and
     # barely touches the floor.
-    - position_meters: [1.40, -2.10, 1.15]
+    - position: [1.40, -2.10, 1.15]
       direction: [-0.55, 0.72, -0.30]
       directional: true
       diffuse: [0.82, 0.80, 0.74]
       specular: [0.12, 0.12, 0.12]
       cast_shadow: false
     # Opposite grazing fill; opens the shadow side of the castings.
-    - position_meters: [-1.70, 1.90, 1.05]
+    - position: [-1.70, 1.90, 1.05]
       direction: [0.68, -0.66, -0.28]
       directional: true
       diffuse: [0.48, 0.50, 0.54]
       specular: [0.06, 0.06, 0.06]
       cast_shadow: false
     # Warm bounce along the belt, so packages separate from the conveyor.
-    - position_meters: [2.20, -0.40, 0.95]
+    - position: [2.20, -0.40, 0.95]
       direction: [-0.80, 0.20, -0.40]
       directional: true
       diffuse: [0.28, 0.24, 0.18]
@@ -78,20 +78,20 @@ cameras:
   # belt: a pallet jack stands at (-2.00, -1.65) and a shallower angle puts it
   # between the near-left camera and the machine.
   - name: near-left
-    azimuth_degrees: 205.0
-    elevation_degrees: -30.0
-    distance_meters: 3.60
-    lookat_meters: [0.0, -0.25, 1.05]
-    fovy_degrees: 40.0
+    azimuth_deg: 205.0
+    elevation_deg: -30.0
+    distance: 3.60
+    lookat: [0.0, -0.25, 1.05]
+    fovy_deg: 40.0
   - name: near-right
-    azimuth_degrees: 148.0
-    elevation_degrees: -28.0
-    distance_meters: 3.40
-    lookat_meters: [0.0, -0.25, 1.05]
-    fovy_degrees: 42.0
+    azimuth_deg: 148.0
+    elevation_deg: -28.0
+    distance: 3.40
+    lookat: [0.0, -0.25, 1.05]
+    fovy_deg: 42.0
   - name: low-three-quarter
-    azimuth_degrees: 218.0
-    elevation_degrees: -28.0
-    distance_meters: 3.40
-    lookat_meters: [0.0, -0.25, 1.02]
-    fovy_degrees: 38.0
+    azimuth_deg: 218.0
+    elevation_deg: -28.0
+    distance: 3.40
+    lookat: [0.0, -0.25, 1.02]
+    fovy_deg: 38.0

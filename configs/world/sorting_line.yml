@@ -19,7 +19,7 @@ belt:
   # by sweeping the compiled model with the tool held vertical.
   # docs/measurements.md carries the sweep. The width below is the one the
   # line runs.
-  length_meters: 3.00
+  length: 3.00
   # Narrowed from 1.00 m, and the reason is reach margin rather than cost.
   #
   # At 1.00 m the near edge sat at y = -0.50, which is 0.20 m from the arm
@@ -33,19 +33,19 @@ belt:
   # the whole width sits in the middle of the annulus. It also brings the
   # belt inside what the sensing gate actually images, which closes a defect
   # the roadmap carried. docs/measurements.md has both sweeps.
-  width_meters: 0.50
+  width: 0.50
   # Ergonomic picking-line height. A manual sort station puts the belt near a
   # standing operator's waist, and a robot retrofitted onto such a line
   # inherits it.
-  surface_height_meters: 0.90
+  surface_height: 0.90
   # Vertical allowance for deciding an object still rests on the belt, in meters.
-  height_tolerance_meters: 0.05
+  height_tolerance: 0.05
   # Fastest a package is allowed to keep moving, in meters per second.
   # A contact between two packages can leave one of them at many times
   # belt speed. That is not a motion of this line. Cutting it back here
   # keeps the step finite. The value sits above a drop from the spawn
   # height and below the impulse a deep overlap produces.
-  contact_speed_limit_meters_per_second: 1.0
+  contact_speed_limit: 1.0
   # How far the gripper driver travels, as a fraction of its stroke, before
   # a contact with the arm releases the flat pose. Half the stroke is the
   # open jaw: a brush while the fingers are still open is not a grasp, and
@@ -66,9 +66,9 @@ belt:
   # docs/measurements.md records: the sweep behind it started at the origin
   # and so measured the downstream half of a window centred on it. The window
   # is 2.071 m, from -1.034 m to +1.034 m.
-  speed_meters_per_second: [0.25, 0.35]
+  speed: [0.25, 0.35]
   # Side guides keep tipped cylinders from rolling off. A real line has them.
-  guide_height_meters: 0.04
+  guide_height: 0.04
   # The belt is drawn as a row of conveyor modules from the CC BY 4.0 Open-RMF
   # model, scaled to the belt this file configures. The count and the length
   # above have to agree: ten modules of 0.300 m make the 3.00 m belt. The
@@ -87,7 +87,7 @@ spawn:
   pool_size: 22
   # Objects enter this far inside the belt's leading edge. Spawning exactly on
   # the edge lets an object tip off before the belt drive engages.
-  entry_margin_meters: 0.08
+  entry_margin: 0.08
   # Objects are released every so many metres of belt travel, not every so
   # many seconds. A metering feeder doses by distance, and that is what makes
   # belt speed a throughput knob: the arrival rate is speed over spacing. Fed
@@ -99,21 +99,21 @@ spawn:
   # A mean spacing of 1.20 m against the 0.25 objects per second the arm
   # sustains puts the belt at 0.300 m/s, which sits in the middle of the
   # drive's range, so the controller has room in both directions.
-  spacing_meters: [1.00, 1.40]
+  spacing: [1.00, 1.40]
   # Inside the belt's half width, keeping the same 0.08 m clearance from the
   # side guides that the 1.00 m belt used. The whole span is reachable, so
   # this range does not deliberately place objects the arm has to refuse.
-  lateral_offset_meters: [-0.17, 0.17]
-  drop_height_meters: [0.01, 0.03]
+  lateral_offset: [-0.17, 0.17]
+  drop_height: [0.01, 0.03]
   # Standing height of a crushed package, in meters. A face taller than
   # this is scaled down to it. The pads close on a plane 30 mm up and span
   # 37.5 mm, so 55 mm fills that band and is still flat against the 84 to
   # 168 mm the scans stand at.
-  crushed_height_meters: 0.055
+  crushed_height: 0.055
   # Shortest face the pads can meet from the side, in meters. A thinner face
   # puts the pinch on the top edge and the pads on the belt. A package whose
   # flattest face is thinner than this is turned onto the next face.
-  minimum_rest_height_meters: 0.040
+  minimum_rest_height: 0.040
   # Two sides within this fraction of each other, with a longer third, are a
   # round package. It stands on the flat end. Laying that side down is how
   # a can rolls.
@@ -200,22 +200,22 @@ arm:
   # This is the top of the pedestal, which is the arm's own base. 0.70 m from
   # the centreline puts the whole 1.00 m belt inside the annulus below, with the
   # working range running 0.60 m to 0.75 m.
-  base_position_meters: [0.0, -0.70, 0.90]
-  # The pedestal's footprint. Its half-diagonal stays inside `reach_min_meters`,
+  base_position: [0.0, -0.70, 0.90]
+  # The pedestal's footprint. Its half-diagonal stays inside `reach_min`,
   # so the arm cannot drive into the support carrying it.
-  pedestal_footprint_meters: [0.30, 0.30]
+  pedestal_footprint: [0.30, 0.30]
   # The annulus the arm is trusted over, measured by sweeping the compiled model
   # with the tool held vertical rather than derived from link lengths: a
   # six-axis arm under an orientation constraint has no closed-form workspace.
   # The sweep put the inner limit at 0.200 m and the outer between 1.266 m and
   # 1.309 m by bearing; these sit inside both, so the trusted region is strictly
   # smaller than the reachable one. docs/measurements.md carries the sweep.
-  reach_min_meters: 0.25
-  reach_max_meters: 1.25
+  reach_min: 0.25
+  reach_max: 1.25
   # Where the flange is trusted, relative to the arm's own base rather than to
   # the belt, because that is the frame the sweep measured in. Solutions exist
   # well past both ends; these stop short on purpose.
-  tool_above_base_meters: [-0.05, 0.45]
+  tool_above_base: [-0.05, 0.45]
   # The widest object the end effector handles.
   #
   # MEASURED FROM THE EFFECTOR THAT IS NOW ON THE ARM. The Robotiq 2F-85's
@@ -230,7 +230,7 @@ arm:
   # which costs one object in eighteen and no class, and which halves the
   # barcode decode yield because it was one of only two objects that ever
   # decoded. docs/measurements.md carries the re-measured figure.
-  max_grasp_width_meters: 0.085
+  max_grasp_width: 0.085
 
 # The end effector on the arm.
 #
@@ -239,7 +239,7 @@ arm:
 # stated assumptions, and the numbers below are now read off the compiled
 # model rather than chosen.
 #
-# The jaw opening is not repeated here. It is `arm.max_grasp_width_meters`,
+# The jaw opening is not repeated here. It is `arm.max_grasp_width`,
 # which already bounds the object set, and a second copy would let the two
 # drift until the world spawned objects its own gripper could not close on.
 effector:
@@ -251,7 +251,7 @@ effector:
   # the effector was an assumption and the real one is 155.8 mm. A test reads
   # both sites out of the compiled model and fails if this drifts from them,
   # so re-copying the vendored gripper cannot move it silently.
-  finger_length_meters: 0.1558
+  finger_length: 0.1558
   # One pad, in its own three directions: thickness along the way it travels
   # to close, depth across that horizontally, and height vertically. A pad is
   # drawn to scale, so a marker that looks like it would collide probably
@@ -263,9 +263,9 @@ effector:
   # while the effector was hypothetical, which put the assumed pad a quarter
   # turn from the real one and the wrong size in every direction. A test reads
   # the geoms out of the compiled model and fails if these drift from them.
-  pad_thickness_meters: 0.008
-  pad_depth_meters: 0.022
-  pad_height_meters: 0.0375
+  pad_thickness: 0.008
+  pad_depth: 0.022
+  pad_height: 0.0375
   # How far the jaw's lowest collision geometry reaches below the flange, in
   # meters, at its lowest over the jaw's own travel.
   #
@@ -276,14 +276,14 @@ effector:
   # so it is not the lowest part of the jaw at all: the pads hang 4.5 to 17.7 mm
   # below it, and a clearance quoted at the pinch point is that much more
   # generous than the clearance the jaw has.
-  lowest_below_flange_meters: 0.1735
+  lowest_below_flange: 0.1735
   # The same reach with the jaw open.
   #
   # MEASURED from the compiled model: 160.3 mm open against 173.5 mm shut.
   # The descent arrives against the open figure. The hold rises by the
   # difference while the jaw closes, so the shut figure keeps the same
   # clearance above the belt. A test reads both states and fails if this drifts.
-  open_lowest_below_flange_meters: 0.1603
+  open_lowest_below_flange: 0.1603
   # The clearance that lowest geometry keeps above the belt surface, in meters.
   #
   # MEASURED, and it is the number the marker's grasp plane is derived from and
@@ -300,8 +300,8 @@ effector:
   # contact** against **−1.4 mm and 1 tick** at 10 mm, and the jaw failed to
   # hold seven of eight objects. The number stands at 10 mm and the force the
   # fingers close with is what changed instead; see
-  # `effector.closing_torque_newton_meters`.
-  jaw_clearance_meters: 0.010
+  # `effector.closing_torque`.
+  jaw_clearance: 0.010
   # Where the pads close, measured up from the belt surface.
   #
   # This stands in for a height nobody measures. The gate looks straight down
@@ -314,13 +314,13 @@ effector:
   # rather than letting the tracker's markers close the pads on the belt.
   #
   # It is not a height the pads need in order to reach an object. The scans
-  # stand 83.7 to 168.2 mm and are crushed to `spawn.crushed_height_meters`
+  # stand 83.7 to 168.2 mm and are crushed to `spawn.crushed_height`
   # before they are spawned, so the side the jaw meets is that crushed
   # height rather than the scan. The ground-truth marker follows the
   # crushed package's own centre, clamped to the jaw's clearance. The
   # narrowest horizontal width is unchanged by a vertical scale, and it
   # stays inside the 85 mm opening.
-  grasp_height_meters: 0.030
+  grasp_height: 0.030
 
   # The torque the fingers may apply to what they close on, in newton meters.
   # Symmetric, so it is also the torque they open against.
@@ -353,7 +353,7 @@ effector:
   # has a settable force for the same reason -- 20 N is its floor, against a
   # parcel that weighs 0.2 N -- so this is a setting a line would choose rather
   # than a simulator artefact being tuned away.
-  closing_torque_newton_meters: 0.30
+  closing_torque: 0.30
 
 # Where a picked object goes. One funnel per channel the routing policy
 # resolves to, set beside the belt at belt height on the arm's own side, each
@@ -369,7 +369,7 @@ chutes:
   #
   # Negative because the arm stands at y = -0.70. Putting the bank on the far
   # side would make every release a reach across the line.
-  offset_from_belt_meters: -0.42
+  offset_from_belt: -0.42
 
   # Where the bank starts along belt travel, and how far apart the mouths sit.
   #
@@ -383,34 +383,34 @@ chutes:
   # At 0.28 m spacing the four mouths stand at x = 0.30, 0.58, 0.86 and 1.14,
   # which is 0.41 m to 1.17 m of radius from the base: inside the 1.25 m outer
   # limit with 80 mm to spare on the furthest.
-  first_position_meters: 0.30
-  spacing_meters: 0.28
+  first_position: 0.30
+  spacing: 0.28
 
   # The mouth is what the arm releases over and the throat is what the object
   # falls through. A funnel rather than a hole, so an object let go near an
   # edge is guided in rather than left on a lip.
-  mouth_meters: [0.22, 0.22]
-  throat_meters: [0.12, 0.12]
-  throat_height_meters: 0.58
+  mouth: [0.22, 0.22]
+  throat: [0.12, 0.12]
+  throat_height: 0.58
 
   # The take-away conveyor under each throat. Plant downstream of the opening:
   # receives sorted items, guides them, and carries them away from the sorting
   # line.
   takeaway:
-    surface_height_meters: 0.30
-    width_meters: 0.24
-    length_meters: 1.40
+    surface_height: 0.30
+    width: 0.24
+    length: 1.40
     # How fast a sorted object is driven along the take-away, in meters per second.
-    speed_meters_per_second: 0.20
+    speed: 0.20
     # Vertical band that counts as resting on a take-away, in meters.
-    height_min_meters: 0.25
-    height_max_meters: 0.45
+    height_min: 0.25
+    height_max: 0.45
     # Lateral acceptance around a chute mouth when scoring a take-away hit, in meters.
-    mouth_half_width_meters: 0.15
+    mouth_half_width: 0.15
     # How far past the mouth along the take-away an object still counts, in meters.
-    past_mouth_meters: 1.50
+    past_mouth: 1.50
     # How far back toward the mouth along the take-away still counts, in meters.
-    toward_mouth_meters: 0.10
+    toward_mouth: 0.10
 
 structure:
   # The belt and the arm used to float. Nothing below changes a trajectory: a
@@ -420,13 +420,13 @@ structure:
   # equipment rather than like floating boxes.
   #
   # Belt legs, as a bench conveyor has: four uprights under the frame.
-  leg_side_meters: 0.025
-  leg_inset_meters: 0.12
+  leg_side: 0.025
+  leg_inset: 0.12
   # The frame the belt surface sits on, spanning the legs.
-  frame_depth_meters: 0.05
+  frame_depth: 0.05
   # The pedestal the manipulator is bolted to is not described here. It was,
   # as a cylinder with a mounting plate, and nothing has read those three
-  # keys since it became a box sized by arm.pedestal_footprint_meters.
+  # keys since it became a box sized by arm.pedestal_footprint.
 
 environment:
   # Scene dressing from the MIT-0 AWS RoboMaker warehouse, the same collection
@@ -444,11 +444,11 @@ environment:
   # line.
   props:
     - mesh: shelf.obj
-      position_meters: [-0.40, 2.30, 0.0]
-      yaw_degrees: 0.0
+      position: [-0.40, 2.30, 0.0]
+      yaw_deg: 0.0
     - mesh: shelf_e.obj
-      position_meters: [-0.40, -2.40, 0.0]
-      yaw_degrees: 180.0
+      position: [-0.40, -2.40, 0.0]
+      yaw_deg: 180.0
 
 # Every sensor that observes the belt. The tracker fuses by `role` and never
 # by `id`, so adding, moving or removing a camera changes this list and nothing
@@ -508,7 +508,7 @@ cameras:
     sensor: imx264
     lens: hf8xa-5m
     long_axis: across
-    position_meters: [-1.00, 0.0, 1.942]
+    position: [-1.00, 0.0, 1.942]
 
   # Detection again, over the part of the belt the arm can actually reach.
   #
@@ -532,7 +532,7 @@ cameras:
     sensor: imx264
     lens: hf8xa-5m
     long_axis: across
-    position_meters: [0.38, 0.0, 1.942]
+    position: [0.38, 0.0, 1.942]
 
   # Barcode reading. An EAN-13 narrow module is about 0.33 mm and decoding
   # wants roughly two pixels across it, so 0.165 mm per pixel is the floor.
@@ -548,19 +548,19 @@ cameras:
     sensor: imx264
     lens: hf16xa-5m
     long_axis: across
-    position_meters: [-1.00, 0.33, 1.630]
+    position: [-1.00, 0.33, 1.630]
   - id: gate_code_center
     role: code
     sensor: imx264
     lens: hf16xa-5m
     long_axis: across
-    position_meters: [-1.00, 0.0, 1.630]
+    position: [-1.00, 0.0, 1.630]
   - id: gate_code_right
     role: code
     sensor: imx264
     lens: hf16xa-5m
     long_axis: across
-    position_meters: [-1.00, -0.33, 1.630]
+    position: [-1.00, -0.33, 1.630]
 
 lighting:
   diffuse: [0.45, 0.80]

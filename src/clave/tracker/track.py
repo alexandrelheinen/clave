@@ -215,7 +215,7 @@ class Tracker:
             that gate is nothing and no later detection can ever join, so the
             two would run as separate tracks over one object. The caller passes
             the widest object the line handles, which
-            `arm.max_grasp_width_meters` already states.
+            `arm.max_grasp_width` already states.
         resolve: Turns a decoded symbol into packaging components.
     """
 

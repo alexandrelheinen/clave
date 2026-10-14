@@ -28,7 +28,7 @@ video:
   # desk-sized world saw the floor beside it. The elevation clears the
   # warehouse dressing: at 18 degrees below the horizon a workbench standing at
   # (-2.00, -1.65) sits between the camera and the machine.
-  azimuth_degrees: 150.0
-  elevation_degrees: -26.0
-  distance_meters: 4.40
-  lookat_meters: [0.0, -0.10, 1.00]
+  azimuth_deg: 150.0
+  elevation_deg: -26.0
+  distance: 4.40
+  lookat: [0.0, -0.10, 1.00]

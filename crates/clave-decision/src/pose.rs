@@ -17,43 +17,35 @@ use crate::window::MonotonicNanos;
 /// envelope's own bounds are expressed against it, so the documents were
 /// corrected to the frame rather than the frame moved to the documents.
 #[derive(Debug, Clone, Copy, PartialEq)]
-#[expect(
-    clippy::struct_field_names,
-    reason = "the unit belongs in the name of a published wire field a consumer reads standalone"
-)]
 pub struct BeltPoint {
-    x_meters: f64,
-    y_meters: f64,
-    z_meters: f64,
+    x: f64,
+    y: f64,
+    z: f64,
 }
 
 impl BeltPoint {
     /// Returns the point at these belt frame coordinates.
     #[must_use]
-    pub const fn new(x_meters: f64, y_meters: f64, z_meters: f64) -> Self {
-        Self {
-            x_meters,
-            y_meters,
-            z_meters,
-        }
+    pub const fn new(x: f64, y: f64, z: f64) -> Self {
+        Self { x, y, z }
     }
 
     /// Returns the coordinate along belt travel, in meters.
     #[must_use]
-    pub const fn x_meters(self) -> f64 {
-        self.x_meters
+    pub const fn x(self) -> f64 {
+        self.x
     }
 
     /// Returns the coordinate across the belt, in meters.
     #[must_use]
-    pub const fn y_meters(self) -> f64 {
-        self.y_meters
+    pub const fn y(self) -> f64 {
+        self.y
     }
 
     /// Returns the coordinate normal to the belt surface, in meters.
     #[must_use]
-    pub const fn z_meters(self) -> f64 {
-        self.z_meters
+    pub const fn z(self) -> f64 {
+        self.z
     }
 }
 
