@@ -53,7 +53,11 @@ Every attempt shall be released over its chute and counted as placed.
 The run report shall give the attempt count and the place count, and
 the two shall be equal. A visit given up before the jaw shuts, and an
 object no interception was planned for, are not attempts. The jaw shall
-stay open at the grasp pose while the tool yaw is outside the configured
+stay open through the approach and the descent. The pose held when the
+jaw shuts shall be the start of the hold, including when the pick instant
+still falls inside the descent, so the close is not commanded on a
+descent that is still moving onto the package. The jaw shall
+stay open at that pose while the tool yaw is outside the configured
 tolerance of the commanded grasp yaw, and the plan clock shall wait with
 it. If the wrist has not arrived when the align limit runs out, the
 visit shall be given up before the jaw shuts. Once the jaw is commanded
@@ -61,8 +65,9 @@ shut, the flange shall stay at the grasp height and ride with the belt
 until the fingers have travelled the configured fraction of the driver
 stroke, or until the close dwell has elapsed when a package stops the
 fingers short of that fraction. A wait for the wrist shall ride with
-the belt the same way, with the jaw still open. A close whose release, including that seat and the release
-dwell, would run past the time the caller has left shall be given up
+the belt the same way, with the jaw still open. A close whose release,
+including that seat and the release dwell, would run past the time the
+caller has left shall be given up
 before the jaw shuts. A close whose nearest object sits farther from
 the pinch than the configured gap shall be given up before the jaw
 shuts. The belt shift that keeps the pinch over the package during a
@@ -73,6 +78,12 @@ the arcs run out, the arm shall hold the
 release pose with the jaw opening for the configured release dwell, so
 the next visit cannot start while the fingers are still shut.
 
+`AC-BEHAVE-06`: The grasp aim shall carry a package forward at the belt's
+running speed. A measured along-belt velocity from the contact that just
+resolved, including travel back up the belt or a spike ahead of the belt,
+shall not be the speed the aim uses. Lateral velocity may still be carried
+for the drift horizon.
+
 ## Test plan
 
 | Criterion | Test |
@@ -81,4 +92,5 @@ the next visit cannot start while the fingers are still shut.
 | `AC-BEHAVE-02` | `test_descent_retarget_does_not_project_lateral_drift`, existing AC-MOVE-63 |
 | `AC-BEHAVE-03` | `test_commanded_yaw_picks_the_nearer_parallel_grip` |
 | `AC-BEHAVE-04` | `test_the_solver_prefers_an_extended_reach_over_a_folded_wrist` |
-| `AC-BEHAVE-05` | `test_the_arm_holds_the_release_until_the_object_can_fall`, `test_the_jaw_stays_open_until_the_wrist_matches`, `test_a_wrist_that_cannot_match_is_not_an_attempt`, `test_the_rise_waits_until_the_fingers_have_closed`, `test_a_close_that_cannot_finish_is_not_an_attempt`, `test_a_far_object_is_not_an_attempt`, `test_the_release_is_still_the_planned_chute` |
+| `AC-BEHAVE-05` | `test_the_arm_holds_the_release_until_the_object_can_fall`, `test_the_jaw_stays_open_until_the_wrist_matches`, `test_a_wrist_that_cannot_match_is_not_an_attempt`, `test_the_rise_waits_until_the_fingers_have_closed`, `test_a_close_that_cannot_finish_is_not_an_attempt`, `test_a_far_object_is_not_an_attempt`, `test_the_release_is_still_the_planned_chute`, `test_the_close_stays_on_the_hold_when_the_pick_falls_in_the_descent` |
+| `AC-BEHAVE-06` | `test_a_contact_velocity_does_not_aim_the_jaw_ahead` |

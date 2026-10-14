@@ -746,10 +746,10 @@ class TaskMachine:
                     False,
                 )
                 return None
-            frozen = self._plan.at(self._plan.pick_at)
-            if frozen is None:
-                frozen = sampled
-            phase, state, _ignored = frozen
+            held = self._hold_at_the_pick()
+            if held is None:
+                held = (sampled[0], sampled[1])
+            phase, state = held
             grip = JAW_OPEN
             frozen_yaw = self._plan.yaw_at(self._plan.pick_at)
             if frozen_yaw is not None:
@@ -836,9 +836,9 @@ class TaskMachine:
                 else:
                     self._seat_wait += dt
                     self._seat_lag += dt
-                frozen = self._plan.at(self._plan.pick_at)
-                if frozen is not None:
-                    phase, state, _ignored = frozen
+                held = self._hold_at_the_pick()
+                if held is not None:
+                    phase, state = held
                 grip = JAW_SHUT
                 seated_yaw = self._plan.yaw_at(self._plan.pick_at)
                 if seated_yaw is not None:
@@ -858,7 +858,7 @@ class TaskMachine:
         if yaw is None:
             yaw = self._plan_yaw
         self._last_yaw = yaw
-        if grip >= 0.5:
+        if grip >= 0.5 and phase is Phase.HOLD:
             self._jaw_committed = True
         # The plan clock waits while the wrist arrives and while the fingers
         # close, so the rise does not start early. The object does not wait
@@ -1470,6 +1470,26 @@ class TaskMachine:
                     return False
         return True
 
+    def _hold_at_the_pick(self) -> tuple[Phase, State] | None:
+        """Return the grasp pose, which is the start of the hold.
+
+        The pick instant is the end of the descent. A leg owns a half-open
+        interval, so an instant one float below that end is still the
+        descent, and the descent's jaw is open. Sitting the close on that
+        leftover descent commands the jaw shut while the arm is still
+        moving onto the package (`AC-BEHAVE-05`).
+
+        Returns:
+            The hold phase and the pose at its start, or None when the plan
+            has no hold to sit on.
+        """
+        if self._plan is None:
+            return None
+        for leg in self._plan.legs:
+            if leg.phase is Phase.HOLD:
+                return leg.phase, leg.segment.at(0.0)
+        return None
+
     def _object_velocity(self, head: Candidate) -> NDArray[np.float64]:
         """Return how the belt is carrying this candidate, with no vertical guess.
 
@@ -1478,25 +1498,20 @@ class TaskMachine:
         against -- and a second copy of this clamp is how they come to disagree
         about which object they are aiming at.
 
+        The along-belt component is the belt's running speed. The velocity
+        read off the body is the contact the solver just resolved, and on a
+        packed line that contact travels back up the belt or spikes ahead of
+        it. Aiming with it puts the jaw ahead of the package (`AC-BEHAVE-06`).
+
         Args:
             head: The candidate.
 
         Returns:
-            Its velocity in world frame, with travel up the belt floored at
-            zero: a jaw cannot be aimed at an object that is behind where the
-            plan already committed to meet it.
+            Belt speed along the belt, the measured lateral velocity for the
+            drift horizon, and no vertical component.
         """
-        obj_vel = (
-            head.velocity_world
-            if head.velocity_world is not None
-            else np.asarray((self._belt_speed, 0.0, 0.0), dtype=np.float64)
-        )
-        # A floor on one component only: `max` names that, and `np.clip` over a
-        # per-component bound would hide which axis carries it.
-        return np.asarray(
-            (max(0.0, float(obj_vel[0])), float(obj_vel[1]), float(obj_vel[2])),
-            dtype=np.float64,
-        )
+        lateral = 0.0 if head.velocity_world is None else float(head.velocity_world[1])
+        return np.asarray((self._belt_speed, lateral, 0.0), dtype=np.float64)
 
     def _fresh_aim(
         self,

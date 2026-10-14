@@ -46,6 +46,12 @@ belt:
   # keeps the step finite. The value sits above a drop from the spawn
   # height and below the impulse a deep overlap produces.
   contact_speed_limit_meters_per_second: 1.0
+  # How far the gripper driver travels, as a fraction of its stroke, before
+  # a contact with the arm releases the flat pose. Half the stroke is the
+  # open jaw: a brush while the fingers are still open is not a grasp, and
+  # releasing the belt there is what let the jaw push a package along it.
+  # Past this fraction the spin is released so the lift is not pinned.
+  jaw_release_fraction: 0.5
   # A range, drawn once per run from the seed, not a fixed speed. A line whose
   # speed never varies trains a policy that has memorised one speed.
   #

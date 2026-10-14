@@ -10,6 +10,7 @@ the clock and read what the plan asks for.
 from __future__ import annotations
 
 import math
+from dataclasses import replace
 from pathlib import Path
 from typing import cast
 
@@ -1446,3 +1447,90 @@ def test_the_release_is_still_the_planned_chute() -> None:
     assert last is not None
     assert arm.served == (1,)
     assert last.position[0] == pytest.approx(float(aimed[0]) + margin, abs=0.015)
+
+
+def _planned(velocity: tuple[float, float, float]) -> TaskMachine:
+    """Commit one full visit for an object moving at `velocity`."""
+    arm = machine(profile=Profile.FULL_VISIT)
+    head = Candidate(
+        track_id=1,
+        anchor=np.asarray((0.30, 0.0, PINCH_Z), dtype=np.float64),
+        flange=np.asarray((0.30, 0.0, PICK_Z), dtype=np.float64),
+        closing_axis=math.pi / 2.0,
+        distance_before_leaving=1.5,
+        velocity_world=np.asarray(velocity, dtype=np.float64),
+    )
+    arm.step(queue_of(head), PARK, 0.0)
+    assert arm.plan is not None
+    return arm
+
+
+def _descent_end(arm: TaskMachine) -> NDArray[np.float64]:
+    """Return where the descent of `arm` puts the flange."""
+    assert arm.plan is not None
+    return next(
+        leg.segment.end.position for leg in arm.plan.legs if leg.phase is Phase.DESCEND
+    )
+
+
+def test_a_contact_velocity_does_not_aim_the_jaw_ahead() -> None:
+    """AC-BEHAVE-06: contact velocity is not the speed the jaw aims with.
+
+    Travel back up the belt, and a spike ahead of the belt, are what the
+    contact solver reports on a packed line. Both aims ride the belt's
+    running speed. Lateral drift is still carried for the drift horizon.
+    """
+    backward = _planned((-0.40, 0.05, 0.10))
+    spiked = _planned((0.80, 0.05, -0.20))
+    settled = _planned((-0.40, 0.0, 0.10))
+    for arm in (backward, spiked, settled):
+        assert arm.plan is not None
+        assert arm.plan.transport_velocity == pytest.approx((BELT_SPEED, 0.0, 0.0))
+    back_end = _descent_end(backward)
+    spike_end = _descent_end(spiked)
+    still_end = _descent_end(settled)
+    assert back_end[0] == pytest.approx(float(spike_end[0]))
+    assert back_end[1] == pytest.approx(float(spike_end[1]))
+    assert back_end[2] == pytest.approx(PICK_Z)
+    assert abs(float(back_end[1] - still_end[1])) > 0.005
+
+
+def test_the_close_stays_on_the_hold_when_the_pick_falls_in_the_descent() -> None:
+    """AC-BEHAVE-05: a pick instant inside the descent does not shut there.
+
+    A leg owns a half-open interval, and a retarget can leave the pick
+    instant a few milliseconds inside the descent. That sample is still
+    moving onto the package, and its jaw is open. The close sits on the
+    hold.
+    """
+    arm = machine(profile=Profile.FULL_VISIT)
+    arm.step(queue_of(candidate(1, x=0.30)), PARK, 0.0)
+    assert arm.plan is not None
+    elapsed = 0.0
+    hold = None
+    for leg in arm.plan.legs:
+        if leg.phase is Phase.HOLD:
+            hold = leg
+            break
+        elapsed += leg.segment.duration
+    assert hold is not None
+    leftover = 0.004
+    boundary = arm.plan.started_at + elapsed
+    arm._plan = replace(arm.plan, pick_at=boundary - leftover)
+    assert arm.plan is not None
+    early = arm.plan.at(arm.plan.pick_at)
+    assert early is not None
+    assert early[0] is Phase.DESCEND
+    hold_z = float(hold.segment.at(0.0).position[2])
+    at_seconds = 0.0
+    closed = None
+    while at_seconds < 12.0:
+        at_seconds += 0.01
+        flown = arm.tick(at_seconds, PARK, jaw_travel=0.0, seconds_left=30.0)
+        if flown is not None and flown.grip >= 0.5:
+            closed = flown
+            break
+    assert closed is not None
+    assert closed.phase is Phase.HOLD
+    assert closed.grip == pytest.approx(1.0)
+    assert closed.position[2] == pytest.approx(hold_z)
