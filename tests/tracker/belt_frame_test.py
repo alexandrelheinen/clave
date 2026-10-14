@@ -147,14 +147,14 @@ def test_the_nadir_scale_factor_matches_the_configured_detection_camera() -> Non
     angle, which is what a test asserting a number nobody reads does.
     """
     raw = load(ROOT / "configs" / "world" / "sorting_line.yml")
-    surface = float(require(require(raw, "belt"), "surface_height_meters", "belt"))
+    surface = float(require(require(raw, "belt"), "surface_height", "belt"))
     wide = next(c for c in require(raw, "cameras") if str(c["role"]) == "detection")
     pixels = max(require(require(raw, "sensors")[str(wide["sensor"])], "pixels"))
 
     optics = NadirOptics(
-        camera_height=float(wide["position_meters"][2]),
-        fovy_degrees=field_of_view(
-            wide, require(raw, "sensors"), require(raw, "lenses")
+        camera_height=float(wide["position"][2]),
+        fovy=math.radians(
+            field_of_view(wide, require(raw, "sensors"), require(raw, "lenses"))
         ),
     )
     measured = optics.meters_per_pixel(surface_height=surface, render_height=pixels)
@@ -169,7 +169,7 @@ def test_the_scale_factor_is_taken_at_the_object_and_not_at_the_belt() -> None:
     grasp_width and the mass band.
     """
     # Literal optics on purpose: this is the arithmetic, not the shipped line.
-    optics = NadirOptics(camera_height=1.750, fovy_degrees=45.0)
+    optics = NadirOptics(camera_height=1.750, fovy=math.radians(45.0))
     at_belt = optics.meters_per_pixel(surface_height=0.90, render_height=1080)
     at_object = optics.meters_per_pixel(surface_height=1.00, render_height=1080)
     assert at_object < at_belt
@@ -184,7 +184,7 @@ def test_the_scale_factor_follows_the_render_size_not_the_declared_resolution() 
     the ratio, so the render height is an argument rather than read from the
     sensor.
     """
-    optics = NadirOptics(camera_height=1.750, fovy_degrees=45.0)
+    optics = NadirOptics(camera_height=1.750, fovy=math.radians(45.0))
     coarse = optics.meters_per_pixel(surface_height=0.90, render_height=240)
     fine = optics.meters_per_pixel(surface_height=0.90, render_height=1080)
     assert coarse / fine == pytest.approx(1080 / 240)
@@ -192,7 +192,7 @@ def test_the_scale_factor_follows_the_render_size_not_the_declared_resolution() 
 
 def test_a_camera_below_the_surface_it_looks_at_is_refused() -> None:
     """A negative standoff yields a negative scale factor."""
-    optics = NadirOptics(camera_height=0.80, fovy_degrees=45.0)
+    optics = NadirOptics(camera_height=0.80, fovy=math.radians(45.0))
     with pytest.raises(FrameError, match="standoff"):
         optics.meters_per_pixel(surface_height=0.90, render_height=1080)
 

@@ -47,7 +47,7 @@ def test_a_corpus_archive_round_trips_cameras_and_pose(tmp_path: Path) -> None:
         seed=3,
         examples=(example,),
         belt_speed=0.30,
-        spacing_meters=0.35,
+        spacing=0.35,
     )
     written = write(
         tmp_path,
@@ -59,8 +59,8 @@ def test_a_corpus_archive_round_trips_cameras_and_pose(tmp_path: Path) -> None:
         campaign_id="campaign",
     )
     assert written.format_version == FORMAT_CORPUS
-    assert written.files[0].belt_speed_meters_per_second == 0.30
-    assert written.files[0].spacing_meters == 0.35
+    assert written.files[0].belt_speed == 0.30
+    assert written.files[0].spacing == 0.35
     assert written.files[0].camera_ids == ("gate_wide", "pick_wide")
 
     restored = load_split(tmp_path, "train", camera="pick_wide")

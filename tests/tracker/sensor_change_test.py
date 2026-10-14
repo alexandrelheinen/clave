@@ -94,9 +94,7 @@ def test_adding_a_fourth_barcode_camera_edits_one_file() -> None:
     raw = load(WORLD)
     raw["cameras"] = [
         *raw["cameras"],
-        dict(
-            raw["cameras"][2], id="gate_code_fourth", position_meters=[-1.0, 0.16, 1.63]
-        ),
+        dict(raw["cameras"][2], id="gate_code_fourth", position=[-1.0, 0.16, 1.63]),
     ]
     sensors = load_sensors(raw)
     assert len(of_role(sensors, Role.CODE)) == 4
@@ -119,10 +117,10 @@ def test_moving_the_gate_further_upstream_edits_one_position() -> None:
     raw["cameras"] = [
         dict(
             entry,
-            position_meters=[
+            position=[
                 -1.40,
-                entry["position_meters"][1],
-                entry["position_meters"][2],
+                entry["position"][1],
+                entry["position"][2],
             ],
         )
         for entry in raw["cameras"]
@@ -146,7 +144,7 @@ def test_replacing_three_code_cameras_with_one_reader_edits_one_list() -> None:
     raw = load(WORLD)
     raw["cameras"] = [
         raw["cameras"][0],
-        dict(raw["cameras"][2], id="gate_line_scan", position_meters=[-1.0, 0.0, 1.63]),
+        dict(raw["cameras"][2], id="gate_line_scan", position=[-1.0, 0.0, 1.63]),
     ]
     sensors = load_sensors(raw)
     assert len(of_role(sensors, Role.CODE)) == 1

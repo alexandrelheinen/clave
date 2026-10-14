@@ -6,12 +6,12 @@ use clave_publish::InMemorySink;
 use clave_sitl::{Outcome, RuntimeConfig, Service};
 
 const ENVELOPE: &str = r#"
-  "base_meters": [0.0, -0.70, 0.90],
-  "reach_meters": [0.25, 1.25],
-  "tool_above_base_meters": [-0.05, 0.45],
-  "belt_surface_z_meters": 0.90,
-  "belt_x_meters": [-1.5, 1.5],
-  "belt_y_meters": [-0.5, 0.5],
+  "base": [0.0, -0.70, 0.90],
+  "reach": [0.25, 1.25],
+  "tool_above_base": [-0.05, 0.45],
+  "belt_surface_z": 0.90,
+  "belt_x": [-1.5, 1.5],
+  "belt_y": [-0.5, 0.5],
   "channels": {"M-08": 8, "M-06": 6, "M-05": 5},
   "reject_channel": 0,
   "confidence_floor": 0.6
@@ -108,12 +108,12 @@ fn ac_sort_09_a_runtime_refuses_residue_cheaper_than_reject() {
     sorted[10] = 4.0;
     let document = format!(
         r#"{{
-            "base_meters": [0.0, -0.70, 0.90],
-            "reach_meters": [0.25, 1.25],
-            "tool_above_base_meters": [-0.05, 0.45],
-            "belt_surface_z_meters": 0.90,
-            "belt_x_meters": [-1.5, 1.5],
-            "belt_y_meters": [-0.5, 0.5],
+            "base": [0.0, -0.70, 0.90],
+            "reach": [0.25, 1.25],
+            "tool_above_base": [-0.05, 0.45],
+            "belt_surface_z": 0.90,
+            "belt_x": [-1.5, 1.5],
+            "belt_y": [-0.5, 0.5],
             "channels": {{"M-08": 8}},
             "reject_channel": 0,
             "confidence_floor": 0.6,

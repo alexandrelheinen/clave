@@ -10,6 +10,7 @@ because nothing recorded the tree.
 from __future__ import annotations
 
 import csv
+import math
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -153,7 +154,7 @@ def test_the_report_survives_the_terminal_it_printed_on_ac_move_55() -> None:
         metadata_path=Path("runs/debug/example/metadata.json"),
         min_jaw_clearance=0.0071,
         belt_contacts=0,
-        worst_tool_tilt_degrees=3.7,
+        worst_tool_tilt=math.radians(3.7),
         ground_truth=True,
     )
     text = "\n".join(report_lines(report))
@@ -240,7 +241,7 @@ def test_a_telemetry_row_carries_the_command_and_the_jaw(
         "jaw_lowest_z",
         "jaw_clearance",
         "belt_contact",
-        "tool_tilt_degrees",
+        "tool_tilt",
     ):
         assert column in record, f"{column} is not in the telemetry"
     assert float(record["commanded_x"]) == pytest.approx(0.50)
@@ -251,7 +252,7 @@ def test_a_telemetry_row_carries_the_command_and_the_jaw(
     # Parked at 1.20 m with the jaw 173.5 mm below the flange, the pads stand
     # clear of a belt at 0.90 m by a hand's width.
     assert state.clearance > 0.05
-    assert state.tilt_degrees < 1.0
+    assert state.tilt < math.radians(1.0)
 
 
 def test_the_jaw_state_reports_a_jaw_inside_the_belt(world: Any) -> None:

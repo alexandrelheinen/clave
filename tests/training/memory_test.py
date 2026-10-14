@@ -56,7 +56,7 @@ def test_ac_mem_04_a_checkpoint_records_the_input_side(tmp_path: Path) -> None:
     sample = FrameSample(
         samples_per_crossing=1,
         dataset_digest="a" * 64,
-        along_travel_meters=0.92,
+        along_travel=0.92,
         capture_interval_seconds=0.2,
         seed=0,
         picks={},

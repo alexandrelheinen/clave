@@ -20,8 +20,8 @@ def test_the_shipped_configuration_loads() -> None:
 
 def test_a_missing_key_fails_naming_its_location() -> None:
     """Nothing is substituted for an absent key."""
-    with pytest.raises(WorldConfigError, match="belt.speed_meters_per_second"):
-        require({}, "speed_meters_per_second", "belt")
+    with pytest.raises(WorldConfigError, match="belt.speed"):
+        require({}, "speed", "belt")
 
 
 def test_an_inverted_range_fails_naming_the_key() -> None:
@@ -40,9 +40,9 @@ def test_every_randomizable_belt_and_spawn_value_is_a_range() -> None:
     """Every randomizable belt and spawn value is a range, in the shipped
     configuration rather than a fixture."""
     raw = load(CONFIG)
-    require_range(raw["belt"], "speed_meters_per_second", "belt")
-    require_range(raw["spawn"], "spacing_meters", "spawn")
-    require_range(raw["spawn"], "lateral_offset_meters", "spawn")
+    require_range(raw["belt"], "speed", "belt")
+    require_range(raw["spawn"], "spacing", "spawn")
+    require_range(raw["spawn"], "lateral_offset", "spawn")
     # Cameras are fixed installations rather than randomized quantities: a
     # sensor that moves between runs cannot be calibrated, so each entry
     # carries scalars and the list itself is what varies between lines.
@@ -51,7 +51,7 @@ def test_every_randomizable_belt_and_spawn_value_is_a_range() -> None:
         assert {
             "id",
             "role",
-            "position_meters",
+            "position",
             "sensor",
             "lens",
             "long_axis",
@@ -59,7 +59,7 @@ def test_every_randomizable_belt_and_spawn_value_is_a_range() -> None:
         # A camera names the parts it is built from. An angle written directly
         # is a number nobody can check against a catalog, so `fovy` is derived
         # and must not appear here.
-        assert "fovy_degrees" not in sensor, sensor["id"]
+        assert "fovy_deg" not in sensor, sensor["id"]
         assert sensor["sensor"] in raw["sensors"]
         assert sensor["lens"] in raw["lenses"]
 
@@ -77,8 +77,8 @@ def test_an_object_wider_than_the_gripper_is_refused() -> None:
         "name": "boulder",
         "material_class": "M-01",
         "shape": "cylinder",
-        "size_a_meters": [0.030, 0.038],
-        "size_b_meters": [0.090, 0.120],
+        "size_a": [0.030, 0.038],
+        "size_b": [0.090, 0.120],
         "density_kg_per_m3": [55, 110],
     }
     with pytest.raises(WorldConfigError, match="boulder"):
@@ -92,7 +92,7 @@ def test_every_shipped_object_fits_the_shipped_gripper() -> None:
     from clave.world.objects import parse
 
     raw = load(CONFIG)
-    limit = float(require(require(raw, "arm"), "max_grasp_width_meters"))
+    limit = float(require(require(raw, "arm"), "max_grasp_width"))
     specs = parse(require(raw, "objects"), limit)
     assert specs
     assert all(spec.max_grasp_width <= limit for spec in specs)

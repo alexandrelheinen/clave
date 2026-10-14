@@ -918,27 +918,27 @@ One new file, `configs/runtime/control.yml`, every key required:
 ```yaml
 selection:
   exit_weight: ...            # dimensionless, weights urgency against travel
-  anchor_radius_meters: ...   # how far an estimate moves before the anchor does
+  anchor_radius: ...   # how far an estimate moves before the anchor does
 task:
   profile: full_visit         # or motion_only
-  approach_height_meters: ...
-  arrival_tolerance_meters: ...
+  approach_height: ...
+  arrival_tolerance: ...
   dwell_seconds: ...
-  grasp_clearance_meters: ...              # AC-MOVE-32
-  approach_speed_meters_per_second: ...    # AC-MOVE-33, and AC-MOVE-35 with it
+  grasp_clearance: ...              # AC-MOVE-32
+  approach_speed: ...    # AC-MOVE-33, and AC-MOVE-35 with it
   interception_limit_seconds: ...          # AC-MOVE-41
   interception_margin: ...                 # AC-MOVE-42
-  park_position_meters: [...]
+  park_position: [...]
   park_marker_color: [...]     # AC-MOVE-21
 motion:
-  max_speed_meters_per_second: ...
-  max_acceleration_meters_per_second_squared: ...
+  max_speed: ...
+  max_acceleration: ...
 servo:
   gain: ...
   max_joint_speed_radians_per_second: ...
   lead_seconds: ...            # AC-MOVE-36
 calibration:
-  flange_offset_meters: [...]  # AC-MOVE-06
+  flange_offset: [...]  # AC-MOVE-06
 ```
 
 ### The seams under test

@@ -41,7 +41,7 @@ class TrainingConfig:
         validation_dataset: Held-out corpus. None skips selection.
         patience: Epochs without a better held-out score before the run stops.
             None when there is no validation dataset.
-        window_exit_meters: Belt coordinate where the reachable window ends,
+        window_exit: Belt coordinate where the reachable window ends,
             used to replay the scripted expert.
         act_chunk_size: Actions an action chunking policy predicts per
             observation. Shorter than the benchmarked default on purpose.
@@ -59,7 +59,7 @@ class TrainingConfig:
     class_balance: str
     validation_dataset: Path | None
     patience: int | None
-    window_exit_meters: float
+    window_exit: float
     act_chunk_size: int
 
     @property
@@ -81,7 +81,7 @@ class TrainingConfig:
                     else str(self.validation_dataset)
                 ),
                 "patience": self.patience,
-                "window_exit_meters": self.window_exit_meters,
+                "window_exit": self.window_exit,
                 "act_chunk_size": self.act_chunk_size,
             }
         )
@@ -127,7 +127,7 @@ class TrainingConfig:
             class_balance=_class_balance(need("class_balance"), chosen),
             validation_dataset=_validation_dataset(section),
             patience=_patience(section),
-            window_exit_meters=float(need("window_exit_meters")),
+            window_exit=float(need("window_exit")),
             act_chunk_size=int(need("act_chunk_size")),
         )
 

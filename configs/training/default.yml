@@ -26,7 +26,7 @@ training:
   # docs/measurements.md carries the sweep. The value this replaced, 0.213, was
   # the half-window of the 0.24 m workspace the previous arm had, and it told
   # the expert the window closed 0.82 m before it does.
-  window_exit_meters: 1.034
+  window_exit: 1.034
   # ACT predicts a chunk of future actions. v0.4.0 benchmarked the upstream
   # default of 100; captures here are half a second apart, so 100 would reach
   # far past the 1.13 second reachable window and be almost all padding.

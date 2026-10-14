@@ -23,7 +23,7 @@ Centers at 0.125 m on the belt the shipped line already runs.
   height, returns to the pool. A lifted package does not.
 - While two packages touch, the belt leaves the velocity the contact
   solver just produced. A linear speed past
-  `contact_speed_limit_meters_per_second` (1.0 m/s) is cut back, so a
+  `contact_speed_limit` (1.0 m/s) is cut back, so a
   deep overlap cannot throw a package at many times belt speed.
 - A pick counts as an attempt only once the jaw is commanded shut, and
   every attempt has to be placed. The jaw stays open at the grasp pose

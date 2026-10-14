@@ -42,8 +42,8 @@ class DatasetFile:
         byte_count: Size in bytes.
         frame_count: Captured instants in the archive.
         seed: Seed the rollout ran under.
-        belt_speed_meters_per_second: Fixed belt speed, when the rollout had one.
-        spacing_meters: Fixed release gap, when the rollout had one.
+        belt_speed: Fixed belt speed, when the rollout had one.
+        spacing: Fixed release gap, when the rollout had one.
         camera_ids: Detection cameras stored in the archive, in order.
     """
 
@@ -52,8 +52,8 @@ class DatasetFile:
     byte_count: int
     frame_count: int
     seed: int
-    belt_speed_meters_per_second: float | None = None
-    spacing_meters: float | None = None
+    belt_speed: float | None = None
+    spacing: float | None = None
     camera_ids: tuple[str, ...] = ()
 
 
@@ -261,8 +261,8 @@ def _file_record(path: Path, rollout: Rollout) -> DatasetFile:
         byte_count=path.stat().st_size,
         frame_count=len(rollout.examples),
         seed=rollout.seed,
-        belt_speed_meters_per_second=rollout.belt_speed,
-        spacing_meters=rollout.spacing_meters,
+        belt_speed=rollout.belt_speed,
+        spacing=rollout.spacing,
         camera_ids=camera_ids,
     )
 
@@ -319,10 +319,8 @@ def _description_from_json(raw: dict[str, object]) -> DatasetDescription:
                     byte_count=int(item["byte_count"]),
                     frame_count=int(item["frame_count"]),
                     seed=int(item["seed"]),
-                    belt_speed_meters_per_second=_optional_float(
-                        item.get("belt_speed_meters_per_second")
-                    ),
-                    spacing_meters=_optional_float(item.get("spacing_meters")),
+                    belt_speed=_optional_float(item.get("belt_speed")),
+                    spacing=_optional_float(item.get("spacing")),
                     camera_ids=tuple(str(camera) for camera in cameras),
                 )
             )
@@ -411,10 +409,8 @@ def load_split(root: Path, part: str, camera: str | None = None) -> tuple[Rollou
                 rollout_id=rollout_id,
                 seed=recorded.seed if recorded is not None else description.seed,
                 examples=examples,
-                belt_speed=None
-                if recorded is None
-                else recorded.belt_speed_meters_per_second,
-                spacing_meters=None if recorded is None else recorded.spacing_meters,
+                belt_speed=None if recorded is None else recorded.belt_speed,
+                spacing=None if recorded is None else recorded.spacing,
             )
         )
     return tuple(rollouts)
@@ -501,8 +497,8 @@ def _load_rollout(
         rollout_id=rollout_id,
         seed=recorded.seed if recorded is not None else description.seed,
         examples=owned,
-        belt_speed=None if recorded is None else recorded.belt_speed_meters_per_second,
-        spacing_meters=None if recorded is None else recorded.spacing_meters,
+        belt_speed=None if recorded is None else recorded.belt_speed,
+        spacing=None if recorded is None else recorded.spacing,
     )
 
 

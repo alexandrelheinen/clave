@@ -120,7 +120,7 @@ the honest thing to add later *if* a vacuum model arrives that is more than a
 conditional weld.
 
 **What adopting it costs, swept rather than estimated.** The jaw opens
-85 mm and the world admits objects up to `arm.max_grasp_width_meters` of
+85 mm and the world admits objects up to `arm.max_grasp_width` of
 180 mm. Measured against the compiled meshes, the 85 mm jaw takes the set
 from 18 objects to 17 and leaves the class coverage where it was, at `M-02`,
 `M-04`, `M-06` and `M-09`. The one object it loses is `master_chef_can` at

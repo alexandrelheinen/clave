@@ -99,7 +99,7 @@ def test_the_flange_arrives_inside_the_tolerance_the_task_layer_uses(
 ) -> None:
     """AC-MOVE-12: the flange arrives inside the tolerance the task layer uses.
 
-    Ten millimetres is what `task.arrival_tolerance_meters` calls arrived. A
+    Ten millimetres is what `task.arrival_tolerance` calls arrived. A
     servo that cannot get inside it makes every visit hang, so the number and
     the mechanism are checked against each other here rather than separately.
     """

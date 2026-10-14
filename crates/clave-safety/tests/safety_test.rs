@@ -19,12 +19,12 @@ fn envelope() -> Envelope {
 }
 
 const ENVELOPE_JSON: &str = r#"{
-  "base_meters": [0.0, -0.70, 0.90],
-  "reach_meters": [0.25, 1.25],
-  "tool_above_base_meters": [-0.05, 0.45],
-  "belt_surface_z_meters": 0.90,
-  "belt_x_meters": [-1.5, 1.5],
-  "belt_y_meters": [-0.5, 0.5]
+  "base": [0.0, -0.70, 0.90],
+  "reach": [0.25, 1.25],
+  "tool_above_base": [-0.05, 0.45],
+  "belt_surface_z": 0.90,
+  "belt_x": [-1.5, 1.5],
+  "belt_y": [-0.5, 0.5]
 }"#;
 
 fn resolver() -> Resolver {
@@ -66,7 +66,7 @@ fn a_proposal_carries_every_field_across_the_boundary() {
     assert_eq!(proposal.object().get(), 7);
     assert_eq!(proposal.class(), MaterialClass::Pet);
     assert!((f64::from(proposal.confidence().get()) - 0.90).abs() < 1e-6);
-    assert!((proposal.pose().point().z_meters() - 0.95).abs() < 1e-9);
+    assert!((proposal.pose().point().z() - 0.95).abs() < 1e-9);
     assert_eq!(proposal.window().earliest().get(), 1000);
 }
 
@@ -193,9 +193,9 @@ fn a_low_confidence_proposal_is_rejected_rather_than_overridden() {
 fn the_envelope_names_a_missing_configuration_key() {
     // No geometric constant lives in this crate, so a key that
     // is absent has to fail rather than fall back.
-    let error = Envelope::from_json(br#"{"base_meters": [0.0, -0.70, 0.90]}"#).unwrap_err();
+    let error = Envelope::from_json(br#"{"base": [0.0, -0.70, 0.90]}"#).unwrap_err();
     assert!(
-        format!("{error}").contains("reach_meters"),
+        format!("{error}").contains("reach"),
         "the error does not name the missing key: {error}"
     );
 }
@@ -206,7 +206,7 @@ fn the_envelope_loads_from_a_file() {
     std::fs::write(&path, ENVELOPE_JSON).unwrap();
     let loaded = Envelope::load(&path).unwrap();
     std::fs::remove_file(&path).unwrap();
-    assert!((loaded.reach_meters().1 - 1.25).abs() < 1e-12);
+    assert!((loaded.reach().1 - 1.25).abs() < 1e-12);
 }
 
 #[test]

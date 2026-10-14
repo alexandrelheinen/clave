@@ -5,6 +5,7 @@ the lighting reaches the world as an argument and never as a change to the
 configuration every dataset, training run and benchmark reads.
 """
 
+import math
 import subprocess
 from pathlib import Path
 
@@ -52,8 +53,8 @@ def test_every_camera_sits_inside_the_stated_ranges() -> None:
     assert len(scenario.cameras) >= 3
     for camera in scenario.cameras:
         assert 2.2 <= camera.distance <= 4.0, camera.name
-        assert -35.0 <= camera.elevation <= -10.0, camera.name
-        assert 20.0 <= camera.fovy <= 60.0, camera.name
+        assert -35.0 <= math.degrees(camera.elevation) <= -10.0, camera.name
+        assert 20.0 <= math.degrees(camera.fovy) <= 60.0, camera.name
     # Three points of view rather than one frame rendered three times.
     assert len({camera.azimuth for camera in scenario.cameras}) == len(scenario.cameras)
 
@@ -236,7 +237,7 @@ def test_a_still_naming_no_camera_is_refused(tmp_path: Path) -> None:
 def test_a_camera_needs_three_numbers_to_look_at(tmp_path: Path) -> None:
     """Two coordinates name no point in a scene."""
     raw = yaml.safe_load((STILLS / "thumbnail.yml").read_text())
-    raw["cameras"][0]["lookat_meters"] = [0.0, 0.0]
+    raw["cameras"][0]["lookat"] = [0.0, 0.0]
     path = tmp_path / "flat.yml"
     path.write_text(yaml.safe_dump(raw))
     with pytest.raises(StillError, match="three numbers"):

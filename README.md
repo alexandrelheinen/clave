@@ -151,7 +151,7 @@ configures:
 | Width | 0.504 m | **0.50 m**, the belt width | 0.992 |
 | Height | 0.502 m | **0.90 m**, so the module surface lands on the belt surface | 1.793 |
 
-Change `belt.modules` and `belt.length_meters` together: four modules of 0.30 m
+Change `belt.modules` and `belt.length` together: four modules of 0.30 m
 make a 1.20 m belt, eight of 0.15 m make the same belt out of shorter sections,
 and six modules on a 1.80 m belt lengthen the line. The module count changes
 nothing the simulation measures, because the modules carry no collision

@@ -55,9 +55,7 @@ def test_the_base_is_the_mounting_face_not_the_first_joint() -> None:
     pytest.importorskip("mujoco")
     _, _, indices = built()
     raw = config.load(ROOT / "configs" / "world" / "sorting_line.yml")
-    configured = config.require(
-        config.require(raw, "arm"), "base_position_meters", "arm"
-    )
+    configured = config.require(config.require(raw, "arm"), "base_position", "arm")
     assert np.allclose(indices.base_position, [float(v) for v in configured])
 
 

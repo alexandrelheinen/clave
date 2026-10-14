@@ -70,8 +70,8 @@ CREATE TABLE IF NOT EXISTS dataset_files (
     byte_count INTEGER,
     frame_count INTEGER,
     seed INTEGER,
-    belt_speed_meters_per_second REAL,
-    spacing_meters REAL,
+    belt_speed REAL,
+    spacing REAL,
     camera_ids TEXT,
     r2_key TEXT,
     PRIMARY KEY (digest, name)
@@ -219,8 +219,8 @@ class D1Client:
                 byte_count INTEGER,
                 frame_count INTEGER,
                 seed INTEGER,
-                belt_speed_meters_per_second REAL,
-                spacing_meters REAL,
+                belt_speed REAL,
+                spacing REAL,
                 camera_ids TEXT,
                 r2_key TEXT,
                 PRIMARY KEY (digest, name)
@@ -414,8 +414,8 @@ class D1Client:
         byte_count: int,
         frame_count: int,
         seed: int,
-        belt_speed_meters_per_second: float | None,
-        spacing_meters: float | None,
+        belt_speed: float | None,
+        spacing: float | None,
         camera_ids: str,
         r2_key: str,
     ) -> None:
@@ -423,15 +423,15 @@ class D1Client:
         sql = """
         INSERT INTO dataset_files (
             digest, name, sha256, byte_count, frame_count, seed,
-            belt_speed_meters_per_second, spacing_meters, camera_ids, r2_key
+            belt_speed, spacing, camera_ids, r2_key
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(digest, name) DO UPDATE SET
             sha256=excluded.sha256,
             byte_count=excluded.byte_count,
             frame_count=excluded.frame_count,
             seed=excluded.seed,
-            belt_speed_meters_per_second=excluded.belt_speed_meters_per_second,
-            spacing_meters=excluded.spacing_meters,
+            belt_speed=excluded.belt_speed,
+            spacing=excluded.spacing,
             camera_ids=excluded.camera_ids,
             r2_key=excluded.r2_key
         """
@@ -444,8 +444,8 @@ class D1Client:
                 byte_count,
                 frame_count,
                 seed,
-                belt_speed_meters_per_second,
-                spacing_meters,
+                belt_speed,
+                spacing,
                 camera_ids,
                 r2_key,
             ],
@@ -463,15 +463,15 @@ class D1Client:
         sql = """
         INSERT INTO dataset_files (
             digest, name, sha256, byte_count, frame_count, seed,
-            belt_speed_meters_per_second, spacing_meters, camera_ids, r2_key
+            belt_speed, spacing, camera_ids, r2_key
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(digest, name) DO UPDATE SET
             sha256=excluded.sha256,
             byte_count=excluded.byte_count,
             frame_count=excluded.frame_count,
             seed=excluded.seed,
-            belt_speed_meters_per_second=excluded.belt_speed_meters_per_second,
-            spacing_meters=excluded.spacing_meters,
+            belt_speed=excluded.belt_speed,
+            spacing=excluded.spacing,
             camera_ids=excluded.camera_ids,
             r2_key=excluded.r2_key
         """
@@ -487,8 +487,8 @@ class D1Client:
                         archived.byte_count,
                         archived.frame_count,
                         archived.seed,
-                        archived.belt_speed_meters_per_second,
-                        archived.spacing_meters,
+                        archived.belt_speed,
+                        archived.spacing,
                         ",".join(archived.camera_ids),
                         f"datasets/{digest}/{archived.name}",
                     ],

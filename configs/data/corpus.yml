@@ -12,15 +12,15 @@ corpus:
   capture_interval_seconds: 0.2
   frame_height: 480
   frame_width: 640
-  belt_speeds_meters_per_second: [0.25, 0.30, 0.35]
-  spacing_meters: [0.35, 0.70, 1.20]
+  belt_speeds: [0.25, 0.30, 0.35]
+  spacing: [0.35, 0.70, 1.20]
   train_rollouts_per_cell: 8
   validation_rollouts_per_cell: 2
   out: datasets/corpus
 
   preview:
     seconds: 8.0
-    belt_speed_meters_per_second: 0.30
-    spacing_meters: 0.35
+    belt_speed: 0.30
+    spacing: 0.35
     frames_per_second: 5
     out: runs/debug/corpus/stream.mp4

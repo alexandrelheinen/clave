@@ -43,7 +43,7 @@ GATE_MULTIPLE = 1.5
 """How far outside its own footprint a track will reach for an observation.
 
 A multiple of the track's own major extent. That is what replaces
-`association_radius_meters`, which was sized for a 0.16 m belt. The belt is
+`association_radius`, which was sized for a 0.16 m belt. The belt is
 0.50 m, and a gate that scales with the object stays valid when the width
 changes. The fixed radius is part of why only 7 of 134 demonstrations
 produced a usable proposal.

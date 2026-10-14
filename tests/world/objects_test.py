@@ -49,8 +49,8 @@ def test_an_unknown_material_class_is_rejected_naming_the_object() -> None:
             "name": "mystery",
             "material_class": "M-99",
             "shape": "box",
-            "size_a_meters": [0.1, 0.2],
-            "size_b_meters": [0.1, 0.2],
+            "size_a": [0.1, 0.2],
+            "size_b": [0.1, 0.2],
             "density_kg_per_m3": [10, 20],
         }
     ]
@@ -65,8 +65,8 @@ def test_an_unknown_shape_is_rejected_naming_the_object() -> None:
             "name": "blob",
             "material_class": "M-01",
             "shape": "torus",
-            "size_a_meters": [0.1, 0.2],
-            "size_b_meters": [0.1, 0.2],
+            "size_a": [0.1, 0.2],
+            "size_b": [0.1, 0.2],
             "density_kg_per_m3": [10, 20],
         }
     ]

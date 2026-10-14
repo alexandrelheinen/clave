@@ -35,7 +35,7 @@ def test_a_run_records_seed_digests_and_environment(tmp_path: Path) -> None:
     """A run records seed digests and environment."""
     pytest.importorskip("torch")
     config = config_for(tmp_path, "behavior-cloning-baseline")
-    run = train(config, config.window_exit_meters, budget=BUDGET, world=WORLD)
+    run = train(config, config.window_exit, budget=BUDGET, world=WORLD)
     assert run.seed == config.seed
     assert run.config_digest == config.digest
     assert len(run.dataset_digest) == 64
@@ -48,7 +48,7 @@ def test_epoch_records_carry_loss_and_wall_clock(tmp_path: Path) -> None:
     """Epoch records carry loss and wall clock."""
     pytest.importorskip("torch")
     config = config_for(tmp_path, "behavior-cloning-baseline")
-    run = train(config, config.window_exit_meters, budget=BUDGET, world=WORLD)
+    run = train(config, config.window_exit, budget=BUDGET, world=WORLD)
     assert run.epochs
     assert run.epochs[0].seconds > 0
     assert run.epochs[0].loss >= 0
@@ -59,7 +59,7 @@ def test_a_run_record_reloads_without_importing_project_code(tmp_path: Path) -> 
     """A run record reloads without importing project code."""
     pytest.importorskip("torch")
     config = config_for(tmp_path, "behavior-cloning-baseline")
-    train(config, config.window_exit_meters, budget=BUDGET, world=WORLD)
+    train(config, config.window_exit, budget=BUDGET, world=WORLD)
     raw = json.loads(run_record_path(tmp_path, "behavior-cloning-baseline").read_text())
     assert raw["candidate"] == "behavior-cloning-baseline"
     assert raw["completed"] is True
@@ -70,11 +70,11 @@ def test_a_checkpoint_is_written_and_a_restart_resumes(tmp_path: Path) -> None:
     """A checkpoint is written and a restart resumes."""
     pytest.importorskip("torch")
     first = config_for(tmp_path, "behavior-cloning-baseline", epochs=1)
-    train(first, first.window_exit_meters, budget=BUDGET, world=WORLD)
+    train(first, first.window_exit, budget=BUDGET, world=WORLD)
     assert (tmp_path / "behavior-cloning-baseline.pt").is_file()
 
     second = replace(first, epochs=2)
-    resumed = train(second, second.window_exit_meters, budget=BUDGET, world=WORLD)
+    resumed = train(second, second.window_exit, budget=BUDGET, world=WORLD)
     # Epoch 0 already happened, so a resumed run records only the new epoch.
     assert [epoch.index for epoch in resumed.epochs] == [1]
 
@@ -101,7 +101,7 @@ def test_one_seed_twice_gives_the_same_first_epoch_loss(tmp_path: Path) -> None:
         f"c=replace(b,dataset=Path({str(DATASET)!r}),"
         "checkpoints=Path(sys.argv[1]),epochs=1);"
         "g=MemoryBudget(resident_limit_bytes=8*1024**3,input_side_pixels=32);"
-        f"r=train(c,c.window_exit_meters,budget=g,world=Path({str(WORLD)!r}));"
+        f"r=train(c,c.window_exit,budget=g,world=Path({str(WORLD)!r}));"
         "print(r.epochs[0].loss)"
     )
     losses = []
@@ -121,14 +121,14 @@ def test_a_checkpoint_from_another_candidate_is_refused(tmp_path: Path) -> None:
     """Restoring mismatched weights would fail confusingly much later."""
     pytest.importorskip("torch")
     config = config_for(tmp_path, "behavior-cloning-baseline")
-    train(config, config.window_exit_meters, budget=BUDGET, world=WORLD)
+    train(config, config.window_exit, budget=BUDGET, world=WORLD)
     (tmp_path / "behavior-cloning-baseline.pt").rename(
         tmp_path / "resnet50-baseline.pt"
     )
     with pytest.raises(ValueError, match="behavior-cloning-baseline"):
         train(
             config_for(tmp_path, "resnet50-baseline"),
-            config.window_exit_meters,
+            config.window_exit,
             budget=BUDGET,
             world=WORLD,
         )
@@ -139,6 +139,6 @@ def test_two_candidates_do_not_overwrite_each_others_records(tmp_path: Path) -> 
     """A shared record file would erase the comparison it exists for."""
     pytest.importorskip("torch")
     config = config_for(tmp_path, "behavior-cloning-baseline")
-    train(config, config.window_exit_meters, budget=BUDGET, world=WORLD)
+    train(config, config.window_exit, budget=BUDGET, world=WORLD)
     assert run_record_path(tmp_path, "behavior-cloning-baseline").is_file()
     assert not run_record_path(tmp_path, "resnet50-baseline").is_file()

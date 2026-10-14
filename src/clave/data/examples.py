@@ -204,7 +204,7 @@ class Rollout:
         belt_speed: Meters per second the belt was driven at, when the recording
             fixed it. None when the world drew a speed and the record did not
             keep it.
-        spacing_meters: Metres of belt between releases, when the recording
+        spacing: Metres of belt between releases, when the recording
             fixed the gap. None when each gap was drawn from a range.
     """
 
@@ -212,4 +212,4 @@ class Rollout:
     seed: int
     examples: tuple[Example, ...]
     belt_speed: float | None = None
-    spacing_meters: float | None = None
+    spacing: float | None = None

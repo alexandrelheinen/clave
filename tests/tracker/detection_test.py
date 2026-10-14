@@ -27,7 +27,7 @@ from clave.tracker.adapters.detection import (
 from clave.tracker.belt_frame import Footprint, NadirOptics
 from clave.tracker.evidence import Detection, Evidence, PixelMask, Role
 
-WIDE = NadirOptics(camera_height=1.942, fovy_degrees=55.65)
+WIDE = NadirOptics(camera_height=1.942, fovy=math.radians(55.65))
 CAMERA = np.asarray((-1.0, 0.0, 1.942), dtype=np.float64)
 SURFACE = 0.90
 
@@ -338,7 +338,7 @@ def test_the_adapter_finds_a_real_object_where_the_world_actually_put_it() -> No
     model, data, _ = scene.build(raw, np.random.default_rng(0), root)
     wide = require_role(load_sensors(raw), Role.DETECTION)
     belt_surface = float(
-        config.require(config.require(raw, "belt"), "surface_height_meters", "belt")
+        config.require(config.require(raw, "belt"), "surface_height", "belt")
     )
 
     renderer = mujoco.Renderer(model, height=480, width=640)

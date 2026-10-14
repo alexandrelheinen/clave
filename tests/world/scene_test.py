@@ -38,11 +38,11 @@ def conveyor_for(
     return belt.Conveyor(
         plan,
         rng,
-        config.require_range(spawn, "spacing_meters", "spawn"),
-        config.require_range(spawn, "lateral_offset_meters", "spawn"),
-        config.require_range(spawn, "drop_height_meters", "spawn"),
+        config.require_range(spawn, "spacing", "spawn"),
+        config.require_range(spawn, "lateral_offset", "spawn"),
+        config.require_range(spawn, "drop_height", "spawn"),
         belt.flat_tilt(spawn),
-        entry_margin=float(spawn["entry_margin_meters"]),
+        entry_margin=float(spawn["entry_margin"]),
     )
 
 
@@ -341,8 +341,8 @@ def test_a_channel_with_no_color_is_refused() -> None:
             annotations={
                 "channel_colors": {"CH-HDPE": [1.0, 0.0, 0.0]},
                 "class_markers": {
-                    "radius_meters": 0.03,
-                    "height_above_meters": 0.16,
+                    "radius": 0.03,
+                    "height_above": 0.16,
                 },
             },
         )

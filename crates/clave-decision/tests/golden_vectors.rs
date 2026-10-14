@@ -41,18 +41,12 @@ fn the_nominal_vector_decodes_to_its_documented_values() {
     assert_eq!(decision.object(), ObjectId::new(4_815_162_342));
     assert_eq!(decision.class(), MaterialClass::Pet);
     assert_eq!(decision.channel(), ChannelId::new(3));
+    assert_eq!(decision.pose().point().x().to_bits(), 0.412_f64.to_bits());
     assert_eq!(
-        decision.pose().point().x_meters().to_bits(),
-        0.412_f64.to_bits()
-    );
-    assert_eq!(
-        decision.pose().point().y_meters().to_bits(),
+        decision.pose().point().y().to_bits(),
         (-0.085_f64).to_bits()
     );
-    assert_eq!(
-        decision.pose().point().z_meters().to_bits(),
-        0.031_f64.to_bits()
-    );
+    assert_eq!(decision.pose().point().z().to_bits(), 0.031_f64.to_bits());
     assert_eq!(decision.pose().yaw_radians().to_bits(), 1.047_f64.to_bits());
     assert_eq!(
         decision.pose().reference_time(),
