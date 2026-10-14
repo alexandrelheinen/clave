@@ -358,6 +358,18 @@ def test_the_adapter_finds_a_real_object_where_the_world_actually_put_it() -> No
             renderer.update_scene(data, camera=wide.source_id)
             masks = segment_masks(model, renderer.render())
             assert masks, f"({placed_x}, {placed_y}) should be in frame"
+            # The scale is taken at the surface being imaged. A crushed
+            # package is shorter than the scan it came from, so that plane
+            # is the top of this mesh rather than a height written down
+            # for the uncrushed bottle.
+            geom = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "object_0_geom")
+            mesh = int(model.geom_dataid[geom])
+            start = int(model.mesh_vertadr[mesh])
+            count = int(model.mesh_vertnum[mesh])
+            local = np.asarray(model.mesh_vert[start : start + count], dtype=np.float64)
+            rotation = np.asarray(data.geom_xmat[geom], dtype=np.float64).reshape(3, 3)
+            origin = np.asarray(data.geom_xpos[geom], dtype=np.float64)
+            top = float((local @ rotation.T + origin)[:, 2].max())
 
             reading = detections_from_masks(
                 masks,
@@ -365,15 +377,16 @@ def test_the_adapter_finds_a_real_object_where_the_world_actually_put_it() -> No
                 observed_at_nanos=0,
                 camera=wide.position,
                 optics=wide.optics,
-                # This package stands about 0.095 m, and the scale is taken at
-                # the surface being imaged rather than at the belt.
-                surface_height=belt_surface + 0.095,
+                surface_height=top,
                 render=(640, 480),
                 belt_surface=belt_surface,
             )[0]
             found_x, found_y, _ = footprint_of(reading).center
             assert found_x == pytest.approx(placed_x, abs=0.005)
-            assert found_y == pytest.approx(placed_y, abs=0.005)
+            # 0.30 m off the optical axis the camera sees the side, and the
+            # mask bounds sit about 7 mm toward the lens. A mirrored row
+            # or a scale taken at the belt misses by several centimetres.
+            assert found_y == pytest.approx(placed_y, abs=0.010)
     finally:
         renderer.close()
 

@@ -1076,6 +1076,58 @@ def _posed_extents(
     return np.asarray(world.max(axis=0) - world.min(axis=0), dtype=np.float64)
 
 
+def _centred_on_the_body(
+    mujoco: Any, path: Path, quat: list[float], scale: list[float]
+) -> list[float]:
+    """Return the geom position that sits the package on the body.
+
+    The compiler recenters the vertices and shifts the geom by the centre
+    the file had. A quarter turn swings that centre out across the belt,
+    and a camera or a grasp aimed at the body then misses the package.
+    The position cancels the shift, so the horizontal centre lies on the
+    body and the bottom of the geometry lies at the body's height.
+
+    Args:
+        mujoco: The imported module.
+        path: The mesh file.
+        quat: Geom orientation, `(w, x, y, z)`.
+        scale: Three file-axis scale factors.
+
+    Returns:
+        The geom position in the body frame, in meters.
+    """
+    spec = mujoco.MjSpec()
+    spec.add_mesh(name="extent", file=str(path), scale=scale)
+    body = spec.worldbody.add_body(name="extent")
+    body.add_geom(
+        name="extent",
+        type=mujoco.mjtGeom.mjGEOM_MESH,
+        meshname="extent",
+        quat=quat,
+    )
+    model = spec.compile()
+    data = mujoco.MjData(model)
+    mujoco.mj_forward(model, data)
+    body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "extent")
+    geom = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "extent")
+    count = int(model.mesh_vertnum[0])
+    local = np.asarray(model.mesh_vert[:count], dtype=np.float64)
+    rotation = np.asarray(data.geom_xmat[geom], dtype=np.float64).reshape(3, 3)
+    posed = local @ rotation.T
+    centre = (posed.min(axis=0) + posed.max(axis=0)) / 2.0
+    shift = np.asarray(data.geom_xpos[geom], dtype=np.float64) - np.asarray(
+        data.xpos[body_id], dtype=np.float64
+    )
+    # The compiler's shift puts the geom frame on the body. The vertices
+    # are only approximately centred in that frame, so the box they
+    # actually fill needs the rest of the correction.
+    return [
+        -float(shift[0]) - float(centre[0]),
+        -float(shift[1]) - float(centre[1]),
+        -float(shift[2]) - float(posed[:, 2].min()),
+    ]
+
+
 def _orientation_quaternions() -> list[list[float]]:
     """Return the quarter-turn orientations, including the identity.
 
@@ -1111,7 +1163,7 @@ def _flat_pose(
     minimum: float,
     opening: float,
     round_ratio: float,
-) -> tuple[list[float], list[float]]:
+) -> tuple[list[float], list[float], list[float]]:
     """Choose the scale and geom orientation that lays a package flat.
 
     A round package, two shorter sides in agreement and a longer axis,
@@ -1131,7 +1183,8 @@ def _flat_pose(
             longer of them, before the package is treated as round.
 
     Returns:
-        The file-axis scale and the geom quaternion.
+        The file-axis scale, the geom quaternion, and the geom position
+        that puts the package on the body.
 
     Raises:
         WorldConfigError: If no face is both graspable and crushable to
@@ -1170,7 +1223,7 @@ def _flat_pose(
         standing, quat, _extents = min(tall or graspable, key=lambda item: item[0])
     scale = [1.0, 1.0, 1.0]
     if standing <= height:
-        return scale, quat
+        return scale, quat, _centred_on_the_body(mujoco, path, quat, scale)
     for index in range(3):
         trial = [1.0, 1.0, 1.0]
         trial[index] = 0.5
@@ -1179,7 +1232,7 @@ def _flat_pose(
         grasp = min(float(probed[0]), float(probed[1]))
         if probed_height < standing * 0.75 and grasp < opening:
             scale[index] = 0.5 * (height / probed_height)
-            return scale, quat
+            return scale, quat, _centred_on_the_body(mujoco, path, quat, scale)
     raise WorldConfigError(
         f"mesh {path.name} has no file axis that scales its standing height, "
         "so it cannot be crushed onto the belt"
@@ -1771,6 +1824,7 @@ def build(
         )
     friction, condim = _rest_contact(spawn_cfg)
     flat_quat: dict[str, list[float]] = {}
+    flat_pos: dict[str, list[float]] = {}
     for spec in plan.objects:
         if not spec.is_mesh or spec.mesh is None:
             continue
@@ -1782,10 +1836,11 @@ def build(
                 f"object {spec.name!r} names the mesh {spec.mesh}, which is not "
                 "on disk. Run: python scripts/import_scene_assets.py --objects"
             )
-        scale, quat = _flat_pose(
+        scale, quat, pos = _flat_pose(
             mujoco, spec_mesh, crushed, minimum_rest, opening, round_ratio
         )
         flat_quat[spec.name] = quat
+        flat_pos[spec.name] = pos
         mujoco_spec.add_mesh(
             name=f"asset_{spec.name}",
             file=str(spec_mesh),
@@ -1818,6 +1873,7 @@ def build(
                 name=f"object_{index}_geom",
                 type=mujoco.mjtGeom.mjGEOM_MESH,
                 meshname=f"asset_{template.name}",
+                pos=flat_pos[template.name],
                 quat=flat_quat[template.name],
                 density=density,
                 friction=friction,

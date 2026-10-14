@@ -146,7 +146,10 @@ geometry touches the package, the system shall stop writing its velocity,
 so the grasp can lift it. A package the arm has lifted is not driven. Each scanned package shall be
 turned onto a face that lies flat and still has one horizontal side inside
 the jaw, and a face taller than the configured crushed height shall be
-scaled down to it. A round package shall stand on its flat end. A face
+scaled down to it. The centre of that pose shall lie on the body in the
+belt plane, and the bottom of the geometry shall lie at the body's
+height, so the scan origin cannot leave the package beside the point a
+grasp or a camera aims at. A round package shall stand on its flat end. A face
 thinner than the configured minimum shall not be the one on the belt,
 because the pads would close on its top edge. The contact coefficients
 that hold a package once the constraint has released shall come from
