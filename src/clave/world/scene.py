@@ -145,6 +145,9 @@ class BeltGeometry:
             stay, in meters per second. A contact that drives it past this
             is no longer a motion of the belt, and the extra is cut back
             so the step stays finite.
+        jaw_release_fraction: How far the gripper driver has to travel,
+            as a fraction of its stroke, before a contact with the arm
+            releases the flat pose. Below it an open jaw is not a grasp.
     """
 
     length: float
@@ -153,6 +156,7 @@ class BeltGeometry:
     speed: float
     height_tolerance: float
     speed_limit: float
+    jaw_release_fraction: float
 
 
 @dataclass(frozen=True)
@@ -392,6 +396,7 @@ def layout(raw: dict[str, Any], rng: np.random.Generator) -> SceneLayout:
         speed_limit=float(
             require(belt_cfg, "contact_speed_limit_meters_per_second", "belt")
         ),
+        jaw_release_fraction=float(require(belt_cfg, "jaw_release_fraction", "belt")),
     )
     takeaway_cfg = require(require(raw, "chutes"), "takeaway", "chutes")
     takeaway = TakeawayDrive(

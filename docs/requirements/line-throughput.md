@@ -128,12 +128,12 @@ its rate from one that saturated.
 and a test shall prove the counter reads the simulator rather than the
 tracker.
 
-`AC-RATE-11`: Pinning a package's rotation while the arm is already touching
-it was measured and made the line worse. The belt's drag becomes a reaction
-that tips the package, the jaw meets a flat upper edge, and the close pulls
-the pads onto the belt. The rest constraint in `AC-RATE-16` therefore stops
-writing velocity at the first arm contact. A test that keeps the pin through
-that contact is describing the failure this measurement recorded.
+`AC-RATE-11`: Pinning a package's rotation while the jaw is already closing
+on it was measured and made the line worse. The belt's drag becomes a
+reaction that tips the package, the jaw meets a flat upper edge, and the
+close pulls the pads onto the belt. The flat pose in `AC-RATE-17` therefore
+releases once the jaw has started to close. A test that keeps the pin
+through that close is describing the failure this measurement recorded.
 
 `AC-RATE-16`: When a package rests on the belt and no arm geometry is
 touching it, the system shall carry it at belt speed, with no lateral
@@ -141,20 +141,20 @@ velocity and no rotation, so it does not roll, slide, or tumble relative
 to the belt. Clearing the angular velocity is not enough, because the
 contact during a step still turns the body, and a tall face then stays
 on its side. The orientation is restored to the flat pose it was laid
-down in, until the arm touches it. Vertical motion stays with the contact
-solver, so the package
-can settle on the surface. When two packages touch, the system shall still
-hold the rotation at rest but shall leave the linear velocity the contact
-solver produced, so the drive does not ram one through the other. When arm
-geometry touches the package, the system shall stop writing its velocity,
-so the grasp can lift it. A package the arm has lifted is not driven. Each scanned package shall be
-turned onto a face that lies flat and still has one horizontal side inside
+down in, until the jaw has started to close (`AC-RATE-17`). Vertical
+motion stays with the contact solver, so the package
+can settle on the surface. When two packages touch, the along-belt speed
+stays the belt's running speed (`AC-RATE-17`). When the jaw is closing on
+the package, the system shall stop restoring that flat pose, so the grasp
+can lift it. A package the arm has lifted is not driven. Each scanned
+package shall be turned onto a face that lies flat and still has one
+horizontal side inside
 the jaw, and a face taller than the configured crushed height shall be
 scaled down to it. The centre of that pose shall lie on the body in the
 belt plane, and the bottom of the geometry shall lie at the body's
 height, so the scan origin cannot leave the package beside the point a
-grasp or a camera aims at. A round package shall stand on its flat end. A face
-thinner than the configured minimum shall not be the one on the belt,
+grasp or a camera aims at. A round package shall stand on its flat end.
+A face thinner than the configured minimum shall not be the one on the belt,
 because the pads would close on its top edge. The contact coefficients
 that hold a package once the constraint has released shall come from
 configuration.
@@ -174,9 +174,9 @@ from the bottom of its geometry. A package whose origin sits above the
 height tolerance, and whose bottom rests on the surface, shall be driven
 at belt speed. A package whose bottom is above the surface by more than
 the height tolerance shall not be driven. When two packages are touching,
-the system shall leave the velocity the contact solver produced on that
-step, so the drive does not ram one through the other. A linear velocity
-past the configured contact speed limit shall be cut back to that limit.
+the along-belt speed is still the belt's running speed (`AC-RATE-17`).
+A linear velocity past the configured contact speed limit shall be cut
+back to that limit.
 
 `AC-RATE-15`: The high-flow file shall space centers at 0.125 m. At the
 drive floor of 0.25 m/s that spacing carries 2.0 objects per second.
@@ -186,6 +186,21 @@ shipped pool shall stay unchanged. A package that has left the belt past
 a side guide, and is still at belt height, shall return to the pool. A
 package the arm has lifted shall not. A package already over a chute
 mouth shall not, so a release can fall through and be counted.
+
+`AC-RATE-17`: While a package rests on the belt, the system shall drive
+its along-belt speed at the belt's running speed and its lateral speed
+at rest, including while it touches another package and including while
+open arm geometry touches it. Leaving the contact solver's linear
+velocity on a touch was measured, on the packed line, as travel back up
+the belt, and the jaw then came down ahead of the package and pushed it
+along the belt. Writing the speed back is not the whole of the travel:
+the contact step spends part of it, and a packed line then moves slower
+than the belt the jaw is aimed at. The along-belt position shall be put
+back on the belt's own travel each step, by at most one belt step. An open jaw is not a grasp. Once the gripper driver has
+passed the configured fraction of its stroke, the system shall stop
+restoring the flat pose and shall stop clearing the spin, so the lift
+is not the pin in `AC-RATE-11`, and shall keep the along-belt speed
+until the bottom leaves the belt.
 
 ## A faster feed for one run
 

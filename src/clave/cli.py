@@ -1013,6 +1013,16 @@ def _build_parser() -> argparse.ArgumentParser:
         help="playback rate, or the rate configs/debug/tracker.yml names",
     )
     sim.add_argument(
+        "--video-interval",
+        type=float,
+        default=None,
+        help=(
+            "simulated seconds between video frames "
+            "(default: the debug configuration). "
+            "Smaller than the playback frame plays slower"
+        ),
+    )
+    sim.add_argument(
         "--view",
         default=None,
         help="which view in configs/debug/tracker.yml to film from",
@@ -1270,6 +1280,7 @@ def _debug_tracker(root: Path, args: Any) -> int:
         render_mode=render_mode,
         routing_path=args.routing,
         feed_path=args.feed,
+        video_interval=args.video_interval,
     )
     for line in report_lines(report):
         _log_output(line)

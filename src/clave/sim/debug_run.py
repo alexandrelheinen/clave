@@ -20,7 +20,9 @@ park pose in frame.
 
 `--camera-video` writes a second file of the primary detection camera, with a
 box on each object a segmentation of that same frame covered. That render
-stays off unless it is asked for (`AC-CAM-01`).
+stays off unless it is asked for (`AC-CAM-01`). With `--video` as well, the
+free-camera file carries every detection camera along its bottom edge, boxes
+included (`AC-CAM-04`).
 
 **The report separates active motion from grasping.** An arm can reach the pose it
 was sent to perfectly and still hold nothing, which is what happens when the
@@ -75,6 +77,7 @@ from clave.sim.clearance import (
     _mesh_vertices,
 )
 from clave.sim.overlay import (
+    _camera_frame,
     _camera_recorder,
     _flange,
     _lookat,
@@ -86,7 +89,8 @@ from clave.sim.overlay import (
     _view,
     _without_shadows,
     _write_beliefs,
-    _write_camera_frame,
+    inset_frame_size,
+    paste_camera_insets,
 )
 from clave.sim.report import (
     GRASPED_METERS,
@@ -283,6 +287,7 @@ def run(
     render_mode: str = "lite",
     routing_path: Path | None = None,
     feed_path: Path | None = None,
+    video_interval: float | None = None,
 ) -> DebugRunReport:
     """Drive the tracker over one rollout, annotating every capture.
 
@@ -326,6 +331,9 @@ def run(
         feed_path: A debug feed file naming a rate, a belt speed and a
             spacing for this run, or None to keep the shipped line. The
             shipped world file is not edited.
+        video_interval: Simulated seconds between video frames, or None for
+            the interval in the debug configuration. A smaller interval
+            plays slower at the same playback rate.
 
     Returns:
         The report.
@@ -726,21 +734,56 @@ def run(
     believed = out / "records.txt"
     believed.write_text("")
     movie = config.require(debug, "video")
-    movie_interval = float(config.require(movie, "interval_seconds", "video"))
+    movie_interval = (
+        float(config.require(movie, "interval_seconds", "video"))
+        if video_interval is None
+        else video_interval
+    )
+    if movie_interval <= 0.0:
+        raise DebugRunError(f"video interval {movie_interval} s must be above zero")
     playback = fps or int(config.require(movie, "frames_per_second"))
-    recorder = _recorder(view, out, playback, movie_interval) if video else None
+    inset_width = int(config.require(movie, "inset_width_pixels", "video"))
+    # The free-camera file grows to the right to hold the detection views
+    # in a column. A band under the picture covered the placing bins. The
+    # recorder has to be opened at that size, because the encoder rejects a
+    # frame that is not the size it was started with.
+    film = dict(view)
+    if video and camera_video and inset_width > 0:
+        film["width"], film["height"] = inset_frame_size(
+            int(view["width"]),
+            int(view["height"]),
+            render[0],
+            render[1],
+            len(detecting),
+            inset_width,
+        )
+    recorder = _recorder(film, out, playback, movie_interval) if video else None
     # The detection-camera file is a second render. It stays unbuilt unless
     # asked for, which is what keeps a headless run from paying for it
     # (`AC-CAM-01`).
     camera_recorder = None
     camera_rgb = None
     camera_seg = None
+    # `(name, colour renderer, segmentation renderer)`. The primary camera is
+    # first and is the one `camera-debug.mp4` records. Further detection
+    # cameras are rendered only when the free-camera file will carry them
+    # (`AC-CAM-04`), which is the expensive part AC-CAM-01 keeps off otherwise.
+    camera_insets: list[tuple[str, Any, Any]] = []
     if camera_video:
         camera_recorder = _camera_recorder(out, width, height, playback)
         if camera_recorder is not None:
             camera_rgb = mujoco.Renderer(model, height=height, width=width)
             camera_seg = mujoco.Renderer(model, height=height, width=width)
             camera_seg.enable_segmentation_rendering()
+            camera_insets.append((detection_camera, camera_rgb, camera_seg))
+            if video:
+                for spec in detecting:
+                    if spec.source_id == detection_camera:
+                        continue
+                    extra_rgb = mujoco.Renderer(model, height=height, width=width)
+                    extra_seg = mujoco.Renderer(model, height=height, width=width)
+                    extra_seg.enable_segmentation_rendering()
+                    camera_insets.append((spec.source_id, extra_rgb, extra_seg))
     next_capture = 0.0
     # Ground truth is the object's own pose, so the arm can read it far faster
     # than the cameras settle. A descent lasts 0.4 s and the capture is 0.5 s,
@@ -1102,16 +1145,20 @@ def run(
             line_view = (recorder is not None or opened) and watching is not None
             if due and (line_view or camera_recorder is not None):
                 next_frame = data.time + movie_interval
-            if due and camera_recorder is not None:
-                _write_camera_frame(
-                    camera_rgb,
-                    camera_seg,
-                    model,
-                    data,
-                    detection_camera,
-                    camera_recorder,
-                    render_mode=render_mode,
-                )
+            panels: list[tuple[str, NDArray[np.uint8]]] = []
+            if due and camera_insets:
+                for name, rgb, seg in camera_insets:
+                    shot = _camera_frame(
+                        rgb,
+                        seg,
+                        model,
+                        data,
+                        name,
+                        render_mode=render_mode,
+                    )
+                    if name == detection_camera and camera_recorder is not None:
+                        camera_recorder.write(shot)
+                    panels.append((name, shot))
             if due and line_view:
                 frame = _painted(
                     watching,
@@ -1125,6 +1172,8 @@ def run(
                     indices,
                     render_mode=render_mode,
                 )
+                if panels and recorder is not None:
+                    frame = paste_camera_insets(frame, panels, min_width=inset_width)
                 if recorder is not None:
                     recorder.write(frame)
                 if opened and tracker_cam is not None:
@@ -1412,6 +1461,11 @@ def run(
             camera_seg.close()
         if camera_recorder is not None:
             camera_recorder.close()
+        for _name, rgb, seg in camera_insets:
+            if rgb is not camera_rgb:
+                rgb.close()
+            if seg is not camera_seg:
+                seg.close()
         if telemetry is not None:
             telemetry.close()
         if opened:

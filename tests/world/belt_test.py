@@ -37,6 +37,7 @@ def layout(speed: float, offset: float) -> SceneLayout:
             speed=speed,
             height_tolerance=0.05,
             speed_limit=1.0,
+            jaw_release_fraction=0.5,
         ),
         arm_base=np.asarray((0.0, offset, 0.90), dtype=np.float64),
         reach_min=_REACH_MIN,
@@ -324,15 +325,27 @@ def test_a_resting_package_does_not_move_relative_to_the_belt_ac_rate_16() -> No
         mujoco.mj_step(model, data)
         conveyor.step(model, data)
     assert conveyor.active, "nothing was on the belt to test"
-    item = conveyor.active[0]
-    body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, item.name)
-    address = model.jnt_qposadr[model.body_jntadr[body]]
-    dof = model.jnt_dofadr[model.body_jntadr[body]]
+    # The oldest package has already left: at belt speed the belt is only
+    # a few seconds long. The one under test still has the half second
+    # of belt this check travels.
+    elapsed = 0.5
+    room = plan.belt.length / 2.0 - conveyor.speed * elapsed - 0.05
+    chosen: tuple[int, int] | None = None
+    for item in conveyor.active:
+        body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, item.name)
+        address = model.jnt_qposadr[model.body_jntadr[body]]
+        position = data.qpos[address : address + 3]
+        bottom = belt._body_bottom(model, data, body)
+        if belt._on_belt(position, plan, bottom) and float(position[0]) < room:
+            dof = model.jnt_dofadr[model.body_jntadr[body]]
+            chosen = (address, dof)
+            break
+    assert chosen is not None, "no package had belt left for the half second"
+    address, dof = chosen
     start_x = float(data.qpos[address])
     start_y = float(data.qpos[address + 1])
     data.qvel[dof + 5] = 5.0
     data.qvel[dof + 1] = 0.4
-    elapsed = 0.5
     for _ in range(int(elapsed / plan.timestep)):
         mujoco.mj_step(model, data)
         conveyor.step(model, data)
@@ -393,11 +406,12 @@ def test_packages_lie_flat_and_stay_graspable_ac_rate_16() -> None:
     assert seen == len(plan.objects)
 
 
-def test_an_arm_contact_releases_the_rest_constraint_ac_rate_16() -> None:
-    """AC-RATE-16: a package the arm is touching keeps the velocity it has.
+def test_an_open_jaw_does_not_release_the_belt_ac_rate_17() -> None:
+    """AC-RATE-17: an open jaw keeps the package on the belt speed.
 
-    The rest write stops at that contact. Continuing it is the pin that
-    tips the package under the jaw.
+    Releasing the drive at the first brush is what let the jaw push the
+    package. The spin stays held until the driver has passed the configured
+    fraction, which is the pin `AC-RATE-11` measured once the jaw is closing.
     """
     pytest.importorskip("mujoco")
     import mujoco
@@ -427,19 +441,30 @@ def test_an_arm_contact_releases_the_rest_constraint_ac_rate_16() -> None:
     data.qvel[velocity : velocity + 6] = 0.0
     mujoco.mj_step(model, data)
     assert body in belt._packages_touching_arm(mujoco, model, data)
-    # The contact is the one the step just resolved. Move the package onto
-    # the belt before the drive runs, without another dynamics step, so the
-    # drive sees a resting package that the arm is already touching.
+    # Flat, with the bottom on the surface. A quarter turn about X swings
+    # the mesh through the belt and the drive never writes. The origin is
+    # not the bottom, so the body is lifted until the mesh meets the belt.
     data.qpos[address : address + 3] = [0.0, 0.0, plan.belt.surface_height]
+    data.qpos[address + 3 : address + 7] = [1.0, 0.0, 0.0, 0.0]
+    mujoco.mj_kinematics(model, data)
+    bottom = belt._body_bottom(model, data, body)
+    data.qpos[address + 2] = float(data.qpos[address + 2]) + (
+        plan.belt.surface_height - bottom
+    )
     data.qvel[velocity] = 0.1
     data.qvel[velocity + 5] = 1.5
-    data.qpos[address + 3 : address + 7] = [0.70710678, 0.70710678, 0.0, 0.0]
+    conveyor.step(model, data)
+    assert float(data.qvel[velocity + 5]) == pytest.approx(0.0)
+    assert float(data.qvel[velocity]) == pytest.approx(conveyor.running)
+    driver = mujoco.mj_name2id(
+        model, mujoco.mjtObj.mjOBJ_JOINT, "arm_grip_right_driver_joint"
+    )
+    assert driver >= 0
+    data.qpos[model.jnt_qposadr[driver]] = float(model.jnt_range[driver][1])
+    data.qvel[velocity + 5] = 1.5
     conveyor.step(model, data)
     assert float(data.qvel[velocity + 5]) == pytest.approx(1.5)
-    assert float(data.qvel[velocity]) == pytest.approx(0.1)
-    assert data.qpos[address + 3 : address + 7] == pytest.approx(
-        (0.70710678, 0.70710678, 0.0, 0.0)
-    )
+    assert float(data.qvel[velocity]) == pytest.approx(conveyor.running)
 
 
 def _rest_on_surface(
@@ -606,11 +631,19 @@ def test_close_centers_keep_moving_ac_rate_14() -> None:
     conveyor.spacing = config.Range(0.125, 0.125)
     conveyor.speed = 0.25
     steps = int(8.0 / plan.timestep)
+    marks: dict[str, float] = {}
+    marked_at = 0.0
     for _ in range(steps):
         mujoco.mj_step(model, data)
         conveyor.step(model, data)
         if not np.isfinite(data.qpos).all() or not np.isfinite(data.qvel).all():
             raise AssertionError("the belt state left the finite range")
+        if not marks and float(data.time) >= 6.0:
+            marked_at = float(data.time)
+            for item in conveyor.active:
+                body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, item.name)
+                address = model.jnt_qposadr[model.body_jntadr[body]]
+                marks[item.name] = float(data.qpos[address])
         for item in conveyor.active:
             body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, item.name)
             dof = model.jnt_dofadr[model.body_jntadr[body]]
@@ -633,7 +666,27 @@ def test_close_centers_keep_moving_ac_rate_14() -> None:
         on_belt += 1
     assert on_belt >= 8, "packages left the belt instead of riding it"
     assert len(conveyor.arrivals) >= 10
-    assert float(np.median(speeds)) == pytest.approx(conveyor.running, abs=0.05)
+    assert speeds
+    assert speeds == pytest.approx([conveyor.running] * len(speeds))
+    # The contact step spends part of the written speed. The position has
+    # to travel at the belt anyway, or the jaw, aimed at the belt, arrives
+    # ahead of the package.
+    travelled = 0
+    elapsed = float(data.time) - marked_at
+    assert elapsed > 1.0
+    for item in conveyor.active:
+        if item.name not in marks:
+            continue
+        body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, item.name)
+        address = model.jnt_qposadr[model.body_jntadr[body]]
+        bottom = belt._body_bottom(model, data, body)
+        position = data.qpos[address : address + 3]
+        if not belt._on_belt(position, plan, bottom):
+            continue
+        speed = (float(data.qpos[address]) - marks[item.name]) / elapsed
+        assert speed == pytest.approx(conveyor.running, abs=0.002), item.name
+        travelled += 1
+    assert travelled >= 4
 
 
 def test_a_slot_returns_to_the_pool_once_its_object_leaves() -> None:
