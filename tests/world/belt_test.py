@@ -361,11 +361,20 @@ def test_packages_lie_flat_and_stay_graspable_ac_rate_16() -> None:
         start, count = model.mesh_vertadr[mesh], model.mesh_vertnum[mesh]
         local = np.asarray(model.mesh_vert[start : start + count], dtype=np.float64)
         rotation = np.asarray(data.geom_xmat[geom], dtype=np.float64).reshape(3, 3)
-        world = local @ rotation.T
+        origin = np.asarray(data.geom_xpos[geom], dtype=np.float64)
+        world = local @ rotation.T + origin
         extents = world.max(axis=0) - world.min(axis=0)
         standing = float(extents[2])
         assert minimum - 1e-3 <= standing <= height + 1e-3, spec.name
         assert min(float(extents[0]), float(extents[1])) < opening, spec.name
+        body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, f"object_{index}")
+        place = np.asarray(data.xpos[body], dtype=np.float64)
+        centre = (world.min(axis=0) + world.max(axis=0)) / 2.0
+        assert centre[0] == pytest.approx(float(place[0]), abs=0.002), spec.name
+        assert centre[1] == pytest.approx(float(place[1]), abs=0.002), spec.name
+        assert float(world[:, 2].min()) == pytest.approx(float(place[2]), abs=0.002), (
+            spec.name
+        )
         seen += 1
     assert seen == len(plan.objects)
 
