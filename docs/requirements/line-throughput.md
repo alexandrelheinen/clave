@@ -144,8 +144,9 @@ feed file and shall release objects at that spacing for the run. The
 shipped world spacing shall stay unchanged. The belt speed the file names
 shall lie inside the shipped drive range. The spacing used for the
 high-flow run shall be greater than the sum of the bounding radii of the
-two largest packages, so two packages do not interpenetrate at any
-orientation, and it shall be the dense end of that clearance.
+two largest packages. It shall also be the dense spacing at which a
+thirty-second run still finishes: a closer gap lets a stalled package
+be caught by the next one, and the step overflows.
 
 ## A faster feed for one run
 
@@ -160,9 +161,12 @@ that needs 2.40 m/s. v1.6.3 did that, and the arm had no interception,
 so it picked nothing. At 0.25 m/s the same rate needs centers 0.125 m
 apart. The two largest packages have bounding radii that sum to 0.180 m,
 so 0.125 m can put them through each other once one tips onto its long
-side. The dense spacing that still clears them is 0.19 m, and at 0.25
-m/s that is 1.32 objects per second. The setpoint stays 0.125 so the
-controller holds the drive floor instead of raising the belt.
+side. 0.19 m clears those radii, and a package that rolls into the side
+guide then stops being driven until the next one catches it. That jam
+overflows the step. 0.22 m is the dense spacing at which a thirty-second
+seed still finishes, and at 0.25 m/s that is 1.14 objects per second.
+The setpoint stays 0.125 so the controller holds the drive floor
+instead of raising the belt.
 
 Editing `configs/world/sorting_line.yml` would move every other run. A
 debug file names the rate, the speed and the spacing for the run that

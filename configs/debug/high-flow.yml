@@ -17,11 +17,14 @@
 # long side. v1.6.3 ran the belt at 2.40 m/s to reach 2.0 objects per
 # second at the shipped spacing, and the arm picked nothing.
 #
-# 0.19 m is the dense spacing that still clears those two radii. At
-# 0.25 m/s the line then carries 0.25 / 0.19 = 1.32 objects per second.
-# The setpoint stays 0.125, below what the drive floor delivers, so the
+# 0.19 m clears those radii and still jams. A package that rolls into
+# the side guide stops being driven, the next one catches it, and the
+# step overflows. 0.20 m does the same on a thirty-second seed. 0.22 m
+# is the dense spacing at which that seed still finishes. At 0.25 m/s
+# the line then carries 0.25 / 0.22 = 1.14 objects per second. The
+# setpoint stays 0.125, below what the drive floor delivers, so the
 # controller holds the floor instead of speeding the belt up.
 
 rate_objects_per_second: 0.125
 belt_speed_meters_per_second: 0.25
-spacing_meters: [0.19, 0.19]
+spacing_meters: [0.22, 0.22]

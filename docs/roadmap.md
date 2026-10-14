@@ -111,11 +111,11 @@ demo. A debug feed file and `clave sim --feed`, so a run can ask for
 line. The arm picked nothing at that speed.
 
 **v1.6.4.** Tagged. The same debug feed file now keeps the belt at the
-drive floor, 0.25 m/s, and spaces package centers at 0.19 m. That
-clears the two largest packages and carries 1.32 objects per second.
-Ten times the v1.6.2 flow would need 0.125 m centers at this speed,
-which those packages can overlap. A second arm is not part of this
-patch.
+drive floor, 0.25 m/s, and spaces package centers at 0.22 m. That is
+the dense spacing at which a thirty-second seed still finishes. It
+carries 1.14 objects per second. Ten times the v1.6.2 flow would need
+0.125 m centers at this speed, inside the 0.180 m the two largest
+packages need once one tips. A second arm is not part of this patch.
 
 | Version | Spec | What lands | State |
 | --- | --- | --- | --- |
