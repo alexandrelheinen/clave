@@ -664,7 +664,6 @@ def refine(
     cross_v = cross_speed if cross_speed is not None else approach_speed
 
     track_legs = [leg for leg in plan.legs if leg.phase is Phase.TRACK]
-    dt = descent_seconds(clearance, approach_speed)
     elapsed = at_seconds - plan.started_at
 
     if len(track_legs) > 1:
@@ -691,7 +690,7 @@ def refine(
                     position=where_carried(
                         obj_pos_at_border,
                         drift,
-                        track_leg.duration + dt,
+                        track_leg.duration,
                         clearance,
                         drift_horizon,
                     ),
@@ -716,7 +715,7 @@ def refine(
             aimed = _object_under(
                 new_track_arc.end.position,
                 drift,
-                new_track_arc.duration + dt,
+                new_track_arc.duration,
                 clearance,
                 drift_horizon,
             )
@@ -759,7 +758,7 @@ def refine(
                     position=where_carried(
                         obj_pos,
                         drift,
-                        rem_track + dt,
+                        rem_track,
                         clearance,
                         drift_horizon,
                     ),
@@ -784,7 +783,7 @@ def refine(
             aimed = _object_under(
                 new_track_arc.end.position,
                 drift,
-                new_track_arc.duration + dt,
+                new_track_arc.duration,
                 clearance,
                 drift_horizon,
             )
@@ -828,7 +827,7 @@ def refine(
             position=where_carried(
                 obj_pos,
                 drift,
-                remaining + dt,
+                remaining,
                 clearance,
                 drift_horizon,
             ),
@@ -851,7 +850,7 @@ def refine(
     if arc is None:
         return None
     aimed = _object_under(
-        arc.end.position, drift, arc.duration + dt, clearance, drift_horizon
+        arc.end.position, drift, arc.duration, clearance, drift_horizon
     )
     return _assemble(
         arc,
@@ -1279,9 +1278,8 @@ def _object_under(
     Args:
         end: Where the approach arc finishes, clearance above the object.
         velocity: How the object is moving.
-        seconds: How far ahead the aim was carried, which is the approach
-            plus the descent. The approach finishes where the object will be
-            when the jaw arrives, not when the descent begins.
+        seconds: How far ahead the aim was carried. The approach finishes
+            where the object is when the descent begins (`AC-BEHAVE-07`).
         clearance: How far above the object the arc finishes, in meters.
         drift_horizon: How long a lateral velocity is carried.
 

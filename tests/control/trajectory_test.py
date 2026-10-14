@@ -246,7 +246,7 @@ def test_the_approach_ends_above_where_the_object_will_be() -> None:
 
     Checked against the definition rather than a constant: the arc's end
     sits one clearance above the object's position at the instant the
-    descent that follows will finish.
+    descent begins. The pick itself is one descent later (`AC-BEHAVE-07`).
     """
     now = np.asarray((-0.40, 0.10, 0.95), dtype=np.float64)
     arc = approach(
@@ -263,8 +263,7 @@ def test_the_approach_ends_above_where_the_object_will_be() -> None:
         bisection_passes=BISECTION_PASSES,
     )
     assert arc is not None
-    arrival = arc.duration + descent_seconds(Z_OFFSET, APPROACH_SPEED)
-    assert arc.end.position[0] == pytest.approx(now[0] + BELT[0] * arrival)
+    assert arc.end.position[0] == pytest.approx(now[0] + BELT[0] * arc.duration)
     assert arc.end.position[2] == pytest.approx(now[2] + Z_OFFSET)
 
 
@@ -421,6 +420,50 @@ def test_the_descent_starts_exactly_where_the_approach_ended() -> None:
         drift_horizon=DRIFT_HORIZON,
     )
     assert second.start == first.end
+
+
+def test_the_descent_is_vertical_in_the_object_frame() -> None:
+    """AC-BEHAVE-07: the descent stays over the object, moving with the belt.
+
+    The approach finishes where the object is when the descent begins. The
+    descent then covers the same along-belt travel the object does, with the
+    belt's speed at both ends, so the quintic is a straight line in the
+    object's frame. A shared world position at both ends is the sweep that
+    shoves the package.
+    """
+    now = np.asarray((-0.40, 0.10, 0.95), dtype=np.float64)
+    first = approach(
+        moving(PARK),
+        now,
+        BELT,
+        Z_OFFSET,
+        APPROACH_SPEED,
+        MAX_SPEED,
+        MAX_ACCELERATION,
+        latest=6.0,
+        drift_horizon=DRIFT_HORIZON,
+        segment_sample_count=SEGMENT_SAMPLES,
+        bisection_passes=BISECTION_PASSES,
+    )
+    assert first is not None
+    second = descend(
+        first,
+        now,
+        BELT,
+        Z_OFFSET,
+        APPROACH_SPEED,
+        drift_horizon=DRIFT_HORIZON,
+    )
+    travel = BELT[0] * second.duration
+    assert second.end.position[0] - first.end.position[0] == pytest.approx(travel)
+    for step in range(201):
+        elapsed = second.duration * step / 200
+        state = second.at(elapsed)
+        carried_x = now[0] + BELT[0] * (first.duration + elapsed)
+        assert state.position[0] == pytest.approx(carried_x, abs=1e-6)
+        assert state.position[1] == pytest.approx(now[1], abs=1e-6)
+        assert state.velocity[0] == pytest.approx(BELT[0], abs=1e-6)
+        assert state.velocity[1] == pytest.approx(0.0, abs=1e-6)
 
 
 def test_the_descent_lands_on_the_object_moving_with_it() -> None:

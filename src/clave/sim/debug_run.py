@@ -20,7 +20,9 @@ park pose in frame.
 
 `--camera-video` writes a second file of the primary detection camera, with a
 box on each object a segmentation of that same frame covered. That render
-stays off unless it is asked for (`AC-CAM-01`).
+stays off unless it is asked for (`AC-CAM-01`). With `--video` as well, the
+free-camera file carries every detection camera along its bottom edge, boxes
+included (`AC-CAM-04`).
 
 **The report separates active motion from grasping.** An arm can reach the pose it
 was sent to perfectly and still hold nothing, which is what happens when the
@@ -73,8 +75,13 @@ from clave.sim.clearance import (
     _jaw_collision_geoms,
     _jaw_state,
     _mesh_vertices,
+    body_geoms,
+    body_top,
+    geoms_touch,
 )
+from clave.sim.grasp_path import GraspPathWatch
 from clave.sim.overlay import (
+    _camera_frame,
     _camera_recorder,
     _flange,
     _lookat,
@@ -86,7 +93,7 @@ from clave.sim.overlay import (
     _view,
     _without_shadows,
     _write_beliefs,
-    _write_camera_frame,
+    paste_camera_insets,
 )
 from clave.sim.report import (
     GRASPED_METERS,
@@ -681,6 +688,7 @@ def run(
     # And how the tool was turned against the object it closed on, which only a
     # ground-truth run can measure.
     yaw_errors: list[float] = []
+    path = GraspPathWatch()
     counted = 0
     # And how near the jaw came to any object at all when it shut, which is
     # the figure that separates a visit tick that missed from a grasp that let go.
@@ -735,12 +743,26 @@ def run(
     camera_recorder = None
     camera_rgb = None
     camera_seg = None
+    # `(name, colour renderer, segmentation renderer)`. The primary camera is
+    # first and is the one `camera-debug.mp4` records. Further detection
+    # cameras are rendered only when the free-camera file will carry them
+    # (`AC-CAM-04`), which is the expensive part AC-CAM-01 keeps off otherwise.
+    camera_insets: list[tuple[str, Any, Any]] = []
     if camera_video:
         camera_recorder = _camera_recorder(out, width, height, playback)
         if camera_recorder is not None:
             camera_rgb = mujoco.Renderer(model, height=height, width=width)
             camera_seg = mujoco.Renderer(model, height=height, width=width)
             camera_seg.enable_segmentation_rendering()
+            camera_insets.append((detection_camera, camera_rgb, camera_seg))
+            if video:
+                for spec in detecting:
+                    if spec.source_id == detection_camera:
+                        continue
+                    extra_rgb = mujoco.Renderer(model, height=height, width=width)
+                    extra_seg = mujoco.Renderer(model, height=height, width=width)
+                    extra_seg.enable_segmentation_rendering()
+                    camera_insets.append((spec.source_id, extra_rgb, extra_seg))
     next_capture = 0.0
     # Ground truth is the object's own pose, so the arm can read it far faster
     # than the cameras settle. A descent lasts 0.4 s and the capture is 0.5 s,
@@ -857,6 +879,10 @@ def run(
             while len(conveyor.arrivals) > counted:
                 feeding.arrived(conveyor.arrivals[counted])
                 counted += 1
+            # The speed this tick's step already drove at. The update below
+            # is the speed of the next step, and using it would book one
+            # tick of belt travel the package has not had.
+            driven = conveyor.running
             conveyor.speed = feeding.update(data.time, plan.timestep)
 
             # The deciders run at the capture cadence and the servo runs at
@@ -1072,6 +1098,19 @@ def run(
             tracking_error = (
                 None if command is None else distance(place, command.position)
             )
+            _note_grasp_path(
+                path,
+                mujoco,
+                model,
+                data,
+                conveyor,
+                indices,
+                jaw_geoms,
+                jaw,
+                None if task.plan is None else task.plan.track_id,
+                driven,
+                flown is not None and flown.grip >= 0.5,
+            )
             watch.observe(
                 data.time,
                 contact=jaw.contact,
@@ -1102,16 +1141,20 @@ def run(
             line_view = (recorder is not None or opened) and watching is not None
             if due and (line_view or camera_recorder is not None):
                 next_frame = data.time + movie_interval
-            if due and camera_recorder is not None:
-                _write_camera_frame(
-                    camera_rgb,
-                    camera_seg,
-                    model,
-                    data,
-                    detection_camera,
-                    camera_recorder,
-                    render_mode=render_mode,
-                )
+            panels: list[tuple[str, NDArray[np.uint8]]] = []
+            if due and camera_insets:
+                for name, rgb, seg in camera_insets:
+                    shot = _camera_frame(
+                        rgb,
+                        seg,
+                        model,
+                        data,
+                        name,
+                        render_mode=render_mode,
+                    )
+                    if name == detection_camera and camera_recorder is not None:
+                        camera_recorder.write(shot)
+                    panels.append((name, shot))
             if due and line_view:
                 frame = _painted(
                     watching,
@@ -1125,6 +1168,8 @@ def run(
                     indices,
                     render_mode=render_mode,
                 )
+                if panels and recorder is not None:
+                    paste_camera_insets(frame, panels)
                 if recorder is not None:
                     recorder.write(frame)
                 if opened and tracker_cam is not None:
@@ -1412,6 +1457,11 @@ def run(
             camera_seg.close()
         if camera_recorder is not None:
             camera_recorder.close()
+        for _name, rgb, seg in camera_insets:
+            if rgb is not camera_rgb:
+                rgb.close()
+            if seg is not camera_seg:
+                seg.close()
         if telemetry is not None:
             telemetry.close()
         if opened:
@@ -1425,6 +1475,7 @@ def run(
         )
         LOGGER.info("routing comparison written: %s", comparison)
 
+    path.finish()
     report = DebugRunReport(
         captures=captures,
         tracks=len(tracker.settle(at_nanos=int(data.time * NANOS_PER_SECOND))),
@@ -1468,6 +1519,9 @@ def run(
         worst_tool_tilt_degrees=tilt,
         metadata_path=metadata_path,
         render_mode=render_mode,
+        contact_slide_meters=tuple(path.slides),
+        contact_turn_radians=tuple(path.turns),
+        above_object_meters=tuple(path.above),
     )
     written_report = out / "report.json"
     written_report.write_text(
@@ -1522,6 +1576,76 @@ def _park_the_arm(
     for slot, actuator in enumerate(indices.actuator_ids):
         data.ctrl[actuator] = angles[slot]
     mujoco.mj_forward(model, data)
+
+
+def _note_grasp_path(
+    watch: GraspPathWatch,
+    mujoco: Any,
+    model: Any,
+    data: Any,
+    conveyor: Any,
+    indices: Any,
+    jaw_geoms: tuple[int, ...],
+    jaw: JawState,
+    track: int | None,
+    belt_speed: float,
+    jaw_shut: bool,
+) -> None:
+    """Record one tick of the visit against the package it is aimed at.
+
+    Args:
+        watch: The accumulator.
+        mujoco: The imported module.
+        model: The compiled model.
+        data: Its state, with forward kinematics current.
+        conveyor: The belt, whose active objects carry the visit's serial.
+        indices: The arm indices.
+        jaw_geoms: The jaw's collision geoms.
+        jaw: The jaw's height this tick.
+        track: The plan's target, or None when the arm is not on a visit.
+        belt_speed: The speed the belt drove at on this tick.
+        jaw_shut: Whether the jaw is commanded shut.
+    """
+    if track is None:
+        watch.observe(
+            track=None,
+            time=float(data.time),
+            pinch_xy=(0.0, 0.0),
+            lowest_z=jaw.lowest_z,
+            object_xy=(0.0, 0.0),
+            object_top_z=0.0,
+            object_quat=(1.0, 0.0, 0.0, 0.0),
+            belt_speed=belt_speed,
+            contacting=False,
+            jaw_shut=False,
+        )
+        return
+    item = next((active for active in conveyor.active if active.serial == track), None)
+    if item is None:
+        return
+    body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, item.name)
+    if body < 0:
+        return
+    centre = data.xipos[body]
+    pinch = _pinch(indices, data)
+    quat = data.xquat[body]
+    watch.observe(
+        track=track,
+        time=float(data.time),
+        pinch_xy=(float(pinch[0]), float(pinch[1])),
+        lowest_z=jaw.lowest_z,
+        object_xy=(float(centre[0]), float(centre[1])),
+        object_top_z=body_top(model, data, int(body)),
+        object_quat=(
+            float(quat[0]),
+            float(quat[1]),
+            float(quat[2]),
+            float(quat[3]),
+        ),
+        belt_speed=belt_speed,
+        contacting=geoms_touch(data, jaw_geoms, body_geoms(model, int(body))),
+        jaw_shut=jaw_shut,
+    )
 
 
 def _object_position_world(

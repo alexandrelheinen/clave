@@ -17,9 +17,9 @@ tracker segments (`render`), with an axis-aligned box per object present in a
 segmentation of that same frame. The report names the file. The flag is off
 unless set, and a run that does not set it constructs no extra camera renderer.
 
-**Out.** Boxes on the free-camera video. A box on the live-window inset.
-Caching decoded frames or holding more than one archive. Changing capture
-cadence, tracker decisions, or what the arm does.
+**Out.** A box painted on the free camera's own pixels. A box on the
+live-window inset. Caching decoded frames or holding more than one archive.
+Changing capture cadence, tracker decisions, or what the arm does.
 
 ## Acceptance criteria
 
@@ -37,6 +37,13 @@ none was written, the report does not.
 runs on the same frame. Pixels on the border take the overlay colour. Pixels
 outside the box stay as the camera rendered them. An object absent from the
 segmentation has no box.
+
+`AC-CAM-04`: When `clave sim` is invoked with both `--video` and
+`--camera-video`, the free-camera file shall include every detection
+camera's frame, each with the boxes `AC-CAM-03` draws, so a reader of that
+one file sees the cameras. The separate `camera-debug.mp4` of the primary
+detection camera is unchanged. Without `--camera-video` the free-camera
+file is the free camera alone, and no detection-camera renderer is built.
 
 ## Constraints
 

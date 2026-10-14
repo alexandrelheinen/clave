@@ -153,8 +153,8 @@ task:
   # arm cannot reach in the belt it has left.
   #
   # MEASURED against the table in docs/trajectory-formulation.md: from the park
-  # pose, interceptions across the reachable window solve between 2.07 and
-  # 2.48 s, and adding the descent puts the longest at 2.88 s. Four seconds
+  # pose, interceptions across the reachable window solve between 2.09 and
+  # 2.59 s, and adding the descent puts the longest at 2.99 s. Four seconds
   # clears that with margin while still refusing an object that has already
   # run most of the way past the arm.
   interception_limit_seconds: 4.00

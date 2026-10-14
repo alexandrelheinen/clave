@@ -84,6 +84,17 @@ resolved, including travel back up the belt or a spike ahead of the belt,
 shall not be the speed the aim uses. Lateral velocity may still be carried
 for the drift horizon.
 
+`AC-BEHAVE-07`: When the arm descends on a package, the flange shall already
+be within 5 mm of that package in the horizontal plane, and moving at the
+belt's running speed, before any part of the open jaw is lower than the
+package's top. The descent from there shall stay inside those 5 mm, with
+the jaw open, and shall cover the same along-belt travel the package does.
+Between the first contact of the jaw with the target and the jaw being
+commanded shut, the target's horizontal displacement and its rotation
+relative to the belt shall stay about zero. The run report shall give that
+displacement and that rotation, and the lowest the jaw sat above the
+package's top while the pinch was more than 5 mm off it.
+
 ## Test plan
 
 | Criterion | Test |
@@ -94,3 +105,4 @@ for the drift horizon.
 | `AC-BEHAVE-04` | `test_the_solver_prefers_an_extended_reach_over_a_folded_wrist` |
 | `AC-BEHAVE-05` | `test_the_arm_holds_the_release_until_the_object_can_fall`, `test_the_jaw_stays_open_until_the_wrist_matches`, `test_a_wrist_that_cannot_match_is_not_an_attempt`, `test_the_rise_waits_until_the_fingers_have_closed`, `test_a_close_that_cannot_finish_is_not_an_attempt`, `test_a_far_object_is_not_an_attempt`, `test_the_release_is_still_the_planned_chute`, `test_the_close_stays_on_the_hold_when_the_pick_falls_in_the_descent` |
 | `AC-BEHAVE-06` | `test_a_contact_velocity_does_not_aim_the_jaw_ahead` |
+| `AC-BEHAVE-07` | `test_the_descent_is_vertical_in_the_object_frame`, `test_the_jaw_is_over_the_package_before_any_part_drops_below_it`, `test_a_package_that_rides_the_belt_does_not_count_as_shoved`, `test_a_shove_before_the_jaw_shuts_is_the_slide_and_the_turn` |

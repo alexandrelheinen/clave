@@ -18,7 +18,7 @@ there as a coefficient rather than approaching it through control points.
 how long it takes to get there, because the belt carries the object while
 the arm travels. Written out, the approach point is
 
-    p_approach(T) = p_object(t0) + v_object * (T + dt) + (0, 0, z_offset)
+    p_approach(T) = p_object(t0) + v_object * T + (0, 0, z_offset)
 
 and the segment reaching it has to respect the speed and acceleration
 ceilings over its whole length. Peak speed and peak acceleration both fall
@@ -428,10 +428,12 @@ def approach(
 ) -> Segment | None:
     """Return the soonest feasible arc onto the point above a moving object.
 
-    The arc ends above where the object will be when the descent that
-    follows finishes, moving with the object and already coming down at the
-    approach speed, so the two arcs chain without the flange stopping
-    between them.
+    The arc ends above where the object is when the descent begins, moving
+    with the object and already coming down at the approach speed, so the
+    two arcs chain without the flange stopping between them. Ending where
+    the object will be when the descent finishes puts the jaw one descent
+    downstream, and the quintic then sweeps back through the package
+    (`AC-BEHAVE-07`).
 
     Args:
         flange: Where the flange is now and how it is moving.
@@ -471,10 +473,11 @@ def approach(
     if clearance is None:
         raise TypeError("approach requires approach_clearance_z or z_offset")
 
-    dt = descent_seconds(clearance, approach_speed)
     # Aim positions carry lateral drift for a horizon; matching velocity is
     # belt-axis only (AC-MOVE-71). The world image of object-frame rest at the
-    # pick is transport, not contact-disturbed cvel.
+    # pick is transport, not contact-disturbed cvel. The horizon is the
+    # approach itself. Adding the descent would aim at the object's position
+    # at the pick, which is where the descent has to end, not where it starts.
     match = np.asarray([max(0.0, float(obj_vel[0])), 0.0, 0.0], dtype=np.float64)
 
     def arc(seconds: float) -> Segment:
@@ -486,7 +489,7 @@ def approach(
                 position=where_carried(
                     obj_pos,
                     obj_vel,
-                    seconds + dt,
+                    seconds,
                     clearance,
                     drift_horizon,
                 ),

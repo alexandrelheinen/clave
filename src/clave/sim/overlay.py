@@ -173,19 +173,19 @@ def _camera_recorder(out: Path, width: int, height: int, fps: int) -> Any:
     )
 
 
-def _write_camera_frame(
+def _camera_frame(
     rgb: Any,
     segmentation: Any,
     model: Any,
     data: Any,
     camera: str,
-    recorder: Any,
     render_mode: str = "lite",
-) -> None:
-    """Paint one detection-camera frame and hand it to the encoder.
+) -> NDArray[np.uint8]:
+    """Paint one detection-camera frame, with a box on each segmented object.
 
     The colour frame and the segmentation are the same camera at the same
-    size, so a box sits on the pixels the object actually covered.
+    size, so a box sits on the pixels the object actually covered
+    (`AC-CAM-03`).
 
     Args:
         rgb: Renderer for the colour frame.
@@ -193,8 +193,10 @@ def _write_camera_frame(
         model: The compiled model, used to name geometries.
         data: The simulated state.
         camera: The detection camera's name.
-        recorder: The open encoder.
         render_mode: Render mode ('lite' or 'demo'/'realistic').
+
+    Returns:
+        The painted frame.
     """
     rgb.update_scene(data, camera=camera)
     if render_mode in ("demo", "realistic"):
@@ -211,7 +213,85 @@ def _write_camera_frame(
     boxes = [item[0] for item in boxes_and_labels]
     labels = [item[1] for item in boxes_and_labels]
     paint_boxes(frame, boxes, labels=labels, render_mode=render_mode)
-    recorder.write(frame)
+    return frame
+
+
+def _write_camera_frame(
+    rgb: Any,
+    segmentation: Any,
+    model: Any,
+    data: Any,
+    camera: str,
+    recorder: Any,
+    render_mode: str = "lite",
+) -> None:
+    """Paint one detection-camera frame and hand it to the encoder.
+
+    Args:
+        rgb: Renderer for the colour frame.
+        segmentation: Renderer for geometry ids, segmentation already enabled.
+        model: The compiled model, used to name geometries.
+        data: The simulated state.
+        camera: The detection camera's name.
+        recorder: The open encoder.
+        render_mode: Render mode ('lite' or 'demo'/'realistic').
+    """
+    recorder.write(_camera_frame(rgb, segmentation, model, data, camera, render_mode))
+
+
+def paste_camera_insets(
+    frame: NDArray[np.uint8],
+    panels: Sequence[tuple[str, NDArray[np.uint8]]],
+) -> NDArray[np.uint8]:
+    """Copy each detection view, boxes included, along the bottom of a frame.
+
+    The free-camera file is what a reader watches. The boxes stay on the
+    detection views they were measured on (`AC-CAM-04`).
+
+    Args:
+        frame: The free-camera frame, height by width by three.
+        panels: `(name, image)` pairs, each image already boxed.
+
+    Returns:
+        The same frame, with the views painted over its bottom edge.
+    """
+    import cv2
+
+    if not panels:
+        return frame
+    height, width = frame.shape[:2]
+    band = max(1, height // 3)
+    gap = 8
+    used = gap
+    for name, panel in panels:
+        scale = band / panel.shape[0]
+        thumb_w = max(1, int(round(panel.shape[1] * scale)))
+        thumb_h = band
+        if used + thumb_w + gap > width:
+            break
+        thumb = cv2.resize(panel, (thumb_w, thumb_h), interpolation=cv2.INTER_AREA)
+        y0 = height - thumb_h - gap
+        x0 = used
+        frame[y0 : y0 + thumb_h, x0 : x0 + thumb_w] = thumb
+        cv2.rectangle(
+            frame,
+            (x0, y0),
+            (x0 + thumb_w - 1, y0 + thumb_h - 1),
+            (0, 255, 0),
+            2,
+        )
+        cv2.putText(
+            frame,
+            name,
+            (x0 + 6, y0 + 18),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.45,
+            (255, 255, 255),
+            1,
+            cv2.LINE_AA,
+        )
+        used += thumb_w + gap
+    return frame
 
 
 def _recorder(view: dict[str, Any], out: Path, fps: int, interval: float) -> Any:

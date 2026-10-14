@@ -72,7 +72,7 @@ state, so the flange never stops between them.
 
 | # | Arc | $\mathbf{p}$, $\mathbf{v}$, $\mathbf{a}$ at the end | Duration |
 |---|---|---|---|
-| 1 | Approach | $\mathbf{p}_o(t_0{+}T{+}\delta t) + \mathbf{z}$, $\;\mathbf{v}_o - V_a\hat{\mathbf{z}}$, $\;\mathbf{0}$ | $T$, solved |
+| 1 | Approach | $\mathbf{p}_o(t_0{+}T) + \mathbf{z}$, $\;\mathbf{v}_o - V_a\hat{\mathbf{z}}$, $\;\mathbf{0}$ | $T$, solved |
 | 2 | Descent | $\mathbf{p}_o(t_0{+}T{+}\delta t)$, $\;\mathbf{v}_o$, $\;\mathbf{0}$ | $\delta t$, derived |
 | 3 | Grasp | held, moving with the belt | the dwell |
 | 4 | Retreat | $\mathbf{p}_o + \mathbf{z}$, $\;\mathbf{v}_o + V_a\hat{\mathbf{z}}$, $\;\mathbf{0}$ | $\delta t$ |
@@ -104,12 +104,21 @@ this line, below the belt.
 
 ## The interception time
 
-Arc 1 has to end above where the object **will be** once arc 2 has also
-finished, so its terminal condition contains its own duration:
+Arc 1 has to end above where the object **is** when arc 2 begins, so its
+terminal condition contains its own duration and not the descent's:
 
 $$
-\mathbf{p}_{\text{approach}}(T) = \mathbf{p}_o(t_0) + \mathbf{v}_o (T + \delta t) + \mathbf{z}.
+\mathbf{p}_{\text{approach}}(T) = \mathbf{p}_o(t_0) + \mathbf{v}_o T + \mathbf{z}.
 $$
+
+Arc 2 then ends at $\mathbf{p}_o(t_0 + T + \delta t)$. The two ends differ by
+$\mathbf{v}_o \delta t$, which is the travel the object makes during the
+descent, and both ends carry $\mathbf{v}_o$. The quintic of that pair is a
+straight line at belt speed. Putting the approach end at
+$\mathbf{p}_o(t_0 + T + \delta t)$ as well leaves both ends of the descent on
+one world point: the jaw is already one descent downstream when it starts
+down, and the polynomial sweeps back through the package by about
+$v_b \delta t$. At the shipped clearance that is 100 mm, which is the shove.
 
 $T$ is therefore a fixed point rather than something computed forward. Let
 $\Sigma(T)$ be the arc built with that terminal condition and duration $T$,
@@ -230,16 +239,19 @@ before the two speeds meet.
 
 ## What the shipped line produces
 
-From the park pose, across the reachable window, with $Z = 50\ \mathrm{mm}$,
-$V_a = 0.25\ \mathrm{m/s}$ so $\delta t = 0.40\ \mathrm{s}$:
+From the park pose $(0.45, -1.00, 1.20)\ \mathrm{m}$, across the reachable
+window, with the object at $y = 0.10\ \mathrm{m}$, $z = 0.95\ \mathrm{m}$,
+belt speed $0.314\ \mathrm{m/s}$, $Z = 50\ \mathrm{mm}$ and
+$V_a = 0.25\ \mathrm{m/s}$ so $\delta t = 0.40\ \mathrm{s}$. The approach
+ends at $T$, above the object, and the pick is at $T + \delta t$:
 
 | Object at $x$ | $T$ | $T + \delta t$ | peak speed | peak acceleration |
 |---|---|---|---|---|
-| $-1.00$ m | 2.479 s | 2.879 s | 1.000 m/s | 1.457 m/s² |
-| $-0.60$ m | 2.196 s | 2.596 s | 1.000 m/s | 1.574 m/s² |
-| $-0.20$ m | 2.068 s | 2.468 s | 1.000 m/s | 1.556 m/s² |
-| $+0.20$ m | 2.205 s | 2.605 s | 1.000 m/s | 1.367 m/s² |
-| $+0.60$ m | 2.708 s | 3.108 s | 1.000 m/s | 1.095 m/s² |
+| $-1.00$ m | 2.588 s | 2.988 s | 1.000 m/s | 1.410 m/s² |
+| $-0.60$ m | 2.273 s | 2.673 s | 1.000 m/s | 1.546 m/s² |
+| $-0.20$ m | 2.086 s | 2.486 s | 1.000 m/s | 1.583 m/s² |
+| $+0.20$ m | 2.125 s | 2.525 s | 1.000 m/s | 1.429 m/s² |
+| $+0.60$ m | 2.509 s | 2.909 s | 1.000 m/s | 1.187 m/s² |
 
 **Speed binds and acceleration does not**, at every point tried: the peak
 speed sits exactly on its ceiling while the acceleration sits near 1.5 of
