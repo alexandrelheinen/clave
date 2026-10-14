@@ -173,19 +173,19 @@ def _camera_recorder(out: Path, width: int, height: int, fps: int) -> Any:
     )
 
 
-def _write_camera_frame(
+def _camera_frame(
     rgb: Any,
     segmentation: Any,
     model: Any,
     data: Any,
     camera: str,
-    recorder: Any,
     render_mode: str = "lite",
-) -> None:
-    """Paint one detection-camera frame and hand it to the encoder.
+) -> NDArray[np.uint8]:
+    """Paint one detection-camera frame, with a box on each segmented object.
 
     The colour frame and the segmentation are the same camera at the same
-    size, so a box sits on the pixels the object actually covered.
+    size, so a box sits on the pixels the object actually covered
+    (`AC-CAM-03`).
 
     Args:
         rgb: Renderer for the colour frame.
@@ -193,8 +193,10 @@ def _write_camera_frame(
         model: The compiled model, used to name geometries.
         data: The simulated state.
         camera: The detection camera's name.
-        recorder: The open encoder.
         render_mode: Render mode ('lite' or 'demo'/'realistic').
+
+    Returns:
+        The painted frame.
     """
     rgb.update_scene(data, camera=camera)
     if render_mode in ("demo", "realistic"):
@@ -211,7 +213,216 @@ def _write_camera_frame(
     boxes = [item[0] for item in boxes_and_labels]
     labels = [item[1] for item in boxes_and_labels]
     paint_boxes(frame, boxes, labels=labels, render_mode=render_mode)
-    recorder.write(frame)
+    return frame
+
+
+def _write_camera_frame(
+    rgb: Any,
+    segmentation: Any,
+    model: Any,
+    data: Any,
+    camera: str,
+    recorder: Any,
+    render_mode: str = "lite",
+) -> None:
+    """Paint one detection-camera frame and hand it to the encoder.
+
+    Args:
+        rgb: Renderer for the colour frame.
+        segmentation: Renderer for geometry ids, segmentation already enabled.
+        model: The compiled model, used to name geometries.
+        data: The simulated state.
+        camera: The detection camera's name.
+        recorder: The open encoder.
+        render_mode: Render mode ('lite' or 'demo'/'realistic').
+    """
+    recorder.write(_camera_frame(rgb, segmentation, model, data, camera, render_mode))
+
+
+_INSET_GAP = 8
+"""Pixels of margin around a detection view pasted into the free-camera file."""
+
+
+def thumb_size(panel_width: int, panel_height: int, min_width: int) -> tuple[int, int]:
+    """Return the pixel size of one detection view at the configured width.
+
+    Args:
+        panel_width: The camera frame's width, in pixels.
+        panel_height: The camera frame's height, in pixels.
+        min_width: How wide the pasted view must be, in pixels.
+
+    Returns:
+        `(width, height)` of the view, keeping the camera's aspect.
+    """
+    scale = min_width / panel_width
+    return (
+        max(1, int(round(panel_width * scale))),
+        max(1, int(round(panel_height * scale))),
+    )
+
+
+def inset_frame_size(
+    view_width: int,
+    view_height: int,
+    panel_width: int,
+    panel_height: int,
+    panel_count: int,
+    min_width: int,
+) -> tuple[int, int]:
+    """Return the free-camera file size once the detection views are added.
+
+    Args:
+        view_width: The free camera's own width, in pixels.
+        view_height: The free camera's own height, in pixels.
+        panel_width: One detection camera's width, in pixels.
+        panel_height: One detection camera's height, in pixels.
+        panel_count: How many detection views will be pasted.
+        min_width: How wide each of those views must be, in pixels. Zero
+            keeps the free camera's own size and paints the views over it.
+
+    Returns:
+        `(width, height)` of the encoded frame. Both are even, which is
+        what the encoder's chroma format expects. The free camera keeps its
+        own size on the left. The views stack on the right (`AC-CAM-06`).
+    """
+    if panel_count <= 0 or min_width <= 0:
+        return view_width, view_height
+    thumb_w, thumb_h = thumb_size(panel_width, panel_height, min_width)
+    width = view_width + _INSET_GAP + thumb_w + _INSET_GAP
+    stack = panel_count * thumb_h + max(0, panel_count - 1) * _INSET_GAP
+    height = max(view_height, stack)
+    if width % 2:
+        width += 1
+    if height % 2:
+        height += 1
+    return width, height
+
+
+def paste_camera_insets(
+    frame: NDArray[np.uint8],
+    panels: Sequence[tuple[str, NDArray[np.uint8]]],
+    *,
+    min_width: int = 0,
+) -> NDArray[np.uint8]:
+    """Copy each detection view, boxes included, onto the right of a frame.
+
+    The free-camera file is what a reader watches. The boxes stay on the
+    detection views they were measured on (`AC-CAM-04`). A configured width
+    stacks the views down the right edge, and the frame grows so the free
+    camera, including the placing bins, is not covered (`AC-CAM-05`,
+    `AC-CAM-06`).
+
+    Args:
+        frame: The free-camera frame, height by width by three.
+        panels: `(name, image)` pairs, each image already boxed. The first
+            is the top of the stack.
+        min_width: How wide each view must be, in pixels. Zero fits them
+            into the bottom third of `frame`.
+
+    Returns:
+        The frame the encoder should write. With `min_width` set, this is
+        a wider image and `frame` itself is left unchanged.
+    """
+    import cv2
+
+    if not panels:
+        return frame
+    if min_width <= 0:
+        return _paste_into_band(frame, panels)
+    thumbs: list[tuple[str, NDArray[np.uint8]]] = []
+    for name, panel in panels:
+        thumb_w, thumb_h = thumb_size(panel.shape[1], panel.shape[0], min_width)
+        resized = cv2.resize(panel, (thumb_w, thumb_h), interpolation=cv2.INTER_AREA)
+        thumbs.append((name, np.asarray(resized, dtype=np.uint8)))
+    width, height = inset_frame_size(
+        frame.shape[1],
+        frame.shape[0],
+        panels[0][1].shape[1],
+        panels[0][1].shape[0],
+        len(panels),
+        min_width,
+    )
+    canvas = np.zeros((height, width, 3), dtype=np.uint8)
+    canvas[0 : frame.shape[0], 0 : frame.shape[1]] = frame
+    x0 = frame.shape[1] + _INSET_GAP
+    y0 = 0
+    for name, thumb in thumbs:
+        canvas[y0 : y0 + thumb.shape[0], x0 : x0 + thumb.shape[1]] = thumb
+        _label_inset(canvas, name, x0, y0, thumb.shape[1], thumb.shape[0])
+        y0 += thumb.shape[0] + _INSET_GAP
+    return canvas
+
+
+def _paste_into_band(
+    frame: NDArray[np.uint8],
+    panels: Sequence[tuple[str, NDArray[np.uint8]]],
+) -> NDArray[np.uint8]:
+    """Paint the views over the bottom third, shrinking them to fit.
+
+    Args:
+        frame: The free-camera frame.
+        panels: `(name, image)` pairs, each image already boxed.
+
+    Returns:
+        The same frame.
+    """
+    import cv2
+
+    height, width = frame.shape[:2]
+    band = max(1, height // 3)
+    used = _INSET_GAP
+    for name, panel in panels:
+        scale = band / panel.shape[0]
+        thumb_w = max(1, int(round(panel.shape[1] * scale)))
+        thumb_h = band
+        if used + thumb_w + _INSET_GAP > width:
+            break
+        thumb = cv2.resize(panel, (thumb_w, thumb_h), interpolation=cv2.INTER_AREA)
+        y0 = height - thumb_h - _INSET_GAP
+        x0 = used
+        frame[y0 : y0 + thumb_h, x0 : x0 + thumb_w] = thumb
+        _label_inset(frame, name, x0, y0, thumb_w, thumb_h)
+        used += thumb_w + _INSET_GAP
+    return frame
+
+
+def _label_inset(
+    frame: NDArray[np.uint8],
+    name: str,
+    x0: int,
+    y0: int,
+    width: int,
+    height: int,
+) -> None:
+    """Draw the camera name and a border on one pasted view.
+
+    Args:
+        frame: The image being composed.
+        name: The camera name.
+        x0: Left edge of the view, in pixels.
+        y0: Top edge of the view, in pixels.
+        width: The view's width, in pixels.
+        height: The view's height, in pixels.
+    """
+    import cv2
+
+    cv2.rectangle(
+        frame,
+        (x0, y0),
+        (x0 + width - 1, y0 + height - 1),
+        (0, 255, 0),
+        2,
+    )
+    cv2.putText(
+        frame,
+        name,
+        (x0 + 6, y0 + max(18, height // 12)),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.8 if height >= 200 else 0.45,
+        (255, 255, 255),
+        1,
+        cv2.LINE_AA,
+    )
 
 
 def _recorder(view: dict[str, Any], out: Path, fps: int, interval: float) -> Any:

@@ -44,6 +44,7 @@ def minimal_plan() -> SceneLayout:
             speed=0.31,
             height_tolerance=0.05,
             speed_limit=1.0,
+            jaw_release_fraction=0.5,
         ),
         arm_base=np.asarray((0.0, -0.45, 0.90), dtype=np.float64),
         reach_min=0.30,

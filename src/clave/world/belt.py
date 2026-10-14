@@ -1,13 +1,17 @@
 """The conveyor: spawning, carrying, and reachability.
 
 MuJoCo has no conveyor primitive. Objects are free bodies. While one rests
-on the belt and the arm is not touching it, its travel is driven to belt
-speed, its lateral velocity is held at rest, and its orientation is put
-back on the flat face it was laid down on. Clearing the spin is not
-enough: the contact during a step still turns a tall face onto its side.
-That write is a constraint after the step, not a weld. The body stays
-free, and the constraint stops at the first contact with the arm so the
-grasp can lift it and turn it.
+on the belt, its along-belt speed is written to the belt's running speed
+and the travel a contact step spends is put back, and its lateral
+velocity is held at rest, including while it touches
+another package and including while an open jaw brushes it. Clearing the
+spin is not enough: the contact during a step still turns a tall face
+onto its side, so the orientation is put back on the flat face it was
+laid down on. That write is a constraint after the step, not a weld. The
+body stays free. Spin and the flat pose stay held until the jaw has
+passed the configured fraction of its stroke. Once the jaw is closing,
+spin and the flat pose are released so the lift is not pinned, and the
+along-belt write continues until the bottom leaves the belt.
 
 **The pin must not continue through the grasp.** That was measured. With
 the spin held at zero while the jaw was already on the package, the belt's
@@ -20,10 +24,13 @@ edge, and the close pulled the jaw onto the belt:
 | spin pinned through the grasp | **−2.8 mm, 54 ticks** | **934 m/s²** | none of 7 |
 | spin damped through the grasp | **−18.6 mm, 17 ticks** | 170 m/s² | none of 8 |
 
-The rest constraint therefore covers the ride up to the arm and no
-further. A crushed package that is still free to spin rolls the way the
-standing cans did, which is the motion this drive exists to remove. The
-measurement is written up in
+The rest constraint therefore holds spin and the flat pose up to the
+close, and no further. Along-belt speed stays with the belt until the
+bottom leaves the surface: leaving the solver's velocity on a touch sent
+packages back up the belt, and the jaw arrived ahead of them. A crushed
+package that is still free to spin rolls the way the standing cans did,
+which is the motion this drive exists to remove until the jaw has
+started to close. The measurement is written up in
 [measurements.md](measurements.md#what-the-reported-run-turned-out-to-be).
 
 **Rest is the bottom of the geometry, not the body origin.** Six of the ten
@@ -216,6 +223,10 @@ class SpawnedObject:
             never has to infer it.
         channel: Default channel for that class.
         entered_window: Whether it has been seen inside the reachable window.
+        belt_x: Along-belt position at the end of the previous drive step,
+            in meters. The contact step spends part of the speed written
+            then, and the next step puts that deficit back. None until the
+            package has been driven once.
     """
 
     index: int
@@ -225,6 +236,7 @@ class SpawnedObject:
     serial: int = 0
     entered_window: bool = False
     object_name: str = ""
+    belt_x: float | None = None
 
 
 @dataclass
@@ -448,11 +460,15 @@ class Conveyor:
         # test reads geom poses, so those poses have to match qpos before
         # anyone is driven. One kinematics pass, not another dynamics step.
         mujoco.mj_kinematics(model, data)
-        # Forcing belt speed through a contact undoes the separation the
-        # solver just computed, and the next step rams the packages together
-        # until one of them leaves at a speed the belt never had.
-        touching = _packages_in_contact(mujoco, model, data)
+        # A touch used to leave the solver's linear velocity, so the drive
+        # would not ram one package through another. On the packed line that
+        # velocity is travel back up the belt, and the jaw comes down ahead
+        # of the package and pushes it (`AC-RATE-17`). Both packages are
+        # written to belt speed, so a touch has no relative motion along it.
         held = _packages_touching_arm(mujoco, model, data)
+        closing = _jaw_is_closing(
+            mujoco, model, data, self.plan.belt.jaw_release_fraction
+        )
 
         for item in self.active:
             body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, item.name)
@@ -460,20 +476,34 @@ class Conveyor:
             velocity = model.jnt_dofadr[model.body_jntadr[body]]
             position = data.qpos[address : address + 3]
             on_belt = _on_belt(position, self.plan, _body_bottom(model, data, body))
-            if on_belt and body not in held:
-                # Rest until the arm arrives. Vertical motion stays with the
-                # contact solver so the package can settle, and so a lift is
-                # not fought on the tick the constraint lets go. The
-                # orientation is restored as well as the rate: a contact
-                # during the step still turns a tall face onto its side,
-                # and the jaw then cannot lift it.
-                _rest_package(
-                    data,
-                    velocity,
-                    self.running,
-                    body in touching,
+            grasped = body in held and closing
+            if on_belt:
+                # The contact step spends part of the speed written last
+                # tick, so a packed line travels slower than the belt. The
+                # jaw is aimed at the belt and then comes down ahead of the
+                # package. Put the spent travel back (`AC-RATE-17`).
+                item.belt_x = _restore_belt_travel(
+                    data, address, item.belt_x, self.running, self.plan.timestep
                 )
+            else:
+                item.belt_x = None
+            if on_belt and not grasped:
+                # Rest until the jaw has started to close. An open jaw that
+                # brushes the package is not a grasp: leaving the solver's
+                # velocity there let the jaw push the package along the belt.
+                # Vertical motion stays with the contact solver so the
+                # package can settle. The orientation is restored as well
+                # as the rate, because a contact during the step still
+                # turns a tall face onto its side.
+                _rest_package(data, velocity, self.running)
                 _hold_flat(data, address, self.rest_tilt)
+            elif on_belt:
+                # The jaw is closing. Spin and the flat pose are released
+                # so the lift is not the pin measured in `AC-RATE-11`.
+                # Along-belt travel stays with the belt until the bottom
+                # leaves the surface (`AC-RATE-17`).
+                data.qvel[velocity] = self.running
+                data.qvel[velocity + 1] = 0.0
             elif _on_takeaway(position, self.plan):
                 # Drive sorted objects along the take-away conveyor away from the line.
                 data.qvel[velocity + 1] = -self.plan.takeaway.speed
@@ -577,31 +607,58 @@ def _limit_speed(data: Any, velocity: int, limit: float) -> None:
             data.qvel[velocity + axis] = -limit
 
 
-def _rest_package(
-    data: Any, velocity: int, speed: float, touching_package: bool
-) -> None:
+def _restore_belt_travel(
+    data: Any,
+    address: int,
+    remembered: float | None,
+    speed: float,
+    dt: float,
+) -> float:
+    """Return the along-belt position, with the contact step's loss put back.
+
+    The solver integrates a packed contact at less than the speed written
+    on the previous tick. Over a visit that deficit is centimetres, and a
+    jaw aimed at the belt arrives ahead of the package and sweeps back
+    onto it. The loss on one step is at most the belt's own step. A larger
+    jump is a placement, and it is left where it is.
+
+    Args:
+        data: The state, modified in place.
+        address: Index of the body's free-joint position.
+        remembered: Along-belt position at the end of the previous drive
+            step, or None when this is the first.
+        speed: Belt speed, in meters per second.
+        dt: The step, in seconds.
+
+    Returns:
+        The along-belt position this step leaves the body at.
+    """
+    current = float(data.qpos[address])
+    if remembered is not None:
+        expected = speed * dt
+        deficit = expected - (current - remembered)
+        if abs(deficit) <= abs(expected):
+            current += deficit
+            data.qpos[address] = current
+    return current
+
+
+def _rest_package(data: Any, velocity: int, speed: float) -> None:
     """Hold a resting package to the belt without welding it there.
 
-    Travel matches the belt. Lateral velocity and rotation are cleared so
-    the package cannot slide or tumble. Vertical velocity is left alone:
-    the contact solver is what sits the package on the surface, and what
-    lifts it once this function is no longer called.
-
-    A package that is touching another package keeps the linear velocity
-    the solver just produced. Forcing belt speed through that contact
-    undoes the separation and the next step rams them together. The
-    rotation is still cleared, so the bump does not start a roll.
+    Travel matches the belt, including while another package is touching
+    it. Lateral velocity and rotation are cleared so the package cannot
+    slide or tumble. Vertical velocity is left alone: the contact solver
+    is what sits the package on the surface, and what lifts it once this
+    function is no longer called.
 
     Args:
         data: The state, modified in place.
         velocity: Index of the body's first linear degree of freedom.
         speed: Belt speed, in meters per second.
-        touching_package: Whether this body is in contact with another
-            package on this step.
     """
-    if not touching_package:
-        data.qvel[velocity] = speed
-        data.qvel[velocity + 1] = 0.0
+    data.qvel[velocity] = speed
+    data.qvel[velocity + 1] = 0.0
     for axis in range(3, 6):
         data.qvel[velocity + axis] = 0.0
 
@@ -652,12 +709,41 @@ def _hold_flat(data: Any, address: int, limit: float) -> None:
     data.qpos[address + 3 : address + 7] = (1.0, 0.0, 0.0, 0.0)
 
 
+def _jaw_is_closing(mujoco: Any, model: Any, data: Any, fraction: float) -> bool:
+    """Return whether the gripper driver has passed `fraction` of its stroke.
+
+    An open jaw that brushes a package is not a grasp. The flat pose stays
+    held until the driver has travelled this far (`AC-RATE-17`).
+
+    Args:
+        mujoco: The imported module.
+        model: The compiled model.
+        data: Its state.
+        fraction: How far through the stroke the close has to be.
+
+    Returns:
+        Whether the driver is at least that far from its open stop. False
+        when the model has no gripper driver.
+    """
+    joint = mujoco.mj_name2id(
+        model, mujoco.mjtObj.mjOBJ_JOINT, "arm_grip_right_driver_joint"
+    )
+    if joint < 0:
+        return False
+    low, high = model.jnt_range[joint]
+    span = float(high - low)
+    if span <= 0.0:
+        return False
+    travelled = float(data.qpos[model.jnt_qposadr[joint]]) - float(low)
+    return travelled / span >= fraction
+
+
 def _packages_touching_arm(mujoco: Any, model: Any, data: Any) -> set[int]:
     """Return body ids of packages an arm geom is touching.
 
-    The rest constraint stops for these. The grasp is contact physics, and
-    writing the package's velocity after the arm has met it is the pin that
-    was measured to tip the package and pull the jaw onto the belt.
+    The flat pose releases for these once the jaw is closing. Writing the
+    spin after the jaw has met the package is the pin that was measured to
+    tip the package and pull the jaw onto the belt.
 
     Args:
         mujoco: The imported module.
@@ -677,28 +763,6 @@ def _packages_touching_arm(mujoco: Any, model: Any, data: Any) -> set[int]:
         elif second_name.startswith("object_") and first_name.startswith("arm_"):
             held.add(second)
     return held
-
-
-def _packages_in_contact(mujoco: Any, model: Any, data: Any) -> set[int]:
-    """Return body ids of packages that are touching another package.
-
-    Args:
-        mujoco: The imported module.
-        model: The compiled model.
-        data: Its state, after the dynamics step that resolved contacts.
-    """
-    touching: set[int] = set()
-    for index in range(int(data.ncon)):
-        first = int(model.geom_bodyid[int(data.contact[index].geom1)])
-        second = int(model.geom_bodyid[int(data.contact[index].geom2)])
-        if first == second:
-            continue
-        first_name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, first) or ""
-        second_name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, second) or ""
-        if first_name.startswith("object_") and second_name.startswith("object_"):
-            touching.add(first)
-            touching.add(second)
-    return touching
 
 
 def _beside_chute(x: float, y: float, plan: SceneLayout) -> bool:
