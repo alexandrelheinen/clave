@@ -139,20 +139,34 @@ and a belt speed for one simulation run, and shall report that rate. The
 shipped world file's rate and drive range shall stay unchanged. When the
 operator also passes a belt speed, that speed shall win over the file.
 
+`AC-RATE-13`: The system shall accept a spacing range in that same debug
+feed file and shall release objects at that spacing for the run. The
+shipped world spacing shall stay unchanged. The belt speed the file names
+shall lie inside the shipped drive range. The spacing used for the
+high-flow run shall be greater than the sum of the bounding radii of the
+two largest packages, so two packages do not interpenetrate at any
+orientation, and it shall be the dense end of that clearance.
+
 ## A faster feed for one run
 
 The shipped setpoint is what one arm holds. A line fed faster is an
-ordinary condition, and `AC-RATE-08` already runs the belt at the drive's
-upper limit and reports the shortfall. The v1.6.2 seed, thirty seconds of
-ground truth, carried about six arrivals, near 0.2 objects per second. Ten
-times that flow is 2.0 objects per second. At the shipped mean spacing of
-1.20 m that needs 2.40 m/s, and the shipped drive stops at 0.35 m/s, so
-raising only the setpoint saturates and never reaches the rate. Passing
-`--belt-speed` alone does not hold it either: the controller trims speed
-back toward the shipped setpoint.
+ordinary condition. The v1.6.2 seed, thirty seconds of ground truth,
+carried about six arrivals, near 0.2 objects per second, with the belt
+on the drive floor at 0.25 m/s. The setpoint of 0.125 objects per second
+would like a slower belt, and the drive will not go below 0.25 m/s.
+
+Ten times that flow is 2.0 objects per second. At the shipped spacing
+that needs 2.40 m/s. v1.6.3 did that, and the arm had no interception,
+so it picked nothing. At 0.25 m/s the same rate needs centers 0.125 m
+apart. The two largest packages have bounding radii that sum to 0.180 m,
+so 0.125 m can put them through each other once one tips onto its long
+side. The dense spacing that still clears them is 0.19 m, and at 0.25
+m/s that is 1.32 objects per second. The setpoint stays 0.125 so the
+controller holds the drive floor instead of raising the belt.
 
 Editing `configs/world/sorting_line.yml` would move every other run. A
-debug file names the rate and the speed for the run that asks for it.
+debug file names the rate, the speed and the spacing for the run that
+asks for it.
 
 A second arm is out of this change. The task machine, the chutes and the
 safety envelope are one arm, and a feed file does not start another.

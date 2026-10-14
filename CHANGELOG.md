@@ -3,6 +3,23 @@
 The product version is the git tag. Package metadata in `pyproject.toml`
 and the crate manifests stays on its own numbers.
 
+## v1.6.4
+
+A closer feed on the belt the shipped line already runs.
+
+- v1.6.3 reached ten times the v1.6.2 flow by running the belt at 2.40 m/s.
+  The arm had no interception and picked nothing.
+- `configs/debug/high-flow.yml` keeps the shipped setpoint of 0.125
+  objects per second and the drive floor of 0.25 m/s, and spaces package
+  centers at 0.19 m. The two largest packages have bounding radii that
+  sum to 0.180 m, so 0.125 m centers, which ten times the flow would
+  need at this belt speed, can interpenetrate once a package tips.
+- At 0.25 m/s and 0.19 m the line carries 1.32 objects per second. The
+  controller holds the drive floor because the setpoint is below what
+  that floor delivers. The shipped world file is unchanged.
+
+`AC-RATE-13` holds.
+
 ## v1.6.3
 
 A reproducible feed faster than one arm clears.

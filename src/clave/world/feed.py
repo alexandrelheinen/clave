@@ -29,7 +29,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
-from clave.world.config import WorldConfigError, load, require
+from clave.world.config import Range, WorldConfigError, load, require, require_range
 
 
 @dataclass(frozen=True)
@@ -77,16 +77,18 @@ class FeedSettings:
 
 @dataclass(frozen=True)
 class FeedScenario:
-    """A rate and a belt speed for one run, not the shipped line.
+    """A rate, a belt speed and a spacing for one run, not the shipped line.
 
     Attributes:
-        rate: Objects per second this run is asked to carry.
-        belt_speed: Meters per second the belt starts at. When this exceeds
-            the shipped drive, it is also the upper limit for this run.
+        rate: Objects per second this run is asked to carry. The controller
+            trims belt speed toward it, inside the shipped drive.
+        belt_speed: Meters per second the belt starts at.
+        spacing: Metres of belt travel between objects, centre to centre.
     """
 
     rate: float
     belt_speed: float
+    spacing: Range
 
     @classmethod
     def load(cls, path: Path) -> FeedScenario:
@@ -106,6 +108,7 @@ class FeedScenario:
         return cls(
             rate=_positive(raw, "rate_objects_per_second", where=""),
             belt_speed=_positive(raw, "belt_speed_meters_per_second", where=""),
+            spacing=require_range(raw, "spacing_meters"),
         )
 
 

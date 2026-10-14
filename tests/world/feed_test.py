@@ -174,26 +174,26 @@ def test_the_feed_loop_reads_no_perception() -> None:
     assert "import" in source, "the check is worthless if the file is empty"
 
 
-def test_a_feed_file_names_a_rate_the_shipped_drive_cannot_hold() -> None:
-    """AC-RATE-12: a feed file names a rate the shipped drive cannot hold.
+def test_the_high_flow_file_keeps_the_belt_inside_the_shipped_drive() -> None:
+    """AC-RATE-13: the high-flow file keeps the belt inside the shipped drive.
 
-    Ten times the flow a thirty-second seed carried needs a belt faster
-    than the shipped drive. The file names both, and the shipped world
-    file keeps its own rate and its own range.
+    Closing the spacing raises the arrival rate while the belt stays at
+    the drive floor. The shipped world file keeps its own rate, its own
+    spacing and its own range.
     """
     root = Path(__file__).resolve().parents[2]
     world = load(root / "configs" / "world" / "sorting_line.yml")
     shipped = FeedSettings.load(world)
     drive = require_range(world["belt"], "speed_meters_per_second", "belt")
-    spacing = require_range(world["spawn"], "spacing_meters", "spawn")
+    shipped_spacing = require_range(world["spawn"], "spacing_meters", "spawn")
     scenario = FeedScenario.load(root / "configs" / "debug" / "high-flow.yml")
 
-    ceiling = drive.high / spacing.midpoint
-    assert scenario.rate > ceiling
-    assert scenario.rate >= 10.0 * shipped.rate
-    assert scenario.belt_speed / spacing.midpoint >= scenario.rate
-    assert shipped.rate < scenario.rate
-    assert drive.high < scenario.belt_speed
+    assert scenario.rate == shipped.rate
+    assert drive.low <= scenario.belt_speed <= drive.high
+    assert scenario.spacing.high < shipped_spacing.low
+    assert scenario.belt_speed == drive.low
+    carried = scenario.belt_speed / scenario.spacing.midpoint
+    assert carried > shipped.rate
 
 
 def test_a_feed_file_refuses_a_rate_that_is_not_positive(tmp_path: Path) -> None:
@@ -201,6 +201,16 @@ def test_a_feed_file_refuses_a_rate_that_is_not_positive(tmp_path: Path) -> None
     path = tmp_path / "feed.yml"
     path.write_text("rate_objects_per_second: 0\nbelt_speed_meters_per_second: 1.0\n")
     with pytest.raises(WorldConfigError, match="not a line"):
+        FeedScenario.load(path)
+
+
+def test_a_feed_file_refuses_a_missing_spacing(tmp_path: Path) -> None:
+    """AC-RATE-13: a feed file refuses a missing spacing."""
+    path = tmp_path / "feed.yml"
+    path.write_text(
+        "rate_objects_per_second: 0.125\nbelt_speed_meters_per_second: 0.25\n"
+    )
+    with pytest.raises(WorldConfigError, match="spacing_meters"):
         FeedScenario.load(path)
 
 
