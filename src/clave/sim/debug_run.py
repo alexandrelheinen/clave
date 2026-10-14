@@ -115,7 +115,7 @@ from clave.tracker.track import Tracker
 from clave.world import arm as armmod
 from clave.world import belt, config, scene
 from clave.world.effector import Effector
-from clave.world.feed import FeedSettings, RateController
+from clave.world.feed import FeedScenario, FeedSettings, RateController, apply_scenario
 
 LOGGER = logging.getLogger(__name__)
 
@@ -276,6 +276,7 @@ def run(
     progress: bool = True,
     render_mode: str = "lite",
     routing_path: Path | None = None,
+    feed_path: Path | None = None,
 ) -> DebugRunReport:
     """Drive the tracker over one rollout, annotating every capture.
 
@@ -308,13 +309,17 @@ def run(
             MuJoCo ground-truth physics instead of tracker estimates, or None
             to read the debug configuration.
         belt_speed: Override belt speed in meters per second, or None to use
-            the speed sampled by the scene layout.
+            the speed sampled by the scene layout. When a feed file is also
+            set, this speed wins over the one in the file.
         progress: Draw the tqdm bar. Off when the operator wants the debug
             narrative, which shares the terminal with the bar.
         render_mode: `lite`, `demo`, or `realistic`.
         routing_path: A routing file for this run. Absent, each object stays
             on the channel its class maps to. The shipped runtime file is
             not what this argument reads.
+        feed_path: A debug feed file naming a rate and a belt speed for this
+            run, or None to keep the shipped setpoint. The shipped world
+            file is not edited.
 
     Returns:
         The report.
@@ -362,6 +367,12 @@ def run(
         packaging_path,
     )
     raw = config.load(world_path)
+    scenario = None
+    if feed_path is not None:
+        resolved_feed = feed_path if feed_path.is_absolute() else root / feed_path
+        scenario = FeedScenario.load(resolved_feed)
+        if belt_speed is None:
+            belt_speed = scenario.belt_speed
     sensors = load_sensors(raw)
     try:
         # Every detection camera, not the first one. A line with a single
@@ -415,11 +426,15 @@ def run(
     drive = config.require_range(
         config.require(raw, "belt"), "speed_meters_per_second", "belt"
     )
+    settings = FeedSettings.load(raw)
+    speed = plan.belt.speed
+    if scenario is not None:
+        settings, speed = apply_scenario(settings, scenario, belt_speed)
     feeding = RateController(
-        settings=FeedSettings.load(raw),
-        lowest=min(drive.low, plan.belt.speed),
-        highest=max(drive.high, plan.belt.speed),
-        speed=plan.belt.speed,
+        settings=settings,
+        lowest=min(drive.low, speed),
+        highest=max(drive.high, speed),
+        speed=speed,
     )
 
     tracker = Tracker(

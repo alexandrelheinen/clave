@@ -6,7 +6,7 @@ CLAVE sorts waste on a simulated conveyor belt with a learned perception and
 pick policy, under a Rust safety layer that can override it. The loop closes
 end to end in simulation, and every number it produces comes from simulation.
 
-The tagged line runs through v1.6.2. What remains is identity taken from
+The tagged line runs through v1.6.3. What remains is identity taken from
 observation, a grip that holds through the carry, and a cycle time measured
 to a chute. `docs/architecture.md` records, under what is absent, that the
 proposal loop still borrows object identity from the simulator.
@@ -75,9 +75,10 @@ and when.
 
 Versions already tagged stay where they are. v1.2.0, v1.4.0 and v1.5.0 were
 named while the work was open and were never tagged. The latest tag is
-v1.6.2. v1.6.0 remains the feed-rate minor, and v1.6.2 is the
-probabilistic-sorting patch. It does not close a ladder step. The work
-that was still open under the earlier names continues as v1.7.0, v1.8.0
+v1.6.3. v1.6.0 remains the feed-rate minor. v1.6.2 is the
+probabilistic-sorting patch, and v1.6.3 is a debug feed a run can ask
+for without moving the shipped setpoint. Neither closes a ladder step. The work that was still open under the
+earlier names continues as v1.7.0, v1.8.0
 and v1.9.0. A later minor is greater than v1.6.0.
 
 | Version | Spec | What landed | State |
@@ -102,6 +103,12 @@ beside the confidence floor, and an offline count estimator. The shipped
 rule stays `confidence_floor`. The phase 6 seed shows the two rules
 agree on a class spike, so the floor is not removed. v1.7.0 stays the
 learned tracker.
+
+**v1.6.3.** Tagged. A debug feed file and `clave sim --feed`, so a run
+can ask for 2.0 objects per second on a 2.40 m/s belt without editing
+the shipped line. The shipped drive cannot deliver that rate, and a
+belt-speed override alone is trimmed back to the shipped setpoint. A
+second arm is not part of this patch.
 
 | Version | Spec | What lands | State |
 | --- | --- | --- | --- |

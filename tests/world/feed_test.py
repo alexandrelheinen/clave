@@ -8,10 +8,12 @@ objects a second is the whole of what the controller sees.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
-from clave.world.config import WorldConfigError
-from clave.world.feed import FeedSettings, RateController
+from clave.world.config import WorldConfigError, load, require_range
+from clave.world.feed import FeedScenario, FeedSettings, RateController, apply_scenario
 
 LOW, HIGH = 0.25, 0.35
 TIMESTEP = 0.002
@@ -165,10 +167,52 @@ def test_the_feed_loop_reads_no_perception() -> None:
     line. Asserted against the module's imports rather than argued in a
     comment, because a comment does not fail when somebody adds one.
     """
-    from pathlib import Path
-
     source = (
         Path(__file__).resolve().parents[2] / "src" / "clave" / "world" / "feed.py"
     ).read_text()
     assert "clave.tracker" not in source
     assert "import" in source, "the check is worthless if the file is empty"
+
+
+def test_a_feed_file_names_a_rate_the_shipped_drive_cannot_hold() -> None:
+    """AC-RATE-12: a feed file names a rate the shipped drive cannot hold.
+
+    Ten times the flow a thirty-second seed carried needs a belt faster
+    than the shipped drive. The file names both, and the shipped world
+    file keeps its own rate and its own range.
+    """
+    root = Path(__file__).resolve().parents[2]
+    world = load(root / "configs" / "world" / "sorting_line.yml")
+    shipped = FeedSettings.load(world)
+    drive = require_range(world["belt"], "speed_meters_per_second", "belt")
+    spacing = require_range(world["spawn"], "spacing_meters", "spawn")
+    scenario = FeedScenario.load(root / "configs" / "debug" / "high-flow.yml")
+
+    ceiling = drive.high / spacing.midpoint
+    assert scenario.rate > ceiling
+    assert scenario.rate >= 10.0 * shipped.rate
+    assert scenario.belt_speed / spacing.midpoint >= scenario.rate
+    assert shipped.rate < scenario.rate
+    assert drive.high < scenario.belt_speed
+
+
+def test_a_feed_file_refuses_a_rate_that_is_not_positive(tmp_path: Path) -> None:
+    """AC-RATE-12: a feed file refuses a rate that is not positive."""
+    path = tmp_path / "feed.yml"
+    path.write_text("rate_objects_per_second: 0\nbelt_speed_meters_per_second: 1.0\n")
+    with pytest.raises(WorldConfigError, match="not a line"):
+        FeedScenario.load(path)
+
+
+def test_an_operator_belt_speed_wins_over_the_feed_file() -> None:
+    """AC-RATE-12: an operator belt speed wins over the feed file."""
+    root = Path(__file__).resolve().parents[2]
+    shipped = FeedSettings.load(load(root / "configs" / "world" / "sorting_line.yml"))
+    scenario = FeedScenario.load(root / "configs" / "debug" / "high-flow.yml")
+    raised, speed = apply_scenario(shipped, scenario, None)
+    assert raised.rate == scenario.rate
+    assert speed == scenario.belt_speed
+    assert raised.window_seconds == shipped.window_seconds
+    overridden, chosen = apply_scenario(shipped, scenario, 0.30)
+    assert overridden.rate == scenario.rate
+    assert chosen == 0.30
