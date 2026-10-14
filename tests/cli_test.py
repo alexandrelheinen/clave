@@ -84,6 +84,14 @@ def test_camera_video_is_off_unless_asked() -> None:
     assert parser.parse_args(["sim", "--camera-video"]).camera_video is True
 
 
+def test_feed_file_is_absent_unless_asked() -> None:
+    """AC-RATE-12: a feed file is absent unless the operator names one."""
+    parser = _build_parser()
+    assert parser.parse_args(["sim"]).feed is None
+    asked = parser.parse_args(["sim", "--feed", "configs/debug/high-flow.yml"])
+    assert asked.feed == Path("configs/debug/high-flow.yml")
+
+
 def test_no_command_is_an_error() -> None:
     """argparse requires a subcommand."""
     with pytest.raises(SystemExit):

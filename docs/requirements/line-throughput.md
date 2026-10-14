@@ -134,6 +134,29 @@ taking the spin about the belt normal out was measured and made the line worse,
 because pinning a body's rotation while the belt drags it turns the contact
 into a reaction that tips the parcel over.
 
+`AC-RATE-12`: The system shall accept a debug feed file that names a rate
+and a belt speed for one simulation run, and shall report that rate. The
+shipped world file's rate and drive range shall stay unchanged. When the
+operator also passes a belt speed, that speed shall win over the file.
+
+## A faster feed for one run
+
+The shipped setpoint is what one arm holds. A line fed faster is an
+ordinary condition, and `AC-RATE-08` already runs the belt at the drive's
+upper limit and reports the shortfall. The v1.6.2 seed, thirty seconds of
+ground truth, carried about six arrivals, near 0.2 objects per second. Ten
+times that flow is 2.0 objects per second. At the shipped mean spacing of
+1.20 m that needs 2.40 m/s, and the shipped drive stops at 0.35 m/s, so
+raising only the setpoint saturates and never reaches the rate. Passing
+`--belt-speed` alone does not hold it either: the controller trims speed
+back toward the shipped setpoint.
+
+Editing `configs/world/sorting_line.yml` would move every other run. A
+debug file names the rate and the speed for the run that asks for it.
+
+A second arm is out of this change. The task machine, the chutes and the
+safety envelope are one arm, and a feed file does not start another.
+
 ## Design notes
 
 **Why proportional-integral and not proportional alone.** A proportional

@@ -25,10 +25,11 @@ regulate the tracker's opinion rather than the line.
 from __future__ import annotations
 
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from pathlib import Path
 from typing import Any
 
-from clave.world.config import WorldConfigError, require
+from clave.world.config import WorldConfigError, load, require
 
 
 @dataclass(frozen=True)
@@ -72,6 +73,61 @@ class FeedSettings:
             proportional_gain=float(require(block, "proportional_gain", "feed")),
             integral_gain=float(require(block, "integral_gain", "feed")),
         )
+
+
+@dataclass(frozen=True)
+class FeedScenario:
+    """A rate and a belt speed for one run, not the shipped line.
+
+    Attributes:
+        rate: Objects per second this run is asked to carry.
+        belt_speed: Meters per second the belt starts at. When this exceeds
+            the shipped drive, it is also the upper limit for this run.
+    """
+
+    rate: float
+    belt_speed: float
+
+    @classmethod
+    def load(cls, path: Path) -> FeedScenario:
+        """Read a debug feed file.
+
+        Args:
+            path: Path to the YAML file.
+
+        Returns:
+            The scenario it names.
+
+        Raises:
+            WorldConfigError: If a key is absent, or if the rate or the
+                speed is not above zero.
+        """
+        raw = load(path)
+        return cls(
+            rate=_positive(raw, "rate_objects_per_second", where=""),
+            belt_speed=_positive(raw, "belt_speed_meters_per_second", where=""),
+        )
+
+
+def apply_scenario(
+    settings: FeedSettings,
+    scenario: FeedScenario,
+    belt_speed: float | None,
+) -> tuple[FeedSettings, float]:
+    """Apply a debug feed file to one run.
+
+    Args:
+        settings: The shipped feed settings.
+        scenario: The file's rate and speed.
+        belt_speed: An operator belt speed, or None. When set, it wins over
+            the speed in the file. The file's rate still applies.
+
+    Returns:
+        The settings with the file's rate, and the belt speed this run starts
+        at.
+    """
+    speed = scenario.belt_speed if belt_speed is None else belt_speed
+    return replace(settings, rate=scenario.rate), speed
 
 
 @dataclass
@@ -161,12 +217,14 @@ class RateController:
         return bounded
 
 
-def _positive(block: dict[str, Any], key: str) -> float:
+def _positive(block: dict[str, Any], key: str, where: str = "feed") -> float:
     """Read a value that has to be above zero.
 
     Args:
-        block: The `feed` block.
+        block: The mapping to read from.
         key: The key required.
+        where: Dotted path of the parent, used in the error message. Empty
+            when the key sits at the top of a debug feed file.
 
     Returns:
         The value.
@@ -174,9 +232,10 @@ def _positive(block: dict[str, Any], key: str) -> float:
     Raises:
         WorldConfigError: If the key is absent or the value is not positive.
     """
-    value = float(require(block, key, "feed"))
+    value = float(require(block, key, where))
+    name = f"{where}.{key}" if where else key
     if not value > 0.0:
         raise WorldConfigError(
-            f"feed.{key} is {value}, and a line carrying nothing is not a line"
+            f"{name} is {value}, and a line carrying nothing is not a line"
         )
     return value

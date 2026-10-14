@@ -3,6 +3,23 @@
 The product version is the git tag. Package metadata in `pyproject.toml`
 and the crate manifests stays on its own numbers.
 
+## v1.6.3
+
+A reproducible feed faster than one arm clears.
+
+- `configs/debug/high-flow.yml` names 2.0 objects per second and a belt
+  at 2.40 m/s. That is ten times the flow the v1.6.2 seed carried
+  (about six arrivals in thirty seconds). The shipped drive stops at
+  0.35 m/s, so the shipped setpoint cannot reach this rate, and
+  `--belt-speed` alone is trimmed back toward that setpoint.
+- `clave sim --feed` applies the file for one run. The shipped world
+  file keeps its rate and its drive range. A `--belt-speed` on the
+  same command wins over the speed in the file.
+- This patch does not add an arm. The task machine, the chutes and the
+  safety envelope stay one arm.
+
+`AC-RATE-12` holds.
+
 ## v1.6.2
 
 Probabilistic sorting on the tagged line.

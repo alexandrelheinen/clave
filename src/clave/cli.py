@@ -1035,6 +1035,16 @@ def _build_parser() -> argparse.ArgumentParser:
         help="override belt speed in meters per second (default: config value)",
     )
     sim.add_argument(
+        "--feed",
+        type=Path,
+        default=None,
+        help=(
+            "debug feed file naming a rate and a belt speed for this run. "
+            "The shipped world file stays as it is. A --belt-speed on the "
+            "same command wins over the speed in the file"
+        ),
+    )
+    sim.add_argument(
         "--mode",
         "--render-mode",
         dest="render_mode",
@@ -1215,7 +1225,7 @@ def _debug_tracker(root: Path, args: Any) -> int:
         "out=%s, video=%s, camera_video=%s, frames=%s, telemetry=%s, "
         "telemetry_rate=%.3f, "
         "trajectory_seconds=%.3f, window=%s, view=%s, ground_truth_tracker=%s, "
-        "progress=%s, render_mode=%s, routing=%s",
+        "progress=%s, render_mode=%s, routing=%s, feed=%s",
         args.seconds,
         args.seed,
         args.out,
@@ -1231,6 +1241,7 @@ def _debug_tracker(root: Path, args: Any) -> int:
         not args.no_progress,
         render_mode,
         args.routing,
+        args.feed,
     )
     telemetry_path = None
     if args.telemetry:
@@ -1256,6 +1267,7 @@ def _debug_tracker(root: Path, args: Any) -> int:
         progress=not args.no_progress,
         render_mode=render_mode,
         routing_path=args.routing,
+        feed_path=args.feed,
     )
     for line in report_lines(report):
         _log_output(line)
