@@ -130,24 +130,24 @@ def test_the_envelope_is_derived_from_the_world_rather_than_restated() -> None:
     derived = loop.runtime_config(world, settings.routing)
     belt = config.require(world, "belt")
     arm = config.require(world, "arm")
-    length = float(config.require(belt, "length_meters", "belt"))
-    width = float(config.require(belt, "width_meters", "belt"))
+    length = float(config.require(belt, "length", "belt"))
+    width = float(config.require(belt, "width", "belt"))
     # Derived, not restated: the assertion reads the world rather than repeating
     # numbers that would have to be edited here every time the line is rescaled.
-    assert derived["belt_x_meters"] == [-length / 2.0, length / 2.0]
-    assert derived["belt_y_meters"] == [-width / 2.0, width / 2.0]
-    assert derived["belt_surface_z_meters"] == float(
-        config.require(belt, "surface_height_meters", "belt")
+    assert derived["belt_x"] == [-length / 2.0, length / 2.0]
+    assert derived["belt_y"] == [-width / 2.0, width / 2.0]
+    assert derived["belt_surface_z"] == float(
+        config.require(belt, "surface_height", "belt")
     )
-    base = [float(v) for v in config.require(arm, "base_position_meters", "arm")]
+    base = [float(v) for v in config.require(arm, "base_position", "arm")]
     # The arm's mounting face, which is what the reach test is radial about.
-    assert derived["base_meters"] == base
-    assert derived["reach_meters"] == [
-        float(config.require(arm, "reach_min_meters", "arm")),
-        float(config.require(arm, "reach_max_meters", "arm")),
+    assert derived["base"] == base
+    assert derived["reach"] == [
+        float(config.require(arm, "reach_min", "arm")),
+        float(config.require(arm, "reach_max", "arm")),
     ]
-    assert derived["tool_above_base_meters"] == [
-        float(v) for v in config.require(arm, "tool_above_base_meters", "arm")
+    assert derived["tool_above_base"] == [
+        float(v) for v in config.require(arm, "tool_above_base", "arm")
     ]
 
 

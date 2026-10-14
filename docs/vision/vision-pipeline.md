@@ -1171,7 +1171,7 @@ and the same command without `--gt` makes the arm follow the vision poses.
 | $\rho$ | 1.15 | orientability threshold | `adapters/detection.py` |
 | $N_{\text{sat}}$ | 400 px | confidence saturation | `adapters/detection.py` |
 | $\gamma$ | 1.5 | gate, in multiples of $L_j$ | `association.py` |
-| $\varepsilon_u$ | 0.085 m | extent of an unmeasured track | `arm.max_grasp_width_meters` |
+| $\varepsilon_u$ | 0.085 m | extent of an unmeasured track | `arm.max_grasp_width` |
 | $\alpha_x, \beta_x$ | 0.80, 0.05 | along-travel gains | `perception/fusion.yml` |
 | $\alpha_y, \beta_y$ | 0.70, 0.20 | across-belt gains | `perception/fusion.yml` |
 | $\epsilon$ | $5\times10^{-4}$ | posterior floor | `perception/fusion.yml` |

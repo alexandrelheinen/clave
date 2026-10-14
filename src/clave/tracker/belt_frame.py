@@ -231,13 +231,13 @@ class NadirOptics:
     Attributes:
         camera_height: Where the camera sits, in belt frame meters, which is
             measured from the floor like every other `z` in this frame.
-        fovy_degrees: The vertical field of view, which is what MuJoCo's `fovy`
-            means. It sets the image height axis, and for these cameras that
-            axis lies across the belt rather than along it.
+        fovy: The vertical field of view, in radians. MuJoCo's `fovy` is the
+            same angle in degrees. It sets the image height axis, and for
+            these cameras that axis lies across the belt rather than along it.
     """
 
     camera_height: float
-    fovy_degrees: float
+    fovy: float
 
     def meters_per_pixel(self, surface_height: float, render_height: int) -> float:
         """Return the belt-frame meters one pixel spans at a given height.
@@ -275,5 +275,5 @@ class NadirOptics:
                 f"standoff is {standoff!r}: a camera at {self.camera_height} "
                 f"does not look down on a surface at {surface_height}"
             )
-        span = 2.0 * standoff * math.tan(math.radians(self.fovy_degrees) / 2.0)
+        span = 2.0 * standoff * math.tan(self.fovy / 2.0)
         return span / render_height

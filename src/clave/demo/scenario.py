@@ -7,6 +7,7 @@ one nobody can vary without editing code.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -93,18 +94,18 @@ def _video(raw: Any, path: Path) -> VideoSettings | None:
     """Read the recording settings, or None when the scenario records nothing."""
     if raw is None:
         return None
-    lookat = [float(value) for value in _require(raw, "lookat_meters", "video")]
+    lookat = [float(value) for value in _require(raw, "lookat", "video")]
     if len(lookat) != 3:
-        raise ScenarioError("video.lookat_meters needs three numbers")
+        raise ScenarioError("video.lookat needs three numbers")
     return VideoSettings(
         path=path,
         width=int(_require(raw, "width", "video")),
         height=int(_require(raw, "height", "video")),
         frames_per_second=int(_require(raw, "frames_per_second", "video")),
         interval_seconds=float(_require(raw, "interval_seconds", "video")),
-        azimuth=float(_require(raw, "azimuth_degrees", "video")),
-        elevation=float(_require(raw, "elevation_degrees", "video")),
-        distance=float(_require(raw, "distance_meters", "video")),
+        azimuth=math.radians(float(_require(raw, "azimuth_deg", "video"))),
+        elevation=math.radians(float(_require(raw, "elevation_deg", "video"))),
+        distance=float(_require(raw, "distance", "video")),
         lookat=np.asarray((lookat[0], lookat[1], lookat[2]), dtype=np.float64),
     )
 

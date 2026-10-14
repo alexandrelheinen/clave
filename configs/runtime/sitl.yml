@@ -30,7 +30,7 @@ runtime:
   # would admit those mismatches. The sim tracker already gates on the
   # track's own footprint, and the proposal loop takes that gate when it
   # stops calling associate().
-  association_radius_meters: 0.12
+  association_radius: 0.12
   # The coordinate frame a pick point is expressed in, carried into every
   # published message. The belt frame has its origin at the center of the belt
   # under the arm, with x along belt travel, y across the belt and z measured

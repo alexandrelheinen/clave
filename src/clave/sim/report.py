@@ -6,6 +6,7 @@ and the command that produced it sit next to the figures.
 
 from __future__ import annotations
 
+import math
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -118,8 +119,8 @@ class DebugRunReport:
             geometry was inside the belt.
         belt_contacts: How many ticks had a contact between the jaw and the
             belt.
-        worst_tool_tilt_degrees: The largest departure of the tool's axis from
-            the belt normal, in degrees.
+        worst_tool_tilt: The largest departure of the tool's axis from the
+            belt normal, in radians. The printed report converts it to degrees.
         abandoned: Visits given up before the descent began, with the reason
             each was given up. Distinct from `missed`: an abandoned visit is a
             plan that was active and that the freshest estimate contradicted,
@@ -176,7 +177,7 @@ class DebugRunReport:
     metadata_path: Path
     min_jaw_clearance: float | None
     belt_contacts: int
-    worst_tool_tilt_degrees: float | None
+    worst_tool_tilt: float | None
     attempted: int = 0
     abandoned: tuple[tuple[int, str], ...] = ()
     worst_aim_drift: float | None = None
@@ -320,9 +321,9 @@ def report_lines(report: DebugRunReport) -> tuple[str, ...]:
             f"  jaw clearance   {report.min_jaw_clearance * 1000:.1f} mm above the "
             f"belt, {report.belt_contacts} ticks in contact"
         )
-    if report.worst_tool_tilt_degrees is not None:
+    if report.worst_tool_tilt is not None:
         lines.append(
-            f"  tool tilt       {report.worst_tool_tilt_degrees:.1f} deg off the "
+            f"  tool tilt       {math.degrees(report.worst_tool_tilt):.1f} deg off the "
             f"belt normal at worst"
         )
     lines.append(f"  frames written  {report.frames_written} to {report.output}")

@@ -13,6 +13,7 @@ angle that disagrees with itself the first time a lens changes.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 import numpy as np
@@ -103,9 +104,7 @@ def load_sensors(raw: dict[str, object]) -> tuple[SensorSpec, ...]:
                 f"camera {source_id!r} reports role {named!r}, which is not "
                 f"one of {', '.join(sorted(roles))}"
             )
-        position = [
-            float(value) for value in require(entry, "position_meters", "cameras")
-        ]
+        position = [float(value) for value in require(entry, "position", "cameras")]
         pixels = require(
             catalogs[0][str(require(entry, "sensor", "cameras"))], "pixels"
         )
@@ -118,7 +117,7 @@ def load_sensors(raw: dict[str, object]) -> tuple[SensorSpec, ...]:
                 ),
                 optics=NadirOptics(
                     camera_height=position[2],
-                    fovy_degrees=field_of_view(entry, *catalogs),
+                    fovy=math.radians(field_of_view(entry, *catalogs)),
                 ),
                 pixels=(int(pixels[0]), int(pixels[1])),
             )

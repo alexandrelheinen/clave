@@ -187,7 +187,7 @@ def test_the_simulator_associator_falls_back_to_geometry_for_pixels() -> None:
     A detection carries no identity, because the adapter discards the only one
     it has. So the shipped associator is asymmetric on
     purpose: ground truth for the label, geometry for the pixels, and it is the
-    geometric branch that replaces `association_radius_meters`.
+    geometric branch that replaces `association_radius`.
     """
     associator = SimulatorIdentity()
     near = TrackSummary(

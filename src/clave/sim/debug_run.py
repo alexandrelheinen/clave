@@ -160,7 +160,7 @@ class _TelemetryWriter:
             "jaw_lowest_z",
             "jaw_clearance",
             "belt_contact",
-            "tool_tilt_degrees",
+            "tool_tilt",
         ]
         self._headers.extend(f"qpos_{index}" for index in range(model.nq))
         self._headers.extend(f"qvel_{index}" for index in range(model.nv))
@@ -212,7 +212,7 @@ class _TelemetryWriter:
             jaw.lowest_z,
             jaw.clearance,
             int(jaw.contact),
-            jaw.tilt_degrees,
+            jaw.tilt,
             *[float(value) for value in data.qpos],
             *[float(value) for value in data.qvel],
             *[float(value) for value in data.ctrl],
@@ -396,11 +396,9 @@ def run(
         raise DebugRunError(str(error)) from error
 
     surface = float(
-        config.require(config.require(raw, "belt"), "surface_height_meters", "belt")
+        config.require(config.require(raw, "belt"), "surface_height", "belt")
     )
-    grasp = float(
-        config.require(config.require(raw, "arm"), "max_grasp_width_meters", "arm")
-    )
+    grasp = float(config.require(config.require(raw, "arm"), "max_grasp_width", "arm"))
     effector = Effector.load(raw)
     control = ControlSettings.load(config.load(control_path))
     debug = config.load(debug_path)
@@ -422,23 +420,21 @@ def run(
     if belt_speed is not None:
         plan = replace(plan, belt=replace(plan.belt, speed=belt_speed))
     spawn = config.require(raw, "spawn")
-    spacing = config.require_range(spawn, "spacing_meters", "spawn")
+    spacing = config.require_range(spawn, "spacing", "spawn")
     if scenario is not None:
         spacing = scenario.spacing
     conveyor = belt.Conveyor(
         plan,
         np.random.default_rng(seed),
         spacing,
-        config.require_range(spawn, "lateral_offset_meters", "spawn"),
-        config.require_range(spawn, "drop_height_meters", "spawn"),
+        config.require_range(spawn, "lateral_offset", "spawn"),
+        config.require_range(spawn, "drop_height", "spawn"),
         belt.flat_tilt(spawn),
-        entry_margin=float(config.require(spawn, "entry_margin_meters", "spawn")),
+        entry_margin=float(config.require(spawn, "entry_margin", "spawn")),
     )
     # The belt speed the layout drew is where the loop starts, not where it
     # stays. Its range becomes the drive's limits rather than a distribution.
-    drive = config.require_range(
-        config.require(raw, "belt"), "speed_meters_per_second", "belt"
-    )
+    drive = config.require_range(config.require(raw, "belt"), "speed", "belt")
     settings = FeedSettings.load(raw)
     speed = plan.belt.speed
     if scenario is not None:
@@ -503,9 +499,9 @@ def run(
         else None
     )
     eye = mujoco.MjvCamera()
-    eye.azimuth = float(config.require(view, "azimuth_degrees", "view"))
-    eye.elevation = float(config.require(view, "elevation_degrees", "view"))
-    eye.distance = float(config.require(view, "distance_meters", "view"))
+    eye.azimuth = float(config.require(view, "azimuth_deg", "view"))
+    eye.elevation = float(config.require(view, "elevation_deg", "view"))
+    eye.distance = float(config.require(view, "distance", "view"))
     eye.lookat[:] = _lookat(view)
 
     out.mkdir(parents=True, exist_ok=True)
@@ -694,7 +690,7 @@ def run(
     misrouted = 0
     opening = [
         float(v)
-        for v in config.require(config.require(raw, "chutes"), "mouth_meters", "chutes")
+        for v in config.require(config.require(raw, "chutes"), "mouth", "chutes")
     ]
     mouth = (opening[0], opening[1])
     # Which channel each pool slot's object belongs in, learned as objects
@@ -875,7 +871,7 @@ def run(
                 )
                 if under_jaw is not None:
                     pinch_gap = under_jaw[1]
-                    short_axis = _short_axis_degrees(mujoco, model, data, under_jaw[0])
+                    short_axis = _short_axis(mujoco, model, data, under_jaw[0])
                     if short_axis is not None:
                         object_yaw = math.radians(short_axis)
             driver = mujoco.mj_name2id(
@@ -1060,7 +1056,7 @@ def run(
             )
             clearance = min(clearance, jaw.clearance)
             contacts += int(jaw.contact)
-            tilt = max(tilt, jaw.tilt_degrees)
+            tilt = max(tilt, jaw.tilt)
             if task.plan is not None:
                 subject = task.plan.track_id
             elif active_track is not None:
@@ -1465,7 +1461,7 @@ def run(
         ground_truth=use_ground_truth,
         min_jaw_clearance=None if clearance == float("inf") else clearance,
         belt_contacts=contacts,
-        worst_tool_tilt_degrees=tilt,
+        worst_tool_tilt=tilt,
         metadata_path=metadata_path,
         render_mode=render_mode,
     )
@@ -1644,23 +1640,25 @@ def _in_the_jaw(
     return (conveyor.active[at].name, float(gaps[at]))
 
 
-def _fold_jaw_degrees(delta_degrees: float) -> float:
+def _fold_jaw(delta: float) -> float:
     """Return how far two headings are apart, folded into a jaw's symmetry.
 
-    A jaw is symmetric about 90 degrees, so 40 degrees and 50 degrees the
-    other way are the same miss. The fold is `(delta + 45) mod 90 - 45`.
+    A jaw is symmetric about a right angle, so a miss of forty degrees and a
+    miss of fifty degrees the other way are the same miss. The fold is
+    `(delta + pi / 4) mod (pi / 2) - pi / 4`.
 
     Args:
-        delta_degrees: One heading minus the other, in degrees.
+        delta: One heading minus the other, in radians.
 
     Returns:
-        The absolute miss, in degrees, from 0 to 45.
+        The absolute miss, in radians, from 0 to a quarter turn.
     """
-    return abs((delta_degrees + 45.0) % 90.0 - 45.0)
+    quarter_turn = math.pi / 4.0
+    return abs((delta + quarter_turn) % (math.pi / 2.0) - quarter_turn)
 
 
-def _short_axis_degrees(mujoco: Any, model: Any, data: Any, name: str) -> float | None:
-    """Return the yaw of an object's short axis in the belt plane, in degrees.
+def _short_axis(mujoco: Any, model: Any, data: Any, name: str) -> float | None:
+    """Return the yaw of an object's short axis in the belt plane, in radians.
 
     The jaw closes horizontally. The direction it has to match is the short
     direction of the object after it has been rotated into the world, projected
@@ -1675,7 +1673,7 @@ def _short_axis_degrees(mujoco: Any, model: Any, data: Any, name: str) -> float 
         name: The body's name.
 
     Returns:
-        The yaw in degrees, or None when the shape has no preferred axis.
+        The yaw in radians, or None when the shape has no preferred axis.
     """
     body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, name)
     if body < 0:
@@ -1703,7 +1701,7 @@ def _short_axis_degrees(mujoco: Any, model: Any, data: Any, name: str) -> float 
     centered = flat - flat.mean(axis=0)
     _values, vectors = np.linalg.eigh(centered.T @ centered)
     minor = vectors[:, 0]
-    return math.degrees(math.atan2(float(minor[1]), float(minor[0])))
+    return math.atan2(float(minor[1]), float(minor[0]))
 
 
 def _free_velocity(
@@ -1800,16 +1798,16 @@ def _log_closure(
         )
     )
     tracked = distance(flange, command.position) * 1000.0
-    tool = math.degrees(armmod.tool_yaw(data, indices))
-    ordered = None if command.yaw is None else math.degrees(command.yaw)
+    tool = armmod.tool_yaw(data, indices)
+    ordered = command.yaw
     body = _body_yaw(mujoco, model, data, name)
-    short = _short_axis_degrees(mujoco, model, data, name)
+    short = _short_axis(mujoco, model, data, name)
     motion = _free_velocity(mujoco, model, data, name)
 
     def _yaw(left: float | None, right: float | None) -> str:
         if left is None or right is None:
             return "n/a"
-        return f"{_fold_jaw_degrees(left - right):.1f}"
+        return f"{math.degrees(_fold_jaw(left - right)):.1f}"
 
     if motion is None:
         velocity, spin = "n/a", "n/a"
@@ -1919,7 +1917,7 @@ def _geometric_center(
 
 
 def _body_yaw(mujoco: Any, model: Any, data: Any, name: str) -> float | None:
-    """Return an object's own rotation about the belt normal, in degrees.
+    """Return an object's own rotation about the belt normal, in radians.
 
     Read from the body's quaternion rather than from anything the tracker
     published, because the question this answers is whether the jaw closed
@@ -1934,7 +1932,7 @@ def _body_yaw(mujoco: Any, model: Any, data: Any, name: str) -> float | None:
         name: The body's name in the model.
 
     Returns:
-        The yaw in degrees, or None when the body carries no free joint to
+        The yaw in radians, or None when the body carries no free joint to
         read a rotation from.
     """
     body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, name)
@@ -1942,4 +1940,4 @@ def _body_yaw(mujoco: Any, model: Any, data: Any, name: str) -> float | None:
         return None
     quat = data.xquat[body]
     w, x, y, z = (float(quat[i]) for i in range(4))
-    return math.degrees(math.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z)))
+    return math.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))

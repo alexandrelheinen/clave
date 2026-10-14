@@ -54,11 +54,12 @@ class StillCamera:
 
     Attributes:
         name: Used in the output file name.
-        azimuth: Degrees around the scene, measured as MuJoCo measures it.
-        elevation: Degrees above the horizon, negative looking down.
+        azimuth: Radians around the scene. MuJoCo measures the same angle in
+            degrees, and the still converts at that boundary.
+        elevation: Radians above the horizon, negative looking down.
         distance: Meters from the point it looks at.
         lookat: What it points at, in world meters.
-        fovy: Vertical field of view in degrees.
+        fovy: Vertical field of view, in radians.
     """
 
     name: str
@@ -166,16 +167,16 @@ class StillScenario:
 def _camera(entry: Any) -> StillCamera:
     """Read one camera."""
     name = str(_require(entry, "name", "cameras"))
-    lookat = [float(v) for v in _require(entry, "lookat_meters", name)]
+    lookat = [float(v) for v in _require(entry, "lookat", name)]
     if len(lookat) != 3:
-        raise StillError(f"camera {name!r}: lookat_meters needs three numbers")
+        raise StillError(f"camera {name!r}: lookat needs three numbers")
     return StillCamera(
         name=name,
-        azimuth=float(_require(entry, "azimuth_degrees", name)),
-        elevation=float(_require(entry, "elevation_degrees", name)),
-        distance=float(_require(entry, "distance_meters", name)),
+        azimuth=math.radians(float(_require(entry, "azimuth_deg", name))),
+        elevation=math.radians(float(_require(entry, "elevation_deg", name))),
+        distance=float(_require(entry, "distance", name)),
         lookat=np.asarray((lookat[0], lookat[1], lookat[2]), dtype=np.float64),
-        fovy=float(_require(entry, "fovy_degrees", name)),
+        fovy=math.radians(float(_require(entry, "fovy_deg", name))),
     )
 
 
@@ -290,11 +291,11 @@ def _simulate(
     conveyor = belt.Conveyor(
         plan,
         rng,
-        config.require_range(spawn, "spacing_meters", "spawn"),
-        config.require_range(spawn, "lateral_offset_meters", "spawn"),
-        config.require_range(spawn, "drop_height_meters", "spawn"),
+        config.require_range(spawn, "spacing", "spawn"),
+        config.require_range(spawn, "lateral_offset", "spawn"),
+        config.require_range(spawn, "drop_height", "spawn"),
         belt.flat_tilt(spawn),
-        entry_margin=float(config.require(spawn, "entry_margin_meters", "spawn")),
+        entry_margin=float(config.require(spawn, "entry_margin", "spawn")),
     )
     indices = armmod.locate(
         model,
@@ -376,11 +377,11 @@ def capture(root: Path, scenario: StillScenario, out: Path) -> list[Path]:
     written: list[Path] = []
     for camera in scenario.cameras:
         view = mujoco.MjvCamera()
-        view.azimuth = camera.azimuth
-        view.elevation = camera.elevation
+        view.azimuth = math.degrees(camera.azimuth)
+        view.elevation = math.degrees(camera.elevation)
         view.distance = camera.distance
         view.lookat[:] = camera.lookat
-        model.vis.global_.fovy = camera.fovy
+        model.vis.global_.fovy = math.degrees(camera.fovy)
         renderer.update_scene(data, camera=view)
         path = out / f"{scenario.name}-{camera.name}.png"
         write_png(renderer.render(), path, scenario.width, scenario.height)

@@ -92,7 +92,7 @@ class RuntimeSettings:
         frame_width: Frame width in pixels.
         seed: Seed controlling belt speed, placement and spawn timing.
         presence_floor: Probability below which the classifier abstains.
-        association_radius_meters: How far an identity association may reach.
+        association_radius: How far an identity association may reach.
         belt_frame: Name of the coordinate frame pick points are expressed in,
             carried into every published message so a consumer knows what the
             numbers mean.
@@ -108,7 +108,7 @@ class RuntimeSettings:
     frame_width: int
     seed: int
     presence_floor: float
-    association_radius_meters: float
+    association_radius: float
     belt_frame: str
     routing: RoutingPolicy
 
@@ -147,8 +147,8 @@ class RuntimeSettings:
             frame_width=int(_require(runtime, "frame_width", "runtime")),
             seed=int(_require(runtime, "seed", "runtime")),
             presence_floor=float(_require(runtime, "presence_floor", "runtime")),
-            association_radius_meters=float(
-                _require(runtime, "association_radius_meters", "runtime")
+            association_radius=float(
+                _require(runtime, "association_radius", "runtime")
             ),
             belt_frame=str(_require(runtime, "belt_frame", "runtime")),
             routing=RoutingPolicy(
@@ -392,32 +392,26 @@ def runtime_config(world: dict[str, Any], routing: RoutingPolicy) -> dict[str, A
     """
     arm = config.require(world, "arm")
     conveyor = config.require(world, "belt")
-    length = float(config.require(conveyor, "length_meters", "belt"))
-    width = float(config.require(conveyor, "width_meters", "belt"))
-    base = [
-        float(value) for value in config.require(arm, "base_position_meters", "arm")
-    ]
-    band = [
-        float(value) for value in config.require(arm, "tool_above_base_meters", "arm")
-    ]
+    length = float(config.require(conveyor, "length", "belt"))
+    width = float(config.require(conveyor, "width", "belt"))
+    base = [float(value) for value in config.require(arm, "base_position", "arm")]
+    band = [float(value) for value in config.require(arm, "tool_above_base", "arm")]
     document = {
         # Where the arm stands, which is the top of its pedestal. The reach test
         # is radial about this point.
-        "base_meters": base,
+        "base": base,
         # The annulus and the vertical band, both measured by sweeping the
         # compiled model with the tool held vertical rather than derived from
         # link lengths. A six-axis arm under an orientation constraint has no
         # closed-form workspace, so there is nothing to derive them from.
-        "reach_meters": [
-            float(config.require(arm, "reach_min_meters", "arm")),
-            float(config.require(arm, "reach_max_meters", "arm")),
+        "reach": [
+            float(config.require(arm, "reach_min", "arm")),
+            float(config.require(arm, "reach_max", "arm")),
         ],
-        "tool_above_base_meters": band,
-        "belt_surface_z_meters": float(
-            config.require(conveyor, "surface_height_meters", "belt")
-        ),
-        "belt_x_meters": [-length / 2.0, length / 2.0],
-        "belt_y_meters": [-width / 2.0, width / 2.0],
+        "tool_above_base": band,
+        "belt_surface_z": float(config.require(conveyor, "surface_height", "belt")),
+        "belt_x": [-length / 2.0, length / 2.0],
+        "belt_y": [-width / 2.0, width / 2.0],
         "channels": routing.channels,
         "reject_channel": routing.reject_channel,
         "confidence_floor": routing.confidence_floor,
@@ -541,8 +535,8 @@ class RunReport:
             "decisions_received": self.decisions_received,
             "presented": len(self.presented),
             "counters": self.counters,
-            "belt_speed_meters_per_second": self.belt_speed,
-            "window_length_meters": self.window_length,
+            "belt_speed": self.belt_speed,
+            "window_length": self.window_length,
             "budget_seconds": self.budget_seconds,
             "latency_seconds": {
                 "samples": len(self.latencies_seconds),
@@ -611,15 +605,15 @@ def run(
     model, data, plan = scene.build(raw, rng, root)
     spawn = config.require(raw, "spawn")
     effector = config.require(raw, "effector")
-    finger_length = float(config.require(effector, "finger_length_meters", "effector"))
+    finger_length = float(config.require(effector, "finger_length", "effector"))
     conveyor = belt.Conveyor(
         plan,
         rng,
-        config.require_range(spawn, "spacing_meters", "spawn"),
-        config.require_range(spawn, "lateral_offset_meters", "spawn"),
-        config.require_range(spawn, "drop_height_meters", "spawn"),
+        config.require_range(spawn, "spacing", "spawn"),
+        config.require_range(spawn, "lateral_offset", "spawn"),
+        config.require_range(spawn, "drop_height", "spawn"),
         belt.flat_tilt(spawn),
-        entry_margin=float(config.require(spawn, "entry_margin_meters", "spawn")),
+        entry_margin=float(config.require(spawn, "entry_margin", "spawn")),
     )
     # The swept downstream edge, not half the window's length. Those agree only
     # while the arm stands at the belt centre, so the second is a latent defect
@@ -797,8 +791,8 @@ def _recording(mujoco: Any, model: Any, video: Any) -> tuple[Any, Any, Any]:
     if recorder is None:
         return None, None, None
     camera = mujoco.MjvCamera()
-    camera.azimuth = video.azimuth
-    camera.elevation = video.elevation
+    camera.azimuth = math.degrees(video.azimuth)
+    camera.elevation = math.degrees(video.elevation)
     camera.distance = video.distance
     camera.lookat[:] = video.lookat
     return recorder, video, camera

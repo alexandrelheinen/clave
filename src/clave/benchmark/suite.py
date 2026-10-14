@@ -145,7 +145,7 @@ def build_predictor(
         perception=configuration.perception or "",
         policy=configuration.policy or "",
         presence_floor=settings.presence_floor,
-        association_radius=settings.association_radius_meters,
+        association_radius=settings.association_radius,
     )
 
 

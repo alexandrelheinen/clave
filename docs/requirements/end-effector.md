@@ -76,7 +76,7 @@ if a vacuum model arrives that is more than a conditional weld.
   narrowest horizontal axis, and its class keeps three other objects. So the
   cost is one object in eighteen and no class.
 
-  Until the object set or `arm.max_grasp_width_meters` changes, building the
+  Until the object set or `arm.max_grasp_width` changes, building the
   shipped world with an 85 mm limit raises, naming that can. That is the
   existing graspability check doing its job, and it is the first thing this
   step has to resolve rather than a surprise to meet later.

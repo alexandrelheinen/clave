@@ -30,11 +30,11 @@ _ARM = load(
     Path(__file__).resolve().parents[2] / "configs" / "world" / "sorting_line.yml"
 )["arm"]
 BOUNDS = ReachBounds(
-    float(_ARM["reach_min_meters"]),
-    float(_ARM["reach_max_meters"]),
+    float(_ARM["reach_min"]),
+    float(_ARM["reach_max"]),
     (
-        float(_ARM["tool_above_base_meters"][0]),
-        float(_ARM["tool_above_base_meters"][1]),
+        float(_ARM["tool_above_base"][0]),
+        float(_ARM["tool_above_base"][1]),
     ),
 )
 BASE_XY = (0.0, -0.70)

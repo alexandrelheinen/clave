@@ -22,7 +22,7 @@ def test_ac_accum_01_one_step_keeps_archive_order(tmp_path: Path) -> None:
         "  learning_rate: 0.0001\n"
         "  seed: 0\n"
         "  samples_per_crossing: 3\n"
-        "  window_exit_meters: 1.034\n"
+        "  window_exit: 1.034\n"
         "  act_chunk_size: 10\n"
         "  class_balance: none\n"
     )

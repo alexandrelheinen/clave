@@ -35,7 +35,7 @@ entities, reference frames, and units is exhaustively defined in the
 [Physical Variables Glossary](glossary.md).
 
 ```
-[who_]what[_where][_unit]
+[who_]what[_where]
 ```
 
 Where:
@@ -47,21 +47,23 @@ Where:
   `target_flange_position_world`, `max_belt_speed`.
 - **`where`**: The coordinate frame of reference the quantity is expressed in
   (e.g. `world`, `camera`, `belt`, `flange`, `base`, `joint`).
-- **`unit`**: Required **only when the quantity is not in standard SI units**.
-  SI units ($m$, $m/s$, $m/s^2$, $rad$, $rad/s$, $kg$, $s$, $N$) are the
-  default and **never** take a unit suffix. Non-SI quantities append the unit
-  name explicitly (`deg`, `mm`, `ms`, `nanos`, `px`).
+- **No unit segment on a code identifier.** Code stores SI: meters, meters
+  per second, radians, seconds, kilograms, newtons. A degree, a millimeter,
+  or a millisecond is converted at the configuration or IO boundary. The
+  identifier inside that boundary names the quantity: `flange_yaw` is
+  radians. The shared rule is
+  [style/naming.md](../.guidelines/style/naming.md).
 
 ### Examples
 
 | Variable | Meaning |
 |---|---|
-| `flange_position_world` | Flange position in the world reference frame ($m$, SI) |
-| `object_velocity_belt` | Object velocity in the conveyor belt reference frame ($m/s$, SI) |
-| `camera_pose_world` | 3D pose of the camera in world coordinates (SI) |
-| `flange_yaw_deg` | Flange rotation in degrees (non-SI unit suffix required) |
-| `capture_timestamp_nanos` | Sensor acquisition timestamp in nanoseconds (non-SI) |
-| `detection_bbox_px` | Detection bounding box in camera pixel coordinates (non-SI) |
+| `flange_position_world` | Flange position in the world reference frame, meters |
+| `object_velocity_belt` | Object velocity in the conveyor belt reference frame, meters per second |
+| `camera_pose_world` | 3D pose of the camera in world coordinates, meters and radians |
+| `flange_yaw` | Flange rotation about the belt normal, radians |
+| `capture_timestamp` | Sensor acquisition time, seconds |
+| `detection_bbox` | Detection bounding box in image coordinates |
 
 ### Abstraction and omission rules
 
@@ -110,8 +112,12 @@ specific bodies or frames. Omit segments when an abstraction does not need them:
   `num_sensors` or `n_chutes`.
 - Collections are plural nouns, not suffixed with `_list` or `_array`:
   `chute_mouths`, `candidates`, `tracks`, not `chute_mouth_list`.
-- Configuration keys in YAML and JSON follow the same grammar, retaining
-  non-SI suffixes when needed (`spacing_meters`, `yaw_degrees`, `timeout_ms`).
+- Configuration keys carry a unit suffix only in the short forms `_deg`,
+  `_mm`, and `_ms`. A key whose value is already SI has none (`spacing`).
+  `yaw_deg` is degrees in the file and radians after loading. `timeout_ms`
+  is the millisecond form. Comments may name the unit. A versioned wire
+  field keeps the name its contract shipped, such as `x_meters` on the pick
+  decision and the proposal, until that contract's version moves.
 
 ## The mathematics: name the object, then call the function
 

@@ -47,14 +47,14 @@ class Assignment:
         rollout_id: Identity inside that half.
         seed: Seed for placement, lighting and which object is drawn.
         belt_speed: Meters per second, held for the whole rollout.
-        spacing_meters: Metres of belt between releases.
+        spacing: Metres of belt between releases.
     """
 
     role: str
     rollout_id: str
     seed: int
     belt_speed: float
-    spacing_meters: float
+    spacing: float
 
 
 @dataclass(frozen=True)
@@ -75,7 +75,7 @@ class CampaignConfig:
         out: Directory the two halves are written under.
         preview_seconds: Simulated seconds of the preview video.
         preview_belt_speed: Belt speed of that video.
-        preview_spacing_meters: Release gap of that video.
+        preview_spacing: Release gap of that video.
         preview_frames_per_second: Playback rate.
         preview_out: Where the video is written, relative to the repository.
     """
@@ -92,7 +92,7 @@ class CampaignConfig:
     out: Path
     preview_seconds: float
     preview_belt_speed: float
-    preview_spacing_meters: float
+    preview_spacing: float
     preview_frames_per_second: int
     preview_out: Path
 
@@ -104,8 +104,8 @@ class CampaignConfig:
             "capture_interval_seconds": self.capture_interval_seconds,
             "frame_height": self.frame_height,
             "frame_width": self.frame_width,
-            "belt_speeds_meters_per_second": list(self.belt_speeds),
-            "spacing_meters": list(self.spacings),
+            "belt_speeds": list(self.belt_speeds),
+            "spacing": list(self.spacings),
             "train_rollouts_per_cell": self.train_rollouts_per_cell,
             "validation_rollouts_per_cell": self.validation_rollouts_per_cell,
         }
@@ -136,13 +136,11 @@ class CampaignConfig:
         speeds = _positive_list(
             need(
                 section,
-                "belt_speeds_meters_per_second",
-                "corpus.belt_speeds_meters_per_second",
+                "belt_speeds",
+                "corpus.belt_speeds",
             )
         )
-        spacings = _positive_list(
-            need(section, "spacing_meters", "corpus.spacing_meters")
-        )
+        spacings = _positive_list(need(section, "spacing", "corpus.spacing"))
         preview = section.get("preview")
         if not isinstance(preview, dict):
             raise CampaignError(f"{path} has no 'corpus.preview' section")
@@ -181,13 +179,11 @@ class CampaignConfig:
             preview_belt_speed=float(
                 need(
                     preview,
-                    "belt_speed_meters_per_second",
-                    "corpus.preview.belt_speed_meters_per_second",
+                    "belt_speed",
+                    "corpus.preview.belt_speed",
                 )
             ),
-            preview_spacing_meters=float(
-                need(preview, "spacing_meters", "corpus.preview.spacing_meters")
-            ),
+            preview_spacing=float(need(preview, "spacing", "corpus.preview.spacing")),
             preview_frames_per_second=int(
                 need(preview, "frames_per_second", "corpus.preview.frames_per_second")
             ),
@@ -226,7 +222,7 @@ def assignments(config: CampaignConfig) -> tuple[Assignment, ...]:
                         rollout_id=f"rollout_{index:03d}",
                         seed=seed,
                         belt_speed=speed,
-                        spacing_meters=spacing,
+                        spacing=spacing,
                     )
                 )
                 seed += 1
@@ -336,7 +332,7 @@ def record_campaign(root: Path, config: CampaignConfig) -> CampaignResult:
                 len(chosen),
                 item.seed,
                 item.belt_speed,
-                item.spacing_meters,
+                item.spacing,
             )
             rollout = record(
                 root=root,
@@ -347,7 +343,7 @@ def record_campaign(root: Path, config: CampaignConfig) -> CampaignResult:
                 width=config.frame_width,
                 rollout_id=item.rollout_id,
                 belt_speed=item.belt_speed,
-                spacing_meters=item.spacing_meters,
+                spacing=item.spacing,
                 drive_arm=False,
                 cameras=camera_ids,
             )
@@ -405,7 +401,7 @@ def _preview(root: Path, config: CampaignConfig, camera_id: str) -> Path | None:
         width=config.frame_width,
         rollout_id="preview",
         belt_speed=config.preview_belt_speed,
-        spacing_meters=config.preview_spacing_meters,
+        spacing=config.preview_spacing,
         drive_arm=False,
         cameras=(camera_id,),
     )

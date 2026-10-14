@@ -18,11 +18,11 @@ from clave.world.scene import BeltGeometry, SceneLayout, TakeawayDrive
 
 ROOT = Path(__file__).resolve().parents[2]
 _ARM = config.load(ROOT / "configs" / "world" / "sorting_line.yml")["arm"]
-_REACH_MIN = float(_ARM["reach_min_meters"])
-_REACH_MAX = float(_ARM["reach_max_meters"])
+_REACH_MIN = float(_ARM["reach_min"])
+_REACH_MAX = float(_ARM["reach_max"])
 _TOOL_ABOVE = (
-    float(_ARM["tool_above_base_meters"][0]),
-    float(_ARM["tool_above_base_meters"][1]),
+    float(_ARM["tool_above_base"][0]),
+    float(_ARM["tool_above_base"][1]),
 )
 
 

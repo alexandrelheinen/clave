@@ -30,7 +30,7 @@ def predictor_for(
         perception=scenario.perception or "",
         policy=scenario.policy or "",
         presence_floor=settings.presence_floor,
-        association_radius=settings.association_radius_meters,
+        association_radius=settings.association_radius,
     )
 
 

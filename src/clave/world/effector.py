@@ -3,7 +3,7 @@
 The dimensions are the shipped Robotiq 2F-85, read from configuration so a
 marker and the compiled gripper share one description.
 
-The jaw opening is not a field of its own. It is `arm.max_grasp_width_meters`,
+The jaw opening is not a field of its own. It is `arm.max_grasp_width`,
 which already decides which objects the world may spawn, and reading it from
 there is what keeps a marker from calling an object unreachable that the world
 was told to produce.
@@ -145,29 +145,27 @@ class Effector:
         block = require(raw, "effector")
         arm = require(raw, "arm")
         values = {
-            "finger_length": _positive(block, "finger_length_meters"),
-            "pad_thickness": _positive(block, "pad_thickness_meters"),
-            "pad_depth": _positive(block, "pad_depth_meters"),
-            "pad_height": _positive(block, "pad_height_meters"),
-            "grasp_height": _positive(block, "grasp_height_meters"),
-            "lowest_below_flange": _positive(block, "lowest_below_flange_meters"),
-            "open_lowest_below_flange": _positive(
-                block, "open_lowest_below_flange_meters"
-            ),
-            "jaw_clearance": _positive(block, "jaw_clearance_meters"),
+            "finger_length": _positive(block, "finger_length"),
+            "pad_thickness": _positive(block, "pad_thickness"),
+            "pad_depth": _positive(block, "pad_depth"),
+            "pad_height": _positive(block, "pad_height"),
+            "grasp_height": _positive(block, "grasp_height"),
+            "lowest_below_flange": _positive(block, "lowest_below_flange"),
+            "open_lowest_below_flange": _positive(block, "open_lowest_below_flange"),
+            "jaw_clearance": _positive(block, "jaw_clearance"),
         }
-        opening = float(require(arm, "max_grasp_width_meters", "arm"))
+        opening = float(require(arm, "max_grasp_width", "arm"))
         effector = cls(opening=opening, **values)
         if effector.open_lowest_below_flange >= effector.lowest_below_flange:
             raise WorldConfigError(
-                f"effector.open_lowest_below_flange_meters is "
+                f"effector.open_lowest_below_flange is "
                 f"{effector.open_lowest_below_flange} and the shut jaw reaches "
                 f"{effector.lowest_below_flange}, so closing would not drop the "
                 f"pads and the hold would have nothing to rise by"
             )
         if effector.grasp_height < effector.pinch_floor:
             raise WorldConfigError(
-                f"effector.grasp_height_meters is {effector.grasp_height} and the "
+                f"effector.grasp_height is {effector.grasp_height} and the "
                 f"jaw's lowest geometry reaches {effector.lowest_below_flange} "
                 f"below the flange while keeping {effector.jaw_clearance} above "
                 f"the belt, so the pads would close at {effector.pinch_floor} or "

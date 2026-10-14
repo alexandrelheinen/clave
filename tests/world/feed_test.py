@@ -190,8 +190,8 @@ def test_the_high_flow_file_keeps_the_belt_inside_the_shipped_drive() -> None:
     root = Path(__file__).resolve().parents[2]
     world = load(root / "configs" / "world" / "sorting_line.yml")
     shipped = FeedSettings.load(world)
-    drive = require_range(world["belt"], "speed_meters_per_second", "belt")
-    shipped_spacing = require_range(world["spawn"], "spacing_meters", "spawn")
+    drive = require_range(world["belt"], "speed", "belt")
+    shipped_spacing = require_range(world["spawn"], "spacing", "spawn")
     scenario = FeedScenario.load(root / "configs" / "debug" / "high-flow.yml")
 
     assert scenario.rate == shipped.rate
@@ -205,7 +205,7 @@ def test_the_high_flow_file_keeps_the_belt_inside_the_shipped_drive() -> None:
 def test_a_feed_file_refuses_a_rate_that_is_not_positive(tmp_path: Path) -> None:
     """AC-RATE-12: a feed file refuses a rate that is not positive."""
     path = tmp_path / "feed.yml"
-    path.write_text("rate_objects_per_second: 0\nbelt_speed_meters_per_second: 1.0\n")
+    path.write_text("rate_objects_per_second: 0\nbelt_speed: 1.0\n")
     with pytest.raises(WorldConfigError, match="not a line"):
         FeedScenario.load(path)
 
@@ -213,10 +213,8 @@ def test_a_feed_file_refuses_a_rate_that_is_not_positive(tmp_path: Path) -> None
 def test_a_feed_file_refuses_a_missing_spacing(tmp_path: Path) -> None:
     """AC-RATE-13: a feed file refuses a missing spacing."""
     path = tmp_path / "feed.yml"
-    path.write_text(
-        "rate_objects_per_second: 0.125\nbelt_speed_meters_per_second: 0.25\n"
-    )
-    with pytest.raises(WorldConfigError, match="spacing_meters"):
+    path.write_text("rate_objects_per_second: 0.125\nbelt_speed: 0.25\n")
+    with pytest.raises(WorldConfigError, match="spacing"):
         FeedScenario.load(path)
 
 
@@ -224,9 +222,7 @@ def test_a_feed_file_without_a_pool_keeps_the_shipped_one(tmp_path: Path) -> Non
     """AC-RATE-15: a feed file that names no pool keeps the shipped one."""
     path = tmp_path / "feed.yml"
     path.write_text(
-        "rate_objects_per_second: 0.125\n"
-        "belt_speed_meters_per_second: 0.25\n"
-        "spacing_meters: [0.125, 0.125]\n"
+        "rate_objects_per_second: 0.125\nbelt_speed: 0.25\nspacing: [0.125, 0.125]\n"
     )
     scenario = FeedScenario.load(path)
     assert scenario.pool_size is None
@@ -256,8 +252,8 @@ def test_a_feed_file_refuses_a_pool_that_is_not_a_count(tmp_path: Path) -> None:
     path = tmp_path / "feed.yml"
     path.write_text(
         "rate_objects_per_second: 0.125\n"
-        "belt_speed_meters_per_second: 0.25\n"
-        "spacing_meters: [0.125, 0.125]\n"
+        "belt_speed: 0.25\n"
+        "spacing: [0.125, 0.125]\n"
         "pool_size: 0\n"
     )
     with pytest.raises(WorldConfigError, match="pool_size"):

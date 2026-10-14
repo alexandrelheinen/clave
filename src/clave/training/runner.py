@@ -397,21 +397,21 @@ def _draw_sample(
 ) -> FrameSample:
     """Draw a pick from the camera footprint and the rollout belt speeds."""
     from clave.world.config import load as load_world
-    from clave.world.scene import detection_along_travel_meters
+    from clave.world.scene import detection_along_travel
 
-    along = detection_along_travel_meters(load_world(world))
+    along = detection_along_travel(load_world(world))
     members = description.parts.get(part, ())
     by_name = {item.name: item for item in description.files}
     interval = 0.0
     for rollout_id in members:
         recorded = by_name.get(f"{rollout_id}.npz")
-        speed = None if recorded is None else recorded.belt_speed_meters_per_second
+        speed = None if recorded is None else recorded.belt_speed
         if speed is not None and speed > 0.0:
             interval = capture_interval_seconds(dataset, rollout_id)
             break
     return build_frame_sample(
         description,
-        along_travel_meters=along,
+        along_travel=along,
         capture_interval_seconds=interval,
         samples_per_crossing=config.samples_per_crossing,
         seed=config.seed,

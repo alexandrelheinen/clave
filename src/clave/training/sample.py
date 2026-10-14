@@ -31,7 +31,7 @@ class FrameSample:
     Attributes:
         samples_per_crossing: Looks kept while an object crosses the footprint.
         dataset_digest: Corpus the indexes were drawn from.
-        along_travel_meters: Footprint used for the crossing count.
+        along_travel: Footprint used for the crossing count.
         capture_interval_seconds: Seconds between stored frames. Zero when no
             rollout recorded a belt speed and the interval was not needed.
         seed: Seed the phases were drawn from.
@@ -40,7 +40,7 @@ class FrameSample:
 
     samples_per_crossing: int
     dataset_digest: str
-    along_travel_meters: float
+    along_travel: float
     capture_interval_seconds: float
     seed: int
     picks: dict[str, tuple[int, ...]]
@@ -53,7 +53,7 @@ class FrameSample:
     def payload(self) -> dict[str, object]:
         """A JSON-ready mapping. The digest is not part of it."""
         return {
-            "along_travel_meters": self.along_travel_meters,
+            "along_travel": self.along_travel,
             "capture_interval_seconds": self.capture_interval_seconds,
             "dataset_digest": self.dataset_digest,
             "picks": {key: list(indexes) for key, indexes in self.picks.items()},
@@ -98,7 +98,7 @@ class FrameSample:
             return cls(
                 samples_per_crossing=_as_int(raw["samples_per_crossing"]),
                 dataset_digest=str(raw["dataset_digest"]),
-                along_travel_meters=_as_float(raw["along_travel_meters"]),
+                along_travel=_as_float(raw["along_travel"]),
                 capture_interval_seconds=_as_float(raw["capture_interval_seconds"]),
                 seed=_as_int(raw["seed"]),
                 picks=picks,
@@ -149,7 +149,7 @@ def kept_indexes(
     frame_count: int,
     *,
     belt_speed: float | None,
-    along_travel_meters: float,
+    along_travel: float,
     capture_interval_seconds: float,
     samples_per_crossing: int,
     phase: int,
@@ -159,7 +159,7 @@ def kept_indexes(
     Args:
         frame_count: Frames the archive holds.
         belt_speed: Meters per second, or None when the rollout did not record one.
-        along_travel_meters: Camera footprint along the belt.
+        along_travel: Camera footprint along the belt.
         capture_interval_seconds: Seconds between captures.
         samples_per_crossing: Looks per crossing.
         phase: First kept index. Ignored when every frame is kept.
@@ -171,10 +171,10 @@ def kept_indexes(
         belt_speed is None
         or belt_speed <= 0.0
         or capture_interval_seconds <= 0.0
-        or along_travel_meters <= 0.0
+        or along_travel <= 0.0
     ):
         return tuple(range(frame_count))
-    frames_in_crossing = along_travel_meters / (belt_speed * capture_interval_seconds)
+    frames_in_crossing = along_travel / (belt_speed * capture_interval_seconds)
     stride = crossing_stride(frames_in_crossing, samples_per_crossing)
     if stride <= 1:
         return tuple(range(frame_count))
@@ -185,7 +185,7 @@ def kept_indexes(
 def build_frame_sample(
     description: DatasetDescription,
     *,
-    along_travel_meters: float,
+    along_travel: float,
     capture_interval_seconds: float,
     samples_per_crossing: int,
     seed: int,
@@ -196,7 +196,7 @@ def build_frame_sample(
 
     Args:
         description: The training dataset.
-        along_travel_meters: Footprint of the camera the loader reads.
+        along_travel: Footprint of the camera the loader reads.
         capture_interval_seconds: Seconds between captures.
         samples_per_crossing: Looks per crossing.
         seed: Seed for the phases. The same seed redraws the same phases.
@@ -226,17 +226,17 @@ def build_frame_sample(
             speed = None
             frames = _archive_frame_count(dataset, rollout_id)
         else:
-            speed = recorded.belt_speed_meters_per_second
+            speed = recorded.belt_speed
             frames = recorded.frame_count
         stride = 1
         if speed is not None and speed > 0.0 and capture_interval_seconds > 0.0:
-            crossing = along_travel_meters / (speed * capture_interval_seconds)
+            crossing = along_travel / (speed * capture_interval_seconds)
             stride = crossing_stride(crossing, samples_per_crossing)
         phase = 0 if stride <= 1 else int(rng.integers(0, stride))
         picks[rollout_id] = kept_indexes(
             frames,
             belt_speed=speed,
-            along_travel_meters=along_travel_meters,
+            along_travel=along_travel,
             capture_interval_seconds=capture_interval_seconds,
             samples_per_crossing=samples_per_crossing,
             phase=phase,
@@ -244,7 +244,7 @@ def build_frame_sample(
     return FrameSample(
         samples_per_crossing=samples_per_crossing,
         dataset_digest=description.digest,
-        along_travel_meters=along_travel_meters,
+        along_travel=along_travel,
         capture_interval_seconds=capture_interval_seconds,
         seed=seed,
         picks=picks,

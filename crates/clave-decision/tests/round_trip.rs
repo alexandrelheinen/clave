@@ -41,16 +41,16 @@ fn assert_round_trips(decision: &PickDecision) {
         decision.pose().yaw_radians().to_bits()
     );
     assert_eq!(
-        decoded.pose().point().x_meters().to_bits(),
-        decision.pose().point().x_meters().to_bits()
+        decoded.pose().point().x().to_bits(),
+        decision.pose().point().x().to_bits()
     );
     assert_eq!(
-        decoded.pose().point().y_meters().to_bits(),
-        decision.pose().point().y_meters().to_bits()
+        decoded.pose().point().y().to_bits(),
+        decision.pose().point().y().to_bits()
     );
     assert_eq!(
-        decoded.pose().point().z_meters().to_bits(),
-        decision.pose().point().z_meters().to_bits()
+        decoded.pose().point().z().to_bits(),
+        decision.pose().point().z().to_bits()
     );
     assert_eq!(codec::encode(&decoded).unwrap(), encoded);
 }
@@ -119,9 +119,9 @@ proptest! {
         object in any::<u64>(),
         class_index in 0_usize..11,
         channel in any::<u16>(),
-        x_meters in any::<f64>(),
-        y_meters in any::<f64>(),
-        z_meters in any::<f64>(),
+        x in any::<f64>(),
+        y in any::<f64>(),
+        z in any::<f64>(),
         yaw_radians in any::<f64>(),
         earliest in any::<i64>(),
         span in 0_i64..1_000_000,
@@ -136,7 +136,7 @@ proptest! {
             class,
             ChannelId::new(channel),
             PickPose::new(
-                BeltPoint::new(x_meters, y_meters, z_meters),
+                BeltPoint::new(x, y, z),
                 yaw_radians,
                 MonotonicNanos::new(reference_time),
             ),

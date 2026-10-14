@@ -89,9 +89,9 @@ impl From<&PickDecision> for WireDecision {
             channel: decision.channel().get(),
             pose: WirePose {
                 point: WirePoint {
-                    x_meters: point.x_meters(),
-                    y_meters: point.y_meters(),
-                    z_meters: point.z_meters(),
+                    x_meters: point.x(),
+                    y_meters: point.y(),
+                    z_meters: point.z(),
                 },
                 yaw_radians: decision.pose().yaw_radians(),
                 reference_time: decision.pose().reference_time().get(),

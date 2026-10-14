@@ -116,8 +116,8 @@ def parse(
             texture: str | None = entry.get("texture")
         else:
             size = (
-                require_range(entry, "size_a_meters", f"objects.{name}"),
-                require_range(entry, "size_b_meters", f"objects.{name}"),
+                require_range(entry, "size_a", f"objects.{name}"),
+                require_range(entry, "size_b", f"objects.{name}"),
             )
             mesh = texture = None
         specs.append(

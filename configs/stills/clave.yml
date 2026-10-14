@@ -49,15 +49,15 @@ annotations:
     # Both radii: the outer one bounds the annulus and the inner one is the
     # dead zone the belt carries an object out of.
     rgba: [0.28, 0.88, 0.96, 0.85]
-    thickness_meters: 0.016
+    thickness: 0.016
     segment_count: 180
   window_edges:
     rgba: [0.92, 0.95, 1.00, 0.28]
-    thickness_meters: 0.014
-    height_meters: 0.45
+    thickness: 0.014
+    height: 0.45
   class_markers:
-    radius_meters: 0.032
-    height_above_meters: 0.16
+    radius: 0.032
+    height_above: 0.16
 
 lighting:
   quality:
@@ -71,13 +71,13 @@ lighting:
     top: [0.22, 0.23, 0.26]
     bottom: [0.40, 0.38, 0.36]
   lights:
-    - position_meters: [1.40, -2.10, 1.15]
+    - position: [1.40, -2.10, 1.15]
       direction: [-0.55, 0.72, -0.30]
       directional: true
       diffuse: [0.82, 0.80, 0.74]
       specular: [0.12, 0.12, 0.12]
       cast_shadow: false
-    - position_meters: [-1.70, 1.90, 1.05]
+    - position: [-1.70, 1.90, 1.05]
       direction: [0.68, -0.66, -0.28]
       directional: true
       diffuse: [0.48, 0.50, 0.54]
@@ -86,13 +86,13 @@ lighting:
     # A second key from across the line. The arm-side key leaves the
     # conveyor's far face unlit, and one of the three figures is shot from
     # over there.
-    - position_meters: [-1.40, 2.20, 1.20]
+    - position: [-1.40, 2.20, 1.20]
       direction: [0.50, -0.72, -0.35]
       directional: true
       diffuse: [0.42, 0.41, 0.40]
       specular: [0.08, 0.08, 0.08]
       cast_shadow: false
-    - position_meters: [2.20, -0.40, 0.95]
+    - position: [2.20, -0.40, 0.95]
       direction: [-0.80, 0.20, -0.40]
       directional: true
       diffuse: [0.28, 0.24, 0.18]
@@ -108,24 +108,24 @@ cameras:
   # from here as openings the arm turns to rather than as containers, which
   # is what they are.
   - name: line
-    azimuth_degrees: 332.0
-    elevation_degrees: -26.0
-    distance_meters: 4.00
-    lookat_meters: [0.0, 0.05, 1.00]
-    fovy_degrees: 42.0
+    azimuth_deg: 332.0
+    elevation_deg: -26.0
+    distance: 4.00
+    lookat: [0.0, 0.05, 1.00]
+    fovy_deg: 42.0
   # Straight down, with the belt across the frame rather than along it, so the
   # ring and the belt both fit a sixteen by nine plate.
   - name: overhead
-    azimuth_degrees: 90.0
-    elevation_degrees: -88.0
-    distance_meters: 3.30
-    lookat_meters: [0.0, 0.0, 0.92]
-    fovy_degrees: 45.0
+    azimuth_deg: 90.0
+    elevation_deg: -88.0
+    distance: 3.30
+    lookat: [0.0, 0.0, 0.92]
+    fovy_deg: 45.0
   # Near belt height and along the line, which is the angle where the two window
   # planes read as the walls of a window rather than as lines.
   - name: window
-    azimuth_degrees: 206.0
-    elevation_degrees: -13.0
-    distance_meters: 3.45
-    lookat_meters: [0.15, -0.20, 1.02]
-    fovy_degrees: 38.0
+    azimuth_deg: 206.0
+    elevation_deg: -13.0
+    distance: 3.45
+    lookat: [0.15, -0.20, 1.02]
+    fovy_deg: 38.0

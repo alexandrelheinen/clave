@@ -45,10 +45,10 @@ views:
   belt:
     width: 960
     height: 540
-    azimuth_degrees: 135.0
-    elevation_degrees: -32.0
-    distance_meters: 4.00
-    lookat_meters: [-0.15, 0.00, 1.02]
+    azimuth_deg: 135.0
+    elevation_deg: -32.0
+    distance: 4.00
+    lookat: [-0.15, 0.00, 1.02]
 
   # The whole machine, including the park pose. Wide enough that a jaw is
   # small, which is the price of holding the arm, the belt and the place the
@@ -57,7 +57,7 @@ views:
   line:
     width: 960
     height: 540
-    azimuth_degrees: 180.0
-    elevation_degrees: -26.0
-    distance_meters: 4.00
-    lookat_meters: [0.00, -0.45, 1.05]
+    azimuth_deg: 180.0
+    elevation_deg: -26.0
+    distance: 4.00
+    lookat: [0.00, -0.45, 1.05]

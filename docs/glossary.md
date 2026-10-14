@@ -5,8 +5,9 @@ properties, reference frames, and unit conventions for all physical variables
 across the CLAVE codebase.
 
 The shared baseline lives in [docs/guidelines.md](guidelines.md). This glossary
-is the authoritative reference for every `who`, `what`, `where`, qualifier, and
-unit suffix.
+is the authoritative reference for every `who`, `what`, `where`, and qualifier.
+Units are SI inside the code. A unit suffix appears only on a configuration
+key, in the short forms below, or in a comment.
 
 ---
 
@@ -16,7 +17,7 @@ All variables representing physical quantities, spatial poses, velocities, and
 measurements follow the structured pattern:
 
 ```
-[qualifier_][who_]what[_where][_unit]
+[qualifier_][who_]what[_where]
 ```
 
 ### Segment Breakdown
@@ -27,16 +28,18 @@ measurements follow the structured pattern:
 | `who` | Contextual | The physical body or entity | `flange`, `object`, `jaw`, `belt`, `camera` |
 | `what` | **Mandatory** | The physical property or measurement | `position`, `velocity`, `yaw`, `clearance` |
 | `where` | Contextual | The coordinate reference frame | `world`, `belt`, `camera`, `flange` |
-| `unit` | Conditional | **Only required for non-SI units** | `_deg`, `_mm`, `_nanos`, `_px` |
+| `unit` | No | Absent from a code identifier. Configuration keys may use `_deg`, `_mm`, `_ms` |
 
 ### Core Invariants
 
-1. **Standard SI units take NO suffix.** Distance is meters ($m$), velocity is
-   meters per second ($m/s$), acceleration is $m/s^2$, angle is radians ($rad$),
-   angular velocity is $rad/s$, mass is kilograms ($kg$), time is seconds ($s$),
-   and force is Newtons ($N$). Writing `position_m` or `speed_mps` is forbidden.
-2. **Non-SI units MUST carry an explicit suffix.** Examples: `_deg`, `_mm`,
-   `_nanos`, `_ms`, `_px`.
+1. **Code stores SI and the identifier names the quantity.** Distance is
+   meters ($m$), velocity is meters per second ($m/s$), acceleration is
+   $m/s^2$, angle is radians ($rad$), angular velocity is $rad/s$, mass is
+   kilograms ($kg$), time is seconds ($s$), and force is newtons ($N$).
+2. **A degree, a millimeter, or a millisecond is converted at the
+   configuration or IO boundary.** The configuration key uses one short
+   suffix: `_deg`, `_mm`, or `_ms`. The identifier that holds the converted
+   value has none.
 3. **Compound names maintain left-to-right hierarchy:**
    `target_flange_position_world` $\rightarrow$ `[target_]` (qualifier) + `[flange_]`
    (who) + `[position]` (what) + `[_world]` (where).
@@ -100,7 +103,7 @@ The `what` token names the measured or computed physical quantity.
 | `torque` | Rotational moment | $N\cdot m$ | Vector or scalar | Applied or sensed joint torque |
 | `duration` | Time span | $s$ | Scalar | Elapsed interval between two instants |
 | `timestamp` | Time instant | $s$ | Scalar | Monotonic or simulated time instant |
-| `bbox` | Bounding box | (requires unit) | Tuple $(x_1, y_1, x_2, y_2)$ | 2D bounding box (typically `_px`) |
+| `bbox` | Bounding box | image coordinates | Tuple $(x_1, y_1, x_2, y_2)$ | 2D bounding box. A comment says when the index is pixels |
 
 ---
 
@@ -141,20 +144,24 @@ They precede `who` or `what`:
 
 ---
 
-## 6. Unit Suffixes (Non-SI Quantities)
+## 6. Units
 
-Standard SI units **never** carry a unit suffix. Non-SI quantities **always**
-carry one of the following exact suffixes:
+Code identifiers carry no unit. A length is meters, an angle is radians, a
+duration is seconds. Conversion from another unit happens where configuration
+is read and where a person or a wire is written.
 
-| Suffix | Unit | Equivalent SI Value | Example |
-|---|---|---|---|
-| `_deg` / `_degrees` | Degrees ($^{\circ}$) | $\frac{\pi}{180}\text{ rad}$ | `tool_yaw_deg`, `joint_angle_deg` |
-| `_mm` | Millimeters | $10^{-3}\text{ m}$ | `pad_width_mm`, `jaw_travel_mm` |
-| `_cm` | Centimeters | $10^{-2}\text{ m}$ | `standoff_cm` |
-| `_nanos` | Nanoseconds | $10^{-9}\text{ s}$ | `observed_at_nanos`, `valid_until_nanos` |
-| `_ms` | Milliseconds | $10^{-3}\text{ s}$ | `exposure_time_ms`, `latency_p99_ms` |
-| `_px` | Screen pixels | Dimensionless discrete index | `bbox_px`, `center_px`, `radius_px` |
-| `_g` | Grams | $10^{-3}\text{ kg}$ | `payload_mass_g` |
+A configuration key may append one short suffix when the stored number is
+not SI:
+
+| Suffix | Unit in the file | SI after loading |
+|---|---|---|
+| `_deg` | Degrees ($^{\circ}$) | radians, $\frac{\pi}{180}$ per degree |
+| `_mm` | Millimeters | meters, $10^{-3}$ |
+| `_ms` | Milliseconds | seconds, $10^{-3}$ |
+
+`yaw_deg: 90` is `yaw` in radians after it is loaded. `spacing: 0.35` is
+already meters and takes no suffix. A comment may name the unit. A versioned
+wire field keeps the name its contract shipped until that version moves.
 
 ---
 

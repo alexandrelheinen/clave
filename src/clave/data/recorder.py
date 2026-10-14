@@ -174,7 +174,7 @@ def record(
     rollout_id: str,
     *,
     belt_speed: float | None = None,
-    spacing_meters: float | None = None,
+    spacing: float | None = None,
     drive_arm: bool = True,
     cameras: tuple[str, ...] | None = None,
 ) -> Rollout:
@@ -190,7 +190,7 @@ def record(
         rollout_id: Identity for this rollout within a dataset.
         belt_speed: Meters per second to hold, instead of the speed the world
             draws. None leaves the draw in place.
-        spacing_meters: Metres of belt between releases. None leaves the
+        spacing: Meters of belt between releases. None leaves the
             world's range in place, so each gap is drawn.
         drive_arm: Whether to move the arm toward the scripted expert. A corpus
             records the stream with the arm parked.
@@ -208,19 +208,19 @@ def record(
     rng = np.random.default_rng(seed)
     model, data, plan = scene.build(raw, rng, root)
     spawn = config.require(raw, "spawn")
-    spacing = (
-        Range(spacing_meters, spacing_meters)
-        if spacing_meters is not None
-        else config.require_range(spawn, "spacing_meters", "spawn")
+    gaps = (
+        Range(spacing, spacing)
+        if spacing is not None
+        else config.require_range(spawn, "spacing", "spawn")
     )
     conveyor = belt.Conveyor(
         plan,
         rng,
-        spacing,
-        config.require_range(spawn, "lateral_offset_meters", "spawn"),
-        config.require_range(spawn, "drop_height_meters", "spawn"),
+        gaps,
+        config.require_range(spawn, "lateral_offset", "spawn"),
+        config.require_range(spawn, "drop_height", "spawn"),
         belt.flat_tilt(spawn),
-        entry_margin=float(config.require(spawn, "entry_margin_meters", "spawn")),
+        entry_margin=float(config.require(spawn, "entry_margin", "spawn")),
     )
     if belt_speed is not None:
         conveyor.speed = belt_speed
@@ -274,7 +274,7 @@ def record(
             drive_arm=drive_arm,
             exit_coordinate=exit_coordinate,
             rollout_id=rollout_id,
-            spacing_meters=spacing_meters,
+            spacing=spacing,
             timestep=plan.timestep,
         )
     finally:
@@ -299,7 +299,7 @@ def _capture_rollout(
     drive_arm: bool,
     exit_coordinate: float,
     rollout_id: str,
-    spacing_meters: float | None,
+    spacing: float | None,
     timestep: float,
 ) -> Rollout:
     """Step one rollout and return its labeled frames."""
@@ -358,7 +358,7 @@ def _capture_rollout(
         seed=seed,
         examples=tuple(examples),
         belt_speed=conveyor.running,
-        spacing_meters=spacing_meters,
+        spacing=spacing,
     )
 
 
