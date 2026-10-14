@@ -42,7 +42,10 @@ Centers at 0.125 m on the belt the shipped line already runs.
   lies on the body and the bottom lies at the body's height. Clearing
   the spin left a tall face free to tip during the contact step and
   then ride on its side, where the jaw closes and the package does not
-  rise. Until the arm touches it, the flat pose is restored.
+  rise. Until the arm touches it, the flat pose is restored. A pinch
+  more than 15 mm from the package is given up before the jaw shuts.
+  On the crushed set a 25 mm gap rose 14 mm and was not placed, and a
+  10 mm gap was.
   Until the arm touches it, the belt carries it at belt speed with no
   lateral velocity and no rotation. The constraint stops at that
   contact, so the grasp can lift it. On the seed-0 high-flow run,
