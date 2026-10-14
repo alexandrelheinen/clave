@@ -22,7 +22,7 @@ still:
   description: >-
     The sorting line with the reach annulus, the edges of the reachable window
     and a marker over each package in the color of the channel it routes to.
-    Two packages covering two material classes sit on the belt while the
+    Three packages covering three material classes sit on the belt while the
     arm rides approach height over one of them.
   # Same moment as the thumbnail: arm over the centreline, not colliding.
   seed: 11
@@ -30,8 +30,8 @@ still:
   width: 1920
   height: 1080
   expect:
-    packages: 2
-    classes: 2
+    packages: 3
+    classes: 3
 
 annotations:
   # One color per channel the object set needs. A channel the object set has

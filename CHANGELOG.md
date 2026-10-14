@@ -10,6 +10,9 @@ Centers at 0.125 m on the belt the shipped line already runs.
 - The shipped figure 0.125 is a feed setpoint in objects per second.
   The drive range is 0.25 to 0.35 m/s, so that setpoint already holds
   the belt at 0.25 m/s. It is not a belt speed of 0.125 m/s.
+- The shipped stills at seed 11 and 28.75 s now show three packages
+  and three classes. A tall package that the origin test left sitting
+  now rides the belt, and it is on the belt at that instant.
 - The belt used to decide a package was on it from the body origin.
   Six of the ten packages stand with that origin above the height
   tolerance, so they were not driven. The next package was pushed
