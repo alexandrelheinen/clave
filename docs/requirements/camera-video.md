@@ -48,8 +48,12 @@ file is the free camera alone, and no detection-camera renderer is built.
 `AC-CAM-05`: Each detection view pasted into the free-camera file shall be
 at least the configured inset width, so a box around an object is a
 rectangle a reader can see, not a mark a few pixels across. The free-camera
-image itself is not covered to make room: the views are added along the
-bottom and the frame grows to hold them.
+image itself is not covered to make room.
+
+`AC-CAM-06`: Those views shall be stacked vertically along the right edge,
+in the order the cameras are listed, the first on top. The frame grows to
+the right, and downward when the stack is taller than the free camera, so
+the arm, the pick zone, and the placing bins stay in the free-camera image.
 
 ## Constraints
 
@@ -64,4 +68,6 @@ even, which is what the encoder's chroma format expects.
 The file is encoded with `StreamSettings`, because the pixels already exist.
 Boxes are painted in RGB before the encoder sees the frame. Bounds come from
 the same run-length masks `segment_masks` already returns for the tracker, so
-a box is the object's pixels and not a projection of its pose.
+a box is the object's pixels and not a projection of its pose. The views
+used to sit in a band under the free camera, and that band covered the
+placing bins. They now stand in a column on the right (`AC-CAM-06`).

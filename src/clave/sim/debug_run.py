@@ -748,9 +748,10 @@ def run(
         raise DebugRunError(f"video interval {movie_interval} s must be above zero")
     playback = fps or int(config.require(movie, "frames_per_second"))
     inset_width = int(config.require(movie, "inset_width_pixels", "video"))
-    # The free-camera file grows to hold the detection views at the
-    # configured width. The recorder has to be opened at that size, because
-    # the encoder rejects a frame that is not the size it was started with.
+    # The free-camera file grows to the right to hold the detection views
+    # in a column. A band under the picture covered the placing bins. The
+    # recorder has to be opened at that size, because the encoder rejects a
+    # frame that is not the size it was started with.
     film = dict(view)
     if video and camera_video and inset_width > 0:
         film["width"], film["height"] = inset_frame_size(

@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import numpy as np
 
-from clave.sim.overlay import inset_frame_size, paste_camera_insets
+from clave.sim.overlay import (
+    _INSET_GAP,
+    inset_frame_size,
+    paste_camera_insets,
+    thumb_size,
+)
 
 
 def test_detection_views_sit_on_the_free_camera_frame() -> None:
@@ -20,13 +25,14 @@ def test_detection_views_sit_on_the_free_camera_frame() -> None:
 
 
 def test_an_inset_keeps_the_width_it_was_given() -> None:
-    """AC-CAM-05: a detection view is at least the configured width.
+    """AC-CAM-05, AC-CAM-06: the views keep their width, stacked on the right.
 
-    The free-camera pixels stay where they were. The views are added
-    under them, so a box is not shrunk to fit a band.
+    The free-camera pixels stay where they were, including the bottom edge
+    where the placing bins sit. The gate camera is above the pick camera.
     """
     frame = np.zeros((90, 240, 3), dtype=np.uint8)
     frame[0, 0] = (7, 8, 9)
+    frame[89, 230] = (1, 2, 3)
     gate = np.full((48, 64, 3), (0, 180, 0), dtype=np.uint8)
     pick = np.full((48, 64, 3), (180, 0, 0), dtype=np.uint8)
     out = paste_camera_insets(
@@ -34,9 +40,14 @@ def test_an_inset_keeps_the_width_it_was_given() -> None:
     )
     width, height = inset_frame_size(240, 90, 64, 48, 2, 80)
     assert out.shape == (height, width, 3)
-    assert out.shape[1] >= 80 * 2
-    assert int(out[0, (out.shape[1] - 240) // 2, 0]) == 7
+    assert width >= 240 + 80
+    assert out.shape[1] >= 240 + 80
+    np.testing.assert_array_equal(out[:90, :240], frame)
     assert frame[0, 0, 0] == 7
-    band = out[90:]
-    assert (band[:, :, 1] == 180).any()
-    assert (band[:, :, 0] == 180).any()
+    # The label is drawn on the view, so the check is the middle of each one.
+    thumb_w, thumb_h = thumb_size(64, 48, 80)
+    assert thumb_w >= 80
+    gate_mid = out[thumb_h // 2, 240 + _INSET_GAP + thumb_w // 2]
+    pick_mid = out[thumb_h + _INSET_GAP + thumb_h // 2, 240 + _INSET_GAP + thumb_w // 2]
+    assert tuple(int(v) for v in gate_mid) == (0, 180, 0)
+    assert tuple(int(v) for v in pick_mid) == (180, 0, 0)

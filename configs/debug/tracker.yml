@@ -22,8 +22,8 @@
 video:
   frames_per_second: 30
   # Each detection view pasted into the free-camera file is at least this
-  # wide, in pixels. A 640 px camera shrunk into a 180 px band turns a box
-  # into a dot (`AC-CAM-05`).
+  # wide, in pixels. The views stack on the right, so a band under the
+  # picture does not cover the placing bins (`AC-CAM-05`, `AC-CAM-06`).
   inset_width_pixels: 480
   # Simulated seconds between rendered frames. At 0.0333 with 30 frames a
   # second the recording plays at real time, which is what a reader

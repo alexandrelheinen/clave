@@ -282,13 +282,15 @@ def inset_frame_size(
 
     Returns:
         `(width, height)` of the encoded frame. Both are even, which is
-        what the encoder's chroma format expects.
+        what the encoder's chroma format expects. The free camera keeps its
+        own size on the left. The views stack on the right (`AC-CAM-06`).
     """
     if panel_count <= 0 or min_width <= 0:
         return view_width, view_height
     thumb_w, thumb_h = thumb_size(panel_width, panel_height, min_width)
-    width = max(view_width, _INSET_GAP + panel_count * (thumb_w + _INSET_GAP))
-    height = view_height + _INSET_GAP + thumb_h + _INSET_GAP
+    width = view_width + _INSET_GAP + thumb_w + _INSET_GAP
+    stack = panel_count * thumb_h + max(0, panel_count - 1) * _INSET_GAP
+    height = max(view_height, stack)
     if width % 2:
         width += 1
     if height % 2:
@@ -302,22 +304,24 @@ def paste_camera_insets(
     *,
     min_width: int = 0,
 ) -> NDArray[np.uint8]:
-    """Copy each detection view, boxes included, along the bottom of a frame.
+    """Copy each detection view, boxes included, onto the right of a frame.
 
     The free-camera file is what a reader watches. The boxes stay on the
     detection views they were measured on (`AC-CAM-04`). A configured width
-    adds the views below the free camera instead of shrinking them over it,
-    so a box stays a rectangle (`AC-CAM-05`).
+    stacks the views down the right edge, and the frame grows so the free
+    camera, including the placing bins, is not covered (`AC-CAM-05`,
+    `AC-CAM-06`).
 
     Args:
         frame: The free-camera frame, height by width by three.
-        panels: `(name, image)` pairs, each image already boxed.
+        panels: `(name, image)` pairs, each image already boxed. The first
+            is the top of the stack.
         min_width: How wide each view must be, in pixels. Zero fits them
             into the bottom third of `frame`.
 
     Returns:
         The frame the encoder should write. With `min_width` set, this is
-        a taller image and `frame` itself is left unchanged.
+        a wider image and `frame` itself is left unchanged.
     """
     import cv2
 
@@ -339,14 +343,13 @@ def paste_camera_insets(
         min_width,
     )
     canvas = np.zeros((height, width, 3), dtype=np.uint8)
-    x_off = (width - frame.shape[1]) // 2
-    canvas[0 : frame.shape[0], x_off : x_off + frame.shape[1]] = frame
-    x0 = _INSET_GAP
-    y0 = frame.shape[0] + _INSET_GAP
+    canvas[0 : frame.shape[0], 0 : frame.shape[1]] = frame
+    x0 = frame.shape[1] + _INSET_GAP
+    y0 = 0
     for name, thumb in thumbs:
         canvas[y0 : y0 + thumb.shape[0], x0 : x0 + thumb.shape[1]] = thumb
         _label_inset(canvas, name, x0, y0, thumb.shape[1], thumb.shape[0])
-        x0 += thumb.shape[1] + _INSET_GAP
+        y0 += thumb.shape[0] + _INSET_GAP
     return canvas
 
 
