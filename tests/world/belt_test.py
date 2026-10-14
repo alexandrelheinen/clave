@@ -325,15 +325,27 @@ def test_a_resting_package_does_not_move_relative_to_the_belt_ac_rate_16() -> No
         mujoco.mj_step(model, data)
         conveyor.step(model, data)
     assert conveyor.active, "nothing was on the belt to test"
-    item = conveyor.active[0]
-    body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, item.name)
-    address = model.jnt_qposadr[model.body_jntadr[body]]
-    dof = model.jnt_dofadr[model.body_jntadr[body]]
+    # The oldest package has already left: at belt speed the belt is only
+    # a few seconds long. The one under test still has the half second
+    # of belt this check travels.
+    elapsed = 0.5
+    room = plan.belt.length / 2.0 - conveyor.speed * elapsed - 0.05
+    chosen: tuple[int, int] | None = None
+    for item in conveyor.active:
+        body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, item.name)
+        address = model.jnt_qposadr[model.body_jntadr[body]]
+        position = data.qpos[address : address + 3]
+        bottom = belt._body_bottom(model, data, body)
+        if belt._on_belt(position, plan, bottom) and float(position[0]) < room:
+            dof = model.jnt_dofadr[model.body_jntadr[body]]
+            chosen = (address, dof)
+            break
+    assert chosen is not None, "no package had belt left for the half second"
+    address, dof = chosen
     start_x = float(data.qpos[address])
     start_y = float(data.qpos[address + 1])
     data.qvel[dof + 5] = 5.0
     data.qvel[dof + 1] = 0.4
-    elapsed = 0.5
     for _ in range(int(elapsed / plan.timestep)):
         mujoco.mj_step(model, data)
         conveyor.step(model, data)
