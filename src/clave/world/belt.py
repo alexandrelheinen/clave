@@ -2,10 +2,12 @@
 
 MuJoCo has no conveyor primitive. Objects are free bodies. While one rests
 on the belt and the arm is not touching it, its travel is driven to belt
-speed and its lateral velocity and rotation are held at rest. That is a
-constraint written after the step, not a weld: the body stays free, and
-the constraint stops at the first contact with the arm so the grasp can
-lift it.
+speed, its lateral velocity is held at rest, and its orientation is put
+back on the flat face it was laid down on. Clearing the spin is not
+enough: the contact during a step still turns a tall face onto its side.
+That write is a constraint after the step, not a weld. The body stays
+free, and the constraint stops at the first contact with the arm so the
+grasp can lift it and turn it.
 
 **The pin must not continue through the grasp.** That was measured. With
 the spin held at zero while the jaw was already on the package, the belt's
@@ -36,6 +38,7 @@ stop, so an unpicked object is a throughput loss rather than a fault.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -43,7 +46,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from clave.world import arm
-from clave.world.config import Range
+from clave.world.config import Range, WorldConfigError, require
 from clave.world.scene import PARKED_X, PARKED_Z, SceneLayout
 
 
@@ -239,6 +242,8 @@ class Conveyor:
             rate at one over the interval whatever the belt does.
         lateral: Range the lateral placement is drawn from.
         drop: Range the drop height above the belt is drawn from.
+        rest_tilt: How far, in radians, a package may lean before the rest
+            constraint lays it back on the face it was spawned on.
         speed: What the belt is running at now, in meters per second. Held
             here rather than read from the layout because a feed controller
             moves it, and the layout is the line as configured rather than
@@ -250,6 +255,7 @@ class Conveyor:
     spacing: Range
     lateral: Range
     drop: Range
+    rest_tilt: float
     entry_margin: float = 0.0
     active: list[SpawnedObject] = field(default_factory=list)
     speed: float | None = None
@@ -457,13 +463,17 @@ class Conveyor:
             if on_belt and body not in held:
                 # Rest until the arm arrives. Vertical motion stays with the
                 # contact solver so the package can settle, and so a lift is
-                # not fought on the tick the constraint lets go.
+                # not fought on the tick the constraint lets go. The
+                # orientation is restored as well as the rate: a contact
+                # during the step still turns a tall face onto its side,
+                # and the jaw then cannot lift it.
                 _rest_package(
                     data,
                     velocity,
                     self.running,
                     body in touching,
                 )
+                _hold_flat(data, address, self.rest_tilt)
             elif _on_takeaway(position, self.plan):
                 # Drive sorted objects along the take-away conveyor away from the line.
                 data.qvel[velocity + 1] = -self.plan.takeaway.speed
@@ -594,6 +604,52 @@ def _rest_package(
         data.qvel[velocity + 1] = 0.0
     for axis in range(3, 6):
         data.qvel[velocity + axis] = 0.0
+
+
+def flat_tilt(spawn: Any) -> float:
+    """Return how far a resting package may lean before it is laid flat.
+
+    Args:
+        spawn: The spawn configuration block.
+
+    Returns:
+        The lean, in radians.
+
+    Raises:
+        WorldConfigError: If the configured lean is not between zero and
+            a right angle.
+    """
+    tilt = float(require(spawn, "rest_tilt_radians", "spawn"))
+    if not 0.0 < tilt < math.pi / 2.0:
+        raise WorldConfigError(
+            f"spawn.rest_tilt_radians is {tilt}; it has to lie between zero "
+            "and a right angle"
+        )
+    return tilt
+
+
+def _hold_flat(data: Any, address: int, limit: float) -> None:
+    """Lay a resting package back onto the face it was spawned on.
+
+    Clearing the angular velocity does not undo a turn the contact
+    solver already integrated. A tall face tips during that step and
+    then rides on its side, which is the pose the jaw cannot lift.
+    The spawn orientation is that flat face. A lean inside `limit` is
+    the solver seating that face, and overwriting it drags the package
+    along the belt. Restoring a lean past it leaves the body free to
+    translate. The caller stops once the arm is touching, so the grasp
+    can turn the package as it lifts.
+
+    Args:
+        data: The state, modified in place.
+        address: Index of the body's free-joint position.
+        limit: Lean, in radians, past which the face is restored.
+    """
+    quat = data.qpos[address + 3 : address + 7]
+    sine = math.sqrt(float(quat[1]) ** 2 + float(quat[2]) ** 2 + float(quat[3]) ** 2)
+    if 2.0 * math.atan2(sine, float(quat[0])) <= limit:
+        return
+    data.qpos[address + 3 : address + 7] = (1.0, 0.0, 0.0, 0.0)
 
 
 def _packages_touching_arm(mujoco: Any, model: Any, data: Any) -> set[int]:

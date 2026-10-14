@@ -125,6 +125,7 @@ def conveyor_for(
         config.require_range(spawn, "spacing_meters", "spawn"),
         config.require_range(spawn, "lateral_offset_meters", "spawn"),
         config.require_range(spawn, "drop_height_meters", "spawn"),
+        belt.flat_tilt(spawn),
         entry_margin=float(spawn["entry_margin_meters"]),
     )
 
@@ -144,6 +145,7 @@ def test_objects_reach_belt_speed_and_enter_the_window() -> None:
         config.require_range(spawn, "spacing_meters", "spawn"),
         config.require_range(spawn, "lateral_offset_meters", "spawn"),
         config.require_range(spawn, "drop_height_meters", "spawn"),
+        belt.flat_tilt(spawn),
         entry_margin=float(spawn["entry_margin_meters"]),
     )
     for _ in range(12000):
@@ -193,6 +195,7 @@ def test_an_unpicked_object_is_not_removed() -> None:
         config.require_range(spawn, "spacing_meters", "spawn"),
         config.require_range(spawn, "lateral_offset_meters", "spawn"),
         config.require_range(spawn, "drop_height_meters", "spawn"),
+        belt.flat_tilt(spawn),
         entry_margin=float(spawn["entry_margin_meters"]),
     )
     seen: dict[str, float] = {}
@@ -340,6 +343,17 @@ def test_a_resting_package_does_not_move_relative_to_the_belt_ac_rate_16() -> No
         start_x + 0.35 * elapsed, abs=0.01
     )
     assert float(data.qpos[address + 1]) == pytest.approx(start_y, abs=0.01)
+    quat = data.qpos[address + 3 : address + 7]
+    sine = float(np.linalg.norm(quat[1:]))
+    lean = 2.0 * float(np.arctan2(sine, float(quat[0])))
+    assert lean <= float(raw["spawn"]["rest_tilt_radians"])
+    # Past the configured lean, and still inside the belt's height band.
+    # A right angle swings the mesh through the belt, so the drive no
+    # longer sees a package resting on it.
+    data.qpos[address + 3 : address + 7] = [0.99500417, 0.09983342, 0.0, 0.0]
+    conveyor.step(model, data)
+    assert float(data.qpos[address + 3]) == pytest.approx(1.0)
+    assert data.qpos[address + 4 : address + 7] == pytest.approx((0.0, 0.0, 0.0))
 
 
 def test_packages_lie_flat_and_stay_graspable_ac_rate_16() -> None:
@@ -419,9 +433,13 @@ def test_an_arm_contact_releases_the_rest_constraint_ac_rate_16() -> None:
     data.qpos[address : address + 3] = [0.0, 0.0, plan.belt.surface_height]
     data.qvel[velocity] = 0.1
     data.qvel[velocity + 5] = 1.5
+    data.qpos[address + 3 : address + 7] = [0.70710678, 0.70710678, 0.0, 0.0]
     conveyor.step(model, data)
     assert float(data.qvel[velocity + 5]) == pytest.approx(1.5)
     assert float(data.qvel[velocity]) == pytest.approx(0.1)
+    assert data.qpos[address + 3 : address + 7] == pytest.approx(
+        (0.70710678, 0.70710678, 0.0, 0.0)
+    )
 
 
 def _rest_on_surface(

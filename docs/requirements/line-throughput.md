@@ -138,7 +138,11 @@ that contact is describing the failure this measurement recorded.
 `AC-RATE-16`: When a package rests on the belt and no arm geometry is
 touching it, the system shall carry it at belt speed, with no lateral
 velocity and no rotation, so it does not roll, slide, or tumble relative
-to the belt. Vertical motion stays with the contact solver, so the package
+to the belt. Clearing the angular velocity is not enough, because the
+contact during a step still turns the body, and a tall face then stays
+on its side. The orientation is restored to the flat pose it was laid
+down in, until the arm touches it. Vertical motion stays with the contact
+solver, so the package
 can settle on the surface. When two packages touch, the system shall still
 hold the rotation at rest but shall leave the linear velocity the contact
 solver produced, so the drive does not ram one through the other. When arm

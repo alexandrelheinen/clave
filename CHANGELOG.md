@@ -39,7 +39,10 @@ Centers at 0.125 m on the belt the shipped line already runs.
   The compiler recenters the scan and a quarter turn used to swing that
   centre out across the belt, so a grasp or a camera aimed at the body
   missed the package. The geom position cancels that shift: the centre
-  lies on the body and the bottom lies at the body's height.
+  lies on the body and the bottom lies at the body's height. Clearing
+  the spin left a tall face free to tip during the contact step and
+  then ride on its side, where the jaw closes and the package does not
+  rise. Until the arm touches it, the flat pose is restored.
   Until the arm touches it, the belt carries it at belt speed with no
   lateral velocity and no rotation. The constraint stops at that
   contact, so the grasp can lift it. On the seed-0 high-flow run,

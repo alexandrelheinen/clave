@@ -119,6 +119,11 @@ spawn:
   # live only at condim 6.
   rest_friction: [1.0, 0.05, 0.02]
   rest_condim: 6
+  # A lean past this, in radians, is no longer the face the package was
+  # laid on. The rest constraint puts it back. A smaller lean is the
+  # contact solver seating that face, and overwriting it drags the
+  # package along the belt.
+  rest_tilt_radians: 0.10
 
 # Holding the line at a rate rather than letting it be whatever the feeder
 # produced. docs/requirements/line-throughput.md carries the spec.

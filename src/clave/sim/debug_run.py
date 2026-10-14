@@ -431,6 +431,7 @@ def run(
         spacing,
         config.require_range(spawn, "lateral_offset_meters", "spawn"),
         config.require_range(spawn, "drop_height_meters", "spawn"),
+        belt.flat_tilt(spawn),
         entry_margin=float(config.require(spawn, "entry_margin_meters", "spawn")),
     )
     # The belt speed the layout drew is where the loop starts, not where it

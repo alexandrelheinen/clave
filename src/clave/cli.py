@@ -145,6 +145,7 @@ def _world_probe(root: Path, seconds: float, seed: int) -> int:
         config.require_range(spawn, "spacing_meters", "spawn"),
         config.require_range(spawn, "lateral_offset_meters", "spawn"),
         config.require_range(spawn, "drop_height_meters", "spawn"),
+        belt.flat_tilt(spawn),
         entry_margin=float(config.require(spawn, "entry_margin_meters", "spawn")),
     )
     report = conveyor.report
