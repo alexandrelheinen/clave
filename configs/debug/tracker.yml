@@ -21,6 +21,10 @@
 # poses and none of the motion this is meant to show is visible.
 video:
   frames_per_second: 30
+  # Each detection view pasted into the free-camera file is at least this
+  # wide, in pixels. A 640 px camera shrunk into a 180 px band turns a box
+  # into a dot (`AC-CAM-05`).
+  inset_width_pixels: 480
   # Simulated seconds between rendered frames. At 0.0333 with 30 frames a
   # second the recording plays at real time, which is what a reader
   # comparing the arm against the belt needs.
@@ -61,3 +65,15 @@ views:
     elevation_degrees: -26.0
     distance_meters: 4.00
     lookat_meters: [0.00, -0.45, 1.05]
+
+  # Level with the packages, looking across the belt, so travel is
+  # horizontal and height is vertical. Close enough that a package top
+  # and the jaw are separate shapes. The picks in a dense run land
+  # between about -0.2 m and 0.8 m along the belt.
+  side:
+    width: 960
+    height: 540
+    azimuth_degrees: 90.0
+    elevation_degrees: 0.0
+    distance_meters: 0.85
+    lookat_meters: [0.28, -0.08, 0.98]

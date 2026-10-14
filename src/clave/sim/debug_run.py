@@ -93,6 +93,7 @@ from clave.sim.overlay import (
     _view,
     _without_shadows,
     _write_beliefs,
+    inset_frame_size,
     paste_camera_insets,
 )
 from clave.sim.report import (
@@ -290,6 +291,7 @@ def run(
     render_mode: str = "lite",
     routing_path: Path | None = None,
     feed_path: Path | None = None,
+    video_interval: float | None = None,
 ) -> DebugRunReport:
     """Drive the tracker over one rollout, annotating every capture.
 
@@ -333,6 +335,9 @@ def run(
         feed_path: A debug feed file naming a rate, a belt speed and a
             spacing for this run, or None to keep the shipped line. The
             shipped world file is not edited.
+        video_interval: Simulated seconds between video frames, or None for
+            the interval in the debug configuration. A smaller interval
+            plays slower at the same playback rate.
 
     Returns:
         The report.
@@ -734,9 +739,29 @@ def run(
     believed = out / "records.txt"
     believed.write_text("")
     movie = config.require(debug, "video")
-    movie_interval = float(config.require(movie, "interval_seconds", "video"))
+    movie_interval = (
+        float(config.require(movie, "interval_seconds", "video"))
+        if video_interval is None
+        else video_interval
+    )
+    if movie_interval <= 0.0:
+        raise DebugRunError(f"video interval {movie_interval} s must be above zero")
     playback = fps or int(config.require(movie, "frames_per_second"))
-    recorder = _recorder(view, out, playback, movie_interval) if video else None
+    inset_width = int(config.require(movie, "inset_width_pixels", "video"))
+    # The free-camera file grows to hold the detection views at the
+    # configured width. The recorder has to be opened at that size, because
+    # the encoder rejects a frame that is not the size it was started with.
+    film = dict(view)
+    if video and camera_video and inset_width > 0:
+        film["width"], film["height"] = inset_frame_size(
+            int(view["width"]),
+            int(view["height"]),
+            render[0],
+            render[1],
+            len(detecting),
+            inset_width,
+        )
+    recorder = _recorder(film, out, playback, movie_interval) if video else None
     # The detection-camera file is a second render. It stays unbuilt unless
     # asked for, which is what keeps a headless run from paying for it
     # (`AC-CAM-01`).
@@ -1177,7 +1202,7 @@ def run(
                     render_mode=render_mode,
                 )
                 if panels and recorder is not None:
-                    paste_camera_insets(frame, panels)
+                    frame = paste_camera_insets(frame, panels, min_width=inset_width)
                 if recorder is not None:
                     recorder.write(frame)
                 if opened and tracker_cam is not None:

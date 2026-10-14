@@ -45,6 +45,12 @@ one file sees the cameras. The separate `camera-debug.mp4` of the primary
 detection camera is unchanged. Without `--camera-video` the free-camera
 file is the free camera alone, and no detection-camera renderer is built.
 
+`AC-CAM-05`: Each detection view pasted into the free-camera file shall be
+at least the configured inset width, so a box around an object is a
+rectangle a reader can see, not a mark a few pixels across. The free-camera
+image itself is not covered to make room: the views are added along the
+bottom and the frame grows to hold them.
+
 ## Constraints
 
 The colour frame and the segmentation are separate renders of one camera at
