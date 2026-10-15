@@ -117,6 +117,101 @@ def _aabb_support_down(rotation: Any, centre: float, size: Any) -> float:
     )
 
 
+def _highest_world_z(model: Any, data: Any, geom: int) -> float:
+    """Return the highest height of one collision geom's own volume.
+
+    The same bound as `_lowest_world_z`, read upward. A mesh uses its local
+    AABB, which never sits below the true mesh, so a height above this top
+    is a height above the object.
+
+    Args:
+        model: The compiled model.
+        data: Its state, with forward kinematics current.
+        geom: The geom to measure.
+
+    Returns:
+        The highest world height of that geom, in meters.
+    """
+    import mujoco
+
+    rotation = data.geom_xmat[geom].reshape(3, 3)
+    centre = float(data.geom_xpos[geom][2])
+    size = model.geom_size[geom]
+    kind = int(model.geom_type[geom])
+    if kind in (int(mujoco.mjtGeom.mjGEOM_BOX), int(mujoco.mjtGeom.mjGEOM_MESH)):
+        return centre + (
+            abs(float(rotation[2, 0])) * float(size[0])
+            + abs(float(rotation[2, 1])) * float(size[1])
+            + abs(float(rotation[2, 2])) * float(size[2])
+        )
+    if kind == int(mujoco.mjtGeom.mjGEOM_SPHERE):
+        return centre + float(size[0])
+    if kind in (
+        int(mujoco.mjtGeom.mjGEOM_CYLINDER),
+        int(mujoco.mjtGeom.mjGEOM_CAPSULE),
+    ):
+        return centre + abs(float(rotation[2, 2])) * float(size[1]) + float(size[0])
+    return centre + float(max(size))
+
+
+def body_geoms(model: Any, body: int) -> tuple[int, ...]:
+    """Return the collision geoms bolted to one body.
+
+    Args:
+        model: The compiled model.
+        body: The body id.
+
+    Returns:
+        The geom ids, in model order. Empty when the body has none.
+    """
+    start = int(model.body_geomadr[body])
+    count = int(model.body_geomnum[body])
+    if start < 0 or count <= 0:
+        return ()
+    return tuple(range(start, start + count))
+
+
+def body_top(model: Any, data: Any, body: int) -> float:
+    """Return the highest world height of a body's collision geometry.
+
+    Args:
+        model: The compiled model.
+        data: Its state, with forward kinematics current.
+        body: The body id.
+
+    Returns:
+        The top, in meters. A body with no geometry answers with its centre
+        of mass, which is the only height it has.
+    """
+    geoms = body_geoms(model, body)
+    if not geoms:
+        return float(data.xipos[body][2])
+    return max(_highest_world_z(model, data, geom) for geom in geoms)
+
+
+def geoms_touch(data: Any, left: tuple[int, ...], right: tuple[int, ...]) -> bool:
+    """Return whether any geom in `left` touches any geom in `right`.
+
+    Args:
+        data: The simulated state, contacts current.
+        left: One side of the pair, usually the jaw.
+        right: The other side, usually the target.
+
+    Returns:
+        Whether the contact list holds one such pair. MuJoCo reports a pair
+        in whichever order its broad phase produced.
+    """
+    one = set(left)
+    other = set(right)
+    if not one or not other:
+        return False
+    for index in range(data.ncon):
+        pair = {int(data.contact[index].geom1), int(data.contact[index].geom2)}
+        if pair & one and pair & other:
+            return True
+    return False
+
+
 def _lowest_world_z(model: Any, data: Any, geom: int) -> float:
     """Return the lowest height of one collision geom's own volume.
 

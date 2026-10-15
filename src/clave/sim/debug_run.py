@@ -64,7 +64,7 @@ from numpy.typing import NDArray
 from clave.control.motion import Command, Reference, toward
 from clave.control.pick import JAW_OPEN
 from clave.control.selection import Selector, pickable_in_belt
-from clave.control.servo import follow
+from clave.control.servo import follow, lead_velocity
 from clave.control.settings import ControlSettings, Phase
 from clave.control.story import AnomalyWatch, StoryLog
 from clave.control.task import TaskMachine
@@ -75,7 +75,11 @@ from clave.sim.clearance import (
     _jaw_collision_geoms,
     _jaw_state,
     _mesh_vertices,
+    body_geoms,
+    body_top,
+    geoms_touch,
 )
+from clave.sim.grasp_path import GraspPathWatch
 from clave.sim.overlay import (
     _camera_frame,
     _camera_recorder,
@@ -689,6 +693,7 @@ def run(
     # And how the tool was turned against the object it closed on, which only a
     # ground-truth run can measure.
     yaw_errors: list[float] = []
+    path = GraspPathWatch()
     counted = 0
     # And how near the jaw came to any object at all when it shut, which is
     # the figure that separates a visit tick that missed from a grasp that let go.
@@ -900,6 +905,10 @@ def run(
             while len(conveyor.arrivals) > counted:
                 feeding.arrived(conveyor.arrivals[counted])
                 counted += 1
+            # The speed this tick's step already drove at. The update below
+            # is the speed of the next step, and using it would book one
+            # tick of belt travel the package has not had.
+            driven = conveyor.running
             conveyor.speed = feeding.update(data.time, plan.timestep)
 
             # The deciders run at the capture cadence and the servo runs at
@@ -1066,23 +1075,31 @@ def run(
             tick_refusal: str | None = None
             if command is not None:
                 moving = command.velocity
-                # Lead cancels lag on a moving approach. Through DESCEND/HOLD the
-                # command should already match the object; extrapolating a large
-                # lateral quintic residual (seed-0 peak |vy| ≈ 0.94 m/s) only
-                # throws the jaw past the grasp.
-                lead = (
-                    0.0
-                    if flown is not None and flown.phase in (Phase.DESCEND, Phase.HOLD)
-                    else control.servo.lead_seconds
+                # The lead stays on through the descent and the hold. Turning
+                # it off there leaves the flange one lead-time upstream of a
+                # command that is moving at belt speed, and the jaw is already
+                # below the package while that error grows (AC-BEHAVE-07).
+                # The across-belt component stays unleaded: a residual there,
+                # led forward, is the sideways jab a descent used to make.
+                on_package = flown is not None and flown.phase in (
+                    Phase.DESCEND,
+                    Phase.HOLD,
+                )
+                servo_command = Command(
+                    position=command.position,
+                    yaw=command.yaw,
+                    speed=command.speed,
+                    velocity=lead_velocity(command.velocity, drop_lateral=on_package),
+                    aim=command.aim,
                 )
                 stepped = follow(
                     model,
                     data,
                     indices,
-                    command,
+                    servo_command,
                     control.servo.gain,
                     max_joint_step=joint_step,
-                    lead_seconds=lead,
+                    lead_seconds=control.servo.lead_seconds,
                     keep_inside=keep_inside,
                 )
                 if stepped.refusal is not None:
@@ -1114,6 +1131,19 @@ def run(
                 subject = goal.track_id
             tracking_error = (
                 None if command is None else distance(place, command.position)
+            )
+            _note_grasp_path(
+                path,
+                mujoco,
+                model,
+                data,
+                conveyor,
+                indices,
+                jaw_geoms,
+                jaw,
+                None if task.plan is None else task.plan.track_id,
+                driven,
+                flown is not None and flown.grip >= 0.5,
             )
             watch.observe(
                 data.time,
@@ -1479,6 +1509,7 @@ def run(
         )
         LOGGER.info("routing comparison written: %s", comparison)
 
+    path.finish()
     report = DebugRunReport(
         captures=captures,
         tracks=len(tracker.settle(at_nanos=int(data.time * NANOS_PER_SECOND))),
@@ -1522,6 +1553,9 @@ def run(
         worst_tool_tilt_degrees=tilt,
         metadata_path=metadata_path,
         render_mode=render_mode,
+        contact_slide_meters=tuple(path.slides),
+        contact_turn_radians=tuple(path.turns),
+        above_object_meters=tuple(path.above),
     )
     written_report = out / "report.json"
     written_report.write_text(
@@ -1576,6 +1610,76 @@ def _park_the_arm(
     for slot, actuator in enumerate(indices.actuator_ids):
         data.ctrl[actuator] = angles[slot]
     mujoco.mj_forward(model, data)
+
+
+def _note_grasp_path(
+    watch: GraspPathWatch,
+    mujoco: Any,
+    model: Any,
+    data: Any,
+    conveyor: Any,
+    indices: Any,
+    jaw_geoms: tuple[int, ...],
+    jaw: JawState,
+    track: int | None,
+    belt_speed: float,
+    jaw_shut: bool,
+) -> None:
+    """Record one tick of the visit against the package it is aimed at.
+
+    Args:
+        watch: The accumulator.
+        mujoco: The imported module.
+        model: The compiled model.
+        data: Its state, with forward kinematics current.
+        conveyor: The belt, whose active objects carry the visit's serial.
+        indices: The arm indices.
+        jaw_geoms: The jaw's collision geoms.
+        jaw: The jaw's height this tick.
+        track: The plan's target, or None when the arm is not on a visit.
+        belt_speed: The speed the belt drove at on this tick.
+        jaw_shut: Whether the jaw is commanded shut.
+    """
+    if track is None:
+        watch.observe(
+            track=None,
+            time=float(data.time),
+            pinch_xy=(0.0, 0.0),
+            lowest_z=jaw.lowest_z,
+            object_xy=(0.0, 0.0),
+            object_top_z=0.0,
+            object_quat=(1.0, 0.0, 0.0, 0.0),
+            belt_speed=belt_speed,
+            contacting=False,
+            jaw_shut=False,
+        )
+        return
+    item = next((active for active in conveyor.active if active.serial == track), None)
+    if item is None:
+        return
+    body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, item.name)
+    if body < 0:
+        return
+    centre = data.xipos[body]
+    pinch = _pinch(indices, data)
+    quat = data.xquat[body]
+    watch.observe(
+        track=track,
+        time=float(data.time),
+        pinch_xy=(float(pinch[0]), float(pinch[1])),
+        lowest_z=jaw.lowest_z,
+        object_xy=(float(centre[0]), float(centre[1])),
+        object_top_z=body_top(model, data, int(body)),
+        object_quat=(
+            float(quat[0]),
+            float(quat[1]),
+            float(quat[2]),
+            float(quat[3]),
+        ),
+        belt_speed=belt_speed,
+        contacting=geoms_touch(data, jaw_geoms, body_geoms(model, int(body))),
+        jaw_shut=jaw_shut,
+    )
 
 
 def _object_position_world(

@@ -11,7 +11,7 @@ import pytest
 from numpy.typing import NDArray
 
 from clave.control.motion import Command
-from clave.control.servo import follow
+from clave.control.servo import follow, lead_velocity
 from clave.world.config import load
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -561,6 +561,25 @@ def test_what_is_left_fits_inside_the_jaw_clearance(world: Any) -> None:
     tightest = (0.0852 - 0.0678) / 2.0
     for speed in (0.31, 0.50, 1.00):
         assert track(world, speed, settings.servo.lead_seconds) < tightest
+
+
+def test_the_descent_keeps_the_along_belt_lead() -> None:
+    """AC-BEHAVE-07: the descent leads with the belt, not across it.
+
+    Switching the lead off on the way down leaves the flange one lead-time
+    upstream of the package. At the shipped belt speed and the 33 ms lead
+    that is 8 mm, and the jaw is already below the package while the error
+    grows. The across-belt component stays unleaded, because leading that
+    residual is the sideways jab.
+    """
+    velocity = np.asarray((0.25, 0.94, -0.25), dtype=np.float64)
+    led = lead_velocity(velocity, drop_lateral=True)
+    assert led[0] == pytest.approx(0.25)
+    assert led[1] == pytest.approx(0.0)
+    assert led[2] == pytest.approx(-0.25)
+    assert float(velocity[1]) == pytest.approx(0.94)
+    kept = lead_velocity(velocity, drop_lateral=False)
+    assert kept[1] == pytest.approx(0.94)
 
 
 def test_a_lead_at_the_edge_of_reach_is_projected_rather_than_refused(

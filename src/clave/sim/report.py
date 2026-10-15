@@ -6,6 +6,7 @@ and the command that produced it sit next to the figures.
 
 from __future__ import annotations
 
+import math
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -146,6 +147,18 @@ class DebugRunReport:
         windowed: Whether a live window was opened.
         reason: Why no window was opened, when none was.
         render_mode: Render mode used ('lite' or 'demo'/'realistic').
+        contact_slide_meters: How far the target moved horizontally relative
+            to the belt between the first gripper contact and the jaw being
+            commanded shut, in meters, one per close that touched. About zero
+            when the jaw came down on the package instead of sweeping it
+            (`AC-BEHAVE-07`).
+        contact_turn_radians: How far that target rotated over the same
+            interval, in radians, one per close.
+        above_object_meters: The lowest the gripper's geometry sat above the
+            target's top while the pinch was more than 5 mm off the target,
+            in meters, one per visit that had such a sample. Negative means
+            some part of the jaw was already below the top while it was not
+            yet over the package.
     """
 
     captures: int
@@ -189,6 +202,9 @@ class DebugRunReport:
     ground_truth: bool = False
     camera_video_path: Path | None = None
     render_mode: str = "lite"
+    contact_slide_meters: tuple[float, ...] = ()
+    contact_turn_radians: tuple[float, ...] = ()
+    above_object_meters: tuple[float, ...] = ()
 
 
 def _report_document(report: DebugRunReport) -> dict[str, Any]:
@@ -295,6 +311,22 @@ def report_lines(report: DebugRunReport) -> tuple[str, ...]:
     if report.jaw_gaps:
         each = ", ".join(f"{gap * 1000:.0f}" for gap in report.jaw_gaps)
         lines.append(f"  jaw to object   {each} mm when the jaw shut")
+    if report.contact_slide_meters:
+        slides = ", ".join(
+            f"{slide * 1000:.1f}" for slide in report.contact_slide_meters
+        )
+        turns = ", ".join(
+            f"{math.degrees(turn):.2f}" for turn in report.contact_turn_radians
+        )
+        lines.append(f"  before close    slide {slides} mm, turn {turns} deg")
+    if report.above_object_meters:
+        each = ", ".join(
+            f"{height * 1000:.1f}" for height in report.above_object_meters
+        )
+        lines.append(
+            f"  above the object {each} mm at worst while the pinch was "
+            f"more than 5 mm off"
+        )
     if report.grasp_yaw_errors:
         each = ", ".join(f"{error:.1f}" for error in report.grasp_yaw_errors)
         lines.append(f"  tool turned off {each} deg from the object's own axis")

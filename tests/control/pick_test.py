@@ -727,7 +727,10 @@ def test_an_approach_correction_past_the_ceiling_is_taken_part_way() -> None:
     plan = a_plan(margin=1.15)
     assert plan is not None
     track = next(leg.segment for leg in plan.legs if leg.phase is Phase.TRACK)
-    at = track.duration - 0.30
+    # Late, with less than half a second of the approach left. A tenth less
+    # and no positive fraction of a 1.10 m correction stays under the ceiling,
+    # which is the plan already in hand rather than a partial correction.
+    at = track.duration - 0.45
     wild = np.asarray(
         (OBJECT[0] + BELT[0] * at, OBJECT[1] + 1.10, OBJECT[2]),
         dtype=np.float64,
@@ -967,3 +970,101 @@ def test_descent_retarget_does_not_project_lateral_drift() -> None:
     )
     assert end[1] == pytest.approx(0.020, abs=1e-6)
     assert abs(end[1] - (0.020 + 0.50 * remaining)) > 0.05
+
+
+def test_the_jaw_is_over_the_package_before_any_part_drops_below_it() -> None:
+    """AC-BEHAVE-07: the jaw is over the package before any part drops below it.
+
+    From the shipped park, at the slow end of the belt, for packages across
+    the window. While the flange is more than 5 mm off the package, the
+    lowest point of the open jaw stays above a crushed package's top. The
+    descent then stays inside those 5 mm, with the jaw still open, and it
+    covers the same along-belt travel the package does.
+    """
+    from pathlib import Path
+
+    from clave.control.settings import ControlSettings
+    from clave.sim.grasp_path import MISALIGN_METERS
+    from clave.world.config import load, require
+    from clave.world.effector import Effector
+
+    root = Path(__file__).resolve().parents[2]
+    world = load(root / "configs" / "world" / "sorting_line.yml")
+    control = ControlSettings.load(load(root / "configs" / "runtime" / "control.yml"))
+    effector = Effector.load(world)
+    surface = float(require(require(world, "belt"), "surface_height_meters", "belt"))
+    crushed = float(require(require(world, "spawn"), "crushed_height_meters", "spawn"))
+    width = float(require(require(world, "belt"), "width_meters", "belt"))
+    belt = float(require(require(world, "belt"), "speed_meters_per_second", "belt")[0])
+    centre = surface + crushed / 2.0
+    pinch = max(centre, surface + effector.open_pinch_floor)
+    flange_z = pinch + effector.finger_length
+    top = surface + crushed
+    park = control.task.park_position_world
+    motion = control.motion
+    task = control.task
+    border = -width / 2.0
+    safe = surface + (
+        task.safe_clearance if task.safe_clearance is not None else task.approach_height
+    )
+    mouth = np.asarray((0.58, park[1], surface), dtype=np.float64)
+    velocity = np.asarray((belt, 0.0, 0.0), dtype=np.float64)
+    planned = 0
+    for along, across in ((-0.60, 0.0), (-0.20, 0.05), (0.20, 0.0), (0.50, -0.05)):
+        target = np.asarray((along, across, flange_z), dtype=np.float64)
+        plan = plan_pick(
+            flange=State.at_rest(park),
+            track_id=1,
+            object_position=target,
+            belt_velocity=velocity,
+            z_offset=task.grasp_clearance,
+            approach_speed=task.approach_speed,
+            dwell_seconds=task.dwell_seconds,
+            max_speed=motion.max_speed,
+            max_acceleration=motion.max_acceleration,
+            latest=task.interception_limit,
+            at_seconds=0.0,
+            margin=task.interception_margin,
+            over=mouth,
+            drift_horizon=task.drift_horizon,
+            minimum_segment_seconds=motion.minimum_segment_seconds,
+            closing_rise_seconds=task.closing_rise_seconds,
+            segment_sample_count=motion.segment_sample_count,
+            bisection_passes=motion.bisection_passes,
+            minimum_delivery_seconds=motion.minimum_delivery_seconds,
+            correction_steps=motion.correction_steps,
+            belt_border_y=border,
+            safe_height_world=safe,
+        )
+        assert plan is not None, f"no plan onto x={along}"
+        planned += 1
+        track = [leg for leg in plan.legs if leg.phase is Phase.TRACK][-1]
+        dropping = next(leg for leg in plan.legs if leg.phase is Phase.DESCEND)
+        assert track.grip == JAW_OPEN
+        assert dropping.grip == JAW_OPEN
+        gap = dropping.segment.end.position[0] - track.segment.end.position[0]
+        assert gap == pytest.approx(belt * dropping.segment.duration)
+        clock = 0.0
+        for leg in plan.legs:
+            if leg.phase not in (Phase.TRACK, Phase.DESCEND):
+                clock += leg.segment.duration
+                continue
+            for step in range(81):
+                elapsed = leg.segment.duration * step / 80
+                state = leg.segment.at(elapsed)
+                carried = target[0] + belt * (clock + elapsed)
+                miss = math.hypot(
+                    state.position[0] - carried, state.position[1] - target[1]
+                )
+                lowest = state.position[2] - effector.open_lowest_below_flange
+                if leg.phase is Phase.DESCEND:
+                    assert miss <= MISALIGN_METERS, (
+                        f"x={along} descent is {miss * 1000:.1f} mm off the package"
+                    )
+                elif miss > MISALIGN_METERS:
+                    assert lowest >= top, (
+                        f"x={along} the jaw is {(top - lowest) * 1000:.1f} mm "
+                        f"into the package while still {miss * 1000:.0f} mm off it"
+                    )
+            clock += leg.segment.duration
+    assert planned == 4
