@@ -813,12 +813,7 @@ class TaskMachine:
             and grip >= 0.5
             and self._plan is not None
         ):
-            # The seat is a fraction of the driver stroke. The dwell is the
-            # backup when a package stops the fingers short of it, so the
-            # rise still waits out the close.
-            seated = jaw_travel >= self._settings.grasp_seat_fraction or (
-                self._seating and self._seat_wait >= self._settings.dwell_seconds
-            )
+            seated = jaw_travel >= self._settings.grasp_seat_fraction
             if not seated:
                 if not self._seating:
                     self._seating = True
@@ -836,6 +831,17 @@ class TaskMachine:
                 else:
                     self._seat_wait += dt
                     self._seat_lag += dt
+                    if self._seat_wait >= self._settings.dwell_seconds:
+                        track = self._plan.track_id
+                        self._last_visit_closed = False
+                        self._abandon(
+                            track,
+                            at_seconds,
+                            "the fingers did not seat on the object",
+                            None,
+                            False,
+                        )
+                        return None
                 frozen = self._plan.at(self._plan.pick_at)
                 if frozen is not None:
                     phase, state, _ignored = frozen
