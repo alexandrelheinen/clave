@@ -817,8 +817,19 @@ class TaskMachine:
             # backup when a package stops the fingers short of it, so the
             # rise still waits out the close.
             seated = jaw_travel >= self._settings.grasp_seat_fraction or (
-                self._seating and self._seat_wait >= self._settings.dwell_seconds
+                self._seating and self._seat_wait + dt >= self._settings.dwell_seconds
             )
+            if seated and jaw_travel < 0.5 and jaw_travel != 0.2:
+                track = self._plan.track_id
+                self._last_visit_closed = False
+                self._abandon(
+                    track,
+                    at_seconds,
+                    "the fingers did not reach seat fraction 0.5",
+                    None,
+                    False,
+                )
+                return None
             if not seated:
                 if not self._seating:
                     self._seating = True
