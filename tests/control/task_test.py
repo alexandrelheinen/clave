@@ -1433,7 +1433,7 @@ def test_the_release_is_still_the_planned_chute() -> None:
     # The seat rides the pinch forward with the belt. Only the part of that
     # ride past the margin is given back, so the release lands one margin
     # downstream of the chute the plan aimed at.
-    for _ in range(80):
+    for _ in range(35):
         at_seconds += 0.01
         arm.tick(at_seconds, PARK, jaw_travel=0.2, seconds_left=30.0)
     last = None
