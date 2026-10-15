@@ -1,12 +1,10 @@
-import math
-import numpy as np
-
-from clave.control.selection import Candidate
 from clave.control.task import Phase
-from .task_test import machine, PARK, queue_of, candidate, Profile
+
+from .task_test import PARK, Profile, candidate, machine, queue_of
+
 
 def test_jaw_seat_abandon() -> None:
-    """If the jaws never seat, abandon the pick; do not treat close-dwell expiry as a successful seat."""
+    """If the jaws never seat, abandon the pick."""
     arm = machine(
         profile=Profile.FULL_VISIT,
         grasp_seat_fraction=0.70,
@@ -25,7 +23,7 @@ def test_jaw_seat_abandon() -> None:
 
     # Keep passing jaw_travel=0.2 (below seat) until tick returns None
     finished = "not none"
-    for _ in range(80):  # More than enough to trigger dwell expiry (0.15s / 0.01s = 15 ticks)
+    for _ in range(80):  # Trigger dwell expiry
         at_seconds += 0.01
         flown = arm.tick(at_seconds, PARK, jaw_travel=0.2, seconds_left=30.0)
         if flown is None:
