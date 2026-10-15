@@ -819,6 +819,17 @@ class TaskMachine:
             seated = jaw_travel >= self._settings.grasp_seat_fraction or (
                 self._seating and self._seat_wait >= self._settings.dwell_seconds
             )
+            if seated and jaw_travel < 0.5:
+                track = self._plan.track_id
+                self._last_visit_closed = False
+                self._abandon(
+                    track,
+                    at_seconds,
+                    "the fingers did not reach seat fraction 0.5",
+                    None,
+                    False,
+                )
+                return None
             if not seated:
                 if not self._seating:
                     self._seating = True
