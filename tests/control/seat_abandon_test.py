@@ -1,10 +1,13 @@
 from __future__ import annotations
+
 import math
 from typing import cast
-import numpy as np
+
 from clave.control.settings import Phase, Profile
 from clave.control.trajectory import State
+
 from .task_test import PARK, candidate, machine, queue_of
+
 
 def test_jaw_abandoned_if_not_reaching_seat_fraction_0_5() -> None:
     task = machine(
