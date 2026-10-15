@@ -1,6 +1,6 @@
-from clave.control.task import Phase
+from clave.control.settings import Phase, Profile
 
-from .task_test import PARK, Profile, candidate, machine, queue_of
+from .task_test import PARK, candidate, machine, queue_of
 
 
 def test_jaw_seat_abandon() -> None:
@@ -22,7 +22,7 @@ def test_jaw_seat_abandon() -> None:
             break
 
     # Keep passing jaw_travel=0.2 (below seat) until tick returns None
-    finished = "not none"
+    finished: str | None = "not none"
     for _ in range(80):  # Trigger dwell expiry
         at_seconds += 0.01
         flown = arm.tick(at_seconds, PARK, jaw_travel=0.2, seconds_left=30.0)
