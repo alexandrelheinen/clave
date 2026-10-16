@@ -863,7 +863,9 @@ class TaskMachine:
             # The hold begins at the instant the jaw reaches the object, so
             # the first tick the jaw is allowed to close is the one a pick is
             # decided on. An open jaw waiting on the wrist is not that tick.
-            self._pick_error = distance(flange_pos, state.position)
+            self._pick_error = distance(
+                flange_pos, self._shift_for_wait(state, phase, query).position
+            )
         self._phase = phase
         if yaw is None:
             yaw = self._plan_yaw
