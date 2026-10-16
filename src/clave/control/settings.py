@@ -145,6 +145,9 @@ class TaskSettings:
         grasp_seat_fraction: How far the driver joint has to travel, as a
             fraction of its stroke, before the rise may lift the pinch. The
             dwell is the backup when a package stops the fingers short of it.
+        grasp_contact_fraction: How far the driver joint has to travel, as a
+            fraction of its stroke, before the package is counted as held if
+            it stops the fingers before they seat.
         grasp_gap_limit: How far the nearest object may sit from the pinch,
             in meters, at the moment the jaw would close. Farther than this,
             the visit is given up before the jaw shuts.
@@ -173,6 +176,7 @@ class TaskSettings:
     grasp_yaw_tolerance: float = math.pi
     grasp_align_limit_seconds: float = 0.50
     grasp_seat_fraction: float = 0.70
+    grasp_contact_fraction: float = 0.25
     grasp_gap_limit: float = 0.015
     release_belt_margin: float = 0.08
 
@@ -197,6 +201,7 @@ class TaskSettings:
         grasp_yaw_tolerance: float = math.pi,
         grasp_align_limit_seconds: float = 0.50,
         grasp_seat_fraction: float = 0.70,
+        grasp_contact_fraction: float = 0.25,
         grasp_gap_limit: float = 0.015,
         release_belt_margin: float = 0.08,
         *,
@@ -240,6 +245,7 @@ class TaskSettings:
         object.__setattr__(self, "grasp_yaw_tolerance", grasp_yaw_tolerance)
         object.__setattr__(self, "grasp_align_limit_seconds", grasp_align_limit_seconds)
         object.__setattr__(self, "grasp_seat_fraction", grasp_seat_fraction)
+        object.__setattr__(self, "grasp_contact_fraction", grasp_contact_fraction)
         object.__setattr__(self, "grasp_gap_limit", grasp_gap_limit)
         object.__setattr__(self, "release_belt_margin", release_belt_margin)
 
@@ -273,6 +279,7 @@ class TaskSettings:
             and self.grasp_yaw_tolerance == other.grasp_yaw_tolerance
             and self.grasp_align_limit_seconds == other.grasp_align_limit_seconds
             and self.grasp_seat_fraction == other.grasp_seat_fraction
+            and self.grasp_contact_fraction == other.grasp_contact_fraction
             and self.grasp_gap_limit == other.grasp_gap_limit
             and self.release_belt_margin == other.release_belt_margin
         )
@@ -430,6 +437,7 @@ class ControlSettings:
                     task, "grasp_align_limit_seconds", "task"
                 ),
                 grasp_seat_fraction=_positive(task, "grasp_seat_fraction", "task"),
+                grasp_contact_fraction=_positive(task, "grasp_contact_fraction", "task"),
                 grasp_gap_limit=_positive(task, "grasp_gap_limit_meters", "task"),
                 release_belt_margin=_positive(
                     task, "release_belt_margin_meters", "task"
