@@ -437,7 +437,9 @@ class ControlSettings:
                     task, "grasp_align_limit_seconds", "task"
                 ),
                 grasp_seat_fraction=_positive(task, "grasp_seat_fraction", "task"),
-                grasp_contact_fraction=_positive(task, "grasp_contact_fraction", "task"),
+                grasp_contact_fraction=_positive(
+                    task, "grasp_contact_fraction", "task"
+                ),
                 grasp_gap_limit=_positive(task, "grasp_gap_limit_meters", "task"),
                 release_belt_margin=_positive(
                     task, "release_belt_margin_meters", "task"
