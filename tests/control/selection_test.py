@@ -8,6 +8,7 @@ stability yet.
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -49,10 +50,10 @@ def selector(
 
 def settings(exit_weight: float = 1.0) -> SelectionSettings:
     """Selection settings with the weight under test."""
-    shipped = ControlSettings.load(load(ROOT / "configs" / "runtime" / "control.yml"))
-    return SelectionSettings(
-        exit_weight=exit_weight, anchor_radius=shipped.selection.anchor_radius
-    )
+    shipped = ControlSettings.load(
+        load(ROOT / "configs" / "runtime" / "control.yml")
+    ).selection
+    return replace(shipped, exit_weight=exit_weight)
 
 
 def marker(

@@ -141,11 +141,16 @@ cost = distance_to_flange + exit_weight * distance_before_leaving
 
 both terms in meters, `exit_weight` dimensionless and configured. Minimising
 it puts the objects running out of belt first and breaks ties by travel. The
-queue is built greedily, scoring each next candidate from where the flange
-will stand after the previous one, which is nearest-neighbour tour
-construction rather than an optimal tour. Naming that is the point: the
-ordering is a starting algorithm chosen to be replaced, and calling it
-optimal would hide that it is not.
+shipped solver builds the queue greedily, scoring each next candidate from
+where the flange will stand after the previous one, which is nearest-neighbour
+tour construction rather than an optimal tour. Naming that is the point: the
+ordering is a starting algorithm, and calling it optimal would hide that it
+is not. The construction is selected by `selection.solver`. The shipped name
+is `nearest_neighbor`, and `AC-MOVE-01` and `AC-MOVE-02` are the contract of
+that setting. `ant_colony` is the other solver.
+[tour-order.md](tour-order.md) is its contract, and
+[object-order-solvers.md](../research/object-order-solvers.md) is the
+comparison.
 
 **What keeps the queue still.** A queue recomputed every tick reorders faster
 than the arm can traverse, and the symptom is an arm oscillating near the
@@ -919,6 +924,17 @@ One new file, `configs/runtime/control.yml`, every key required:
 selection:
   exit_weight: ...            # dimensionless, weights urgency against travel
   anchor_radius_meters: ...   # how far an estimate moves before the anchor does
+  solver: nearest_neighbor    # or ant_colony; see tour-order.md
+  ant_colony:                  # required even when the walk above is selected
+    ant_count: ...
+    iteration_count: ...
+    evaporation: ...
+    pheromone_weight: ...
+    heuristic_weight: ...
+    deposit: ...
+    initial_pheromone: ...
+    position_discount: ...
+    seed: ...
 task:
   profile: full_visit         # or motion_only
   approach_height_meters: ...
