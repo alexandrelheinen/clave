@@ -832,16 +832,20 @@ class TaskMachine:
                     self._seat_wait += dt
                     self._seat_lag += dt
                     if self._seat_wait >= self._settings.dwell_seconds:
-                        track = self._plan.track_id
-                        self._last_visit_closed = False
-                        self._abandon(
-                            track,
-                            at_seconds,
-                            "the fingers did not seat on the object",
-                            None,
-                            False,
-                        )
-                        return None
+                        if jaw_travel >= self._settings.grasp_contact_fraction:
+                            self._seated = True
+                            self._aim_release_at_the_chute()
+                        else:
+                            track = self._plan.track_id
+                            self._last_visit_closed = False
+                            self._abandon(
+                                track,
+                                at_seconds,
+                                "the fingers did not seat on the object",
+                                None,
+                                False,
+                            )
+                            return None
                 frozen = self._plan.at(self._plan.pick_at)
                 if frozen is not None:
                     phase, state, _ignored = frozen

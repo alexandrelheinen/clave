@@ -112,6 +112,12 @@ task:
   # fingers short of it still gets the dwell, which is the measured close.
   grasp_seat_fraction: 0.70
 
+  # The least the driver joint must travel by the end of the dwell for a
+  # package that stops the fingers short of the seat to count as held.
+  # Measured holds stop between 0.33 and 0.69; jaws that barely move stay
+  # below 0.25 and the pick is abandoned.
+  grasp_contact_fraction: 0.25
+
   # How far the nearest object may sit from the pinch, in meters, before
   # the jaw is allowed to close. On the crushed packages a 10 mm gap was
   # carried to the chute and a 25 mm gap rose 14 mm and was not placed.
