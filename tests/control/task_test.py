@@ -1393,6 +1393,7 @@ def test_waiting_visit_measures_arrival_error_against_shifted_command() -> None:
         grasp_align_limit_seconds=1.0,
     )
     arm.step(queue_of(candidate(1, x=0.30)), PARK, 0.0)
+    assert arm.plan is not None
 
     off = (arm.plan.target_yaw or 0.0) + 0.8
     at_seconds = 0.0
@@ -1403,6 +1404,8 @@ def test_waiting_visit_measures_arrival_error_against_shifted_command() -> None:
         if flown is not None and flown.phase is Phase.HOLD:
             waiting = flown
             break
+
+    assert waiting is not None
 
     for _ in range(10):
         at_seconds += 0.01
