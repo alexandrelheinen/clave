@@ -57,6 +57,7 @@ def test_the_shipped_configuration_loads() -> None:
         ("task", "grasp_gap_limit"),
         ("task", "release_belt_margin"),
         ("task", "grasp_yaw_rate_radians_per_second"),
+        ("task", "wrist_yaw_margin_radians"),
         ("task", "park_position"),
         ("task", "park_marker_color"),
         ("motion", "max_speed"),

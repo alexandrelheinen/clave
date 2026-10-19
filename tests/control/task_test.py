@@ -117,6 +117,9 @@ def machine(**overrides: object) -> TaskMachine:
         if raw_chutes is not None
         else None
     )
+    wrist_travel = cast(
+        "tuple[float, float] | None", overrides.pop("wrist_travel", None)
+    )
     return TaskMachine(
         task_settings(**overrides),
         CalibrationSettings(
@@ -128,6 +131,7 @@ def machine(**overrides: object) -> TaskMachine:
         effector=EFFECTOR,
         story=story,
         chutes=chutes,
+        wrist_travel=wrist_travel,
     )
 
 
@@ -1554,3 +1558,97 @@ def test_the_tool_reaches_the_grasp_yaw_early_in_the_approach() -> None:
         <= plan.started_at + 15.0 / 8.0 * diff / SHIPPED_GRASP_YAW_RATE + 0.02
     )
     assert reached_at < plan.pick_at - 1.0
+
+
+def test_a_wrist_near_its_stop_turns_the_grasp_the_other_way() -> None:
+    """AC-MOVE-73: a wrist near its stop turns the grasp yaw the other way."""
+    arm = machine(
+        profile=Profile.FULL_VISIT,
+        wrist_travel=(-2.0 * math.pi, 2.0 * math.pi),
+        wrist_yaw_margin=0.5,
+    )
+    first = Candidate(
+        track_id=1,
+        anchor=np.asarray((0.30, 0.0, PINCH_Z), dtype=np.float64),
+        flange=np.asarray((0.30, 0.0, PICK_Z), dtype=np.float64),
+        closing_axis=0.0,
+        distance_before_leaving=1.5,
+    )
+    arm.step(queue_of(first), PARK, 0.0)
+    wrist_now = math.radians(-330.0)
+    initial_flight = arm.tick(0.01, PARK, wrist_angle=wrist_now)
+    assert initial_flight is not None
+
+    rotated = Candidate(
+        track_id=1,
+        anchor=np.asarray((0.30, 0.0, PINCH_Z), dtype=np.float64),
+        flange=np.asarray((0.30, 0.0, PICK_Z), dtype=np.float64),
+        closing_axis=0.7,
+        distance_before_leaving=1.5,
+    )
+    arm.step(queue_of(rotated), PARK, 0.20)
+    plan = arm.plan
+    assert plan is not None
+    assert plan.target_yaw is not None
+    assert plan.yaw_turn is not None
+    assert abs(plan.yaw_turn) > math.pi / 2.0
+    assert -2.0 * math.pi + 0.5 < wrist_now - plan.yaw_turn < 2.0 * math.pi - 0.5
+    assert parallel_yaw_error(plan.target_yaw, 0.7) == pytest.approx(0.0, abs=1e-6)
+
+    # A turn the configured rate cannot finish before the pick spreads over
+    # the whole time to the pick (AC-BEHAVE-06), so the peak is the faster of
+    # the two quintics.
+    peak_rate = max(
+        SHIPPED_GRASP_YAW_RATE,
+        15.0 / 8.0 * abs(plan.yaw_turn) / (plan.pick_at - plan.started_at),
+    )
+    at_seconds = 0.20
+    previous_yaw: float | None = None
+    cumulative_turn = 0.0
+    while at_seconds <= plan.pick_at + 1e-9:
+        flown = arm.tick(at_seconds, PARK, wrist_angle=wrist_now)
+        if flown is None:
+            break
+        assert flown.yaw is not None
+        if previous_yaw is not None:
+            step_delta = (
+                (flown.yaw - previous_yaw + math.pi) % (2.0 * math.pi)
+            ) - math.pi
+            assert abs(step_delta) <= peak_rate * 0.01 * 1.05
+            cumulative_turn += step_delta
+        previous_yaw = flown.yaw
+        at_seconds = round(at_seconds + 0.01, 2)
+
+    assert cumulative_turn * plan.yaw_turn > 0.0
+    assert abs(cumulative_turn) > math.pi / 2.0
+
+
+def test_a_wrist_with_travel_keeps_the_nearer_grasp() -> None:
+    """AC-MOVE-73: a wrist away from its stops keeps the nearer grasp yaw."""
+    arm = machine(
+        profile=Profile.FULL_VISIT,
+        wrist_travel=(-2.0 * math.pi, 2.0 * math.pi),
+        wrist_yaw_margin=0.5,
+    )
+    first = Candidate(
+        track_id=1,
+        anchor=np.asarray((0.30, 0.0, PINCH_Z), dtype=np.float64),
+        flange=np.asarray((0.30, 0.0, PICK_Z), dtype=np.float64),
+        closing_axis=0.0,
+        distance_before_leaving=1.5,
+    )
+    arm.step(queue_of(first), PARK, 0.0)
+    initial_flight = arm.tick(0.01, PARK, wrist_angle=0.0)
+    assert initial_flight is not None
+
+    rotated = Candidate(
+        track_id=1,
+        anchor=np.asarray((0.30, 0.0, PINCH_Z), dtype=np.float64),
+        flange=np.asarray((0.30, 0.0, PICK_Z), dtype=np.float64),
+        closing_axis=0.7,
+        distance_before_leaving=1.5,
+    )
+    arm.step(queue_of(rotated), PARK, 0.20)
+    plan = arm.plan
+    assert plan is not None
+    assert plan.yaw_turn is None or abs(plan.yaw_turn) <= math.pi / 2.0
