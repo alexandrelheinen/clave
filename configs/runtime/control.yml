@@ -115,6 +115,15 @@ task:
   # more than 45 degrees, which is 0.98 s at this rate.
   grasp_yaw_rate_radians_per_second: 1.5
 
+  # How far inside its travel the wrist's last axis has to stay at the end of
+  # a planned grasp yaw turn, in radians. A parallel jaw grips the same at
+  # theta and theta + pi, so when the nearer grasp would leave less than this,
+  # the turn takes the far one and winds the axis the other way (AC-MOVE-73).
+  # It has to cover what the axis moves while the yaw is held: the shoulder
+  # pan swings about 70 degrees between the belt and the chutes, and the
+  # tool yaw stays put while it does. 1.31 rad is 75 degrees.
+  wrist_yaw_margin_radians: 1.31
+
   # How far the driver joint has to travel, as a fraction of its stroke,
   # before the hold may lift the pinch. The pads meet a package before the
   # joint hits its stop. 0.70 is that meeting. A package that stops the

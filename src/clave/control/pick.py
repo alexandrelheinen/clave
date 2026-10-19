@@ -115,6 +115,61 @@ def nearer_parallel_yaw(target: float, reference: float) -> float:
     return wrap(target)
 
 
+def wrist_safe_yaw_turn(
+    target: float,
+    reference: float,
+    wrist_angle: float,
+    wrist_lower: float,
+    wrist_upper: float,
+    margin: float,
+) -> float:
+    """Return the turn onto target or target+pi that keeps wrist travel (`AC-MOVE-73`).
+
+    Args:
+        target: The yaw the grasp claims, in radians.
+        reference: The yaw the tool already holds, in radians.
+        wrist_angle: Current angle of the wrist's last axis, in radians.
+        wrist_lower: Lower limit of the wrist's last axis, in radians.
+        wrist_upper: Upper limit of the wrist's last axis, in radians.
+        margin: Minimum distance to keep from either limit, in radians.
+
+    Returns:
+        The signed tool-yaw turn from reference, in radians.
+    """
+    two_pi = 2.0 * math.pi
+
+    def wrap(angle: float) -> float:
+        return (angle + math.pi) % two_pi - math.pi
+
+    near = wrap(nearer_parallel_yaw(target, reference) - reference)
+    if near > 0.0:
+        far = near - math.pi
+    elif near < 0.0:
+        far = near + math.pi
+    else:
+        middle = 0.5 * (wrist_lower + wrist_upper)
+        far = (
+            math.pi
+            if abs((wrist_angle - math.pi) - middle)
+            <= abs((wrist_angle + math.pi) - middle)
+            else -math.pi
+        )
+
+    # The wrist's last axis points along the tool, which points down at the
+    # belt, so a positive tool-yaw turn is a negative joint turn.
+    def room(turn: float) -> float:
+        end = wrist_angle - turn
+        return min(end - wrist_lower, wrist_upper - end)
+
+    near_room = room(near)
+    if near_room >= margin:
+        return near
+    far_room = room(far)
+    if far_room >= margin:
+        return far
+    return near if near_room >= far_room else far
+
+
 def parallel_yaw_error(commanded: float, measured: float) -> float:
     """Return how far a jaw command stands from the tool, folded to a right angle.
 
@@ -259,6 +314,8 @@ class Plan:
             because it is the figure the interception exists to produce.
         target_yaw: Orientation about the belt normal at the pick, or None.
         initial_yaw: Orientation about the belt normal at the approach start, or None.
+        yaw_turn: Signed turn in radians from initial_yaw onto target_yaw, or
+            None to take the nearer parallel-jaw turn (`AC-MOVE-73`).
         transport_velocity: Belt-axis model transport for the object target.
             World hold and retreat are this transport composed with rest and
             +Z in the object frame.
@@ -270,6 +327,7 @@ class Plan:
     pick_at: float
     target_yaw: float | None = None
     initial_yaw: float | None = None
+    yaw_turn: float | None = None
     transport_velocity: NDArray[np.float64] = field(default_factory=zeros)
 
     def __eq__(self, other: object) -> bool:
@@ -282,6 +340,7 @@ class Plan:
             and self.pick_at == other.pick_at
             and self.target_yaw == other.target_yaw
             and self.initial_yaw == other.initial_yaw
+            and self.yaw_turn == other.yaw_turn
             and same(self.transport_velocity, other.transport_velocity)
         )
 
@@ -294,8 +353,21 @@ class Plan:
         self,
         target_yaw: float | None = None,
         initial_yaw: float | None = None,
+        yaw_turn: float | None = None,
     ) -> Plan:
-        """Return a copy of the plan with updated target and initial yaw."""
+        """Return a copy of the plan with updated target, initial yaw, and turn.
+
+        Args:
+            target_yaw: Orientation about the belt normal at the pick, in
+                radians, or None to keep the existing target yaw.
+            initial_yaw: Orientation about the belt normal at the approach
+                start, in radians, or None to keep the existing initial yaw.
+            yaw_turn: Signed turn from initial_yaw onto target_yaw, in radians,
+                or None to take the nearer parallel-jaw turn (`AC-MOVE-73`).
+
+        Returns:
+            The updated plan.
+        """
         return Plan(
             track_id=self.track_id,
             legs=self.legs,
@@ -303,6 +375,7 @@ class Plan:
             pick_at=self.pick_at,
             target_yaw=target_yaw if target_yaw is not None else self.target_yaw,
             initial_yaw=initial_yaw if initial_yaw is not None else self.initial_yaw,
+            yaw_turn=yaw_turn,
             transport_velocity=self.transport_velocity,
         )
 
@@ -322,9 +395,12 @@ class Plan:
             return None
         if self.initial_yaw is None:
             return self.target_yaw
-        diff = (
-            self.target_yaw - self.initial_yaw + math.pi / 2.0
-        ) % math.pi - math.pi / 2.0
+        if self.yaw_turn is not None:
+            diff = self.yaw_turn
+        else:
+            diff = (
+                self.target_yaw - self.initial_yaw + math.pi / 2.0
+            ) % math.pi - math.pi / 2.0
         track_duration = max(1e-6, self.pick_at - self.started_at)
         if max_rate is not None:
             track_duration = min(
@@ -1097,6 +1173,7 @@ def retarget_descent(
         pick_at=at_seconds + remaining,
         target_yaw=plan.target_yaw,
         initial_yaw=plan.initial_yaw,
+        yaw_turn=plan.yaw_turn,
         transport_velocity=transport,
     )
 

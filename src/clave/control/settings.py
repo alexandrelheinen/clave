@@ -159,6 +159,9 @@ class TaskSettings:
             grasp yaw, in radians per second. The turn starts when the grasp
             yaw is known and is the shortest quintic that peaks at this rate
             (`AC-BEHAVE-06`).
+        wrist_yaw_margin: How far inside its travel the wrist's last axis has
+            to stay at the end of a planned grasp yaw turn, in radians
+            (`AC-MOVE-73`).
     """
 
     profile: Profile
@@ -184,6 +187,7 @@ class TaskSettings:
     grasp_gap_limit: float = 0.015
     release_belt_margin: float = 0.08
     grasp_yaw_rate: float = 1.5
+    wrist_yaw_margin: float = math.pi / 3.0
 
     def __init__(
         self,
@@ -210,6 +214,7 @@ class TaskSettings:
         grasp_gap_limit: float = 0.015,
         release_belt_margin: float = 0.08,
         grasp_yaw_rate: float = 1.5,
+        wrist_yaw_margin: float = math.pi / 3.0,
         *,
         park_position: NDArray[np.float64] | None = None,
     ) -> None:
@@ -255,6 +260,7 @@ class TaskSettings:
         object.__setattr__(self, "grasp_gap_limit", grasp_gap_limit)
         object.__setattr__(self, "release_belt_margin", release_belt_margin)
         object.__setattr__(self, "grasp_yaw_rate", grasp_yaw_rate)
+        object.__setattr__(self, "wrist_yaw_margin", wrist_yaw_margin)
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, TaskSettings):
@@ -290,6 +296,7 @@ class TaskSettings:
             and self.grasp_gap_limit == other.grasp_gap_limit
             and self.release_belt_margin == other.release_belt_margin
             and self.grasp_yaw_rate == other.grasp_yaw_rate
+            and self.wrist_yaw_margin == other.wrist_yaw_margin
         )
 
     @property
@@ -451,6 +458,7 @@ class ControlSettings:
                 grasp_yaw_rate=_positive(
                     task, "grasp_yaw_rate_radians_per_second", "task"
                 ),
+                wrist_yaw_margin=_positive(task, "wrist_yaw_margin_radians", "task"),
             ),
             motion=MotionSettings(
                 max_speed=_positive(motion, "max_speed", "motion"),
