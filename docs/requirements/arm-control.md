@@ -629,6 +629,19 @@ approach speed and a 0.25 m/s belt, and the quintic sweeps back through
 the package while the jaw is still open (7 targets touched before closing in a
 3 minute dense run).
 
+`AC-MOVE-75`: Through DESCEND and HOLD, the system shall lead the command by
+the configured servo lead (`AC-MOVE-36`) along the belt axis only, so the
+flange tracks a descent that is vertical in the belt frame (`AC-MOVE-74`)
+without trailing it by the belt travel over the lead, and a lateral residual
+of the arc is not extrapolated.
+
+Without a lead the flange trails a belt-speed command by $v_b$ times the lead,
+about 8 mm at 0.25 m/s and 0.033 s, which on a descent that is vertical in the
+belt frame puts the trailing finger onto the object before the jaw closes;
+leading the full command velocity extrapolates the lateral residual (peak about
+0.94 m/s) and throws the jaw past the grasp, which is why the belt axis alone
+is led.
+
 ## Test plan
 
 Each criterion names the test that guards it. The grasp-plane floor and the
@@ -648,6 +661,7 @@ because the rise is one correction.
 | `AC-MOVE-71` | `test_matching_transport_drops_lateral_velocity`, `test_a_lateral_velocity_carries_the_object_only_while_it_lasts` |
 | `AC-MOVE-72` | `test_a_spiked_lateral_velocity_does_not_rewrite_hold_or_retreat` |
 | `AC-MOVE-74` | `test_the_approach_ends_above_where_the_object_will_be`, `test_the_descent_is_vertical_in_the_belt_frame`, `test_a_planned_descent_stays_over_the_object`, `test_a_refined_descent_is_vertical_in_the_belt_frame` |
+| `AC-MOVE-75` | `test_the_descent_is_led_along_the_belt_only`, `test_the_hold_is_led_along_the_belt_only`, `test_other_phases_lead_the_whole_command` |
 | `AC-GRIP-14` | `test_the_open_jaw_is_the_configured_open_reach` |
 | `AC-MARK-17` | `test_the_grasp_plane_stands_on_the_open_jaw` |
 
