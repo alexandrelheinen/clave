@@ -242,6 +242,11 @@ class Leg:
     grip: float
 
 
+_QUINTIC_PEAK_RATE = 15.0 / 8.0
+"""The peak of the quintic smoothstep's derivative, so a turn of `diff` over
+`T` seconds peaks at `15/8 * diff / T`."""
+
+
 @dataclass(frozen=True)
 class Plan:
     """A whole visit, timed from the instant it was made.
@@ -301,21 +306,36 @@ class Plan:
             transport_velocity=self.transport_velocity,
         )
 
-    def yaw_at(self, at_seconds: float) -> float | None:
-        """Return the commanded tool yaw at a simulated instant, or None."""
+    def yaw_at(self, at_seconds: float, max_rate: float | None = None) -> float | None:
+        """Return the commanded tool yaw at a simulated instant, or None.
+
+        Args:
+            at_seconds: Simulated time, in seconds.
+            max_rate: The wrist yaw rate the turn may peak at, in radians per
+                second, or None to spread the turn over the whole time to the
+                pick (`AC-BEHAVE-06`).
+
+        Returns:
+            The commanded yaw in radians, or None when the plan carries none.
+        """
         if self.target_yaw is None:
             return None
         if self.initial_yaw is None:
             return self.target_yaw
+        diff = (
+            self.target_yaw - self.initial_yaw + math.pi / 2.0
+        ) % math.pi - math.pi / 2.0
         track_duration = max(1e-6, self.pick_at - self.started_at)
+        if max_rate is not None:
+            track_duration = min(
+                track_duration,
+                max(1e-6, _QUINTIC_PEAK_RATE * abs(diff) / max_rate),
+            )
         elapsed = at_seconds - self.started_at
         if elapsed >= track_duration:
             return self.target_yaw
         tau = float(np.clip(elapsed / track_duration, 0.0, 1.0))
         s = tau * tau * tau * (10.0 + tau * (-15.0 + 6.0 * tau))
-        diff = (
-            self.target_yaw - self.initial_yaw + math.pi / 2.0
-        ) % math.pi - math.pi / 2.0
         two_pi = 2.0 * math.pi
         return (self.initial_yaw + s * diff + math.pi) % two_pi - math.pi
 

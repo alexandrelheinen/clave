@@ -709,7 +709,9 @@ class TaskMachine:
         if sampled is None:
             return self._release_or_finish(flange_pos, at_seconds)
         phase, state, grip = sampled
-        yaw = self._plan.yaw_at(query)
+        # The tool turns onto the grasp yaw as soon as it is known, at the
+        # configured rate (AC-BEHAVE-06).
+        yaw = self._plan.yaw_at(query, max_rate=self._settings.grasp_yaw_rate)
         if yaw is None:
             yaw = self._plan_yaw
         aimed = object_yaw if object_yaw is not None else yaw

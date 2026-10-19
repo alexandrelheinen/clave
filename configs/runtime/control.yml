@@ -106,6 +106,15 @@ task:
   # given up before the jaw closes, and the object is not an attempt.
   grasp_align_limit_seconds: 0.50
 
+  # How fast the commanded tool yaw turns onto the grasp yaw, in radians
+  # per second. The turn starts the moment the grasp yaw is known, at the
+  # plan or at a re-aim, instead of being spread over the whole approach,
+  # so the wrist is already there when the descent ends. The wrist's joint
+  # cap is 2.09 rad/s; 1.5 rad/s leaves the rest for the roll the other
+  # joints ask of the wrist while the arm travels. A parallel jaw never turns
+  # more than 45 degrees, which is 0.98 s at this rate.
+  grasp_yaw_rate_radians_per_second: 1.5
+
   # How far the driver joint has to travel, as a fraction of its stroke,
   # before the hold may lift the pinch. The pads meet a package before the
   # joint hits its stop. 0.70 is that meeting. A package that stops the
