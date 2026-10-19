@@ -1108,3 +1108,71 @@ def test_a_planned_yaw_turn_runs_the_chosen_way() -> None:
     rebuilt_mid = rebuilt.yaw_at(midpoint)
     assert rebuilt_mid is not None
     assert abs(wrap(rebuilt_mid - wrap(0.2 + turn / 2.0))) > 0.5
+
+
+def test_a_planned_descent_stays_over_the_object() -> None:
+    """AC-MOVE-74: a planned descent stays within 1 mm horizontally of the object."""
+    plan = a_plan()
+    assert plan is not None
+    edges = plan._boundaries()
+    index = next(i for i, leg in enumerate(plan.legs) if leg.phase is Phase.DESCEND)
+    opened = plan.started_at + edges[index]
+    closed = plan.started_at + edges[index + 1]
+    for step in range(21):
+        t = opened + (closed - opened) * step / 20.0
+        sampled = plan.at(t)
+        assert sampled is not None
+        _, state, _ = sampled
+        carried = OBJECT + BELT * (t - plan.started_at)
+        offset = math.hypot(
+            state.position[0] - carried[0], state.position[1] - carried[1]
+        )
+        assert offset <= 1e-3, (
+            f"sample {step} at t={t:.3f} s is {offset * 1000:.2f} mm off horizontally"
+        )
+
+
+def test_a_refined_descent_is_vertical_in_the_belt_frame() -> None:
+    """AC-MOVE-74: a refined descent is vertical in the belt frame."""
+    plan = a_plan(margin=1.15)
+    assert plan is not None
+    at_seconds = 0.5
+    fresh = np.asarray(
+        (OBJECT[0] + BELT[0] * at_seconds + 0.004, OBJECT[1] - 0.006, OBJECT[2]),
+        dtype=np.float64,
+    )
+    refined = refine(
+        plan=plan,
+        object_position=fresh,
+        belt_velocity=BELT,
+        z_offset=CLEARANCE,
+        approach_speed=APPROACH_SPEED,
+        dwell_seconds=DWELL,
+        max_speed=1.00,
+        max_acceleration=2.50,
+        at_seconds=at_seconds,
+        drift_horizon=DRIFT_HORIZON,
+        minimum_segment_seconds=MINIMUM_SEGMENT,
+        closing_rise_seconds=CLOSING_RISE,
+        segment_sample_count=SEGMENT_SAMPLES,
+        bisection_passes=BISECTION_PASSES,
+        minimum_delivery_seconds=MINIMUM_DELIVERY,
+        correction_steps=CORRECTION_STEPS,
+    )
+    assert refined is not None
+    edges = refined._boundaries()
+    index = next(i for i, leg in enumerate(refined.legs) if leg.phase is Phase.DESCEND)
+    opened = refined.started_at + edges[index]
+    closed = refined.started_at + edges[index + 1]
+    for step in range(21):
+        t = opened + (closed - opened) * step / 20.0
+        sampled = refined.at(t)
+        assert sampled is not None
+        _, state, _ = sampled
+        carried = fresh + BELT * (t - at_seconds)
+        offset = math.hypot(
+            state.position[0] - carried[0], state.position[1] - carried[1]
+        )
+        assert offset <= 1e-3, (
+            f"sample {step} at t={t:.3f} s is {offset * 1000:.2f} mm off horizontally"
+        )

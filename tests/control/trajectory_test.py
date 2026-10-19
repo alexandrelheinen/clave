@@ -242,11 +242,11 @@ def test_a_descent_that_matches_the_object_costs_far_less_acceleration() -> None
 
 
 def test_the_approach_ends_above_where_the_object_will_be() -> None:
-    """AC-MOVE-10: the approach ends above where the object will be.
+    """AC-MOVE-74: the approach ends above where the object is when the descent begins.
 
-    Checked against the definition rather than a constant: the arc's end
-    sits one clearance above the object's position at the instant the
-    descent that follows will finish.
+    The approach meets the object at the start of the descent rather than at
+    its end, so the descent that follows spans the belt travel over its own
+    duration and drops vertically in the belt frame.
     """
     now = np.asarray((-0.40, 0.10, 0.95), dtype=np.float64)
     arc = approach(
@@ -263,9 +263,44 @@ def test_the_approach_ends_above_where_the_object_will_be() -> None:
         bisection_passes=BISECTION_PASSES,
     )
     assert arc is not None
-    arrival = arc.duration + descent_seconds(Z_OFFSET, APPROACH_SPEED)
+    arrival = arc.duration
     assert arc.end.position[0] == pytest.approx(now[0] + BELT[0] * arrival)
     assert arc.end.position[2] == pytest.approx(now[2] + Z_OFFSET)
+
+
+def test_the_descent_is_vertical_in_the_belt_frame() -> None:
+    """AC-MOVE-74: the descent stays within 1 mm horizontally in the belt frame."""
+    now = np.asarray((-0.40, 0.10, 0.95), dtype=np.float64)
+    arc = approach(
+        moving(PARK),
+        now,
+        BELT,
+        Z_OFFSET,
+        APPROACH_SPEED,
+        MAX_SPEED,
+        MAX_ACCELERATION,
+        latest=6.0,
+        drift_horizon=DRIFT_HORIZON,
+        segment_sample_count=SEGMENT_SAMPLES,
+        bisection_passes=BISECTION_PASSES,
+    )
+    assert arc is not None
+    drop = descend(
+        arc,
+        now,
+        BELT,
+        Z_OFFSET,
+        APPROACH_SPEED,
+        drift_horizon=DRIFT_HORIZON,
+    )
+    for step in range(21):
+        s = drop.duration * step / 20.0
+        flange = drop.at(s).position
+        carried = now + BELT * (arc.duration + s)
+        offset = math.hypot(flange[0] - carried[0], flange[1] - carried[1])
+        assert offset <= 1e-3, (
+            f"sample {step} at s={s:.3f} s is {offset * 1000:.2f} mm off horizontally"
+        )
 
 
 def test_the_approach_arrives_already_descending_and_moving_with_the_belt() -> None:
