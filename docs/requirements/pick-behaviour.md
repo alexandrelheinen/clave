@@ -92,7 +92,8 @@ approach and the descent. When that turn would not finish before the pick, the
 turn shall spread over the whole time to the pick, as before. When a re-aim
 changes the grasp yaw, the turn shall start again from the yaw commanded at
 that instant under the same rate. The turn shall take the nearer of the two
-parallel-jaw yaws (AC-BEHAVE-03 still holds).
+parallel-jaw yaws (AC-BEHAVE-03 still holds), except when `AC-MOVE-73` takes the
+far one to keep the wrist inside its travel.
 
 ## Test plan
 
