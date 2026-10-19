@@ -612,6 +612,23 @@ Lateral drift affects aim of the target origin only, via `drift_horizon`
 horizontal speed in that frame. A late-descent retarget that sees a large
 object $v_y$ shall not put HOLD or RETREAT on that lateral speed in world.
 
+`AC-MOVE-74`: When a visit is planned or its approach is re-aimed, the system
+shall end the approach one clearance above where the object is predicted to be
+when the descent begins, moving with the belt and already coming down at the
+approach speed, so that relative to the moving belt the descent is vertical
+like the retreat (`AC-MOVE-72`). For an object carried at the belt velocity,
+the system shall keep the flange within 1 mm of the object horizontally in the
+belt frame over the whole descent.
+
+This narrows `AC-MOVE-10`: the arrival `AC-MOVE-10` predicts is the start of
+the descent for the approach arc and the end of the descent for the descent
+arc. Ending the approach above where the object will be when the descent
+finishes starts the descent downstream of the object by the belt travel over
+the descent duration, about 100 mm at the shipped 50 mm clearance, 0.25 m/s
+approach speed and a 0.25 m/s belt, and the quintic sweeps back through
+the package while the jaw is still open (7 targets touched before closing in a
+3 minute dense run).
+
 ## Test plan
 
 Each criterion names the test that guards it. The grasp-plane floor and the
@@ -630,6 +647,7 @@ because the rise is one correction.
 | `AC-MOVE-70` | `test_delivery_is_an_intercept_to_a_stationary_chute` |
 | `AC-MOVE-71` | `test_matching_transport_drops_lateral_velocity`, `test_a_lateral_velocity_carries_the_object_only_while_it_lasts` |
 | `AC-MOVE-72` | `test_a_spiked_lateral_velocity_does_not_rewrite_hold_or_retreat` |
+| `AC-MOVE-74` | `test_the_approach_ends_above_where_the_object_will_be`, `test_the_descent_is_vertical_in_the_belt_frame`, `test_a_planned_descent_stays_over_the_object`, `test_a_refined_descent_is_vertical_in_the_belt_frame` |
 | `AC-GRIP-14` | `test_the_open_jaw_is_the_configured_open_reach` |
 | `AC-MARK-17` | `test_the_grasp_plane_stands_on_the_open_jaw` |
 

@@ -72,7 +72,7 @@ state, so the flange never stops between them.
 
 | # | Arc | $\mathbf{p}$, $\mathbf{v}$, $\mathbf{a}$ at the end | Duration |
 |---|---|---|---|
-| 1 | Approach | $\mathbf{p}_o(t_0{+}T{+}\delta t) + \mathbf{z}$, $\;\mathbf{v}_o - V_a\hat{\mathbf{z}}$, $\;\mathbf{0}$ | $T$, solved |
+| 1 | Approach | $\mathbf{p}_o(t_0{+}T) + \mathbf{z}$, $\;\mathbf{v}_o - V_a\hat{\mathbf{z}}$, $\;\mathbf{0}$ | $T$, solved |
 | 2 | Descent | $\mathbf{p}_o(t_0{+}T{+}\delta t)$, $\;\mathbf{v}_o$, $\;\mathbf{0}$ | $\delta t$, derived |
 | 3 | Grasp | held, moving with the belt | the dwell |
 | 4 | Retreat | $\mathbf{p}_o + \mathbf{z}$, $\;\mathbf{v}_o + V_a\hat{\mathbf{z}}$, $\;\mathbf{0}$ | $\delta t$ |
@@ -104,12 +104,20 @@ this line, below the belt.
 
 ## The interception time
 
-Arc 1 has to end above where the object **will be** once arc 2 has also
-finished, so its terminal condition contains its own duration:
+Arc 1 has to end above where the object **is** when arc 2 begins, so its
+terminal condition contains its own duration (`AC-MOVE-74`):
 
 $$
-\mathbf{p}_{\text{approach}}(T) = \mathbf{p}_o(t_0) + \mathbf{v}_o (T + \delta t) + \mathbf{z}.
+\mathbf{p}_{\text{approach}}(T) = \mathbf{p}_o(t_0) + \mathbf{v}_o T + \mathbf{z}.
 $$
+
+Arc 2 then spans the belt travel $\mathbf{v}_o \delta t$ that the object covers
+during the descent, so in the belt frame its horizontal displacement is zero
+and, because both ends also match the belt velocity and have zero acceleration,
+the horizontal part of the quintic relative to the belt is identically zero.
+Ending arc 1 at $T + \delta t$ instead started the descent $v_b \delta t$
+downstream ($100\ \mathrm{mm}$ on a $0.25\ \mathrm{m/s}$ belt at the shipped clearance and approach speed) and the quintic swept
+back through the object.
 
 $T$ is therefore a fixed point rather than something computed forward. Let
 $\Sigma(T)$ be the arc built with that terminal condition and duration $T$,
@@ -141,8 +149,8 @@ rather than by differentiating it.
 
 Not free, and this is the part most worth writing down.
 
-In the frame moving with the belt the descent is purely vertical: from
-height $Z$ with vertical speed $-V_a$ and no acceleration, to rest on the
+In the frame moving with the belt the descent is purely vertical (`AC-MOVE-74`):
+from height $Z$ with vertical speed $-V_a$ and no acceleration, to rest on the
 object. Only two basis terms survive,
 
 $$z(s) = Z\,H_0(s) - V_a\,\delta t\, H_1(s).$$
