@@ -128,6 +128,11 @@ pedestal's footprint in the belt travel axis, so a take-away conveyor
 running out from under a funnel does not intersect the structure carrying
 the arm.
 
+`AC-DROP-13`: The system shall count a place once for each spawned object
+that crosses an opening, keyed by the spawn rather than by the pool slot's
+body name, so an object recycled into a slot that has already placed one is
+counted when it crosses in turn.
+
 ## Design notes
 
 **Why the place is a plane crossing.** Modelling the chute's interior would
@@ -135,6 +140,13 @@ add contact geometry nothing measures, and modelling a container would add
 the question of whether an object bounced out. The opening's plane is where
 the system's responsibility ends and the plant's begins, which is also
 where the survey puts it.
+
+**Why a place is counted per spawn.** The pool recycles bodies, so a body
+name names a slot rather than an object. The crossing is still seen by both
+the physics tick and the capture, which is why a place is deduplicated at
+all, and deduplicating by name counted only the first object each slot ever
+placed: six three-minute dense runs reported 108 places against 144
+crossings.
 
 **Why misroutes are counted here and not in validation.** The validation
 harness already carries a `max_misroute_rate` gate with no way to produce
