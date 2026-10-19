@@ -23,6 +23,7 @@ from clave.control.pick import (
     plan_pick,
     refine,
     retarget_descent,
+    wrist_safe_yaw_turn,
 )
 from clave.control.settings import Phase
 from clave.control.trajectory import State
@@ -1014,3 +1015,96 @@ def test_the_yaw_turn_spreads_over_the_approach_when_the_rate_cannot_make_it() -
         t = oriented.started_at + (oriented.pick_at - oriented.started_at) * step / 9.0
         assert oriented.yaw_at(t, max_rate=rate) == pytest.approx(oriented.yaw_at(t))
     assert oriented.yaw_at(oriented.pick_at, max_rate=rate) == pytest.approx(0.70)
+
+
+def test_the_far_jaw_is_taken_when_the_near_one_runs_the_wrist_into_its_stop() -> None:
+    """AC-MOVE-73: take the far jaw yaw when the near turn hits the stop margin."""
+    lower, upper = -2.0 * math.pi, 2.0 * math.pi
+    margin = 0.5
+    wrist_angle = math.radians(-330.0)
+    turn = wrist_safe_yaw_turn(
+        target=0.7,
+        reference=0.0,
+        wrist_angle=wrist_angle,
+        wrist_lower=lower,
+        wrist_upper=upper,
+        margin=margin,
+    )
+    assert turn == pytest.approx(0.7 - math.pi)
+    predicted_end = wrist_angle - turn
+    assert lower + margin < predicted_end < upper - margin
+
+
+def test_the_near_jaw_is_kept_while_the_wrist_has_travel() -> None:
+    """AC-MOVE-73: keep the nearer jaw yaw while the wrist stays inside its margin."""
+    lower, upper = -2.0 * math.pi, 2.0 * math.pi
+    margin = 0.5
+    assert wrist_safe_yaw_turn(
+        target=0.7,
+        reference=0.0,
+        wrist_angle=0.0,
+        wrist_lower=lower,
+        wrist_upper=upper,
+        margin=margin,
+    ) == pytest.approx(0.7)
+    assert wrist_safe_yaw_turn(
+        target=-0.7,
+        reference=0.0,
+        wrist_angle=math.radians(330.0),
+        wrist_lower=lower,
+        wrist_upper=upper,
+        margin=margin,
+    ) == pytest.approx(-0.7 + math.pi)
+
+
+def test_the_jaw_that_leaves_most_travel_is_taken_when_neither_keeps_the_margin() -> (
+    None
+):
+    """AC-MOVE-73: pick the jaw leaving more travel when neither keeps the margin."""
+    lower, upper = -2.0 * math.pi, 2.0 * math.pi
+    margin = 6.2
+    assert wrist_safe_yaw_turn(
+        target=0.7,
+        reference=0.0,
+        wrist_angle=math.radians(-330.0),
+        wrist_lower=lower,
+        wrist_upper=upper,
+        margin=margin,
+    ) == pytest.approx(0.7 - math.pi)
+    assert wrist_safe_yaw_turn(
+        target=0.7,
+        reference=0.0,
+        wrist_angle=math.radians(100.0),
+        wrist_lower=lower,
+        wrist_upper=upper,
+        margin=margin,
+    ) == pytest.approx(0.7)
+
+
+def test_a_planned_yaw_turn_runs_the_chosen_way() -> None:
+    """AC-MOVE-73: a plan with an explicit yaw_turn interpolates along that turn."""
+
+    def wrap(angle: float) -> float:
+        return ((angle + math.pi) % (2.0 * math.pi)) - math.pi
+
+    base = a_plan()
+    assert base is not None
+    turn = 0.7 - math.pi
+    target = wrap(0.2 + turn)
+    plan = base.with_yaw(target_yaw=target, initial_yaw=0.2, yaw_turn=turn)
+    assert plan.yaw_turn == pytest.approx(turn)
+    assert plan.yaw_at(plan.started_at) == pytest.approx(0.2)
+    midpoint = 0.5 * (plan.started_at + plan.pick_at)
+    assert plan.yaw_at(midpoint) == pytest.approx(wrap(0.2 + turn / 2.0))
+    assert plan.yaw_at(plan.pick_at) == pytest.approx(target)
+
+    rate = 1.5
+    finish_at = plan.started_at + 15.0 / 8.0 * abs(turn) / rate
+    if finish_at < plan.pick_at:
+        assert plan.yaw_at(finish_at, max_rate=rate) == pytest.approx(target)
+
+    rebuilt = plan.with_yaw(target_yaw=target, initial_yaw=0.2)
+    assert rebuilt.yaw_turn is None
+    rebuilt_mid = rebuilt.yaw_at(midpoint)
+    assert rebuilt_mid is not None
+    assert abs(wrap(rebuilt_mid - wrap(0.2 + turn / 2.0))) > 0.5
