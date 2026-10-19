@@ -1061,23 +1061,19 @@ def run(
             tick_refusal: str | None = None
             if command is not None:
                 moving = command.velocity
-                # Lead cancels lag on a moving approach. Through DESCEND/HOLD the
-                # command should already match the object; extrapolating a large
-                # lateral quintic residual (seed-0 peak |vy| ≈ 0.94 m/s) only
-                # throws the jaw past the grasp.
-                lead = (
-                    0.0
-                    if flown is not None and flown.phase in (Phase.DESCEND, Phase.HOLD)
-                    else control.servo.lead_seconds
-                )
+                # Lead cancels lag on a moving command (`AC-MOVE-36`). Through
+                # DESCEND and HOLD only the belt axis is led (`AC-MOVE-75`), so
+                # the jaw keeps up with a descent that is vertical in the belt
+                # frame without extrapolating the lateral residual.
+                led = _led_command(command, None if flown is None else flown.phase)
                 stepped = follow(
                     model,
                     data,
                     indices,
-                    command,
+                    led,
                     control.servo.gain,
                     max_joint_step=joint_step,
-                    lead_seconds=lead,
+                    lead_seconds=control.servo.lead_seconds,
                     keep_inside=keep_inside,
                 )
                 if stepped.refusal is not None:
@@ -1639,6 +1635,33 @@ def _placed(
                 gone[item.name] = channel
                 break
     return gone
+
+
+def _led_command(command: Command, phase: Phase | None) -> Command:
+    """Return the command the servo leads (`AC-MOVE-36`).
+
+    Through `DESCEND` and `HOLD`, only the belt axis (world x) of the
+    command's velocity is led (`AC-MOVE-75`): the descent is vertical in the
+    belt frame (`AC-MOVE-74`), so with no lead the flange trails it by the
+    belt travel over the lead, and leading the whole velocity would
+    extrapolate the arc's lateral residual.
+
+    Args:
+        command: The command decided for this tick.
+        phase: The active visit phase, or None outside a planned visit.
+
+    Returns:
+        A command whose velocity carries only the belt axis through `DESCEND`
+        and `HOLD`, or `command` unchanged otherwise.
+    """
+    if phase in (Phase.DESCEND, Phase.HOLD):
+        return replace(
+            command,
+            velocity=np.asarray(
+                (float(command.velocity[0]), 0.0, 0.0), dtype=np.float64
+            ),
+        )
+    return command
 
 
 def _resting(mujoco: Any, model: Any, data: Any, conveyor: Any) -> dict[str, float]:
