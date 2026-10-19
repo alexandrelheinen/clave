@@ -649,6 +649,7 @@ def run(
         belt_width=plan.belt.width,
         effector=effector,
         story=story,
+        wrist_travel=(float(indices.lower[5]), float(indices.upper[5])),
     )
     goal = None
     refusal: str | None = None
@@ -937,6 +938,7 @@ def run(
                 jaw_travel=jaw_travel,
                 seconds_left=max(0.0, horizon),
                 pinch_gap=pinch_gap,
+                wrist_angle=float(data.qpos[model.jnt_qposadr[indices.joint_ids[5]]]),
             )
             rise = (place[2] - last_flange_z) / plan.timestep
             accel_sample = abs(rise - last_rise) / plan.timestep

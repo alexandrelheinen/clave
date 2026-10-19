@@ -75,6 +75,7 @@ from clave.control.pick import (
     plan_pick,
     refine,
     retarget_descent,
+    wrist_safe_yaw_turn,
 )
 from clave.control.selection import Candidate, Queue
 from clave.control.settings import (
@@ -262,6 +263,7 @@ class TaskMachine:
         belt_surface: float | None = None,
         effector: Effector | None = None,
         story: StoryLog | None = None,
+        wrist_travel: tuple[float, float] | None = None,
     ) -> None:
         """Hold the settings and the belt the approach height is measured from.
 
@@ -290,6 +292,9 @@ class TaskMachine:
             story: The debug narrative. One machine shares the log the run
                 notes materials on, so a sentence can name the material. None
                 builds a log that emits only when DEBUG is enabled.
+            wrist_travel: The lower and upper limit of the wrist's last axis,
+                in radians, or None when the caller does not know them; then
+                the nearer parallel-jaw yaw is always taken (`AC-MOVE-73`).
 
         Raises:
             TaskError: If the profile plans arcs and was given neither the
@@ -362,6 +367,8 @@ class TaskMachine:
         self._plan: Plan | None = None
         self._plan_yaw: float | None = None
         self._last_yaw: float | None = None
+        self._wrist_angle: float | None = None
+        self._wrist_travel = wrist_travel
         self._pick_error: float | None = None
         self._missed: list[int] = []
         self._refreshes: list[Reaim] = []
@@ -650,6 +657,7 @@ class TaskMachine:
         jaw_travel: float | None = None,
         seconds_left: float | None = None,
         pinch_gap: float | None = None,
+        wrist_angle: float | None = None,
     ) -> VisitTick | None:
         """Drive one tick of a planned visit, or report that none is active.
 
@@ -689,6 +697,8 @@ class TaskMachine:
             pinch_gap: How far the nearest object sits from the pinch, in
                 meters. None skips the gap gate. A gap past the limit is
                 given up before the jaw shuts.
+            wrist_angle: Current angle of the wrist's last axis, in radians,
+                or None when the caller does not measure it (`AC-MOVE-73`).
 
         Returns:
             What to command, or None when no plan is active. None on the tick
@@ -700,6 +710,8 @@ class TaskMachine:
         )
         if flange_pos is None:
             raise TypeError("tick requires flange_position_world or flange")
+        if wrist_angle is not None:
+            self._wrist_angle = wrist_angle
         if self._plan is None:
             return None
         dt = 0.0 if self._prev_tick is None else max(0.0, at_seconds - self._prev_tick)
@@ -967,6 +979,7 @@ class TaskMachine:
             pick_at=self._plan.pick_at,
             target_yaw=self._plan.target_yaw,
             initial_yaw=self._plan.initial_yaw,
+            yaw_turn=self._plan.yaw_turn,
             transport_velocity=self._plan.transport_velocity,
         )
         self._release_aimed = True
@@ -1242,6 +1255,7 @@ class TaskMachine:
             and self._within_reach(refreshed)
         ):
             turned = self._yaw_at_pick(head, refreshed, at_seconds)
+            turned, turn = self._turn_for(turned, self._last_yaw)
             self._refreshes.append(Reaim(at_seconds, track_id, drift, False, "took"))
             self._narrate_reaim(
                 at_seconds,
@@ -1254,6 +1268,7 @@ class TaskMachine:
             self._plan = refreshed.with_yaw(
                 target_yaw=turned,
                 initial_yaw=self._last_yaw,
+                yaw_turn=turn,
             )
             self._plan_yaw = turned
             return
@@ -1307,9 +1322,11 @@ class TaskMachine:
             f"{self._story.refer(track_id)}",
         )
         turned = self._yaw_at_pick(head, solved, at_seconds)
+        turned, turn = self._turn_for(turned, self._last_yaw)
         self._plan = solved.with_yaw(
             target_yaw=turned,
             initial_yaw=self._last_yaw,
+            yaw_turn=turn,
         )
         self._plan_yaw = turned
         LOGGER.debug(
@@ -1387,6 +1404,7 @@ class TaskMachine:
             return
         drift = distance(self._fresh_aim(head, target, at_seconds), _aim_of(self._plan))
         turned = self._yaw_at_pick(head, steered, at_seconds)
+        turned, turn = self._turn_for(turned, self._last_yaw)
         self._refreshes.append(Reaim(at_seconds, head.track_id, drift, False, "took"))
         self._narrate_reaim(
             at_seconds,
@@ -1399,8 +1417,32 @@ class TaskMachine:
         self._plan = steered.with_yaw(
             target_yaw=turned,
             initial_yaw=self._last_yaw,
+            yaw_turn=turn,
         )
         self._plan_yaw = turned
+
+    def _turn_for(
+        self, target_yaw: float | None, initial_yaw: float | None
+    ) -> tuple[float | None, float | None]:
+        """Return the grasp yaw and turn that keep wrist travel (`AC-MOVE-73`)."""
+        if (
+            target_yaw is None
+            or initial_yaw is None
+            or self._wrist_angle is None
+            or self._wrist_travel is None
+        ):
+            return target_yaw, None
+        lower, upper = self._wrist_travel
+        turn = wrist_safe_yaw_turn(
+            target_yaw,
+            initial_yaw,
+            self._wrist_angle,
+            lower,
+            upper,
+            self._settings.wrist_yaw_margin,
+        )
+        wrapped = (initial_yaw + turn + math.pi) % (2.0 * math.pi) - math.pi
+        return wrapped, turn
 
     def _yaw_at_pick(
         self, head: Candidate, plan: Plan, at_seconds: float
@@ -1719,8 +1761,13 @@ class TaskMachine:
         initial_yaw = self._last_yaw if self._last_yaw is not None else target_yaw
         if target_yaw is not None and initial_yaw is not None:
             target_yaw = nearer_parallel_yaw(target_yaw, initial_yaw)
+        target_yaw, turn = self._turn_for(target_yaw, initial_yaw)
 
-        self._plan = plan.with_yaw(target_yaw=target_yaw, initial_yaw=initial_yaw)
+        self._plan = plan.with_yaw(
+            target_yaw=target_yaw,
+            initial_yaw=initial_yaw,
+            yaw_turn=turn,
+        )
         self._plan_yaw = target_yaw
         self._serving = head.track_id
         self._pick_error = None
