@@ -238,16 +238,19 @@ before the two speeds meet.
 
 ## What the shipped line produces
 
-From the park pose, across the reachable window, with $Z = 50\ \mathrm{mm}$,
-$V_a = 0.25\ \mathrm{m/s}$ so $\delta t = 0.40\ \mathrm{s}$:
+From the park pose $(0.45, -1.00, 1.20)\ \mathrm{m}$, across the reachable
+window, with the object at $y = 0.10\ \mathrm{m}$, $z = 0.95\ \mathrm{m}$,
+belt speed $0.314\ \mathrm{m/s}$, $Z = 50\ \mathrm{mm}$ and
+$V_a = 0.25\ \mathrm{m/s}$ so $\delta t = 0.40\ \mathrm{s}$. The approach
+ends at $T$, above the object, and the pick is at $T + \delta t$:
 
 | Object at $x$ | $T$ | $T + \delta t$ | peak speed | peak acceleration |
 |---|---|---|---|---|
-| $-1.00$ m | 2.479 s | 2.879 s | 1.000 m/s | 1.457 m/s² |
-| $-0.60$ m | 2.196 s | 2.596 s | 1.000 m/s | 1.574 m/s² |
-| $-0.20$ m | 2.068 s | 2.468 s | 1.000 m/s | 1.556 m/s² |
-| $+0.20$ m | 2.205 s | 2.605 s | 1.000 m/s | 1.367 m/s² |
-| $+0.60$ m | 2.708 s | 3.108 s | 1.000 m/s | 1.095 m/s² |
+| $-1.00$ m | 2.588 s | 2.988 s | 1.000 m/s | 1.410 m/s² |
+| $-0.60$ m | 2.273 s | 2.673 s | 1.000 m/s | 1.546 m/s² |
+| $-0.20$ m | 2.086 s | 2.486 s | 1.000 m/s | 1.583 m/s² |
+| $+0.20$ m | 2.125 s | 2.525 s | 1.000 m/s | 1.429 m/s² |
+| $+0.60$ m | 2.509 s | 2.909 s | 1.000 m/s | 1.187 m/s² |
 
 **Speed binds and acceleration does not**, at every point tried: the peak
 speed sits exactly on its ceiling while the acceleration sits near 1.5 of
