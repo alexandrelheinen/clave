@@ -728,7 +728,7 @@ def test_an_approach_correction_past_the_ceiling_is_taken_part_way() -> None:
     plan = a_plan(margin=1.15)
     assert plan is not None
     track = next(leg.segment for leg in plan.legs if leg.phase is Phase.TRACK)
-    at = track.duration - 0.30
+    at = track.duration - 0.35
     wild = np.asarray(
         (OBJECT[0] + BELT[0] * at, OBJECT[1] + 1.10, OBJECT[2]),
         dtype=np.float64,
