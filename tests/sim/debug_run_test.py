@@ -23,6 +23,7 @@ from clave.control.settings import Phase
 from clave.sim.clearance import _jaw_collision_geoms, _jaw_state, _lowest_world_z
 from clave.sim.debug_run import (
     _grasp_yaw_error,
+    _led_command,
     _object_yaw,
     _park_the_arm,
     _progress,
@@ -517,3 +518,43 @@ def test_the_grasp_yaw_error_is_reported_in_degrees_from_radians() -> None:
     # half of it is the worst a miss can read.
     assert _grasp_yaw_error(0.10 + math.pi, 0.10) == pytest.approx(0.0, abs=1e-9)
     assert _grasp_yaw_error(0.10 + math.pi / 4.0, 0.10) == pytest.approx(45.0)
+
+
+def test_the_descent_is_led_along_the_belt_only() -> None:
+    """AC-MOVE-75: the descent leads the command along the belt axis only."""
+    cmd = Command(
+        position=np.array([0.50, -0.10, 1.00], dtype=np.float64),
+        yaw=0.35,
+        speed=1.0,
+        velocity=np.array([0.25, 0.94, -0.25], dtype=np.float64),
+    )
+    led = _led_command(cmd, Phase.DESCEND)
+    assert led.velocity == pytest.approx((0.25, 0.0, 0.0))
+    assert led.position == pytest.approx((0.50, -0.10, 1.00))
+    assert led.yaw == cmd.yaw
+
+
+def test_the_hold_is_led_along_the_belt_only() -> None:
+    """AC-MOVE-75: the hold leads the command along the belt axis only."""
+    cmd = Command(
+        position=np.array([0.50, -0.10, 1.00], dtype=np.float64),
+        yaw=0.35,
+        speed=1.0,
+        velocity=np.array([0.25, 0.94, -0.25], dtype=np.float64),
+    )
+    led = _led_command(cmd, Phase.HOLD)
+    assert led.velocity == pytest.approx((0.25, 0.0, 0.0))
+    assert led.position == pytest.approx((0.50, -0.10, 1.00))
+    assert led.yaw == cmd.yaw
+
+
+def test_other_phases_lead_the_whole_command() -> None:
+    """AC-MOVE-75: phases outside DESCEND and HOLD lead the whole command."""
+    cmd = Command(
+        position=np.array([0.50, -0.10, 1.00], dtype=np.float64),
+        yaw=0.35,
+        speed=1.0,
+        velocity=np.array([0.25, 0.94, -0.25], dtype=np.float64),
+    )
+    for phase in (Phase.TRACK, Phase.RETREAT, Phase.DELIVER, None):
+        assert _led_command(cmd, phase) is cmd
