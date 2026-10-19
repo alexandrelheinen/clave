@@ -17,6 +17,7 @@ import numpy as np
 import pytest
 from numpy.typing import NDArray
 
+from clave.control.pick import parallel_yaw_error
 from clave.control.selection import Candidate, Queue
 from clave.control.settings import (
     CalibrationSettings,
@@ -73,6 +74,9 @@ old millimetre silently stopped planning anything at all.
 
 PINCH_Z = PICK_Z - EFFECTOR.finger_length
 """Where the pads close for that pose, which is what a marker's anchor holds."""
+
+SHIPPED_GRASP_YAW_RATE = 1.5
+"""Default TaskSettings.grasp_yaw_rate and shipped grasp_yaw_rate_radians_per_second."""
 
 
 def task_settings(**overrides: object) -> TaskSettings:
@@ -1492,3 +1496,61 @@ def test_the_release_is_still_the_planned_chute() -> None:
     assert last is not None
     assert arm.served == (1,)
     assert last.position[0] == pytest.approx(float(aimed[0]) + margin, abs=0.015)
+
+
+def test_the_tool_reaches_the_grasp_yaw_early_in_the_approach() -> None:
+    """AC-BEHAVE-06: the tool reaches the grasp yaw early in the approach."""
+    arm = machine(profile=Profile.FULL_VISIT)
+    first = Candidate(
+        track_id=1,
+        anchor=np.asarray((0.30, 0.0, PINCH_Z), dtype=np.float64),
+        flange=np.asarray((0.30, 0.0, PICK_Z), dtype=np.float64),
+        closing_axis=0.0,
+        distance_before_leaving=1.5,
+    )
+    arm.step(queue_of(first), PARK, 0.0)
+    initial_flight = arm.tick(0.01, PARK)
+    assert initial_flight is not None
+
+    rotated = Candidate(
+        track_id=1,
+        anchor=np.asarray((0.30, 0.0, PINCH_Z), dtype=np.float64),
+        flange=np.asarray((0.30, 0.0, PICK_Z), dtype=np.float64),
+        closing_axis=math.pi / 4.0,
+        distance_before_leaving=1.5,
+    )
+    arm.step(queue_of(rotated), PARK, 0.20)
+    plan = arm.plan
+    assert plan is not None
+    assert plan.target_yaw is not None
+    assert plan.initial_yaw is not None
+    diff = abs(parallel_yaw_error(plan.target_yaw, plan.initial_yaw))
+    assert diff > 0.5
+
+    at_seconds = 0.20
+    reached_at: float | None = None
+    previous_yaw: float | None = None
+    while at_seconds <= plan.pick_at + 1e-9:
+        flown = arm.tick(at_seconds, PARK)
+        if flown is None:
+            break
+        assert flown.yaw is not None
+        if previous_yaw is not None:
+            assert (
+                parallel_yaw_error(flown.yaw, previous_yaw)
+                <= SHIPPED_GRASP_YAW_RATE * 0.01 * 1.05
+            )
+        previous_yaw = flown.yaw
+        if (
+            reached_at is None
+            and parallel_yaw_error(flown.yaw, plan.target_yaw) <= 1e-3
+        ):
+            reached_at = at_seconds
+        at_seconds = round(at_seconds + 0.01, 2)
+
+    assert reached_at is not None
+    assert (
+        reached_at
+        <= plan.started_at + 15.0 / 8.0 * diff / SHIPPED_GRASP_YAW_RATE + 0.02
+    )
+    assert reached_at < plan.pick_at - 1.0

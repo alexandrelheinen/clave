@@ -967,3 +967,50 @@ def test_descent_retarget_does_not_project_lateral_drift() -> None:
     )
     assert end[1] == pytest.approx(0.020, abs=1e-6)
     assert abs(end[1] - (0.020 + 0.50 * remaining)) > 0.05
+
+
+def test_the_yaw_turn_finishes_at_the_configured_rate() -> None:
+    """AC-BEHAVE-06: the yaw turn finishes at the configured rate and holds."""
+    plan = a_plan()
+    assert plan is not None
+    oriented = plan.with_yaw(target_yaw=0.70, initial_yaw=0.20)
+    rate = 1.5
+    turn = 15.0 / 8.0 * 0.5 / rate
+    assert oriented.yaw_at(oriented.started_at, max_rate=rate) == pytest.approx(0.20)
+    assert oriented.yaw_at(
+        oriented.started_at + turn / 2.0, max_rate=rate
+    ) == pytest.approx(0.45)
+    assert oriented.yaw_at(oriented.started_at + turn, max_rate=rate) == pytest.approx(
+        0.70
+    )
+    for step in range(20):
+        t = (
+            oriented.started_at
+            + turn
+            + (oriented.pick_at - (oriented.started_at + turn)) * step / 19.0
+        )
+        assert oriented.yaw_at(t, max_rate=rate) == pytest.approx(0.70)
+    dt = 0.001
+    steps = round(turn / dt)
+    samples: list[float] = []
+    for step in range(steps + 1):
+        yaw = oriented.yaw_at(oriented.started_at + step * dt, max_rate=rate)
+        assert yaw is not None
+        samples.append(yaw)
+    peak_rate = max(
+        abs(after - before) / dt
+        for before, after in zip(samples, samples[1:], strict=False)
+    )
+    assert rate * 0.98 <= peak_rate <= rate * 1.01
+
+
+def test_the_yaw_turn_spreads_over_the_approach_when_the_rate_cannot_make_it() -> None:
+    """AC-BEHAVE-06: a slow rate spreads the yaw turn over the whole approach."""
+    plan = a_plan()
+    assert plan is not None
+    oriented = plan.with_yaw(target_yaw=0.70, initial_yaw=0.20)
+    rate = 0.1
+    for step in range(10):
+        t = oriented.started_at + (oriented.pick_at - oriented.started_at) * step / 9.0
+        assert oriented.yaw_at(t, max_rate=rate) == pytest.approx(oriented.yaw_at(t))
+    assert oriented.yaw_at(oriented.pick_at, max_rate=rate) == pytest.approx(0.70)
