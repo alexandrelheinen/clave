@@ -542,6 +542,27 @@ The same jaw the other way round is not substituted for the commanded yaw:
 that pose leaves the warm start off the arm, and the command can only close
 the difference at the joint-speed cap.
 
+`AC-MOVE-73`: When a visit's grasp yaw is chosen, at the plan or at a re-aim,
+and the angle and travel of the wrist's last axis are known, the system shall
+choose, between the grasp yaw and the same grasp turned by pi, the one whose
+turn from the commanded yaw leaves the last axis at least the configured margin
+(`wrist_yaw_margin_radians`) inside its travel. When both do, the system shall
+take the shorter turn, so `AC-BEHAVE-03` is unchanged away from the stops. When
+neither does, the system shall take the one that leaves the axis furthest
+inside its travel. The commanded yaw shall turn the chosen way, even when that
+turn is longer than a right angle, at the rate `AC-BEHAVE-06` sets. When the
+wrist angle is not known, `AC-BEHAVE-03` applies unchanged.
+
+On the 3 min dense simulation run (seed 0, belt 0.25 m/s,
+`configs/debug/high-flow.yml`), always taking the nearer parallel-jaw yaw winds
+`wrist_3` down to its -360 degree stop by about 104 s, after which 9 visits are
+given up for the grasp yaw and only 15 of 26 attempts are placed against 20 for
+v1.6.6. Because `wrist_3` points along the downward tool axis, turning to the
+far jaw end turns the joint the other way and keeps travel in hand. This
+differs from `AC-MOVE-64`: `AC-MOVE-64` forbids the servo from swapping the jaw
+end per tick, whereas `AC-MOVE-73` chooses the end once, when the turn is
+planned, and the turn is flown smoothly.
+
 `AC-MOVE-65`: When a descent already active is moved onto a fresher
 estimate and the whole correction breaks the speed ceiling, the system shall
 fly the largest fraction of that correction that stays under the ceiling. A
@@ -600,6 +621,7 @@ because the rise is one correction.
 | Criterion | Test |
 | --- | --- |
 | `AC-MOVE-64` | `test_a_wrist_on_its_stop_is_not_walked_off_the_command`, `test_a_descent_that_walks_off_the_command_is_discarded` |
+| `AC-MOVE-73` | `test_the_far_jaw_is_taken_when_the_near_one_runs_the_wrist_into_its_stop`, `test_the_near_jaw_is_kept_while_the_wrist_has_travel`, `test_the_jaw_that_leaves_most_travel_is_taken_when_neither_keeps_the_margin`, `test_a_planned_yaw_turn_runs_the_chosen_way`, `test_a_wrist_near_its_stop_turns_the_grasp_the_other_way`, `test_a_wrist_with_travel_keeps_the_nearer_grasp` |
 | `AC-MOVE-65` | `test_a_descent_correction_past_the_ceiling_is_taken_part_way` |
 | `AC-MOVE-66` | `test_an_approach_correction_past_the_ceiling_is_taken_part_way` |
 | `AC-MOVE-67` | `test_the_hold_rises_while_the_jaw_closes`, `test_the_rise_leads_the_hang_the_jaw_adds_as_it_shuts`, `test_a_grasp_the_shut_jaw_can_clear_does_not_rise`, `test_a_grasp_below_the_shut_floor_rises_back_to_it` |
