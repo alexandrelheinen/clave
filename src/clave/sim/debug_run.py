@@ -691,11 +691,12 @@ def run(
     # the figure that separates a visit tick that missed from a grasp that let go.
     gaps: list[float] = []
     resting: dict[str, float] = {}
-    # A place is counted once per object, the first capture its centre is
-    # seen below a mouth. Counting every capture after that would report a
-    # figure that grows while the object sits there.
+    # A place is counted once per spawned object, the first time its center is
+    # seen below a mouth, keyed by the spawn because pool slots recycle.
+    # Counting every check after that would report a figure that grows while
+    # the object sits there.
     placed: dict[str, int] = {}
-    seen_down: dict[str, str] = {}
+    seen_down: set[tuple[str, int]] = set()
     misrouted = 0
     opening = [
         float(v)
@@ -798,9 +799,8 @@ def run(
     def _record_place(name: str, channel: str) -> None:
         """Count one object crossing a mouth, and say so in the narrative.
 
-        Both the physics tick and the capture look for the crossing. The first
-        one to see a body records it; the second finds it already seen. The
-        story is emitted here, on that first sighting, because a body can fall
+        The caller has already decided this crossing is a new place. The story
+        is emitted here, on that first sighting, because a body can fall
         through a mouth between captures.
 
         Args:
@@ -808,9 +808,6 @@ def run(
             channel: The chute it crossed.
         """
         nonlocal misrouted
-        if name in seen_down:
-            return
-        seen_down[name] = channel
         placed[channel] = placed.get(channel, 0) + 1
         slot_text = name.rsplit("_", 1)[-1]
         slot = int(slot_text) if slot_text.isdecimal() else None
@@ -886,9 +883,11 @@ def run(
                     if routing_session is not None:
                         chute = routing_session.chute_for(item.serial, item.channel)
                     story.note(item.serial, item.material_class, chute)
-            for name, channel in _placed(
+            crossed = _placed(
                 mujoco, model, data, conveyor, plan.chutes, mouth, surface
-            ).items():
+            )
+            spawns = {item.name: item.serial for item in conveyor.active}
+            for name, channel in _new_places(crossed, spawns, seen_down):
                 _record_place(name, channel)
             # The feed loop runs at the physics rate and reads the simulator's
             # own arrivals, which is ground truth and is why it is named as
@@ -1362,7 +1361,7 @@ def run(
             queue = selector.update(standing, flange, feeding.speed, now)
 
             _stamp_routes()
-            for name, channel in _placed(
+            crossed = _placed(
                 mujoco,
                 model,
                 data,
@@ -1370,7 +1369,9 @@ def run(
                 plan.chutes,
                 (mouth[0], mouth[1]),
                 surface,
-            ).items():
+            )
+            spawns = {item.name: item.serial for item in conveyor.active}
+            for name, channel in _new_places(crossed, spawns, seen_down):
                 _record_place(name, channel)
 
             for trigger in queue.reasons:
@@ -1662,6 +1663,37 @@ def _led_command(command: Command, phase: Phase | None) -> Command:
             ),
         )
     return command
+
+
+def _new_places(
+    crossed: dict[str, str],
+    spawns: dict[str, int],
+    seen: set[tuple[str, int]],
+) -> list[tuple[str, str]]:
+    """Return the crossings that belong to spawns not yet counted as placed.
+
+    The pool recycles bodies, so a place is keyed by the spawn's serial rather
+    than by the body name (`AC-DROP-13`). Both the physics tick and the capture
+    see a crossing, so a spawn already in `seen` is not a new place
+    (`AC-DROP-05`).
+
+    Args:
+        crossed: Body name to the channel it is below, as returned by `_placed`.
+        spawns: Body name to the serial of the object in that slot now; a name
+            missing from it is keyed with serial -1.
+        seen: The `(name, serial)` pairs already counted, updated in place.
+
+    Returns:
+        The new `(name, channel)` pairs in the order of `crossed`.
+    """
+    fresh: list[tuple[str, str]] = []
+    for name, channel in crossed.items():
+        key = (name, spawns.get(name, -1))
+        if key in seen:
+            continue
+        seen.add(key)
+        fresh.append((name, channel))
+    return fresh
 
 
 def _resting(mujoco: Any, model: Any, data: Any, conveyor: Any) -> dict[str, float]:
