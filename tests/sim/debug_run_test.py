@@ -22,6 +22,8 @@ from clave.control.motion import Command
 from clave.control.settings import Phase
 from clave.sim.clearance import _jaw_collision_geoms, _jaw_state, _lowest_world_z
 from clave.sim.debug_run import (
+    _grasp_yaw_error,
+    _object_yaw,
     _park_the_arm,
     _progress,
     _TelemetryWriter,
@@ -468,3 +470,50 @@ def test_a_plan_reports_each_leg_for_its_own_duration() -> None:
     assert sum(duration for _, duration in spans) == pytest.approx(
         plan.duration, abs=2 * tick
     )
+
+
+def _a_box_turned_by(yaw: float) -> tuple[Any, Any, Any]:
+    """A free box longer along its own x than its y, turned about the vertical."""
+    mujoco = pytest.importorskip("mujoco")
+    half = yaw / 2.0
+    model = mujoco.MjModel.from_xml_string(
+        f"""
+        <mujoco>
+          <worldbody>
+            <body name="box" pos="0 0 0.1"
+                  quat="{math.cos(half)} 0 0 {math.sin(half)}">
+              <freejoint/>
+              <geom type="box" size="0.05 0.02 0.01"/>
+            </body>
+          </worldbody>
+        </mujoco>
+        """
+    )
+    data = mujoco.MjData(model)
+    mujoco.mj_forward(model, data)
+    return mujoco, model, data
+
+
+def test_the_task_is_told_an_object_yaw_in_radians() -> None:
+    """AC-BEHAVE-05: the yaw handed to the task is the short axis, in radians.
+
+    The rename that dropped unit suffixes made the short-axis helper return
+    radians while its caller still converted from degrees, so the task was
+    told about a fifty-seventh of the real yaw.
+    """
+    yaw = 0.6
+    mujoco, model, data = _a_box_turned_by(yaw)
+    told = _object_yaw(mujoco, model, data, "box")
+    assert told is not None
+    # The short side of the box is its own y axis, a right angle off its x.
+    expected = yaw + math.pi / 2.0
+    assert abs((told - expected + math.pi / 2.0) % math.pi - math.pi / 2.0) < 1e-9
+
+
+def test_the_grasp_yaw_error_is_reported_in_degrees_from_radians() -> None:
+    """AC-MOVE-59: the reported miss folds two yaws in radians into degrees."""
+    assert _grasp_yaw_error(0.30, 0.10) == pytest.approx(math.degrees(0.20))
+    # The miss folds into the right angle the report measures against, so
+    # half of it is the worst a miss can read.
+    assert _grasp_yaw_error(0.10 + math.pi, 0.10) == pytest.approx(0.0, abs=1e-9)
+    assert _grasp_yaw_error(0.10 + math.pi / 4.0, 0.10) == pytest.approx(45.0)
