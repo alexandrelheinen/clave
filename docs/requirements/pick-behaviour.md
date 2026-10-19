@@ -5,7 +5,9 @@
 Three operator complaints on seed-0 GT runs: the queue commits to an object
 the planner cannot serve while a better candidate sits behind it; the jaw
 jabs sideways in the last fraction of the descent; the wrist stays folded
-backwards (wrist_2 near 270°) through the visit.
+backwards (wrist_2 near 270°) through the visit. A fourth complaint is that
+the tool only reaches the grasp yaw at the end of the descent, so the jaw
+closes with the wrist still turning.
 
 ## Scope
 
@@ -13,10 +15,13 @@ backwards (wrist_2 near 270°) through the visit.
 aiming without inventing lateral drift over the remaining time; choosing the
 parallel-jaw yaw (θ or θ+π) closest to the tool's current yaw; among
 tool-down IK solutions for a target, preferring the extended reach branch
-(positive elbow, shoulder lift below the horizon) over the folded wrist.
+(positive elbow, shoulder lift below the horizon) over the folded wrist;
+turning the tool onto the grasp yaw at a configured wrist rate from the moment
+that yaw is known, instead of over the whole approach.
 
 **Out.** Changing `exit_weight`, the reach annulus, or replacing the damped
-least-squares solver.
+least-squares solver; changing the grasp yaw tolerance, the align limit, or
+how the grasp yaw is predicted (AC-MOVE-62).
 
 ## Evidence (pre-fix, seed 0, 24 s)
 
@@ -25,6 +30,11 @@ least-squares solver.
   a lateral end shift the quintic had to cover in ~0.3 s.
 - IK seeds kept `wrist_2 ≈ 270°`; commits 2/3/5 blended 68–128° of yaw.
 - Track 4 missed `plan_pick` while track 3 was still in the queue.
+- On a 180 s dense run (0.25 m/s belt, `configs/debug/high-flow.yml`, seed 0)
+  on `main` `7e49b60`, at 26 closures the tool stood 19.2, 19.8, 19.9, 20.0,
+  and 20.0 degrees from the commanded yaw at five of them, right at the 20
+  degree `grasp_yaw_tolerance_radians` gate, and 4.0 and 5.7 degrees at two
+  more.
 
 ## Acceptance criteria
 
@@ -73,6 +83,17 @@ the arcs run out, the arm shall hold the
 release pose with the jaw opening for the configured release dwell, so
 the next visit cannot start while the fingers are still shut.
 
+`AC-BEHAVE-06`: When a visit's grasp yaw is known, the commanded tool yaw
+shall turn from the yaw it stands at onto the grasp yaw over the shortest
+quintic whose peak rate is the configured wrist yaw rate
+(`grasp_yaw_rate_radians_per_second`), starting at the instant the plan or its
+re-aim was made, and shall then hold the grasp yaw for the rest of the
+approach and the descent. When that turn would not finish before the pick, the
+turn shall spread over the whole time to the pick, as before. When a re-aim
+changes the grasp yaw, the turn shall start again from the yaw commanded at
+that instant under the same rate. The turn shall take the nearer of the two
+parallel-jaw yaws (AC-BEHAVE-03 still holds).
+
 ## Test plan
 
 | Criterion | Test |
@@ -82,3 +103,4 @@ the next visit cannot start while the fingers are still shut.
 | `AC-BEHAVE-03` | `test_commanded_yaw_picks_the_nearer_parallel_grip` |
 | `AC-BEHAVE-04` | `test_the_solver_prefers_an_extended_reach_over_a_folded_wrist` |
 | `AC-BEHAVE-05` | `test_the_arm_holds_the_release_until_the_object_can_fall`, `test_the_jaw_stays_open_until_the_wrist_matches`, `test_a_wrist_that_cannot_match_is_not_an_attempt`, `test_the_rise_waits_until_the_fingers_have_closed`, `test_a_close_that_cannot_finish_is_not_an_attempt`, `test_a_far_object_is_not_an_attempt`, `test_the_release_is_still_the_planned_chute` |
+| `AC-BEHAVE-06` | `test_the_yaw_turn_finishes_at_the_configured_rate`, `test_the_yaw_turn_spreads_over_the_approach_when_the_rate_cannot_make_it`, `test_the_tool_reaches_the_grasp_yaw_early_in_the_approach` |
