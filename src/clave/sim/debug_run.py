@@ -914,9 +914,7 @@ def run(
                 )
                 if under_jaw is not None:
                     pinch_gap = under_jaw[1]
-                    short_axis = _short_axis(mujoco, model, data, under_jaw[0])
-                    if short_axis is not None:
-                        object_yaw = math.radians(short_axis)
+                    object_yaw = _object_yaw(mujoco, model, data, under_jaw[0])
             driver = mujoco.mj_name2id(
                 model, mujoco.mjtObj.mjOBJ_JOINT, "arm_grip_right_driver_joint"
             )
@@ -1005,8 +1003,7 @@ def run(
                     if use_ground_truth and command.yaw is not None and nearest:
                         body = _body_yaw(mujoco, model, data, nearest[0])
                         if body is not None:
-                            turned = math.degrees(command.yaw) - body
-                            yaw_errors.append(abs((turned + 45.0) % 90.0 - 45.0))
+                            yaw_errors.append(_grasp_yaw_error(command.yaw, body))
                 # Motion resumes from where the plan left the reference, so
                 # the park move after a visit does not start by jumping back
                 # to wherever the reference had been before the plan.
@@ -1709,6 +1706,42 @@ def _fold_jaw(delta: float) -> float:
     """
     quarter_turn = math.pi / 4.0
     return abs((delta + quarter_turn) % (math.pi / 2.0) - quarter_turn)
+
+
+def _grasp_yaw_error(commanded: float, body: float) -> float:
+    """Return how far a commanded jaw yaw stood from an object's own, in degrees.
+
+    Both yaws are in radians. The miss is folded the way `_fold_jaw` folds it
+    and only then turned into degrees, which is the unit the report prints
+    (`AC-MOVE-59`).
+
+    Args:
+        commanded: The commanded tool yaw, in radians.
+        body: The object's own rotation about the belt normal, in radians.
+
+    Returns:
+        The folded miss, in degrees.
+    """
+    return math.degrees(_fold_jaw(commanded - body))
+
+
+def _object_yaw(mujoco: Any, model: Any, data: Any, name: str) -> float | None:
+    """Return the yaw the task is told an object under the jaw faces, in radians.
+
+    This is the object's short axis, which is what the jaw has to close
+    across. The task holds the jaw open while the tool stands off it
+    (`AC-BEHAVE-05`), so the unit has to be the one the task's yaws are in.
+
+    Args:
+        mujoco: The imported module.
+        model: The compiled model.
+        data: Its state.
+        name: The body's name.
+
+    Returns:
+        The yaw in radians, or None when the shape has no preferred axis.
+    """
+    return _short_axis(mujoco, model, data, name)
 
 
 def _short_axis(mujoco: Any, model: Any, data: Any, name: str) -> float | None:
