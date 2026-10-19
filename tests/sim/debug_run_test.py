@@ -24,6 +24,7 @@ from clave.sim.clearance import _jaw_collision_geoms, _jaw_state, _lowest_world_
 from clave.sim.debug_run import (
     _grasp_yaw_error,
     _led_command,
+    _new_places,
     _object_yaw,
     _park_the_arm,
     _progress,
@@ -558,3 +559,32 @@ def test_other_phases_lead_the_whole_command() -> None:
     )
     for phase in (Phase.TRACK, Phase.RETREAT, Phase.DELIVER, None):
         assert _led_command(cmd, phase) is cmd
+
+
+def test_a_crossing_seen_twice_is_one_place() -> None:
+    """AC-DROP-05: a crossing seen on consecutive checks is counted once."""
+    seen: set[tuple[str, int]] = set()
+    crossed = {"object_5": "CH-HDPE"}
+    spawns = {"object_5": 3}
+    assert _new_places(crossed, spawns, seen) == [("object_5", "CH-HDPE")]
+    assert _new_places(crossed, spawns, seen) == []
+
+
+def test_a_recycled_slot_is_placed_again() -> None:
+    """AC-DROP-13: a new spawn in a slot that already placed is counted again."""
+    seen: set[tuple[str, int]] = set()
+    crossed = {"object_5": "CH-HDPE"}
+    assert _new_places(crossed, {"object_5": 3}, seen) == [("object_5", "CH-HDPE")]
+    assert _new_places(crossed, {"object_5": 9}, seen) == [("object_5", "CH-HDPE")]
+    assert seen == {("object_5", 3), ("object_5", 9)}
+
+
+def test_places_in_one_tick_keep_their_order() -> None:
+    """AC-DROP-13: new places in one tick are returned in the order of crossed."""
+    seen: set[tuple[str, int]] = {("object_7", 10)}
+    crossed = {"object_2": "CH-FIBER", "object_7": "CH-HDPE"}
+    spawns = {"object_2": 4, "object_7": 11}
+    assert _new_places(crossed, spawns, seen) == [
+        ("object_2", "CH-FIBER"),
+        ("object_7", "CH-HDPE"),
+    ]
