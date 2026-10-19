@@ -155,6 +155,10 @@ class TaskSettings:
             left on the release, in meters. The part of the ride past this
             is given back, so the release stays inside the mouth and the
             pinch is not dragged back by the whole wait.
+        grasp_yaw_rate: How fast the commanded tool yaw may turn onto the
+            grasp yaw, in radians per second. The turn starts when the grasp
+            yaw is known and is the shortest quintic that peaks at this rate
+            (`AC-BEHAVE-06`).
     """
 
     profile: Profile
@@ -179,6 +183,7 @@ class TaskSettings:
     grasp_contact_fraction: float = 0.25
     grasp_gap_limit: float = 0.015
     release_belt_margin: float = 0.08
+    grasp_yaw_rate: float = 1.5
 
     def __init__(
         self,
@@ -204,6 +209,7 @@ class TaskSettings:
         grasp_contact_fraction: float = 0.25,
         grasp_gap_limit: float = 0.015,
         release_belt_margin: float = 0.08,
+        grasp_yaw_rate: float = 1.5,
         *,
         park_position: NDArray[np.float64] | None = None,
     ) -> None:
@@ -248,6 +254,7 @@ class TaskSettings:
         object.__setattr__(self, "grasp_contact_fraction", grasp_contact_fraction)
         object.__setattr__(self, "grasp_gap_limit", grasp_gap_limit)
         object.__setattr__(self, "release_belt_margin", release_belt_margin)
+        object.__setattr__(self, "grasp_yaw_rate", grasp_yaw_rate)
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, TaskSettings):
@@ -282,6 +289,7 @@ class TaskSettings:
             and self.grasp_contact_fraction == other.grasp_contact_fraction
             and self.grasp_gap_limit == other.grasp_gap_limit
             and self.release_belt_margin == other.release_belt_margin
+            and self.grasp_yaw_rate == other.grasp_yaw_rate
         )
 
     @property
@@ -443,6 +451,9 @@ class ControlSettings:
                 grasp_gap_limit=_positive(task, "grasp_gap_limit_meters", "task"),
                 release_belt_margin=_positive(
                     task, "release_belt_margin_meters", "task"
+                ),
+                grasp_yaw_rate=_positive(
+                    task, "grasp_yaw_rate_radians_per_second", "task"
                 ),
             ),
             motion=MotionSettings(
