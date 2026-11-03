@@ -95,6 +95,20 @@ that instant under the same rate. The turn shall take the nearer of the two
 parallel-jaw yaws (AC-BEHAVE-03 still holds), except when `AC-MOVE-73` takes the
 far one to keep the wrist inside its travel.
 
+`AC-BEHAVE-07`: When the arm approaches a package, the flange shall stay at
+the height it will have on arrival until the pinch is within 5 mm of the
+package in the horizontal plane. That arrival is no lower than the configured
+clearance above the package and no lower than the height the approach started
+from, and it moves at the belt's running speed with no vertical velocity. The
+descent from there shall change only the height in the package's frame: the
+along-belt travel equals the belt speed times the duration, and the
+across-belt coordinate stays on the package. The jaw shall close by driving
+the finger joints until the pads meet the package. The package shall not be
+joined to the gripper by a weld or an equality. A run shall record, for each
+visit, the finger joint positions, the contact force between the pads and the
+package, and the gripper's horizontal position relative to the package
+through the descent.
+
 ## Test plan
 
 | Criterion | Test |
@@ -105,3 +119,4 @@ far one to keep the wrist inside its travel.
 | `AC-BEHAVE-04` | `test_the_solver_prefers_an_extended_reach_over_a_folded_wrist` |
 | `AC-BEHAVE-05` | `test_the_arm_holds_the_release_until_the_object_can_fall`, `test_the_jaw_stays_open_until_the_wrist_matches`, `test_a_wrist_that_cannot_match_is_not_an_attempt`, `test_the_rise_waits_until_the_fingers_have_closed`, `test_a_close_that_cannot_finish_is_not_an_attempt`, `test_a_far_object_is_not_an_attempt`, `test_the_release_is_still_the_planned_chute` |
 | `AC-BEHAVE-06` | `test_the_yaw_turn_finishes_at_the_configured_rate`, `test_the_yaw_turn_spreads_over_the_approach_when_the_rate_cannot_make_it`, `test_the_tool_reaches_the_grasp_yaw_early_in_the_approach` |
+| `AC-BEHAVE-07` | `test_the_approach_stays_level_until_it_is_over_the_object`, `test_the_flange_stays_level_until_it_is_over_the_package`, `test_a_visit_records_the_fingers_the_force_and_the_offset` |

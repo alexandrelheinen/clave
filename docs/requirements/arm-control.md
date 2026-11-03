@@ -339,19 +339,21 @@ whole length, and shall refuse an object for which no such duration exists
 before the object leaves the window.
 
 `AC-MOVE-32`: The system shall approach an object from directly above it, at
-a configured clearance, and shall descend vertically onto it.
+a configured clearance, and shall descend vertically onto it. `AC-BEHAVE-07`
+keeps a higher hover when the flange is already above that clearance.
 
-`AC-MOVE-33`: The system shall arrive at the clearance already descending
-and already moving with the belt, so the approach and the descent chain
-without the flange stopping between them.
+`AC-MOVE-33`: The system shall arrive already moving with the belt, so the
+approach and the descent chain without the flange stopping between them.
+`AC-BEHAVE-07` arrives with no vertical velocity. A descent that begins
+already moving downward passes below the object.
 
 `AC-MOVE-34`: The system shall reach the object moving at the object's own
 velocity, so the jaw closes with no relative slip.
 
-`AC-MOVE-35`: The system shall derive the descent duration from the
-clearance and the approach speed rather than configuring it separately,
-because the three are one relation and a configured third would contradict
-the other two.
+`AC-MOVE-35`: The system shall derive the descent duration from the height
+the descent covers and the approach speed rather than configuring it
+separately, because the two are one relation and a configured third would
+contradict them. That height is the hover of `AC-BEHAVE-07`.
 
 `AC-MOVE-36`: The system shall command the pose the reference will hold one
 configured lead from now, rather than the pose it holds, so the flange does
@@ -404,11 +406,13 @@ asks for, whatever vertical component the object's estimated velocity carries,
 because an object settling on the belt carries one and a plan that follows it
 descends below the belt.
 
-`AC-MOVE-48`: The system shall plan the retreat as the descent reversed: the
-same clearance, the same duration derived from the same approach speed, and a
-terminal velocity of the object's own motion plus the approach speed along the
-belt normal, because a retreat that ends at rest slides backwards through the
-whole lift in the frame the object lives in.
+`AC-MOVE-48`: The system shall plan the retreat as a climb through the
+clearance: the duration `2 * clearance / approach speed`, entering at the
+object's own velocity and leaving at that velocity plus the approach speed
+along the belt normal, because a retreat that ends at rest slides backwards
+through the whole lift in the frame the object lives in. The descent covers
+the hover of `AC-BEHAVE-07`, so the two durations match only when that hover
+is the clearance.
 
 `AC-MOVE-49`: When a visit has to clear the belt side barrier, the system
 shall reach the barrier in an arc of its own, so the retreat's shape does not
@@ -613,12 +617,12 @@ horizontal speed in that frame. A late-descent retarget that sees a large
 object $v_y$ shall not put HOLD or RETREAT on that lateral speed in world.
 
 `AC-MOVE-74`: When a visit is planned or its approach is re-aimed, the system
-shall end the approach one clearance above where the object is predicted to be
-when the descent begins, moving with the belt and already coming down at the
-approach speed, so that relative to the moving belt the descent is vertical
-like the retreat (`AC-MOVE-72`). For an object carried at the belt velocity,
+shall end the approach above where the object is predicted to be when the
+descent begins, moving with the belt, so that relative to the moving belt the
+descent is vertical (`AC-MOVE-72`). For an object carried at the belt velocity,
 the system shall keep the flange within 1 mm of the object horizontally in the
-belt frame over the whole descent.
+belt frame over the whole descent. The height of that arrival, and that it
+carries no vertical velocity, are `AC-BEHAVE-07`.
 
 This narrows `AC-MOVE-10`: the arrival `AC-MOVE-10` predicts is the start of
 the descent for the approach arc and the end of the descent for the descent

@@ -55,6 +55,11 @@ in the order the cameras are listed, the first on top. The frame grows to
 the right, and downward when the stack is taller than the free camera, so
 the arm, the pick zone, and the placing bins stay in the free-camera image.
 
+`AC-CAM-07`: On a camera frame whose longer side is at least 64 px, the box
+border shall be thick enough that scaling the frame to three quarters of its
+width still leaves a closed rectangle. The interior of the box stays
+unpainted. A shorter frame keeps the one-pixel border of `AC-CAM-03`.
+
 ## Constraints
 
 The colour frame and the segmentation are separate renders of one camera at
@@ -71,3 +76,5 @@ the same run-length masks `segment_masks` already returns for the tracker, so
 a box is the object's pixels and not a projection of its pose. The views
 used to sit in a band under the free camera, and that band covered the
 placing bins. They now stand in a column on the right (`AC-CAM-06`).
+A one-pixel border does not survive the area filter that scale applies, so
+a camera frame paints a thicker border (`AC-CAM-07`).
