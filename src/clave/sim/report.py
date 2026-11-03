@@ -190,6 +190,7 @@ class DebugRunReport:
     ground_truth: bool = False
     camera_video_path: Path | None = None
     render_mode: str = "lite"
+    pick_log_path: Path | None = None
 
 
 def _report_document(report: DebugRunReport) -> dict[str, Any]:
@@ -333,6 +334,8 @@ def report_lines(report: DebugRunReport) -> tuple[str, ...]:
         lines.append(f"  camera video    {report.camera_video_path}")
     if report.telemetry_path is not None:
         lines.append(f"  telemetry       {report.telemetry_path}")
+    if report.pick_log_path is not None:
+        lines.append(f"  pick log        {report.pick_log_path}")
     lines.append(f"  metadata        {report.metadata_path}")
     if report.report_path is not None:
         lines.append(f"  report          {report.report_path}")
