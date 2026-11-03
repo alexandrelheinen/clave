@@ -265,7 +265,8 @@ def test_the_approach_ends_above_where_the_object_will_be() -> None:
     assert arc is not None
     arrival = arc.duration
     assert arc.end.position[0] == pytest.approx(now[0] + BELT[0] * arrival)
-    assert arc.end.position[2] == pytest.approx(now[2] + Z_OFFSET)
+    cruise = max(float(PARK[2]), float(now[2]) + Z_OFFSET)
+    assert arc.end.position[2] == pytest.approx(cruise)
 
 
 def test_the_descent_is_vertical_in_the_belt_frame() -> None:
@@ -303,16 +304,16 @@ def test_the_descent_is_vertical_in_the_belt_frame() -> None:
         )
 
 
-def test_the_approach_arrives_already_descending_and_moving_with_the_belt() -> None:
-    """The approach arrives already descending and moving with the belt.
+def test_the_approach_stays_level_until_it_is_over_the_object() -> None:
+    """AC-BEHAVE-07: the approach stays level until it is over the object.
 
-    So the two arcs chain rather than the flange stopping between them,
-    which is the whole reason the terminal velocity is a boundary condition
-    and not an outcome.
+    Ending already on the way down folds that drop into the same arc that is
+    still closing the horizontal gap, so the jaw arrives low and downstream.
     """
+    now = np.asarray((-0.40, 0.10, 0.95), dtype=np.float64)
     arc = approach(
         moving(PARK),
-        np.asarray((-0.40, 0.10, 0.95), dtype=np.float64),
+        now,
         BELT,
         Z_OFFSET,
         APPROACH_SPEED,
@@ -324,8 +325,18 @@ def test_the_approach_arrives_already_descending_and_moving_with_the_belt() -> N
         bisection_passes=BISECTION_PASSES,
     )
     assert arc is not None
+    cruise = max(float(PARK[2]), float(now[2]) + Z_OFFSET)
     assert arc.end.velocity[0] == pytest.approx(BELT[0])
-    assert arc.end.velocity[2] == pytest.approx(-APPROACH_SPEED)
+    assert arc.end.velocity[2] == pytest.approx(0.0)
+    assert arc.end.position[2] == pytest.approx(cruise)
+    for step in range(1, 21):
+        state = arc.at(arc.duration * step / 20.0)
+        carried = now + BELT * (arc.duration * step / 20.0)
+        miss = math.hypot(
+            state.position[0] - carried[0], state.position[1] - carried[1]
+        )
+        if miss > 0.005:
+            assert state.position[2] == pytest.approx(cruise)
 
 
 def test_the_approach_respects_both_ceilings_over_its_whole_length() -> None:

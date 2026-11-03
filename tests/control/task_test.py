@@ -1060,8 +1060,10 @@ def test_a_descent_is_not_given_up_when_the_correction_will_not_fit() -> None:
     coming down back up the belt, or takes the visit away a fraction of a
     second before the jaw shuts. A miss a fraction of which still fits is
     taken that far, which is `AC-MOVE-65`. This miss is past every fraction
-    the speed ceiling allows, so the plan already in hand is the one that
-    flies, and the visit is not abandoned.
+    the speed ceiling allows. The descent now lasts the hover
+    (`AC-BEHAVE-07`), so the miss has to stay past what that longer arc can
+    accept. The plan already in hand is the one that flies, and the visit
+    is not abandoned.
     """
     arm = machine(profile=Profile.FULL_VISIT)
     riding = Candidate(
@@ -1077,8 +1079,8 @@ def test_a_descent_is_not_given_up_when_the_correction_will_not_fit() -> None:
     plan = arm.plan
     wild = Candidate(
         track_id=1,
-        anchor=np.asarray((0.30, 10.0, PINCH_Z), dtype=np.float64),
-        flange=np.asarray((0.30, 10.0, PICK_Z), dtype=np.float64),
+        anchor=np.asarray((0.30, 200.0, PINCH_Z), dtype=np.float64),
+        flange=np.asarray((0.30, 200.0, PICK_Z), dtype=np.float64),
         closing_axis=math.pi / 2.0,
         distance_before_leaving=1.5,
         velocity_world=np.asarray((BELT_SPEED, 0.0, 0.0), dtype=np.float64),
