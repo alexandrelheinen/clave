@@ -145,19 +145,20 @@ def test_the_pick_instant_is_when_the_hold_begins() -> None:
 
 
 def test_the_retreat_is_the_descent_reversed() -> None:
-    """AC-MOVE-48: the retreat is the descent reversed.
+    """AC-MOVE-48: the retreat climbs the clearance.
 
-    Same clearance, and therefore the same duration, entering at the object's
-    own velocity and leaving at that velocity plus the approach speed along the
-    belt normal. A retreat that ends at rest is not a neutral choice: the
-    object's frame carries the belt and the flange does not, so the whole lift
-    slides backwards relative to the object it is holding.
+    The descent covers the hover (`AC-BEHAVE-07`), so its duration is that
+    drop. The retreat still climbs only the clearance, entering at the
+    object's own velocity and leaving at that velocity plus the approach
+    speed along the belt normal.
     """
     plan = a_plan()
     assert plan is not None
     descend = next(leg for leg in plan.legs if leg.phase is Phase.DESCEND).segment
     retreat = next(leg for leg in plan.legs if leg.phase is Phase.RETREAT).segment
-    assert retreat.duration == pytest.approx(descend.duration)
+    hover = float(PARK[2] - OBJECT[2])
+    assert descend.duration == pytest.approx(2.0 * hover / APPROACH_SPEED)
+    assert retreat.duration == pytest.approx(2.0 * CLEARANCE / APPROACH_SPEED)
     assert retreat.end.position[2] - descend.end.position[2] == pytest.approx(CLEARANCE)
     assert retreat.start.velocity == pytest.approx(descend.end.velocity)
     assert retreat.end.velocity == pytest.approx(
@@ -169,6 +170,33 @@ def test_the_retreat_is_the_descent_reversed() -> None:
     assert retreat.end.position[0] - retreat.start.position[0] == pytest.approx(
         BELT[0] * retreat.duration
     )
+
+
+def test_the_flange_stays_level_until_it_is_over_the_package() -> None:
+    """AC-BEHAVE-07: the flange stays level until it is over the package."""
+    plan = a_plan()
+    assert plan is not None
+    track = next(leg for leg in plan.legs if leg.phase is Phase.TRACK).segment
+    dropping = next(leg for leg in plan.legs if leg.phase is Phase.DESCEND).segment
+    assert track.end.velocity[2] == pytest.approx(0.0)
+    assert track.end.velocity[0] == pytest.approx(BELT[0])
+    assert track.end.position[2] == pytest.approx(PARK[2])
+    for step in range(1, 21):
+        t = track.duration * step / 20.0
+        state = track.at(t)
+        carried = OBJECT + BELT * t
+        miss = math.hypot(
+            state.position[0] - carried[0], state.position[1] - carried[1]
+        )
+        if miss > 0.005:
+            assert state.position[2] == pytest.approx(float(PARK[2]))
+    assert dropping.start.velocity[2] == pytest.approx(0.0)
+    for step in range(21):
+        t = dropping.duration * step / 20.0
+        state = dropping.at(t)
+        carried_x = OBJECT[0] + BELT[0] * (track.duration + t)
+        assert state.position[0] == pytest.approx(carried_x)
+        assert state.position[1] == pytest.approx(OBJECT[1])
 
 
 def test_a_vertical_velocity_does_not_move_the_grasp_plane() -> None:
@@ -478,9 +506,10 @@ def test_a_margin_buys_its_room_by_intercepting_later() -> None:
     """AC-MOVE-42: a margin buys its room by intercepting later."""
     soonest, roomy = a_plan(margin=1.0), a_plan(margin=1.15)
     assert soonest is not None and roomy is not None
+    drop = next(leg for leg in soonest.legs if leg.phase is Phase.DESCEND).segment
     assert roomy.pick_at > soonest.pick_at
     assert roomy.pick_at == pytest.approx(
-        (soonest.pick_at - 0.40) * 1.15 + 0.40, rel=1e-6
+        (soonest.pick_at - drop.duration) * 1.15 + drop.duration, rel=1e-6
     )
 
 
