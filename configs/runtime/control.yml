@@ -152,24 +152,19 @@ task:
   # centre of the pinch.
   release_belt_margin: 0.08
 
-  # How far above the object a planned approach ends, and how far the retreat
-  # lifts it afterwards.
+  # The lowest a planned approach may stand above the object, and how far
+  # the retreat lifts afterwards. The approach keeps the height the flange
+  # already holds when that is higher (`AC-BEHAVE-07`).
   #
-  # Chosen, then checked against the descent algebra. Fifty millimetres is
-  # about a third of the fingers' 155.8 mm length, so the pads are already
-  # astride the object at the start of the descent rather than arriving from
-  # above it. Small matters: everything about the interception is predicted
-  # forward over the descent, so a taller clearance is a longer horizon and a
-  # worse prediction.
+  # Fifty millimetres stays the floor. Raising it lengthens the horizon the
+  # interception is predicted over, and the approach already stands higher
+  # than this on the way in from park.
   grasp_clearance: 0.050
 
-  # How fast the flange is coming down when it reaches that clearance, so the
-  # approach and the descent chain without the arm stopping between them.
-  #
-  # An assumption, bounded by the algebra rather than measured. With the
-  # clearance above it puts the descent at 2Z/V = 0.40 s, four fifths of the
-  # 5Z/(2V) = 0.50 s beyond which the quintic dips below the object it is
-  # descending onto. See docs/trajectory-formulation.md for that derivation.
+  # The speed the rest-to-rest descent is scaled to. The approach arrives
+  # with none of it: a descent that begins already moving downward passes
+  # below the object. The duration is 2H/V over the hover H, and the peak
+  # vertical speed is 15/16 of this value. See docs/trajectory-formulation.md.
   approach_speed: 0.25
 
   # The longest interception a pick will plan for. Past it the object is

@@ -779,25 +779,21 @@ def refine(
                 obj_pos
                 + transport * np.asarray([1.0, 0.0, 0.0], dtype=np.float64) * rem_entry
             )
+            hover, velocity, lift = _hover_aim(
+                float(entry_leg.end.position[2]),
+                obj_pos_at_border,
+                drift,
+                transport,
+                track_leg.duration,
+                clearance,
+                drift_horizon,
+            )
             new_track_arc = _feasible_arc(
                 start=entry_leg.end,
                 kept=track_leg.end,
                 wanted=State(
-                    position=where_carried(
-                        obj_pos_at_border,
-                        drift,
-                        track_leg.duration,
-                        clearance,
-                        drift_horizon,
-                    ),
-                    velocity=np.asarray(
-                        (
-                            transport[0],
-                            transport[1],
-                            transport[2] - approach_speed,
-                        ),
-                        dtype=np.float64,
-                    ),
+                    position=hover,
+                    velocity=velocity,
                     acceleration=zeros(),
                 ),
                 duration=track_leg.duration,
@@ -812,7 +808,7 @@ def refine(
                 new_track_arc.end.position,
                 drift,
                 new_track_arc.duration,
-                clearance,
+                lift,
                 drift_horizon,
             )
             return _assemble(
@@ -847,25 +843,21 @@ def refine(
             rem_track = (entry_leg.duration + track_leg.duration) - elapsed
             track_elapsed = elapsed - entry_leg.duration
             current_state = track_leg.at(track_elapsed)
+            hover, velocity, lift = _hover_aim(
+                float(current_state.position[2]),
+                obj_pos,
+                drift,
+                transport,
+                rem_track,
+                clearance,
+                drift_horizon,
+            )
             new_track_arc = _feasible_arc(
                 start=current_state,
                 kept=track_leg.end,
                 wanted=State(
-                    position=where_carried(
-                        obj_pos,
-                        drift,
-                        rem_track,
-                        clearance,
-                        drift_horizon,
-                    ),
-                    velocity=np.asarray(
-                        (
-                            transport[0],
-                            transport[1],
-                            transport[2] - approach_speed,
-                        ),
-                        dtype=np.float64,
-                    ),
+                    position=hover,
+                    velocity=velocity,
                     acceleration=zeros(),
                 ),
                 duration=rem_track,
@@ -880,7 +872,7 @@ def refine(
                 new_track_arc.end.position,
                 drift,
                 new_track_arc.duration,
-                clearance,
+                lift,
                 drift_horizon,
             )
             return _assemble(
@@ -916,25 +908,22 @@ def refine(
     remaining = reaching.duration - elapsed
     if remaining <= 0.0:
         return None
+    here = reaching.at(elapsed)
+    hover, velocity, lift = _hover_aim(
+        float(here.position[2]),
+        obj_pos,
+        drift,
+        transport,
+        remaining,
+        clearance,
+        drift_horizon,
+    )
     arc = _feasible_arc(
-        start=reaching.at(elapsed),
+        start=here,
         kept=reaching.end,
         wanted=State(
-            position=where_carried(
-                obj_pos,
-                drift,
-                remaining,
-                clearance,
-                drift_horizon,
-            ),
-            velocity=np.asarray(
-                (
-                    transport[0],
-                    transport[1],
-                    transport[2] - approach_speed,
-                ),
-                dtype=np.float64,
-            ),
+            position=hover,
+            velocity=velocity,
             acceleration=zeros(),
         ),
         duration=remaining,
@@ -945,9 +934,7 @@ def refine(
     )
     if arc is None:
         return None
-    aimed = _object_under(
-        arc.end.position, drift, arc.duration, clearance, drift_horizon
-    )
+    aimed = _object_under(arc.end.position, drift, arc.duration, lift, drift_horizon)
     return _assemble(
         arc,
         plan.track_id,
@@ -1356,6 +1343,38 @@ def _assemble(
         pick_at=at_seconds + entry_duration + reaching.duration + dropping.duration,
         transport_velocity=transport_velocity,
     )
+
+
+def _hover_aim(
+    flange_z: float,
+    object_position: NDArray[np.float64],
+    drift: NDArray[np.float64],
+    transport: NDArray[np.float64],
+    seconds: float,
+    clearance: float,
+    drift_horizon: float,
+) -> tuple[NDArray[np.float64], NDArray[np.float64], float]:
+    """Return the level arrival above an object, and how far above it stands.
+
+    The arrival keeps the height the flange already holds when that is above
+    the clearance, and it matches the belt with no vertical velocity
+    (`AC-BEHAVE-07`).
+
+    Args:
+        flange_z: The flange height the arc starts from, in meters.
+        object_position: Where the object is at the start of the arc.
+        drift: The velocity [where_carried] predicts with.
+        transport: The belt-axis velocity the arrival matches.
+        seconds: How far ahead the aim is carried.
+        clearance: The configured clearance, in meters.
+        drift_horizon: How long a lateral velocity is carried.
+
+    Returns:
+        The arrival position, its velocity, and the lift used to place it.
+    """
+    lift = max(clearance, flange_z - float(object_position[2]))
+    position = where_carried(object_position, drift, seconds, lift, drift_horizon)
+    return position, transport.copy(), lift
 
 
 def _object_under(

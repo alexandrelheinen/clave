@@ -431,9 +431,11 @@ def approach(
     """Return the soonest feasible arc onto the point above a moving object.
 
     The arc ends above where the object is when the descent begins, moving
-    with the object and already coming down at the approach speed, so the
-    two arcs chain without stopping and the descent that follows is
-    vertical relative to the belt (`AC-MOVE-74`).
+    with the object and with no vertical velocity (`AC-BEHAVE-07`). The
+    height is the one the flange already holds when that is above the
+    clearance, so the quintic does not lose height while it is still
+    closing the horizontal gap. Ending where the object will be when the
+    descent finishes puts the jaw one descent downstream (`AC-MOVE-74`).
 
     Args:
         flange: Where the flange is now and how it is moving.
@@ -474,15 +476,15 @@ def approach(
         raise TypeError("approach requires approach_clearance_z or z_offset")
 
     # Aim positions carry lateral drift for a horizon; matching velocity is
-    # belt-axis only (AC-MOVE-71). The world image of object-frame rest at the
-    # pick is transport, not contact-disturbed cvel. The horizon is the
-    # approach itself; adding the descent would aim at where the descent has
-    # to end, not where it starts.
+    # belt-axis only (AC-MOVE-71). The approach spends none of the vertical
+    # speed. The descent does, and the signature keeps the speed so one
+    # caller plans both arcs. Adding the descent to the horizon would aim
+    # at where the descent has to end, not where it starts.
+    del approach_speed
     match = np.asarray([max(0.0, float(obj_vel[0])), 0.0, 0.0], dtype=np.float64)
+    lift = max(clearance, float(flange.position[2]) - float(obj_pos[2]))
 
     def arc(seconds: float) -> Segment:
-        end_velocity = match.copy()
-        end_velocity[2] -= approach_speed
         return Segment(
             start=flange,
             end=State(
@@ -490,10 +492,10 @@ def approach(
                     obj_pos,
                     obj_vel,
                     seconds,
-                    clearance,
+                    lift,
                     drift_horizon,
                 ),
-                velocity=end_velocity,
+                velocity=match.copy(),
                 acceleration=zeros(),
             ),
             duration=seconds,
@@ -549,7 +551,9 @@ def descend(
     Returns:
         The arc. It ends moving with the object rather than at rest, because
         a jaw arriving stopped has the object sliding through it at belt
-        speed.
+        speed. Vertically it is rest to rest: the approach arrived with no
+        vertical velocity, and a descent that begins already moving downward
+        passes below the object (`AC-BEHAVE-07`).
     """
     obj_pos = object_position if object_position is not None else object_position_belt
     if obj_pos is None:
@@ -561,7 +565,13 @@ def descend(
     if clearance is None:
         raise TypeError("descend requires approach_clearance_z or z_offset")
 
-    dt = descent_seconds(clearance, approach_speed)
+    drop = float(approach_arc.end.position[2] - float(obj_pos[2]))
+    if drop + 1e-9 < clearance:
+        raise ValueError(
+            f"the approach ends {drop} m above the object, under the "
+            f"{clearance} m clearance"
+        )
+    dt = descent_seconds(drop, approach_speed)
     arrival = approach_arc.duration + dt
     match = np.asarray([max(0.0, float(obj_vel[0])), 0.0, 0.0], dtype=np.float64)
     return Segment(

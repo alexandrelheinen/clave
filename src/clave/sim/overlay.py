@@ -25,6 +25,29 @@ from clave.world import config
 
 # Green reads on the belt without sitting on a material the line already paints.
 _BOX_RGB = (0, 255, 0)
+# A camera frame shorter than this keeps a one-pixel border (AC-CAM-03).
+_THIN_FRAME_PIXELS = 64
+# A 640-wide frame gets a 4-pixel border. The inset scale is three quarters,
+# and a one-pixel border does not survive that filter (AC-CAM-07).
+_BORDER_DIVISOR = 160
+
+
+def _border_thickness(height: int, width: int) -> int:
+    """Return how thick a box border has to be on a frame of this size.
+
+    Args:
+        height: Frame height in pixels.
+        width: Frame width in pixels.
+
+    Returns:
+        The border thickness in pixels. One on a short frame, so a unit
+        test's interior pixel stays empty. Several on a camera frame, so
+        the inset's area filter still leaves a rectangle.
+    """
+    longest = max(height, width)
+    if longest < _THIN_FRAME_PIXELS:
+        return 1
+    return max(2, longest // _BORDER_DIVISOR)
 
 
 def bounds_of(runs: Sequence[tuple[int, int, int]]) -> tuple[int, int, int, int]:
@@ -67,6 +90,7 @@ def paint_boxes(
     height, width = frame.shape[:2]
     if render_mode == "lite" or not labels:
         color = np.asarray(_BOX_RGB, dtype=np.uint8)
+        stroke = _border_thickness(height, width)
         for x0, y0, x1, y1 in boxes:
             left = min(max(int(x0), 0), width - 1)
             right = min(max(int(x1), 0), width - 1)
@@ -76,10 +100,18 @@ def paint_boxes(
                 left, right = right, left
             if bottom < top:
                 top, bottom = bottom, top
-            frame[top, left : right + 1] = color
-            frame[bottom, left : right + 1] = color
-            frame[top : bottom + 1, left] = color
-            frame[top : bottom + 1, right] = color
+            band = stroke
+            if right - left <= 2 * stroke or bottom - top <= 2 * stroke:
+                band = 1
+            for offset in range(band):
+                row_top = min(top + offset, bottom)
+                row_bottom = max(bottom - offset, top)
+                col_left = min(left + offset, right)
+                col_right = max(right - offset, left)
+                frame[row_top, col_left : col_right + 1] = color
+                frame[row_bottom, col_left : col_right + 1] = color
+                frame[row_top : row_bottom + 1, col_left] = color
+                frame[row_top : row_bottom + 1, col_right] = color
         return frame
 
     # Demo / realistic mode: styled bounding boxes with labels

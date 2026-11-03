@@ -92,6 +92,7 @@ from clave.sim.overlay import (
     inset_frame_size,
     paste_camera_insets,
 )
+from clave.sim.pick_log import PickLog
 from clave.sim.report import (
     GRASPED_METERS,
     DebugRunError,
@@ -540,6 +541,7 @@ def run(
         )
     else:
         LOGGER.info("telemetry disabled")
+    pick_log = PickLog(out / "pick-evidence.csv", model)
 
     metadata_path = out / "metadata.json"
     metadata_path.write_text(
@@ -784,10 +786,10 @@ def run(
                     camera_insets.append((spec.source_id, extra_rgb, extra_seg))
     next_capture = 0.0
     # Ground truth is the object's own pose, so the arm can read it far faster
-    # than the cameras settle. A descent lasts 0.4 s and the capture is 0.5 s,
-    # which means a visit steered only at the capture closes on a prediction
-    # made before the descent began. Fifty milliseconds keeps that prediction
-    # inside a few millimetres at the lateral speeds measured on this belt.
+    # than the cameras settle. A capture is 0.5 s, which means a visit steered
+    # only at the capture closes on a prediction made before the descent
+    # began. Fifty milliseconds keeps that prediction inside a few millimetres
+    # at the lateral speeds measured on this belt.
     next_ground_truth = 0.0
     ground_truth_steer = 0.05
     next_frame = 0.0
@@ -1126,6 +1128,18 @@ def run(
                     jaw,
                     command,
                 )
+            _note_pick(
+                pick_log,
+                mujoco,
+                model,
+                data,
+                conveyor,
+                indices,
+                subject,
+                telemetry_phase.value,
+                0.0 if flown is None else float(flown.grip),
+                jaw.lowest_z,
+            )
 
             # The video and live window render on their own cadence. The
             # capture cadence is what the tracker decides at, and watching
@@ -1460,6 +1474,7 @@ def run(
                 seg.close()
         if telemetry is not None:
             telemetry.close()
+        pick_log.close()
         if opened:
             cv2.destroyAllWindows()
 
@@ -1506,6 +1521,7 @@ def run(
             None if camera_recorder is None else camera_recorder.settings.path
         ),
         telemetry_path=telemetry_path,
+        pick_log_path=pick_log.path,
         windowed=opened,
         reason=reason,
         ground_truth=use_ground_truth,
@@ -1522,6 +1538,94 @@ def run(
     (out / "report.txt").write_text("\n".join(report_lines(report)) + "\n")
     LOGGER.info("run report written: %s and %s", written_report, out / "report.txt")
     return replace(report, report_path=written_report)
+
+
+def _note_pick(
+    log: PickLog,
+    mujoco: Any,
+    model: Any,
+    data: Any,
+    conveyor: Any,
+    indices: Any,
+    track: int | None,
+    phase: str,
+    grip: float,
+    jaw_lowest_z: float,
+) -> None:
+    """Append one sample of the visit the arm is on, when it is on one.
+
+    Args:
+        log: The visit log.
+        mujoco: The imported module.
+        model: The compiled model.
+        data: Its state.
+        conveyor: The belt, whose active packages carry the track serial.
+        indices: The arm indices.
+        track: The visit's target, or None when the arm is not on one.
+        phase: The phase the tick commanded.
+        grip: The jaw command, from 0 open to 1 shut.
+        jaw_lowest_z: The lowest collision point of the jaw, in meters.
+    """
+    pinch = _pinch(indices, data)
+    pinch_xyz = (float(pinch[0]), float(pinch[1]), float(pinch[2]))
+    item = None
+    if track is not None:
+        item = next(
+            (active for active in conveyor.active if active.serial == track),
+            None,
+        )
+    if item is None:
+        log.record(
+            model,
+            data,
+            track=track,
+            phase=phase,
+            grip=grip,
+            pinch=pinch_xyz,
+            object_xyz=pinch_xyz,
+            object_body=-1,
+            jaw_lowest_z=jaw_lowest_z,
+            object_top_z=0.0,
+        )
+        return
+    body = int(mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, item.name))
+    centre = data.xipos[body]
+    log.record(
+        model,
+        data,
+        track=track,
+        phase=phase,
+        grip=grip,
+        pinch=pinch_xyz,
+        object_xyz=(float(centre[0]), float(centre[1]), float(centre[2])),
+        object_body=body,
+        jaw_lowest_z=jaw_lowest_z,
+        object_top_z=_package_top(model, data, body),
+    )
+
+
+def _package_top(model: Any, data: Any, body: int) -> float:
+    """Return the highest collision point of one body, in meters.
+
+    Args:
+        model: The compiled model.
+        data: Its state.
+        body: The body.
+
+    Returns:
+        That height. The body's centre stands in when it has no collision
+        geometry.
+    """
+    top = float(data.xipos[body][2])
+    for geom in range(int(model.ngeom)):
+        if int(model.geom_bodyid[geom]) != body or model.geom_contype[geom] == 0:
+            continue
+        centre = np.asarray(model.geom_aabb[geom, :3], dtype=np.float64)
+        half = np.asarray(model.geom_aabb[geom, 3:], dtype=np.float64)
+        row = np.asarray(data.geom_xmat[geom], dtype=np.float64).reshape(3, 3)[2]
+        height = float(data.geom_xpos[geom][2] + row @ centre + np.abs(row) @ half)
+        top = max(top, height)
+    return top
 
 
 def _open_window(cv2: Any, wanted: bool) -> tuple[bool, str | None]:
