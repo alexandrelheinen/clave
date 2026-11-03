@@ -72,23 +72,26 @@ state, so the flange never stops between them.
 
 | # | Arc | $\mathbf{p}$, $\mathbf{v}$, $\mathbf{a}$ at the end | Duration |
 |---|---|---|---|
-| 1 | Approach | $\mathbf{p}_o(t_0{+}T) + \mathbf{z}$, $\;\mathbf{v}_o - V_a\hat{\mathbf{z}}$, $\;\mathbf{0}$ | $T$, solved |
-| 2 | Descent | $\mathbf{p}_o(t_0{+}T{+}\delta t)$, $\;\mathbf{v}_o$, $\;\mathbf{0}$ | $\delta t$, derived |
+| 1 | Approach | $\mathbf{p}_o(t_0{+}T) + \mathbf{h}$, $\;\mathbf{v}_o$, $\;\mathbf{0}$ | $T$, solved |
+| 2 | Descent | $\mathbf{p}_o(t_0{+}T{+}\delta t)$, $\;\mathbf{v}_o$, $\;\mathbf{0}$ | $2H/V_a$ |
 | 3 | Grasp | held, moving with the belt | the dwell |
-| 4 | Retreat | $\mathbf{p}_o + \mathbf{z}$, $\;\mathbf{v}_o + V_a\hat{\mathbf{z}}$, $\;\mathbf{0}$ | $\delta t$ |
+| 4 | Retreat | $\mathbf{p}_o + \mathbf{z}$, $\;\mathbf{v}_o + V_a\hat{\mathbf{z}}$, $\;\mathbf{0}$ | $2Z/V_a$ |
 | 5 | Deliver | the chute for the object's class, at rest | unconstrained |
 
-where $\mathbf{z} = (0, 0, Z)$ is the clearance and $V_a$ the approach
-speed. Arc 1 begins at the last drop point, at rest.
+where $\mathbf{z} = (0, 0, Z)$ is the clearance, $V_a$ the approach speed,
+and $\mathbf{h} = (0, 0, H)$ the hover. $H$ is the larger of $Z$ and the
+height the flange already holds above the object, so the approach does not
+lose height (`AC-BEHAVE-07`). Arc 1 begins at the last drop point, at rest,
+and arrives with the belt's velocity and none vertically.
 
-**The sequence mirrors itself about the pick.** Arcs 2 and 4 are one arc read
-in opposite directions: the descent leaves the clearance at the approach speed
-and reaches the object at the object's own velocity, and the retreat leaves the
-object at that velocity and reaches the clearance at the object's velocity plus
-the approach speed along the normal. They share $Z$, so they share the duration
-$2Z/V_a$ as well. An arc that ends at rest destroys the mirror and, worse,
-slides the flange backwards through the whole lift in the frame the object
-lives in, because the object's frame carries the belt and the flange does not.
+**The descent is vertical in the object's frame.** It leaves the hover with
+no vertical velocity and reaches the object at the object's own velocity.
+Both ends carry $\mathbf{v}_o$ and the ends differ by $\mathbf{v}_o\delta t$,
+so the horizontal quintic is a straight line at belt speed. The retreat
+still climbs the clearance $Z$ at $+V_a$ along the normal (`AC-MOVE-48`).
+An arc that ends at rest horizontally slides the flange backwards through
+the lift in the frame the object lives in, because that frame carries the
+belt and the flange does not.
 
 The arc that climbs from the clearance to the height the delivery crosses the
 belt's side barrier at is **not** part of that mirror. It exists so the retreat
@@ -149,9 +152,14 @@ rather than by differentiating it.
 
 Not free, and this is the part most worth writing down.
 
-In the frame moving with the belt the descent is purely vertical (`AC-MOVE-74`):
-from height $Z$ with vertical speed $-V_a$ and no acceleration, to rest on the
-object. Only two basis terms survive,
+In the frame moving with the belt the descent is purely vertical, and both
+vertical boundary velocities are zero (`AC-BEHAVE-07`). It is the rest-to-rest
+quintic over the hover height $H$, whose peak speed is $\tfrac{15}{8}H/\delta t$.
+The implementation takes $\delta t = 2H/V_a$, so that peak is $\tfrac{15}{16}V_a$.
+A rest-to-rest quintic has no excursion past its ends.
+
+A descent that begins at vertical speed $-V_a$ is a different polynomial.
+Only two basis terms survive,
 
 $$z(s) = Z\,H_0(s) - V_a\,\delta t\, H_1(s).$$
 
@@ -172,16 +180,9 @@ exactly when that coefficient turns negative, giving the condition
 
 $$\boxed{\;\delta t \le \frac{5Z}{2V_a}\;}$$
 
-Longer and the jaw closes through the object rather than around it. The
-implementation uses
-
-$$\delta t = \frac{2Z}{V_a},$$
-
-four fifths of the limit, which leaves margin instead of sitting on a
-boundary. Nothing is lost by that: acceleration is not the binding
-constraint here, so stretching $\delta t$ toward the limit buys nothing,
-and a shorter descent keeps the prediction horizon short, which is the
-reason the clearance is small in the first place.
+That is the polynomial the approach does not arrive on. The duration the
+implementation uses is the rest-to-rest one above, with the hover $H$ in
+place of $Z$.
 
 **This was wrong once and is worth recording as wrong.** The first
 statement of the formulation said $2Z/V_a$ *was* the boundary, on the
