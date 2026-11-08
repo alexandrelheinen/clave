@@ -1519,6 +1519,9 @@ def run(
             camera_recorder.close()
         if telemetry is not None:
             telemetry.close()
+        closer = getattr(detector, "close", None)
+        if callable(closer):
+            closer()
         pick_log.close()
         if opened:
             cv2.destroyAllWindows()

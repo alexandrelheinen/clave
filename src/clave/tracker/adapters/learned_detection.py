@@ -140,9 +140,13 @@ def detect(
 def load_segmenter(checkpoint: Path) -> InstanceSegmenter:
     """Load a YOLO-seg checkpoint, failing closed when it is absent.
 
+    Inference runs in a spawned worker process. Ultralytics/OpenCV and
+    MuJoCo/OSMesa share a process poorly (segfault on the first predict once
+    a GL context exists), so the sim keeps YOLO out of the renderer process.
+
     Args:
-        checkpoint: Path to a CLAVE `{candidate}.pt` envelope or a raw
-            Ultralytics weights file.
+        checkpoint: Path to a CLAVE `{candidate}.pt` file or raw Ultralytics
+            weights.
 
     Returns:
         A segmenter ready for `detect`.
@@ -156,25 +160,115 @@ def load_segmenter(checkpoint: Path) -> InstanceSegmenter:
             f"detection checkpoint {checkpoint} is absent; "
             f"train it with `{TRAIN_COMMAND}`"
         )
-    try:
-        from clave.training.yolo_seg import YoloSegError, load_yolo_from_checkpoint
+    meta = checkpoint.with_name(f"{checkpoint.stem}.meta.json")
+    if meta.is_file():
+        import json
 
-        return YoloSegmenter(load_yolo_from_checkpoint(checkpoint))
-    except YoloSegError:
-        raise
-    except Exception as error:
-        raise LearnedDetectionError(
-            f"detection checkpoint {checkpoint} could not be loaded: {error}; "
-            f"train it with `{TRAIN_COMMAND}`"
-        ) from error
+        named = json.loads(meta.read_text()).get("candidate")
+        if named is not None and named != "yolo8n-seg":
+            raise LearnedDetectionError(
+                f"{meta} holds {named!r}, not 'yolo8n-seg'"
+            )
+    return SubprocessYoloSegmenter(checkpoint)
+
+
+class SubprocessYoloSegmenter:
+    """YOLO-seg inference in a spawned worker (safe beside MuJoCo/OSMesa)."""
+
+    def __init__(self, checkpoint: Path) -> None:
+        """Start the worker and load weights there.
+
+        Args:
+            checkpoint: Path to YOLO-seg weights.
+        """
+        import multiprocessing as multiproc
+
+        ctx = multiproc.get_context("spawn")
+        self._requests: Any = ctx.Queue(maxsize=1)
+        self._responses: Any = ctx.Queue(maxsize=1)
+        self._worker = ctx.Process(
+            target=_yolo_worker,
+            args=(str(checkpoint), self._requests, self._responses),
+            daemon=True,
+            name="yolo8n-seg-worker",
+        )
+        self._worker.start()
+        ready = self._responses.get()
+        if ready != "ready":
+            raise LearnedDetectionError(
+                f"detection worker failed to start: {ready!r}; "
+                f"train weights with `{TRAIN_COMMAND}`"
+            )
+
+    def segment(self, frame: NDArray[np.uint8]) -> Sequence[InstancePrediction]:
+        """Run one forward pass on an RGB frame in the worker."""
+        self._requests.put(np.ascontiguousarray(frame))
+        payload = self._responses.get()
+        if isinstance(payload, str):
+            raise LearnedDetectionError(payload)
+        predictions: list[InstancePrediction] = []
+        for mask, class_index, confidence in payload:
+            predictions.append(
+                InstancePrediction(
+                    mask=np.asarray(mask, dtype=bool),
+                    class_index=class_index,
+                    confidence=float(confidence),
+                )
+            )
+        return tuple(predictions)
+
+    def close(self) -> None:
+        """Stop the worker process."""
+        try:
+            self._requests.put(None)
+        except Exception:
+            pass
+        self._worker.join(timeout=5.0)
+        if self._worker.is_alive():
+            self._worker.terminate()
+
+
+def _yolo_worker(checkpoint: str, requests: Any, responses: Any) -> None:
+    """Load YOLO once and answer segment requests until None is sent."""
+    try:
+        from ultralytics import YOLO
+
+        model = YOLO(checkpoint)
+        responses.put("ready")
+    except Exception as error:  # noqa: BLE001 - surface any load failure
+        responses.put(f"worker load failed: {error}")
+        return
+    while True:
+        frame = requests.get()
+        if frame is None:
+            return
+        try:
+            results = model.predict(frame, verbose=False)
+            packed: list[tuple[NDArray[np.bool_], int | None, float]] = []
+            if results and results[0].masks is not None and results[0].boxes is not None:
+                result = results[0]
+                height, width = frame.shape[:2]
+                for index in range(int(result.masks.data.shape[0])):
+                    mask = _resize_mask(result.masks.data[index], height, width)
+                    class_index = int(result.boxes.cls[index].item())
+                    if not 0 <= class_index < CLASS_COUNT:
+                        class_value: int | None = None
+                    else:
+                        class_value = class_index
+                    packed.append(
+                        (
+                            mask,
+                            class_value,
+                            float(result.boxes.conf[index].item()),
+                        )
+                    )
+            responses.put(packed)
+        except Exception as error:  # noqa: BLE001 - return to parent
+            responses.put(f"worker predict failed: {error}")
 
 
 class YoloSegmenter:
-    """Ultralytics YOLO instance segmentation wrapper.
-
-    Imports stay inside methods so importing this module does not require
-    ultralytics on machines that only run the geometry tests.
-    """
+    """In-process Ultralytics wrapper for benches without a MuJoCo GL context."""
 
     def __init__(self, model: Path | Any) -> None:
         """Wrap an Ultralytics model or load weights from a path.
