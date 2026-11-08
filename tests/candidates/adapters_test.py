@@ -11,8 +11,11 @@ from clave.candidates.base import MATERIAL_CLASS_COUNT
 from clave.candidates.bench import benchmark, count_parameters
 from clave.candidates.perception import (
     RESNET50,
+    YOLO8N_SEG,
     _build_resnet50,
+    _build_yolo8n_seg,
     forward_classifier,
+    forward_yolo8n_seg,
 )
 from clave.candidates.policy import (
     BEHAVIOR_CLONING,
@@ -58,11 +61,23 @@ def test_the_behavior_cloning_baseline_is_small_and_runs() -> None:
     assert result.median_latency_seconds is not None
 
 
+def test_ac_det_02_yolo8n_seg_is_described_without_loading() -> None:
+    """AC-DET-02: yolo8n-seg sits in the registry and loads only on demand."""
+    assert YOLO8N_SEG.name == "yolo8n-seg"
+    assert YOLO8N_SEG.requires == "ultralytics"
+    pytest.importorskip("ultralytics")
+    model = _build_yolo8n_seg()
+    result = benchmark(
+        YOLO8N_SEG, model, forward_yolo8n_seg(model), warmup=0, repetitions=1
+    )
+    assert result.median_latency_seconds is not None
+
+
 def test_a_sweep_reports_every_candidate_one_way_or_the_other() -> None:
     """Nothing vanishes from the sweep."""
     pytest.importorskip("torch")
     rows = sweep(warmup=0, repetitions=1)
-    assert len(rows) == 6
+    assert len(rows) == 7
     for spec, result, note in rows:
         assert spec.name
         assert result is not None or note is not None
