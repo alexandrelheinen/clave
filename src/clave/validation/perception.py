@@ -244,6 +244,20 @@ def score_candidate(
         )
     if not checkpoint.is_file():
         raise PerceptionEvalError(f"checkpoint {checkpoint} is missing")
+    if candidate not in (
+        "faster-rcnn-mobilenetv3",
+        "resnet50-baseline",
+        "yolo8n-seg",
+    ):
+        raise PerceptionEvalError(
+            f"{candidate} has no corpus scorer; the known ones are "
+            "resnet50-baseline, faster-rcnn-mobilenetv3, and yolo8n-seg"
+        )
+
+    description = read_dataset(dataset)
+    part = description.role or "validation"
+    if candidate == "yolo8n-seg":
+        return _score_yolo_seg(dataset, checkpoint, description, part)
 
     import torch
 
@@ -264,8 +278,6 @@ def score_candidate(
     stored_side = state.get("input_side_pixels")
     input_side = int(stored_side) if stored_side is not None else None
 
-    description = read_dataset(dataset)
-    part = description.role or "validation"
     from clave.data.dataset import iter_split
 
     frames = 0
@@ -274,11 +286,7 @@ def score_candidate(
     overlap_sum = 0.0
     overlap_count = 0
     matched_boxes = 0
-    if candidate not in ("faster-rcnn-mobilenetv3", "resnet50-baseline"):
-        raise PerceptionEvalError(
-            f"{candidate} has no corpus scorer; the known ones are "
-            "resnet50-baseline and faster-rcnn-mobilenetv3"
-        )
+
     live_bits = _RunningBits()
     live_boxes = _RunningBoxes()
     agreement = 0.0
@@ -330,6 +338,44 @@ def score_candidate(
         dataset_digest=description.digest,
         frames=frames,
         overall_agreement=agreement,
+        mean_iou=mean_iou,
+    )
+
+
+def _score_yolo_seg(
+    dataset: Path,
+    checkpoint: Path,
+    description: Any,
+    part: str,
+) -> PerceptionScore:
+    """AC-DET-13: mean mask IoU against corpus instance maps."""
+    from clave.data.dataset import iter_split
+    from clave.training.yolo_seg import load_yolo_from_checkpoint, score_masks
+
+    model = load_yolo_from_checkpoint(checkpoint)
+    frames = 0
+    overlap_sum = 0.0
+    overlap_count = 0
+    bar = Progress(frame_total(description, part), "validate yolo8n-seg", "frame")
+    try:
+        for rollout in iter_split(dataset, part):
+            examples = rollout.examples
+            frames += len(examples)
+            mean_iou, count = score_masks(model, examples)
+            if count:
+                overlap_sum += mean_iou * count
+                overlap_count += count
+            bar.update(len(examples), iou=overlap_sum / overlap_count if overlap_count else 0.0)
+            del rollout
+            gc.collect()
+    finally:
+        bar.close()
+    mean_iou = overlap_sum / overlap_count if overlap_count else 0.0
+    return PerceptionScore(
+        candidate="yolo8n-seg",
+        dataset_digest=description.digest,
+        frames=frames,
+        overall_agreement=mean_iou,
         mean_iou=mean_iou,
     )
 

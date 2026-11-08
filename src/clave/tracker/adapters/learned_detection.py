@@ -141,7 +141,8 @@ def load_segmenter(checkpoint: Path) -> InstanceSegmenter:
     """Load a YOLO-seg checkpoint, failing closed when it is absent.
 
     Args:
-        checkpoint: Path to the weights file.
+        checkpoint: Path to a CLAVE `{candidate}.pt` envelope or a raw
+            Ultralytics weights file.
 
     Returns:
         A segmenter ready for `detect`.
@@ -155,7 +156,17 @@ def load_segmenter(checkpoint: Path) -> InstanceSegmenter:
             f"detection checkpoint {checkpoint} is absent; "
             f"train it with `{TRAIN_COMMAND}`"
         )
-    return YoloSegmenter(checkpoint)
+    try:
+        from clave.training.yolo_seg import YoloSegError, load_yolo_from_checkpoint
+
+        return YoloSegmenter(load_yolo_from_checkpoint(checkpoint))
+    except YoloSegError:
+        raise
+    except Exception as error:
+        raise LearnedDetectionError(
+            f"detection checkpoint {checkpoint} could not be loaded: {error}; "
+            f"train it with `{TRAIN_COMMAND}`"
+        ) from error
 
 
 class YoloSegmenter:
@@ -165,15 +176,18 @@ class YoloSegmenter:
     ultralytics on machines that only run the geometry tests.
     """
 
-    def __init__(self, checkpoint: Path) -> None:
-        """Load weights from disk.
+    def __init__(self, model: Path | Any) -> None:
+        """Wrap an Ultralytics model or load weights from a path.
 
         Args:
-            checkpoint: Path to a YOLO-seg weights file.
+            model: A loaded YOLO object, or a path to weights YOLO can open.
         """
-        from ultralytics import YOLO
+        if isinstance(model, (str, Path)):
+            from ultralytics import YOLO
 
-        self._model = YOLO(str(checkpoint))
+            self._model = YOLO(str(model))
+        else:
+            self._model = model
 
     def segment(self, frame: NDArray[np.uint8]) -> Sequence[InstancePrediction]:
         """Run one forward pass on an RGB frame."""
