@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from clave.tracker.adapters.masks import pixel_mask_from_array
 from clave.tracker.evidence import PixelMask
 
 INSTANCE_PREFIX = "object_"
@@ -45,7 +46,6 @@ def segment_masks(model: Any, segmentation: Any) -> dict[str, PixelMask]:
     import numpy as np
 
     ids = segmentation[:, :, 0]
-    height, width = ids.shape
     masks: dict[str, PixelMask] = {}
     for geom_id in np.unique(ids):
         if geom_id < 0 or geom_id >= model.ngeom:
@@ -53,31 +53,7 @@ def segment_masks(model: Any, segmentation: Any) -> dict[str, PixelMask]:
         name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, int(geom_id))
         if name is None or not name.startswith(INSTANCE_PREFIX):
             continue
-        runs = _runs_of(np.asarray(ids == geom_id))
-        if runs:
-            masks[name.removesuffix("_geom")] = PixelMask(
-                width=width, height=height, runs=runs
-            )
+        packed = pixel_mask_from_array(np.asarray(ids == geom_id))
+        if packed is not None:
+            masks[name.removesuffix("_geom")] = packed
     return masks
-
-
-def _runs_of(covered: Any) -> tuple[tuple[int, int, int], ...]:
-    """Return the horizontal runs of a boolean pixel mask.
-
-    Args:
-        covered: A height by width boolean array.
-
-    Returns:
-        One `(row, start_column, length)` triple per run.
-    """
-    import numpy as np
-
-    runs: list[tuple[int, int, int]] = []
-    for row in np.flatnonzero(covered.any(axis=1)):
-        columns = np.flatnonzero(covered[row])
-        breaks = np.flatnonzero(np.diff(columns) > 1)
-        starts = np.concatenate(([0], breaks + 1))
-        ends = np.concatenate((breaks, [len(columns) - 1]))
-        for start, end in zip(starts, ends, strict=True):
-            runs.append((int(row), int(columns[start]), int(end - start + 1)))
-    return tuple(runs)
