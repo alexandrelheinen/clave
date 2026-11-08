@@ -349,7 +349,10 @@ def _capture_rollout(
                     float(angle)
                     for angle in armmod.joint_positions(model, data, indices)
                 ),
-                captures=tuple(captures) if store_all else (),
+                # Always keep camera captures (and their instance maps). Learned
+                # detection trains on those maps (issue #117); dropping them
+                # left YOLO with nothing to learn from a format-1 archive.
+                captures=tuple(captures),
             )
         )
         next_capture = data.time + capture_interval_seconds
