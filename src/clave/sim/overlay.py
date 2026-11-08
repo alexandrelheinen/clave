@@ -17,7 +17,7 @@ from numpy.typing import NDArray
 from clave.control.settings import Phase
 from clave.control.task import TaskMachine
 from clave.sim.report import DebugRunError
-from clave.tracker.adapters.render import segment_masks
+from clave.tracker.evidence import PixelMask
 from clave.tracker.listing import described_fields
 from clave.tracker.markers import draw, draw_park
 from clave.world import arm as armmod
@@ -207,24 +207,21 @@ def _camera_recorder(out: Path, width: int, height: int, fps: int) -> Any:
 
 def _camera_frame(
     rgb: Any,
-    segmentation: Any,
-    model: Any,
     data: Any,
     camera: str,
+    masks: tuple[PixelMask, ...] = (),
     render_mode: str = "lite",
 ) -> NDArray[np.uint8]:
-    """Paint one detection-camera frame, with a box on each segmented object.
+    """Paint one detection-camera frame, with a box on each predicted mask.
 
-    The colour frame and the segmentation are the same camera at the same
-    size, so a box sits on the pixels the object actually covered
-    (`AC-CAM-03`).
+    Boxes come from the learned detector's `PixelMask` values (issue #117),
+    not from a MuJoCo segmentation render.
 
     Args:
         rgb: Renderer for the colour frame.
-        segmentation: Renderer for geometry ids, segmentation already enabled.
-        model: The compiled model, used to name geometries.
         data: The simulated state.
         camera: The detection camera's name.
+        masks: Instance masks from the latest YOLO detection for this camera.
         render_mode: Render mode ('lite' or 'demo'/'realistic').
 
     Returns:
@@ -236,39 +233,33 @@ def _camera_frame(
     else:
         _without_shadows(rgb)
     frame = np.array(rgb.render(), copy=True)
-    segmentation.update_scene(data, camera=camera)
-    found = segment_masks(model, segmentation.render())
-    boxes_and_labels = [
-        (bounds_of(mask.runs), name.replace("object_", "OBJ_"))
-        for name, mask in found.items()
-    ]
-    boxes = [item[0] for item in boxes_and_labels]
-    labels = [item[1] for item in boxes_and_labels]
+    boxes = [bounds_of(mask.runs) for mask in masks]
+    labels = [f"DET_{index}" for index in range(len(boxes))]
     paint_boxes(frame, boxes, labels=labels, render_mode=render_mode)
     return frame
 
 
 def _write_camera_frame(
     rgb: Any,
-    segmentation: Any,
-    model: Any,
     data: Any,
     camera: str,
     recorder: Any,
+    masks: tuple[PixelMask, ...] = (),
     render_mode: str = "lite",
 ) -> None:
     """Paint one detection-camera frame and hand it to the encoder.
 
     Args:
         rgb: Renderer for the colour frame.
-        segmentation: Renderer for geometry ids, segmentation already enabled.
-        model: The compiled model, used to name geometries.
         data: The simulated state.
         camera: The detection camera's name.
         recorder: The open encoder.
+        masks: Instance masks from the latest YOLO detection for this camera.
         render_mode: Render mode ('lite' or 'demo'/'realistic').
     """
-    recorder.write(_camera_frame(rgb, segmentation, model, data, camera, render_mode))
+    recorder.write(
+        _camera_frame(rgb, data, camera, masks=masks, render_mode=render_mode)
+    )
 
 
 _INSET_GAP = 8

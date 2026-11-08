@@ -103,11 +103,16 @@ from clave.sim.report import (
 )
 from clave.sim.routing import RoutingSession, ground_truth_beliefs, record_beliefs
 from clave.taxonomy import channel_of
-from clave.tracker.adapters.detection import detections_from_masks
-from clave.tracker.adapters.render import segment_masks
+from clave.tracker.adapters.learned_detection import (
+    DetectionTelemetry,
+    InstanceSegmenter,
+    LearnedDetectionError,
+    detect,
+    load_segmenter,
+)
 from clave.tracker.association import SimulatorIdentity
 from clave.tracker.codes import load_catalog, resolver_for
-from clave.tracker.evidence import Evidence, GroundTruth, Role
+from clave.tracker.evidence import Detection, Evidence, GroundTruth, PixelMask, Role
 from clave.tracker.fusion import FusionSettings
 from clave.tracker.intake import Deployment, Intake
 from clave.tracker.markers import (
@@ -289,6 +294,8 @@ def run(
     routing_path: Path | None = None,
     feed_path: Path | None = None,
     video_interval: float | None = None,
+    detection_checkpoint: Path | None = None,
+    segmenter: InstanceSegmenter | None = None,
 ) -> DebugRunReport:
     """Drive the tracker over one rollout, annotating every capture.
 
@@ -304,9 +311,10 @@ def run(
         video: Encode the rendered frames into a playable file beside them.
             A machine with no `ffmpeg` runs anyway and says none was written.
         camera_video: Encode the primary detection camera, with a box on each
-            object a segmentation of that same frame covered (`AC-CAM-01`).
-            Off unless asked, because the render is the expensive part. A
-            machine with no `ffmpeg` runs anyway and says none was written.
+            YOLO instance mask from the latest capture (`AC-CAM-01`, issue
+            #117). Off unless asked, because the render is the expensive
+            part. A machine with no `ffmpeg` runs anyway and says none was
+            written.
         frames: Write annotated PNG captures. When None, defaults to on if a
             window or video was asked for, and off for a headless run with
             neither (`AC-PERF-02`).
@@ -320,6 +328,10 @@ def run(
         ground_truth_tracker: Feed downstream selection and planning from
             MuJoCo ground-truth physics instead of tracker estimates, or None
             to read the debug configuration.
+        detection_checkpoint: YOLO-seg weights path. None reads
+            `detection.checkpoint` from the debug configuration (issue #117).
+        segmenter: Injected instance segmenter for tests. When None, weights
+            load from `detection_checkpoint` and missing weights fail closed.
         belt_speed: Override belt speed in meters per second, or None to use
             the speed sampled by the scene layout. When a feed file is also
             set, this speed wins over the one in the file.
@@ -340,7 +352,8 @@ def run(
         The report.
 
     Raises:
-        DebugRunError: If the world declares no detection camera.
+        DebugRunError: If the world declares no detection camera, or if the
+            detection checkpoint is absent when no segmenter was injected.
     """
     write_frames = bool(window or video) if frames is None else frames
     os.environ.setdefault("MUJOCO_GL", "osmesa")
@@ -417,6 +430,39 @@ def run(
         if ground_truth_tracker is not None
         else bool(debug.get("ground_truth_tracker", False))
     )
+    detector = segmenter
+    if detector is None:
+        detection_cfg = debug.get("detection")
+        if not isinstance(detection_cfg, dict):
+            raise DebugRunError(
+                "debug configuration is missing detection.checkpoint "
+                "(issue #117); train with "
+                "`clave train --config configs/training/yolo8n_seg.yml`"
+            )
+        configured = detection_checkpoint or Path(
+            str(config.require(detection_cfg, "checkpoint", "detection"))
+        )
+        weights = configured if configured.is_absolute() else root / configured
+        candidate_name = str(
+            detection_cfg.get("candidate", weights.stem)
+        )
+        measured = float(
+            config.require(
+                detection_cfg, "measured_forward_pass_seconds", "detection"
+            )
+        )
+        try:
+            from clave.validation.gates import GateConfig
+            from clave.validation.perception_latency import (
+                PerceptionLatencyError,
+                require_perception_latency,
+            )
+
+            gates = GateConfig.load(root / "configs" / "validation" / "gates.yml")
+            require_perception_latency(candidate_name, measured, gates.thresholds)
+            detector = load_segmenter(weights)
+        except (LearnedDetectionError, PerceptionLatencyError) as error:
+            raise DebugRunError(str(error)) from error
 
     presentation = (
         scene.DEFAULT_DEMO_PRESENTATION
@@ -492,8 +538,15 @@ def run(
     )
 
     width, height = render
-    masks = mujoco.Renderer(model, height=height, width=width)
-    masks.enable_segmentation_rendering()
+    # One RGB renderer per detection camera. YOLO reads colour frames only
+    # (issue #117); MuJoCo segmentation is not on this path.
+    detection_rgb = {
+        eye_on.source_id: mujoco.Renderer(model, height=height, width=width)
+        for eye_on in detecting
+    }
+    last_detection_masks: dict[str, tuple[PixelMask, ...]] = {
+        eye_on.source_id: () for eye_on in detecting
+    }
 
     opened, reason = _open_window(cv2, window)
     # Watching RGB is only for PNG dumps, live window, or video (`AC-PERF-01`).
@@ -762,28 +815,24 @@ def run(
     # asked for, which is what keeps a headless run from paying for it
     # (`AC-CAM-01`).
     camera_recorder = None
-    camera_rgb = None
-    camera_seg = None
-    # `(name, colour renderer, segmentation renderer)`. The primary camera is
-    # first and is the one `camera-debug.mp4` records. Further detection
-    # cameras are rendered only when the free-camera file will carry them
-    # (`AC-CAM-04`), which is the expensive part AC-CAM-01 keeps off otherwise.
-    camera_insets: list[tuple[str, Any, Any]] = []
+    # `(name, colour renderer)`. The primary camera is first and is the one
+    # `camera-debug.mp4` records. Further detection cameras are rendered only
+    # when the free-camera file will carry them (`AC-CAM-04`). Boxes come from
+    # the latest YOLO masks, not from a segmentation buffer (issue #117).
+    camera_insets: list[tuple[str, Any]] = []
     if camera_video:
         camera_recorder = _camera_recorder(out, width, height, playback)
         if camera_recorder is not None:
-            camera_rgb = mujoco.Renderer(model, height=height, width=width)
-            camera_seg = mujoco.Renderer(model, height=height, width=width)
-            camera_seg.enable_segmentation_rendering()
-            camera_insets.append((detection_camera, camera_rgb, camera_seg))
+            camera_insets.append(
+                (detection_camera, detection_rgb[detection_camera])
+            )
             if video:
                 for spec in detecting:
                     if spec.source_id == detection_camera:
                         continue
-                    extra_rgb = mujoco.Renderer(model, height=height, width=width)
-                    extra_seg = mujoco.Renderer(model, height=height, width=width)
-                    extra_seg.enable_segmentation_rendering()
-                    camera_insets.append((spec.source_id, extra_rgb, extra_seg))
+                    camera_insets.append(
+                        (spec.source_id, detection_rgb[spec.source_id])
+                    )
     next_capture = 0.0
     # Ground truth is the object's own pose, so the arm can read it far faster
     # than the cameras settle. A capture is 0.5 s, which means a visit steered
@@ -1151,13 +1200,12 @@ def run(
                 next_frame = data.time + movie_interval
             panels: list[tuple[str, NDArray[np.uint8]]] = []
             if due and camera_insets:
-                for name, rgb, seg in camera_insets:
+                for name, rgb in camera_insets:
                     shot = _camera_frame(
                         rgb,
-                        seg,
-                        model,
                         data,
                         name,
+                        masks=last_detection_masks.get(name, ()),
                         render_mode=render_mode,
                     )
                     if name == detection_camera and camera_recorder is not None:
@@ -1298,20 +1346,25 @@ def run(
             task.belt_speed = feeding.speed
 
             for eye_on in detecting:
-                masks.update_scene(data, camera=eye_on.source_id)
-                found = segment_masks(model, masks.render())
-                if not found:
-                    continue
-                for reading in detections_from_masks(
-                    found,
+                rgb = detection_rgb[eye_on.source_id]
+                rgb.update_scene(data, camera=eye_on.source_id)
+                frame = np.asarray(rgb.render(), dtype=np.uint8)
+                eye_telem = DetectionTelemetry(
                     source_id=eye_on.source_id,
                     observed_at_nanos=now,
                     camera=eye_on.position,
                     optics=eye_on.optics,
-                    surface_height=surface + 0.05,
                     render=render,
+                    surface_height=surface + 0.05,
                     belt_surface=surface,
-                ):
+                )
+                readings = detect(frame, eye_telem, detector)
+                last_detection_masks[eye_on.source_id] = tuple(
+                    reading.payload.mask
+                    for reading in readings
+                    if isinstance(reading.payload, Detection)
+                )
+                for reading in readings:
                     tracker.observe(reading, at_nanos=now)
             for item in conveyor.active:
                 body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, item.name)
@@ -1456,22 +1509,14 @@ def run(
     finally:
         if watching is not None:
             watching.close()
-        masks.close()
+        for rgb in detection_rgb.values():
+            rgb.close()
         if tracker_cam is not None:
             tracker_cam.close()
         if recorder is not None:
             recorder.close()
-        if camera_rgb is not None:
-            camera_rgb.close()
-        if camera_seg is not None:
-            camera_seg.close()
         if camera_recorder is not None:
             camera_recorder.close()
-        for _name, rgb, seg in camera_insets:
-            if rgb is not camera_rgb:
-                rgb.close()
-            if seg is not camera_seg:
-                seg.close()
         if telemetry is not None:
             telemetry.close()
         pick_log.close()

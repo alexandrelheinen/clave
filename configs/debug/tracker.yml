@@ -40,6 +40,17 @@ video:
 # The visual tracker continues to run concurrently.
 ground_truth_tracker: false
 
+# Learned detection checkpoint (issue #117). Colour frames plus telemetry go
+# through YOLO-seg; MuJoCo segmentation is not a detection backend. Relative
+# to the repository root. Absent weights fail the run closed.
+detection:
+  candidate: yolo8n-seg
+  checkpoint: runs/yolo8n-seg.pt
+  # Median forward-pass seconds from docs/measurements.md (AC-DET-15). Runtime
+  # refuses the candidate when this exceeds max_perception_latency_p99_seconds
+  # in configs/validation/gates.yml (AC-DET-18).
+  measured_forward_pass_seconds: 0.1342
+
 default_view: line
 
 views:
