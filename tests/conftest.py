@@ -19,6 +19,7 @@ import pytest
 
 from clave.runtime.bridge import BridgeError, locate_binary
 from clave.runtime.proposal import Proposal
+from clave.tracker.adapters.learned_detection import StubSegmenter
 
 # Pin the rendering backend before any test module is imported.
 #
@@ -37,6 +38,19 @@ from clave.runtime.proposal import Proposal
 os.environ.setdefault("MUJOCO_GL", "osmesa")
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+@pytest.fixture(autouse=True)
+def _stub_learned_detection(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Sim tests load an empty stub detector when no weights are present.
+
+    Production `clave sim` still fails closed on a missing checkpoint
+    (issue #117 AC-DET-04). Tests that need real detections pass `segmenter=`.
+    """
+    monkeypatch.setattr(
+        "clave.sim.debug_run.load_segmenter",
+        lambda _path: StubSegmenter(()),
+    )
 
 
 @pytest.fixture(scope="session")

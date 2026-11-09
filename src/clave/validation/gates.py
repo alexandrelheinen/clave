@@ -49,6 +49,8 @@ class GateThresholds:
         max_named_confusion_rate: Share of a named confusion group's records
             predicted as another member of the same group.
         max_decision_latency_p99_seconds: Frame to decision, at the tail.
+        max_perception_latency_p99_seconds: Perception forward pass alone, at
+            the tail (issue #117 AC-DET-18).
         max_cycle_time_p99_seconds: Decision to placement, at the tail.
         max_unseen_accuracy_drop: Accuracy lost from seen to unseen instances.
     """
@@ -60,6 +62,7 @@ class GateThresholds:
     max_misroute_rate: float
     max_named_confusion_rate: float
     max_decision_latency_p99_seconds: float
+    max_perception_latency_p99_seconds: float
     max_cycle_time_p99_seconds: float
     max_unseen_accuracy_drop: float
 

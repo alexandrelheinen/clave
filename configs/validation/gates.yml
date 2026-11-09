@@ -57,6 +57,12 @@ gates:
   # motion and gives that median 58 ms of tail headroom.
   max_decision_latency_p99_seconds: 0.45
 
+  # Perception forward pass alone, at the 99th percentile, in seconds. Issue
+  # #117 (AC-DET-18): leaves ~150 ms of the 0.45 s decision budget for
+  # tracking and proposal encoding. A candidate whose measured forward pass
+  # exceeds this is refused for runtime detection even if its mIoU passes.
+  max_perception_latency_p99_seconds: 0.30
+
   # Decision to placement, at the 99th percentile, in seconds. A target rather
   # than a derivation.
   #

@@ -37,6 +37,7 @@ def _thresholds(**overrides: float | int) -> GateThresholds:
         "max_misroute_rate": 0.5,
         "max_named_confusion_rate": 0.5,
         "max_decision_latency_p99_seconds": 1.0,
+        "max_perception_latency_p99_seconds": 0.30,
         "max_cycle_time_p99_seconds": 2.0,
         "max_unseen_accuracy_drop": 0.5,
     }

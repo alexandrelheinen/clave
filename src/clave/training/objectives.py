@@ -66,9 +66,23 @@ def act_loss(model: Any, batch: dict[str, Any]) -> Any:
     return loss
 
 
+def yolo_seg_loss(model: Any, batch: Any) -> Any:
+    """Placeholder objective: YOLO-seg trains through `train_from_examples`.
+
+    The generic runner never calls this for `yolo8n-seg`; the candidate is
+    routed to Ultralytics in `runner._train_yolo_seg`. Kept in OBJECTIVES so
+    `batches_for` and tooling can discover the candidate.
+    """
+    raise RuntimeError(
+        "yolo8n-seg trains via clave.training.yolo_seg.train_from_examples, "
+        "not the generic objective loop"
+    )
+
+
 OBJECTIVES: dict[str, Objective] = {
     "resnet50-baseline": multilabel_presence,
     "faster-rcnn-mobilenetv3": detection_loss,
+    "yolo8n-seg": yolo_seg_loss,
     "behavior-cloning-baseline": pick_position,
     "act": act_loss,
 }
@@ -107,6 +121,12 @@ def batches_for(
 
     if candidate == "faster-rcnn-mobilenetv3":
         return adapters.detection_batches(
+            examples, batch_size, augment=augment, input_side=input_side
+        )
+    if candidate == "yolo8n-seg":
+        from clave.training.yolo_seg import yolo_seg_batches
+
+        return yolo_seg_batches(
             examples, batch_size, augment=augment, input_side=input_side
         )
     if candidate == "resnet50-baseline":

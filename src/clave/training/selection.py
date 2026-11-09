@@ -13,6 +13,7 @@ from clave.errors import ClaveError
 
 CLASSIFIER = "resnet50-baseline"
 DETECTOR = "faster-rcnn-mobilenetv3"
+YOLO_SEG = "yolo8n-seg"
 
 
 class SelectionError(ClaveError):
@@ -70,9 +71,10 @@ def metric_for(candidate: str) -> str:
     """
     if candidate == CLASSIFIER:
         return "agreement"
-    if candidate == DETECTOR:
+    if candidate in (DETECTOR, YOLO_SEG):
         return "mean_iou"
     raise SelectionError(
         f"{candidate} has no held-out metric; selection is agreement for "
-        f"{CLASSIFIER} and mean intersection over union for {DETECTOR}"
+        f"{CLASSIFIER} and mean intersection over union for {DETECTOR} "
+        f"and {YOLO_SEG}"
     )

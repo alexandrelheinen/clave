@@ -37,6 +37,14 @@ SAM2 = CandidateSpec(
     requires="sam2",
 )
 
+YOLO8N_SEG = CandidateSpec(
+    name="yolo8n-seg",
+    stage=Stage.PERCEPTION,
+    license="AGPL-3.0",
+    source="ultralytics.YOLO yolov8n-seg",
+    requires="ultralytics",
+)
+
 
 def _build_faster_rcnn() -> Any:
     """Build a detector with its head resized to the taxonomy.
@@ -117,10 +125,38 @@ def forward_sam2(model: Any) -> Callable[[], Any]:
     return run
 
 
+def _build_yolo8n_seg() -> Any:
+    """Build YOLOv8n-seg from its YAML so the bench needs no downloaded weights.
+
+    Class count follows the taxonomy. Ultralytics applies `nc` from the model
+    YAML; overriding keeps the head sized to CLAVE's materials.
+    """
+    from ultralytics import YOLO
+
+    model = YOLO("yolov8n-seg.yaml")
+    model.model.nc = MATERIAL_CLASS_COUNT
+    return model
+
+
+def forward_yolo8n_seg(model: Any) -> Callable[[], Any]:
+    """Return a callable running one YOLO-seg predict on a synthetic frame."""
+    import numpy as np
+
+    # YOLO expects HWC uint8; the shared fixture is CHW float in [0, 1].
+    chw = frame()
+    hwc = (np.transpose(chw, (1, 2, 0)) * 255.0).astype(np.uint8)
+
+    def run() -> Any:
+        return model.predict(hwc, verbose=False)
+
+    return run
+
+
 PERCEPTION_CANDIDATES: tuple[
     tuple[Candidate, Callable[[Any], Callable[[], Any]]], ...
 ] = (
     (Candidate(FASTER_RCNN, _build_faster_rcnn), forward_detector),
     (Candidate(RESNET50, _build_resnet50), forward_classifier),
     (Candidate(SAM2, _build_sam2), forward_sam2),
+    (Candidate(YOLO8N_SEG, _build_yolo8n_seg), forward_yolo8n_seg),
 )

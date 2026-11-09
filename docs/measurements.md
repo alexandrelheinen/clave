@@ -25,6 +25,7 @@ does.
 | Candidate | Stage | Parameters | Median latency | Spread |
 | --- | --- | --- | --- | --- |
 | `resnet50-baseline` | Perception | 23.53 M | 29.0 ms | 6.1 ms |
+| `yolo8n-seg` | Perception | 3.41 M | 134.2 ms | 49.1 ms |
 | `faster-rcnn-mobilenetv3` | Perception | 18.98 M | 391.7 ms | 28.1 ms |
 | `sam2` | Perception | 38.96 M | 1229.2 ms | 41.5 ms |
 | `behavior-cloning-baseline` | Policy | 0.02 M | 0.4 ms | 0.1 ms |
@@ -35,7 +36,8 @@ Two candidates are ruled out by cost alone on this machine. `sam2` exceeds the
 per-object budget before the arm has moved, and `diffusion-policy` exceeds it by
 more than three orders of magnitude. Both remain in the registry, because a
 machine with an accelerator would measure them differently and the registry
-records what was screened rather than what survived.
+records what was screened rather than what survived. `yolo8n-seg` clears the
+0.30 s perception latency gate in issue #117 (`AC-DET-15`, `AC-DET-18`).
 
 ## The manipulator
 

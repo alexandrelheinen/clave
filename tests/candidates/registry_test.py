@@ -12,6 +12,7 @@ def test_registry_lists_every_shortlisted_architecture() -> None:
         "faster-rcnn-mobilenetv3",
         "resnet50-baseline",
         "sam2",
+        "yolo8n-seg",
         "act",
         "diffusion-policy",
         "behavior-cloning-baseline",
@@ -36,7 +37,7 @@ def test_every_candidate_records_its_source() -> None:
 
 def test_the_registry_is_readable_without_loading_anything() -> None:
     """Inspecting the registry imports no heavy library."""
-    assert len(REGISTRY) == 6
+    assert len(REGISTRY) == 7
     for candidate, forward_for in REGISTRY:
         assert callable(candidate.build)
         assert callable(forward_for)

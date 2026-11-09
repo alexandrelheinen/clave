@@ -160,6 +160,9 @@ def train(
     # thing a run most needs to reproduce entirely unseeded.
     seed_everything(config.seed)
 
+    if config.candidate == "yolo8n-seg":
+        return _train_yolo_seg(config, description, run, world)
+
     if config.candidate == "act":
         # ACT is built with a chunk size suited to this data rather than the
         # upstream default v0.4.0 benchmarked. Recorded in the run's config
@@ -376,6 +379,64 @@ def train(
     run.completed = True
     run.write(run_record_path(config.checkpoints, config.candidate))
     return run
+
+
+def _train_yolo_seg(
+    config: TrainingConfig,
+    description: Any,
+    run: TrainingRun,
+    world: Path,
+) -> TrainingRun:
+    """Train YOLO-seg from corpus instance maps (issue #117 AC-DET-12).
+
+    Ultralytics owns the training loop. This path still draws the CLAVE frame
+    sample, refuses a live simulator, and writes the CLAVE checkpoint envelope.
+    """
+    from clave.training.yolo_seg import YoloSegError, train_from_examples
+
+    try:
+        sample = _draw_sample(config, description, world, config.dataset, "train")
+        sample.write(_sample_path(config))
+        run.sample_digest = sample.digest
+        examples = _examples_for_sample(config, description, sample)
+        began = time.perf_counter()
+        train_from_examples(
+            examples,
+            epochs=config.epochs,
+            checkpoints=config.checkpoints,
+            seed=config.seed,
+        )
+        run.epochs.append(
+            EpochRecord(
+                index=0,
+                loss=0.0,
+                seconds=time.perf_counter() - began,
+                selection_score=None,
+            )
+        )
+        run.completed = True
+        run.write(run_record_path(config.checkpoints, config.candidate))
+        return run
+    except ImportError as error:
+        run.unavailable_reason = f"ultralytics is required for yolo8n-seg: {error}"
+        run.write(run_record_path(config.checkpoints, config.candidate))
+        return run
+    except YoloSegError as error:
+        run.unavailable_reason = str(error)
+        run.write(run_record_path(config.checkpoints, config.candidate))
+        return run
+
+
+def _examples_for_sample(
+    config: TrainingConfig, description: Any, sample: FrameSample
+) -> tuple[Any, ...]:
+    """Materialise every frame the sample named, without a live simulator."""
+    frames: list[Any] = []
+    for rollout_id, indexes in sample.picks.items():
+        frames.extend(
+            _examples_at(config.dataset, description, rollout_id, tuple(indexes))
+        )
+    return tuple(frames)
 
 
 def _checkpoint_path(config: TrainingConfig) -> Path:
