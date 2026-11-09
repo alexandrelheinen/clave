@@ -109,7 +109,9 @@ def yolo_seg_batches(
     batch_size: int,
     augment: bool = False,
     input_side: int | None = None,
-) -> Iterator[tuple[list[NDArray[np.uint8]], list[tuple[tuple[int, NDArray[np.bool_]], ...]]]]:
+) -> Iterator[
+    tuple[list[NDArray[np.uint8]], list[tuple[tuple[int, NDArray[np.bool_]], ...]]]
+]:
     """Yield RGB frames paired with instance masks for scoring and smoke tests.
 
     Args:
@@ -360,7 +362,6 @@ def _mask_iou(left: NDArray[np.bool_], right: NDArray[np.bool_]) -> float:
 
 def _as_bool_mask(mask: Any, height: int, width: int) -> NDArray[np.bool_]:
     """Resize a model mask tensor to the frame grid."""
-    import torch
     import torch.nn.functional as functional
 
     tensor = mask.detach().float().unsqueeze(0).unsqueeze(0)

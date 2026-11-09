@@ -11,6 +11,7 @@ Issue #117: AC-DET-01, AC-DET-04 through AC-DET-11, AC-DET-17.
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -121,7 +122,11 @@ def detect(
         masks[f"instance_{index}"] = packed
         if emit_material and prediction.class_index is not None:
             materials.append(
-                _material_evidence(telemetry, prediction.class_index, prediction.confidence)
+                _material_evidence(
+                    telemetry,
+                    prediction.class_index,
+                    prediction.confidence,
+                )
             )
 
     detections = detections_from_masks(
@@ -219,10 +224,8 @@ class SubprocessYoloSegmenter:
 
     def close(self) -> None:
         """Stop the worker process."""
-        try:
+        with contextlib.suppress(Exception):
             self._requests.put(None)
-        except Exception:
-            pass
         self._worker.join(timeout=5.0)
         if self._worker.is_alive():
             self._worker.terminate()
@@ -245,7 +248,9 @@ def _yolo_worker(checkpoint: str, requests: Any, responses: Any) -> None:
         try:
             results = model.predict(frame, verbose=False)
             packed: list[tuple[NDArray[np.bool_], int | None, float]] = []
-            if results and results[0].masks is not None and results[0].boxes is not None:
+            has_masks = results and results[0].masks is not None
+            has_boxes = results and results[0].boxes is not None
+            if has_masks and has_boxes:
                 result = results[0]
                 height, width = frame.shape[:2]
                 for index in range(int(result.masks.data.shape[0])):

@@ -365,7 +365,10 @@ def _score_yolo_seg(
             if count:
                 overlap_sum += mean_iou * count
                 overlap_count += count
-            bar.update(len(examples), iou=overlap_sum / overlap_count if overlap_count else 0.0)
+            mean_so_far = (
+                overlap_sum / overlap_count if overlap_count else 0.0
+            )
+            bar.update(len(examples), iou=mean_so_far)
             del rollout
             gc.collect()
     finally:

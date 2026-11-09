@@ -70,7 +70,13 @@ def test_ac_det_01_detect_accepts_frame_and_telemetry_only() -> None:
 
 def test_ac_det_05_learned_detection_modules_import_no_mujoco() -> None:
     """AC-DET-05: learned detection must not import mujoco or render adapter."""
-    root = Path(__file__).resolve().parents[2] / "src" / "clave" / "tracker" / "adapters"
+    root = (
+        Path(__file__).resolve().parents[2]
+        / "src"
+        / "clave"
+        / "tracker"
+        / "adapters"
+    )
     forbidden = {"mujoco", "clave.tracker.adapters.render"}
     for name in ("learned_detection.py", "masks.py"):
         tree = ast.parse((root / name).read_text())
